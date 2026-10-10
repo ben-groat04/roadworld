@@ -112,7 +112,7 @@ for (const f of exportInfo.files) {
     else mat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.9 });
   }
   const m = new THREE.Mesh(geo, mat);
-  m.castShadow = f.kind !== 'marking'; m.receiveShadow = true;
+  m.userData.marking = f.kind === 'marking'; m.castShadow = f.kind !== 'marking'; m.receiveShadow = true;
   group.add(m);
   report.push(f.file + ' -> ' + (f.kind === 'marking' ? 'marking ' + f.id : (SLOT[f.id] || 'grey')));
 }
@@ -120,6 +120,7 @@ for (const f of exportInfo.files) {
 {
   const zmin = exportInfo.bounds_min[2];
   const gm = await slotMaterial(man, 'grass');
+  gm.color.setHex(0xc8e2a8); // mild viewer tint: the set alone reads brown
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(8000, 8000), gm);
   ground.rotation.x = -Math.PI / 2; ground.position.y = zmin - 0.03;
   const g = ground.geometry; const uv = g.attributes.uv; // PlaneGeometry uv is 0..1: make it metres
@@ -130,7 +131,16 @@ for (const f of exportInfo.files) {
 // view: { name, pos:[x,y,z], target:[x,y,z] in sim metres (original sim frame), fov, near, shadow (radius, m), exposure }
 window.setView = (v) => {
   const P = a => new THREE.Vector3(...S2T(a[0] - off[0], a[1] - off[1], a[2] - off[2]));
-  const pos = P(v.pos), tgt = P(v.target);
+  // rel: z of pos / target is a height above the road surface (highest non-marking mesh) at that xy.
+  const ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0);
+  const surf = group.children.filter(m => !m.userData.marking);
+  const lift = a => {
+    if (!v.rel) return a;
+    const p = P([a[0], a[1], 0]); p.y = 200; ray.set(p, down);
+    const h = ray.intersectObjects(surf, false)[0];
+    return [a[0], a[1], (h ? h.point.y : 0) + a[2] + off[2]];
+  };
+  const pos = P(lift(v.pos)), tgt = P(lift(v.target));
   camera.fov = v.fov ?? 50; camera.near = v.near ?? 0.2; camera.far = v.far ?? 6000; camera.aspect = W / H;
   camera.position.copy(pos); camera.up.set(0, 1, 0); camera.lookAt(tgt); camera.updateProjectionMatrix();
   renderer.toneMappingExposure = v.exposure ?? 0.75;

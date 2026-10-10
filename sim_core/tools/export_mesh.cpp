@@ -63,7 +63,11 @@ int main(int argc, char** argv) {
             for (const auto& w : ms.warnings) std::fprintf(stderr, "export_mesh: marking warning: %s\n", w.c_str());
             for (const auto& m : ms.marks) {
                 const auto tri = cp::triangulate_marking(ms, m);
-                if (tri.empty()) continue;
+                if (tri.empty()) {
+                    std::fprintf(stderr, "export_mesh: marking skipped (no triangles): %s at (%.2f, %.2f)\n",
+                                 cp::marking_category_name(m.category), ms.points(m)[0].x, ms.points(m)[0].y);
+                    continue;
+                }
                 cp::WorldMesh& wm = mark_meshes[ms.colour_id(m)];
                 const auto base = static_cast<std::uint32_t>(wm.positions.size());
                 for (const auto& v : ms.points(m)) {

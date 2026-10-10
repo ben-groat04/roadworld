@@ -1,8 +1,8 @@
 [
-  { "name": "1_aerial_interchange", "pos": [-330, -430, 330], "target": [0, 40, 0], "fov": 42, "near": 5, "shadow": 460, "exposure": 0.7 },
-  { "name": "2_aerial_roundabout", "pos": [75, 10, 45], "target": [0, 80, 0], "fov": 50, "near": 1, "shadow": 90 },
-  { "name": "3_street_roundabout_approach", "pos": [-2, 28, 1.7], "target": [-1, 70, 0.4], "fov": 60, "near": 0.2, "shadow": 80 },
-  { "name": "4_tjunction_from_minor_arm", "pos": [45, 228, 3], "target": [0, 230, 0.4], "fov": 60, "near": 0.2, "shadow": 80 },
-  { "name": "5_slip_merge_low_oblique", "pos": [200, -30, 6], "target": [262, 0, 0], "fov": 55, "near": 0.3, "shadow": 100 },
-  { "name": "6_closeup_kerb_pavement", "pos": [4, 120, 1.5], "target": [8, 134, 0], "fov": 60, "near": 0.1, "shadow": 40 }
+  { "name": "1_aerial_interchange", "pos": [-300, -330, 260], "target": [0, 60, 0], "fov": 45, "near": 5, "shadow": 460, "exposure": 0.9 },
+  { "name": "2_aerial_roundabout", "pos": [75, 10, 45], "target": [0, 80, 0], "fov": 50, "near": 1, "shadow": 90, "exposure": 0.9 },
+  { "name": "3_street_roundabout_approach", "rel": true, "pos": [-2, 20, 1.7], "target": [-1, 70, 0.5], "fov": 60, "near": 0.2, "shadow": 80, "exposure": 0.9 },
+  { "name": "4_tjunction_from_minor_arm", "pos": [45, 228, 3], "target": [0, 230, 0.4], "fov": 60, "near": 0.2, "shadow": 80, "exposure": 0.9 },
+  { "name": "5_slip_merge_low_oblique", "rel": true, "pos": [-195, -32, 7], "target": [-258, 0, 0], "fov": 55, "near": 0.3, "shadow": 100, "exposure": 0.9 },
+  { "name": "6_closeup_kerb_pavement", "pos": [60, 227.5, 1.5], "target": [67, 222, 0], "fov": 60, "near": 0.1, "shadow": 40, "exposure": 0.9 }
 ]
