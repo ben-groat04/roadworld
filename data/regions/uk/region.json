@@ -6,5 +6,19 @@
   "speed_unit": "mph",
   "headroom_m": 5.3,
   "_headroom_source": "UK standard headroom 5.03 m plus allowance; tune by eye",
-  "plan_crossing_junction_dz_m": 1.0
+  "plan_crossing_junction_dz_m": 1.0,
+  "roundabout": {
+    "_comment": "Roundabout tool and layout tunables; tuned by eye. Roundabout-ness itself comes from the roundabout_ring flag on a road type.",
+    "entry_corner_radius_m": 8,
+    "exit_corner_radius_m": 12,
+    "ring_corner_radius_factor": 1.0,
+    "max_arc_rad": 1.62,
+    "max_ring_edges": 16,
+    "min_island_radius_m": 3,
+    "min_edge_length_m": 4,
+    "min_tool_radius_m": 8,
+    "max_tool_radius_m": 100,
+    "splitter_length_m": 12,
+    "splitter_width_m": 1.8
+  }
 }

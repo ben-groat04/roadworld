@@ -1,9 +1,10 @@
-// Roundabouts: the place tool, recognition of hand-drawn rings, the layout (island, carriageway,
-// splitters, connectors) and the post-pass over the JunctionSet. See docs/junctions.md section 7.
+// Roundabouts: group finding by explicit road type, the place preset, per-group layout (island,
+// splitters, give-way) and the post-pass over the JunctionSet. See docs/junctions.md section 7.
 #include "cp/junction_roundabout.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <set>
 
 #if defined(_MSC_VER)
@@ -17,8 +18,13 @@
 
 namespace cp {
 
-// No roundabout fields in the region pack yet: the fallbacks in RoundaboutParams apply.
-RoundaboutParams roundabout_params(const RegionPack&) { return RoundaboutParams{}; }
+const RoundaboutRules& roundabout_params(const RegionPack& region) { return region.roundabout; }
+
+std::string default_ring_road_type(const RegionPack& region) {
+    for (const auto& [id, t] : region.road_types)
+        if (t.roundabout_ring) return id;
+    return {};
+}
 
 namespace {
 
@@ -41,13 +47,6 @@ Clipper2Lib::PathD to_path(const Ring& r) {
     return p;
 }
 
-Clipper2Lib::PathsD to_paths(const PolygonSet& s) {
-    Clipper2Lib::PathsD ps;
-    for (const Ring& r : s) ps.push_back(to_path(r));
-    return ps;
-}
-
-// Clipper2 orients outers CCW and holes CW.
 PolygonSet from_paths(const Clipper2Lib::PathsD& ps) {
     PolygonSet out;
     for (const auto& p : ps) {
@@ -83,21 +82,18 @@ std::vector<double> interior_s(const Edge& e) {
     return s;
 }
 
-// Kerb-line half widths of a one-way edge of `road_type`, as the arms see them (m from the
-// centreline, + = left of a -> b; both are distances, so positive).
+// Kerb-line extent of a one-way type: distances (m) from the centreline to the kerb face on the
+// left and right of a -> b.
 struct KerbExtent {
     bool ok = false;
     double left = 0, right = 0;
 };
 
-KerbExtent kerb_extent(const RegionPack& region, const std::string& road_type) {
+KerbExtent kerb_extent(const RegionPack& region, const RoadType& t) {
     KerbExtent k;
-    const RoadType* t = region.road_type(road_type);
-    if (!t) return k;
     Edge e;
-    e.road_type = road_type;
     e.one_way = true;
-    const std::vector<Lane> lanes = instantiate_lanes(e, *t, region.driving_side);
+    const std::vector<Lane> lanes = instantiate_lanes(e, t, region.driving_side);
     double left = 0, right = 0;
     bool drivable = false;
     for (const Lane& l : lanes) {
@@ -119,17 +115,29 @@ KerbExtent kerb_extent(const RegionPack& region, const std::string& road_type) {
 
 bool is_clockwise_for(const RegionPack& region) { return region.driving_side == DrivingSide::Left; }
 
-// ---------------------------------------------------------------- the place tool
+bool ring_flagged(const RegionPack& region, const Edge& e) {
+    const RoadType* t = region.road_type(e.road_type);
+    return t && t->roundabout_ring;
+}
+
+// ---------------------------------------------------------------- the place preset
 
 class PlaceRoundabout : public RoadCommand {
 public:
-    PlaceRoundabout(Vec3 centre, double radius, std::string type, bool clockwise, RoundaboutParams params,
-                    KerbExtent kerb)
-        : centre_(centre), radius_(radius), type_(std::move(type)), clockwise_(clockwise), prm_(params), kerb_(kerb) {}
+    PlaceRoundabout(Vec3 centre, double radius, std::string type, const RegionPack& region)
+        : centre_(centre), radius_(radius), type_(std::move(type)), clockwise_(is_clockwise_for(region)),
+          prm_(region.roundabout) {
+        const RoadType* t = region.road_type(type_);
+        if (!t) type_error_ = "unknown road type '" + type_ + "'";
+        else if (!t->roundabout_ring) type_error_ = "road type '" + type_ + "' is not a roundabout ring type";
+        else kerb_ = kerb_extent(region, *t);
+        for (const auto& [id, rt] : region.road_types)
+            if (rt.roundabout_ring) ring_types_.insert(id);
+    }
 
     bool apply(RoadGraph& g) override {
         if (!planned_) {
-            if (!plan(g)) return false;
+            if (!plan(g).empty()) return false;
             planned_ = true;
         }
         if (execute(g)) return true;
@@ -141,59 +149,54 @@ public:
 
     std::string name() const override { return "place roundabout"; }
 
-private:
-    struct Stub {
-        Edge e;
-        int na = -1, nb = -1;  // index into added_nodes_ when that end is a new ring node, else the edge's own end
-    };
-    struct Interval {
-        double lo, hi;
-        bool lo_cut, hi_cut;
-    };
-
-    // Circulation parameter u (increasing along the circulation) -> geometric angle and back.
-    double angle_of(double u) const { return clockwise_ ? -u : u; }
-    Vec3 ring_point(double u) const {
-        const double a = angle_of(u);
-        return {centre_.x + radius_ * std::cos(a), centre_.y + radius_ * std::sin(a), centre_.z};
-    }
-    double ring_heading(double u) const {
-        const double a = angle_of(u);
-        return clockwise_ ? a - kPi / 2 : a + kPi / 2;
-    }
-
-    static double wrap_2pi(double a) {
-        a = std::fmod(a, 2 * kPi);
-        return a < 0 ? a + 2 * kPi : a;
-    }
-
-    // Splits the plan: which edges and nodes go, which nodes and edges come. Reads the graph only.
-    bool plan(const RoadGraph& g) {
+    // Empty string: the plan is valid for `g`. Reads the graph only.
+    std::string plan(const RoadGraph& g) {
         removed_edges_.clear();
         removed_nodes_.clear();
         added_nodes_.clear();
         stubs_.clear();
-        if (!(radius_ > 0) || !kerb_.ok) return false;
+        if (!type_error_.empty()) return type_error_;
+        if (!std::isfinite(centre_.x) || !std::isfinite(centre_.y) || !std::isfinite(centre_.z))
+            return "centre is not finite";
+        if (!std::isfinite(radius_)) return "radius is not finite";
+        if (radius_ < prm_.min_tool_radius) return "radius " + fmt(radius_) + " m is below the minimum of " + fmt(prm_.min_tool_radius) + " m";
+        if (radius_ > prm_.max_tool_radius) return "radius " + fmt(radius_) + " m is above the maximum of " + fmt(prm_.max_tool_radius) + " m";
+        if (!kerb_.ok) return "ring road type has no driving lanes";
         const double in_ext = clockwise_ ? kerb_.right : kerb_.left;  // distance to the island-side kerb
-        if (radius_ - in_ext < prm_.min_island_radius) return false;
+        if (radius_ - in_ext < prm_.min_island_radius)
+            return "radius " + fmt(radius_) + " m leaves an island of " + fmt(radius_ - in_ext) + " m, below the minimum of " +
+                   fmt(prm_.min_island_radius) + " m";
 
         const Vec2 c = centre_.xy();
-        std::vector<double> cut_u;  // circulation parameter of each crossing, parallel to added_nodes_
+        std::vector<double> cut_u;  // circulation parameter of each crossing, parallel to the cut nodes
+        std::vector<Node> cut_nodes;
 
         for (const auto& [id, e] : g.edges()) {
             const double L = e.horizontal.length();
             const auto dist = [&](double s) { return (edge_point(e, s).xy() - c).length() - radius_; };
+            // Cheap reject: the whole edge is farther from the centre than the circle plus its sagitta slack.
+            const Vec2 pa = edge_point(e, 0).xy(), pb = edge_point(e, L).xy();
+            const double nearest = ((pa + pb) * 0.5 - c).length();
+            if (nearest - radius_ > 1.5 * L + 1.0) continue;
+
             std::vector<Interval> ivs;
-            bool touched = false;
             bool inside = dist(0) < 0;
+            bool touched = inside;
+            bool structure_inside = false;
             double start = 0;
             bool start_cut = false;
-            touched = inside;
             double prev_s = 0;
             const int steps = std::max(1, static_cast<int>(std::ceil(L / kSampleStep)));
+            const auto in_structure = [&](double s) {
+                for (const StructureSpan& sp : e.structure)
+                    if (sp.kind != StructureKind::Ground && s >= sp.s0 && s <= sp.s1) return true;
+                return false;
+            };
+            if (inside && in_structure(0)) structure_inside = true;
             for (int i = 1; i <= steps; ++i) {
                 const double s = std::min(L, i * kSampleStep);
                 const bool in = dist(s) < 0;
+                if (in && in_structure(s)) structure_inside = true;
                 if (in != inside) {
                     double lo = prev_s, hi = s;
                     for (int k = 0; k < 50; ++k) {
@@ -214,12 +217,17 @@ private:
                 prev_s = s;
             }
             if (!touched) continue;
+            if (ring_types_.count(e.road_type)) return "the circle overlaps an existing roundabout ring (edge " + std::to_string(id.value) + ")";
+            if (structure_inside) return "a bridge or tunnel (edge " + std::to_string(id.value) + ") passes through the circle";
             if (!inside) ivs.push_back({start, L, start_cut, false});
+            if (ivs.empty()) return "road " + std::to_string(id.value) + " lies wholly inside the circle (it would be a road in the island)";
             removed_edges_.push_back(e);
 
             const std::vector<double> is = interior_s(e);
             for (const Interval& iv : ivs) {
-                if (iv.hi - iv.lo < prm_.min_edge_length) return false;  // stub too short
+                if (iv.hi - iv.lo < prm_.min_edge_length)
+                    return "road " + std::to_string(id.value) + " would leave a stub of " + fmt(iv.hi - iv.lo) +
+                           " m, below the minimum of " + fmt(prm_.min_edge_length) + " m";
                 Stub st;
                 st.e = e;
                 st.e.id = {};
@@ -239,12 +247,13 @@ private:
                     const Vec2 p = edge_point(e, end == 0 ? iv.lo : iv.hi).xy();
                     const double geo = std::atan2(p.y - c.y, p.x - c.x);
                     cut_u.push_back(wrap_2pi(clockwise_ ? -geo : geo));
-                    added_nodes_.push_back(Node{{}, ring_point(cut_u.back())});
-                    (end == 0 ? st.na : st.nb) = static_cast<int>(added_nodes_.size()) - 1;
+                    cut_nodes.push_back(Node{{}, ring_point(cut_u.back())});
+                    (end == 0 ? st.na : st.nb) = static_cast<int>(cut_nodes.size()) - 1;
                 }
                 stubs_.push_back(std::move(st));
             }
         }
+        added_nodes_ = cut_nodes;
         for (const auto& [nid, n] : g.nodes())
             if ((n.pos.xy() - c).length() < radius_) removed_nodes_.push_back(n);
 
@@ -266,8 +275,10 @@ private:
         std::vector<int> sub(m, 1);
         int total = 0;
         for (std::size_t i = 0; i < m; ++i) {
-            const double d = wrap_2pi(rn[(i + 1) % m].u - rn[i].u);
-            arc[i] = (m == 1 || d < 1e-9) ? 2 * kPi : d;
+            arc[i] = m == 1 ? 2 * kPi : wrap_2pi(rn[(i + 1) % m].u - rn[i].u);
+            if (radius_ * arc[i] < prm_.min_edge_length)
+                return "two roads meet the circle only " + fmt(radius_ * arc[i]) + " m apart, below the minimum ring edge of " +
+                       fmt(prm_.min_edge_length) + " m";
             sub[i] = std::max(1, static_cast<int>(std::ceil(arc[i] / prm_.max_arc - 1e-9)));
             total += sub[i];
         }
@@ -278,9 +289,10 @@ private:
             ++sub[best];
             ++total;
         }
-        if (total > prm_.max_ring_edges) return false;
+        if (total > prm_.max_ring_edges)
+            return "the ring would need " + std::to_string(total) + " edges, above the maximum of " + std::to_string(prm_.max_ring_edges);
         for (std::size_t i = 0; i < m; ++i)
-            if (radius_ * arc[i] / sub[i] < prm_.min_edge_length) return false;  // ring edge too short
+            if (radius_ * arc[i] / sub[i] < prm_.min_edge_length) return "a ring edge would be shorter than the minimum of " + fmt(prm_.min_edge_length) + " m";
 
         struct SeqNode {
             double u;
@@ -310,7 +322,38 @@ private:
             st.nb = b.node;
             stubs_.push_back(std::move(st));
         }
-        return true;
+        return {};
+    }
+
+private:
+    struct Stub {
+        Edge e;
+        int na = -1, nb = -1;  // index into added_nodes_ when that end is a new ring node, else the edge's own end
+    };
+    struct Interval {
+        double lo, hi;
+        bool lo_cut, hi_cut;
+    };
+
+    static std::string fmt(double v) {
+        char b[32];
+        std::snprintf(b, sizeof b, "%.1f", v);
+        return b;
+    }
+
+    // Circulation parameter u (increasing along the circulation) -> geometric angle and back.
+    double angle_of(double u) const { return clockwise_ ? -u : u; }
+    Vec3 ring_point(double u) const {
+        const double a = angle_of(u);
+        return {centre_.x + radius_ * std::cos(a), centre_.y + radius_ * std::sin(a), centre_.z};
+    }
+    double ring_heading(double u) const {
+        const double a = angle_of(u);
+        return clockwise_ ? a - kPi / 2 : a + kPi / 2;
+    }
+    static double wrap_2pi(double a) {
+        a = std::fmod(a, 2 * kPi);
+        return a < 0 ? a + 2 * kPi : a;
     }
 
     bool execute(RoadGraph& g) {
@@ -348,8 +391,10 @@ private:
     double radius_;
     std::string type_;
     bool clockwise_;
-    RoundaboutParams prm_;
+    RoundaboutRules prm_;
     KerbExtent kerb_;
+    std::string type_error_;
+    std::set<std::string> ring_types_;
 
     bool planned_ = false;
     std::vector<Edge> removed_edges_;
@@ -358,53 +403,14 @@ private:
     std::vector<Stub> stubs_;        // edges to insert (ids likewise)
 };
 
-// ---------------------------------------------------------------- recognition
+// ---------------------------------------------------------------- group finding
 
-struct Candidate {
-    std::vector<NodeId> nodes;
-    std::vector<EdgeId> edges;
-    double length = 0;
-};
-
-// Simple directed cycles of one-way edges, each reported once from its smallest node.
-struct CycleFinder {
-    const RoadGraph& g;
-    const RoundaboutParams& prm;
-    std::map<NodeId, std::vector<const Edge*>> out;
-    double max_len = 0;
-    std::vector<Candidate> cands;
-    std::vector<NodeId> path_nodes;
-    std::vector<EdgeId> path_edges;
-    std::set<NodeId> on_path;
-
-    void dfs(NodeId start, NodeId cur, double len) {
-        const auto it = out.find(cur);
-        if (it == out.end() || cands.size() > 20000) return;
-        for (const Edge* e : it->second) {
-            const double l2 = len + e->horizontal.length();
-            if (l2 > max_len) continue;
-            path_edges.push_back(e->id);
-            if (e->b == start) {
-                if (path_edges.size() >= 3) cands.push_back({path_nodes, path_edges, l2});
-            } else if (e->b.value > start.value && !on_path.count(e->b) &&
-                       static_cast<int>(path_edges.size()) < prm.max_ring_edges) {
-                path_nodes.push_back(e->b);
-                on_path.insert(e->b);
-                dfs(start, e->b, l2);
-                on_path.erase(e->b);
-                path_nodes.pop_back();
-            }
-            path_edges.pop_back();
-        }
-    }
-};
-
-bool evaluate(const Candidate& c, const RoadGraph& g, const RegionPack& region, const RoundaboutParams& prm,
-              JunctionGroup& group) {
-    const std::size_t n = c.nodes.size();
+// Ring order and geometry of a clean component; returns an error text on failure.
+std::string finish_group(const RoadGraph& graph, const RegionPack& region, const std::vector<NodeId>& node_order,
+                         const std::vector<EdgeId>& edge_order, JunctionGroup& group) {
     std::vector<Vec2> pts;
-    for (EdgeId id : c.edges) {
-        const Edge* e = g.edge(id);
+    for (EdgeId id : edge_order) {
+        const Edge* e = graph.edge(id);
         const double L = e->horizontal.length();
         const int k = std::max(4, static_cast<int>(std::ceil(L)));
         for (int i = 0; i < k; ++i) pts.push_back(edge_point(*e, L * i / k).xy());
@@ -412,31 +418,22 @@ bool evaluate(const Candidate& c, const RoadGraph& g, const RegionPack& region, 
     Vec2 centre{};
     for (Vec2 p : pts) centre = centre + p;
     centre = centre * (1.0 / static_cast<double>(pts.size()));
-    double sum = 0, dmin = 1e18, dmax = 0;
-    for (Vec2 p : pts) {
-        const double d = (p - centre).length();
-        sum += d;
-        dmin = std::min(dmin, d);
-        dmax = std::max(dmax, d);
-    }
-    const double radius = sum / static_cast<double>(pts.size());
-    if (radius < prm.min_radius || radius > prm.max_radius) return false;
-    if (dmin < prm.min_roundness * dmax) return false;
+    double sum = 0;
+    for (Vec2 p : pts) sum += (p - centre).length();
     const double area = signed_area(pts);
-    if (std::fabs(area) < 0.5 * kPi * radius * radius) return false;  // figure-of-eight and the like
     const bool clockwise = area < 0;
-    if (clockwise != is_clockwise_for(region)) return false;
-
+    if (std::fabs(area) < 1e-6) return "the ring encloses no area";
+    if (clockwise != is_clockwise_for(region)) return "the ring circulates against the driving side";
     group = JunctionGroup{};
-    group.nodes = c.nodes;
-    group.ring_edges = c.edges;
+    group.nodes = node_order;
+    group.ring_edges = edge_order;
     group.centre = centre;
-    group.radius = radius;
+    group.radius = sum / static_cast<double>(pts.size());
     group.clockwise = clockwise;
-    const std::set<EdgeId> ring(c.edges.begin(), c.edges.end());
-    for (std::size_t i = 0; i < n; ++i) {
+    const std::set<EdgeId> ring(edge_order.begin(), edge_order.end());
+    for (std::size_t i = 0; i < node_order.size(); ++i) {
         std::vector<RoundaboutArm> here;
-        for (const JunctionArm& a : collect_arms(g, c.nodes[i], region)) {
+        for (const JunctionArm& a : collect_arms(graph, node_order[i], region)) {
             if (ring.count(a.edge)) continue;
             RoundaboutArm arm;
             arm.ring_index = static_cast<int>(i);
@@ -449,103 +446,10 @@ bool evaluate(const Candidate& c, const RoadGraph& g, const RegionPack& region, 
                          [](const RoundaboutArm& x, const RoundaboutArm& y) { return x.edge < y.edge; });
         group.arms.insert(group.arms.end(), here.begin(), here.end());
     }
-    return static_cast<int>(group.arms.size()) >= prm.min_arms;
+    return {};
 }
 
 // ---------------------------------------------------------------- layout helpers
-
-// Trim of the arm of `edge` at `node` (0 if the node has no junction, e.g. a joint).
-double ring_trim(const std::map<NodeId, Junction>& js, NodeId node, EdgeId edge, bool at_a) {
-    const auto it = js.find(node);
-    if (it == js.end()) return 0;
-    const Junction& j = it->second;
-    for (std::size_t k = 0; k < j.arms.size() && k < j.trims.size(); ++k)
-        if (j.arms[k].edge == edge && j.arms[k].at_a == at_a) return j.trims[k];
-    return 0;
-}
-
-Vec3 polyline_at(const std::vector<EdgeSample>& samples, double s) {
-    if (samples.empty()) return {};
-    std::size_t i = 0;
-    while (i + 2 < samples.size() && samples[i + 1].s < s) ++i;
-    if (samples.size() < 2) return samples[0].pos;
-    const double span = samples[i + 1].s - samples[i].s;
-    const double t = span > 0 ? std::clamp((s - samples[i].s) / span, 0.0, 1.0) : 0.0;
-    const Vec3 &p = samples[i].pos, &q = samples[i + 1].pos;
-    return {p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t, p.z + (q.z - p.z) * t};
-}
-
-std::vector<Vec3> slice(const OffsetPolyline& pl, double s0, double s1) {
-    std::vector<Vec3> out;
-    if (pl.samples.size() < 2) return out;
-    if (s1 <= s0) s0 = s1 = (s0 + s1) / 2;
-    out.push_back(polyline_at(pl.samples, s0));
-    for (const EdgeSample& s : pl.samples)
-        if (s.s > s0 + 1e-6 && s.s < s1 - 1e-6) out.push_back(s.pos);
-    out.push_back(polyline_at(pl.samples, s1));
-    return out;
-}
-
-void append_path(std::vector<Vec3>& out, const std::vector<Vec3>& p) {
-    for (std::size_t i = 0; i < p.size(); ++i) {
-        if (i == 0 && !out.empty()) {
-            const Vec3& b = out.back();
-            if (std::hypot(b.x - p[0].x, b.y - p[0].y) < 0.05) continue;
-        }
-        out.push_back(p[i]);
-    }
-}
-
-double path_length(const std::vector<Vec3>& p) {
-    double l = 0;
-    for (std::size_t i = 0; i + 1 < p.size(); ++i) l += std::hypot(p[i + 1].x - p[i].x, p[i + 1].y - p[i].y);
-    return l;
-}
-
-// Point at fraction f (0..1) of the path's length.
-Vec3 path_at(const std::vector<Vec3>& p, double f) {
-    const double target = path_length(p) * f;
-    double acc = 0;
-    for (std::size_t i = 0; i + 1 < p.size(); ++i) {
-        const double l = std::hypot(p[i + 1].x - p[i].x, p[i + 1].y - p[i].y);
-        if (acc + l >= target || i + 2 == p.size()) {
-            const double t = l > 0 ? std::clamp((target - acc) / l, 0.0, 1.0) : 0.0;
-            return {p[i].x + (p[i + 1].x - p[i].x) * t, p[i].y + (p[i + 1].y - p[i].y) * t,
-                    p[i].z + (p[i + 1].z - p[i].z) * t};
-        }
-        acc += l;
-    }
-    return p.empty() ? Vec3{} : p.back();
-}
-
-// A lane change: starts on `a`, ends on `b` (two lanes of the same ring edge), smoothstep between.
-std::vector<Vec3> blend_paths(const std::vector<Vec3>& a, const std::vector<Vec3>& b) {
-    if (a.size() < 2 || b.size() < 2) return a;
-    const int n = std::clamp(static_cast<int>(path_length(a) / 1.5), 8, 64);
-    std::vector<Vec3> out;
-    for (int i = 0; i <= n; ++i) {
-        const double f = static_cast<double>(i) / n, w = f * f * (3 - 2 * f);
-        const Vec3 p = path_at(a, f), q = path_at(b, f);
-        out.push_back({p.x + (q.x - p.x) * w, p.y + (q.y - p.y) * w, p.z + (q.z - p.z) * w});
-    }
-    return out;
-}
-
-bool segments_cross(Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
-    const auto o = [](Vec2 p, Vec2 q, Vec2 r) { return (q - p).cross(r - p); };
-    const double d1 = o(a, b, c), d2 = o(a, b, d), d3 = o(c, d, a), d4 = o(c, d, b);
-    return ((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) &&
-           ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9));
-}
-
-bool paths_cross(const std::vector<Vec3>& p, const std::vector<Vec3>& q, double dz) {
-    for (std::size_t i = 0; i + 1 < p.size(); ++i)
-        for (std::size_t k = 0; k + 1 < q.size(); ++k)
-            if (segments_cross(p[i].xy(), p[i + 1].xy(), q[k].xy(), q[k + 1].xy()) &&
-                std::fabs((p[i].z + p[i + 1].z) / 2 - (q[k].z + q[k + 1].z) / 2) < dz)
-                return true;
-    return false;
-}
 
 RoundaboutLayout fail(RoundaboutLayout l, std::string why) {
     l.ok = false;
@@ -565,14 +469,14 @@ Ring ring_polyline(const JunctionGroup& group, const RoadGraph& graph) {
     return r;
 }
 
-// Largest-area ring of a Clipper result as an offset of a CCW polygon.
+// Largest-area ring of the offset of a CCW polygon (empty if it vanishes).
 Ring inflate_ring(const Ring& ccw, double delta) {
     const Clipper2Lib::PathsD res = Clipper2Lib::InflatePaths(Clipper2Lib::PathsD{to_path(ccw)}, delta,
                                                               Clipper2Lib::JoinType::Miter,
                                                               Clipper2Lib::EndType::Polygon, 2.0, 3);
     Ring best;
     double best_area = 0;
-    for (const PolygonSet::value_type& r : from_paths(res))
+    for (const Ring& r : from_paths(res))
         if (signed_area(r) > best_area) {
             best_area = signed_area(r);
             best = r;
@@ -580,41 +484,139 @@ Ring inflate_ring(const Ring& ccw, double delta) {
     return best;
 }
 
+const JunctionArm* find_arm(const Junction& j, EdgeId edge, bool at_a, int* index) {
+    for (std::size_t k = 0; k < j.arms.size(); ++k)
+        if (j.arms[k].edge == edge && j.arms[k].at_a == at_a) {
+            if (index) *index = static_cast<int>(k);
+            return &j.arms[k];
+        }
+    return nullptr;
+}
+
+// A Joint-class Junction for a ring node with only the two ring arms: the through connectors
+// (trim 0, so they are just the lane continuations) and nothing else.
+Junction make_joint_junction(const RoadGraph& graph, const RegionPack& region, const JunctionOverrides& overrides,
+                             NodeId node) {
+    Junction j;
+    j.node = node;
+    j.pos = graph.node(node) ? graph.node(node)->pos : Vec3{};
+    j.side = region.driving_side;
+    j.cls = NodeClass::Joint;
+    j.arms = collect_arms(graph, node, region);
+    j.major_arms = major_arm_indices(j.arms);
+    j.corner_radii = resolve_corner_radii(node, j.arms, overrides);
+    j.trims.assign(j.arms.size(), 0.0);
+    generate_connectors(j, region.driving_side, overrides, region);
+    return j;
+}
+
 }  // namespace
 
-// ---------------------------------------------------------------- public: tool and recognition
+// ---------------------------------------------------------------- public: tool
+
+std::string check_place_roundabout(const RoadGraph& graph, Vec3 centre, double radius, const std::string& ring_road_type,
+                                   const RegionPack& region) {
+    PlaceRoundabout p(centre, radius, ring_road_type, region);
+    return p.plan(graph);
+}
 
 RoadCommandPtr make_place_roundabout(Vec3 centre, double radius, const std::string& ring_road_type,
                                      const RegionPack& region) {
-    return std::make_unique<PlaceRoundabout>(centre, radius, ring_road_type, is_clockwise_for(region),
-                                             roundabout_params(region), kerb_extent(region, ring_road_type));
+    return std::make_unique<PlaceRoundabout>(centre, radius, ring_road_type, region);
 }
 
-std::vector<JunctionGroup> recognise_roundabouts(const RoadGraph& graph, const RegionPack& region) {
-    const RoundaboutParams prm = roundabout_params(region);
-    CycleFinder f{graph, prm, {}, 2 * kPi * prm.max_radius * 1.3, {}, {}, {}, {}};
-    for (const auto& [id, e] : graph.edges())
-        if (e.one_way && e.a != e.b) f.out[e.a].push_back(&e);
-    for (const auto& [start, edges] : f.out) {
-        f.path_nodes = {start};
-        f.path_edges.clear();
-        f.on_path.clear();
-        f.dfs(start, start, 0);
+// ---------------------------------------------------------------- public: group finding
+
+RoundaboutScan find_roundabouts(const RoadGraph& graph, const RegionPack& region, const std::vector<NodeId>& only) {
+    RoundaboutScan out;
+    bool any_type = false;
+    for (const auto& [id, t] : region.road_types) any_type = any_type || t.roundabout_ring;
+    if (!any_type) return out;
+
+    std::vector<EdgeId> seeds;
+    if (only.empty()) {
+        for (const auto& [id, e] : graph.edges())
+            if (ring_flagged(region, e)) seeds.push_back(id);
+    } else {
+        for (NodeId n : only)
+            for (EdgeId id : graph.edges_at(n)) {
+                const Edge* e = graph.edge(id);
+                if (e && ring_flagged(region, *e)) seeds.push_back(id);
+            }
     }
-    std::stable_sort(f.cands.begin(), f.cands.end(), [](const Candidate& a, const Candidate& b) {
-        if (a.nodes[0] != b.nodes[0]) return a.nodes[0] < b.nodes[0];
-        return a.length < b.length;
-    });
-    std::vector<JunctionGroup> groups;
-    std::set<NodeId> used;
-    for (const Candidate& c : f.cands) {
-        if (std::any_of(c.nodes.begin(), c.nodes.end(), [&](NodeId n) { return used.count(n) > 0; })) continue;
-        JunctionGroup grp;
-        if (!evaluate(c, graph, region, prm, grp)) continue;
-        used.insert(c.nodes.begin(), c.nodes.end());
-        groups.push_back(std::move(grp));
+
+    std::set<EdgeId> seen;
+    for (EdgeId seed : seeds) {
+        if (seen.count(seed)) continue;
+        // Connected component of flagged edges (undirected).
+        std::set<EdgeId> edges;
+        std::set<NodeId> nodes;
+        std::vector<EdgeId> stack{seed};
+        edges.insert(seed);
+        while (!stack.empty()) {
+            const Edge* e = graph.edge(stack.back());
+            stack.pop_back();
+            for (NodeId n : {e->a, e->b}) {
+                if (!nodes.insert(n).second) continue;
+                for (EdgeId id : graph.edges_at(n)) {
+                    const Edge* o = graph.edge(id);
+                    if (o && ring_flagged(region, *o) && edges.insert(id).second) stack.push_back(id);
+                }
+            }
+        }
+        seen.insert(edges.begin(), edges.end());
+
+        RoundaboutProblem prob;
+        prob.nodes.assign(nodes.begin(), nodes.end());
+        prob.edges.assign(edges.begin(), edges.end());
+        std::map<NodeId, int> in, outc;
+        std::map<NodeId, EdgeId> out_edge;
+        std::string why;
+        for (EdgeId id : edges) {
+            const Edge* e = graph.edge(id);
+            if (!e->one_way) why = "ring edge " + std::to_string(id.value) + " is two-way";
+            else if (e->a == e->b) why = "ring edge " + std::to_string(id.value) + " is a loop on one node";
+            ++outc[e->a];
+            ++in[e->b];
+            out_edge[e->a] = id;
+        }
+        if (why.empty()) {
+            for (NodeId n : nodes) {
+                if (in[n] == 1 && outc[n] == 1) continue;
+                if (in[n] + outc[n] == 1)
+                    why = "the ring is not closed: its edges stop at node " + std::to_string(n.value) +
+                          " (a road of another type continues there)";
+                else
+                    why = "node " + std::to_string(n.value) + " has " + std::to_string(in[n]) + " ring edge(s) in and " +
+                          std::to_string(outc[n]) + " out; a ring needs exactly one of each";
+                break;
+            }
+        }
+        if (why.empty() && nodes.size() < 3) why = "a ring needs at least 3 nodes";
+        std::vector<NodeId> node_order;
+        std::vector<EdgeId> edge_order;
+        if (why.empty()) {
+            const NodeId start = *nodes.begin();
+            NodeId cur = start;
+            do {
+                node_order.push_back(cur);
+                const EdgeId id = out_edge[cur];
+                edge_order.push_back(id);
+                cur = graph.edge(id)->b;
+            } while (cur != start && node_order.size() <= nodes.size());
+            if (cur != start || node_order.size() != nodes.size()) why = "the ring edges do not form one loop";
+        }
+        JunctionGroup group;
+        if (why.empty()) why = finish_group(graph, region, node_order, edge_order, group);
+        if (why.empty()) out.groups.push_back(std::move(group));
+        else {
+            prob.what = why;
+            out.problems.push_back(std::move(prob));
+        }
     }
-    return groups;
+    std::sort(out.groups.begin(), out.groups.end(),
+              [](const JunctionGroup& a, const JunctionGroup& b) { return a.nodes[0] < b.nodes[0]; });
+    return out;
 }
 
 // ---------------------------------------------------------------- public: layout
@@ -624,7 +626,7 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
     using namespace Clipper2Lib;
     RoundaboutLayout lay;
     lay.group = group;
-    const RoundaboutParams prm = roundabout_params(region);
+    const RoundaboutRules& prm = roundabout_params(region);
     const std::size_t n = group.nodes.size();
     if (n < 3 || group.ring_edges.size() != n) return fail(lay, "ring is not a closed loop");
     const std::set<EdgeId> ring_set(group.ring_edges.begin(), group.ring_edges.end());
@@ -642,12 +644,11 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
             const CornerKey key{group.nodes[i], l.edge, r.edge};
             if (ov.corner_radius.count(key)) continue;
             const bool r_ring = ring_set.count(r.edge) > 0, l_ring = ring_set.count(l.edge) > 0;
-            const EdgeId in = ring_in(i), out = ring_out(i);
             double radius = -1;
             if (r_ring != l_ring) {
                 const EdgeId rng = r_ring ? r.edge : l.edge;
-                radius = rng == out ? prm.entry_corner_radius : prm.exit_corner_radius;
-            } else if (r_ring && l_ring && ((r.edge == in && l.edge == out) || (r.edge == out && l.edge == in))) {
+                radius = rng == ring_out(i) ? prm.entry_corner_radius : prm.exit_corner_radius;
+            } else if (r_ring && l_ring && r.edge != l.edge) {
                 radius = prm.ring_corner_radius_factor * group.radius;
             }
             if (radius >= 0) ov.corner_radius[key] = radius;
@@ -656,94 +657,52 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
     JunctionSet built = build_junctions(graph, region, ov, group.nodes);
     lay.ring_junctions = std::move(built.junctions);
 
-    // ---- connectors: entries, exits and throughs from the node junctions, then the ring lanes
+    // ---- give way: entries yield to the circulating (ring-in -> ring-out) connectors
     for (std::size_t i = 0; i < n; ++i) {
         const auto jt = lay.ring_junctions.find(group.nodes[i]);
         if (jt == lay.ring_junctions.end()) continue;
         const Junction& j = jt->second;
-        for (const LaneConnector& c : j.connectors) {
-            if (!c.enabled || c.path.size() < 2) continue;
-            const JunctionArm& fa = j.arms[static_cast<std::size_t>(c.arm_from)];
-            const JunctionArm& ta = j.arms[static_cast<std::size_t>(c.arm_to)];
-            const bool f_ring = ring_set.count(fa.edge) > 0, t_ring = ring_set.count(ta.edge) > 0;
-            RoundaboutConnector rc;
-            rc.ring_index = static_cast<int>(i);
-            if (!f_ring && t_ring && ta.edge == ring_out(i)) rc.role = RoundaboutConnectorRole::Entry;
-            else if (f_ring && fa.edge == ring_in(i) && !t_ring) rc.role = RoundaboutConnectorRole::Exit;
-            else if (f_ring && t_ring && fa.edge == ring_in(i) && ta.edge == ring_out(i))
-                rc.role = RoundaboutConnectorRole::Through;
-            else continue;  // approach to approach at a ring node: not a roundabout movement
-            rc.from_edge = fa.edge;
-            rc.to_edge = ta.edge;
-            rc.from_slot = fa.lanes[static_cast<std::size_t>(c.lane_from)].slot;
-            rc.to_slot = ta.lanes[static_cast<std::size_t>(c.lane_to)].slot;
-            rc.path = c.path;
-            rc.give_way = rc.role == RoundaboutConnectorRole::Entry;
-            lay.connectors.push_back(std::move(rc));
+        int in_arm = -1, out_arm = -1;
+        find_arm(j, ring_in(i), false, &in_arm);
+        find_arm(j, ring_out(i), true, &out_arm);
+        if (in_arm < 0 || out_arm < 0) continue;
+        std::vector<int> through;
+        for (std::size_t c = 0; c < j.connectors.size(); ++c)
+            if (j.connectors[c].enabled && j.connectors[c].arm_from == in_arm && j.connectors[c].arm_to == out_arm)
+                through.push_back(static_cast<int>(c));
+        for (std::size_t c = 0; c < j.connectors.size(); ++c) {
+            const LaneConnector& k = j.connectors[c];
+            if (!k.enabled || k.arm_to != out_arm || ring_set.count(j.arms[static_cast<std::size_t>(k.arm_from)].edge)) continue;
+            GiveWay gw;
+            gw.node = group.nodes[i];
+            gw.connector = static_cast<int>(c);
+            for (int t : through)
+                if (std::binary_search(k.conflicts.begin(), k.conflicts.end(), t)) gw.yields_to.push_back(t);
+            if (gw.yields_to.empty())
+                for (int t : through)
+                    if (j.connectors[static_cast<std::size_t>(t)].lane_to == k.lane_to) gw.yields_to.push_back(t);
+            if (gw.yields_to.empty()) gw.yields_to = through;
+            lay.give_way.push_back(std::move(gw));
         }
-    }
-    const std::size_t first_ring = lay.connectors.size();
-    for (std::size_t i = 0; i < n; ++i) {
-        const Edge* e = graph.edge(ring_out(i));
-        const RoadType* t = e ? region.road_type(e->road_type) : nullptr;
-        if (!t) return fail(lay, "ring edge has an unknown road type");
-        const double t0 = ring_trim(lay.ring_junctions, group.nodes[i], e->id, true);
-        const double t1 = ring_trim(lay.ring_junctions, group.nodes[(i + 1) % n], e->id, false);
-        const double L = e->horizontal.length();
-        for (const Lane& l : instantiate_lanes(*e, *t, region.driving_side)) {
-            const LaneType* lt = region.lane_type(l.lane_type);
-            if (!lt || !lt->connects_at_junctions || l.dir != TravelDir::Forward) continue;
-            RoundaboutConnector rc;
-            rc.role = RoundaboutConnectorRole::Ring;
-            rc.ring_index = static_cast<int>(i);
-            rc.from_edge = rc.to_edge = e->id;
-            rc.from_slot = rc.to_slot = l.slot;
-            rc.path = slice(sample_offset(*e, l.offset), t0, L - t1);
-            lay.connectors.push_back(std::move(rc));
-        }
-    }
-    // Entries yield to the circulating movements: Through at the same node and the Ring lane
-    // arriving on the same slot (all arriving Ring lanes if no slot matches).
-    for (std::size_t ci = 0; ci < first_ring; ++ci) {
-        RoundaboutConnector& c = lay.connectors[ci];
-        if (c.role != RoundaboutConnectorRole::Entry) continue;
-        const int arriving = static_cast<int>((static_cast<std::size_t>(c.ring_index) + n - 1) % n);
-        std::vector<int> ring_match, ring_any;
-        for (std::size_t k = 0; k < lay.connectors.size(); ++k) {
-            const RoundaboutConnector& o = lay.connectors[k];
-            if (o.role == RoundaboutConnectorRole::Through && o.ring_index == c.ring_index && o.to_slot == c.to_slot)
-                c.conflicts.push_back(static_cast<int>(k));
-            if (o.role == RoundaboutConnectorRole::Ring && o.ring_index == arriving) {
-                ring_any.push_back(static_cast<int>(k));
-                if (o.from_slot == c.to_slot) ring_match.push_back(static_cast<int>(k));
-            }
-        }
-        const std::vector<int>& add = ring_match.empty() ? ring_any : ring_match;
-        c.conflicts.insert(c.conflicts.end(), add.begin(), add.end());
-        std::sort(c.conflicts.begin(), c.conflicts.end());
     }
 
-    // ---- island and carriageway
-    const Ring poly = ring_polyline(group, graph);
-    if (poly.size() < 3) return fail(lay, "ring has no geometry");
-    double out_ext = 0, in_ext = 0;
+    // ---- island: the ring centreline offset to the inner kerb face
+    double in_ext = 0;
     for (EdgeId id : group.ring_edges) {
         const Edge* e = graph.edge(id);
-        const KerbExtent k = kerb_extent(region, e->road_type);
-        out_ext = std::max(out_ext, group.clockwise ? k.left : k.right);
+        const RoadType* t = e ? region.road_type(e->road_type) : nullptr;
+        if (!t) return fail(lay, "ring edge has an unknown road type");
+        const KerbExtent k = kerb_extent(region, *t);
         in_ext = std::max(in_ext, group.clockwise ? k.right : k.left);
     }
+    if (group.radius - in_ext < prm.min_island_radius)
+        return fail(lay, "ring too tight for an island: mean ring radius " + std::to_string(group.radius) +
+                             " m leaves an island under the minimum of " + std::to_string(prm.min_island_radius) + " m");
+    const Ring poly = ring_polyline(group, graph);
+    if (poly.size() < 3) return fail(lay, "ring has no geometry");
     const Ring island = inflate_ring(poly, -in_ext);
-    const Ring disc = inflate_ring(poly, out_ext);
-    if (island.size() < 3 || disc.size() < 3) return fail(lay, "island or ring outline is empty");
+    if (island.size() < 3) return fail(lay, "the island outline is empty (ring too tight or too irregular)");
     lay.island.push_back(island);
-
-    PathsD solid{to_path(disc)};
-    for (const auto& [nid, j] : lay.ring_junctions)
-        for (const Ring& r : j.carriageway) solid.push_back(to_path(r));
-    const PathsD merged = Union(solid, FillRule::NonZero, 3);
-    lay.carriageway = from_paths(Difference(merged, PathsD{to_path(island)}, FillRule::NonZero, 3));
-    if (merged.empty() || lay.carriageway.empty()) return fail(lay, "carriageway is empty");
 
     // ---- splitter islands on two-way approaches
     for (std::size_t gi = 0; gi < group.arms.size(); ++gi) {
@@ -781,172 +740,36 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
 
 // ---------------------------------------------------------------- public: the post-pass
 
-void apply_roundabouts(JunctionSet& set, const RoadGraph& graph, const RegionPack& region,
-                       const JunctionOverrides& overrides) {
-    using namespace Clipper2Lib;
-    for (const JunctionGroup& group : recognise_roundabouts(graph, region)) {
-        if (std::none_of(group.nodes.begin(), group.nodes.end(),
-                         [&](NodeId nd) { return set.junctions.count(nd) > 0; }))
-            continue;
+RoundaboutResult apply_roundabouts(JunctionSet& set, const RoadGraph& graph, const RegionPack& region,
+                                   const JunctionOverrides& overrides, const std::vector<NodeId>& only) {
+    RoundaboutResult res;
+    RoundaboutScan scan = find_roundabouts(graph, region, only);
+    res.problems = std::move(scan.problems);
+    for (const RoundaboutProblem& p : res.problems)
+        for (NodeId nd : p.nodes) {
+            const auto it = set.junctions.find(nd);
+            if (it == set.junctions.end()) continue;
+            it->second.degraded = true;
+            it->second.degraded_reason = "malformed roundabout ring: " + p.what;
+        }
+    for (const JunctionGroup& group : scan.groups) {
         RoundaboutLayout lay = build_roundabout(group, graph, region, overrides);
-        if (!lay.ok) continue;
-        const std::size_t n = group.nodes.size();
-        const std::set<EdgeId> ring_set(group.ring_edges.begin(), group.ring_edges.end());
-
-        Junction rep;
-        rep.node = group.nodes[0];
-        rep.side = region.driving_side;
-        rep.cls = NodeClass::Junction;
-        rep.kind = JunctionKind::Roundabout;
-        rep.group_nodes = group.nodes;
-        double z = 0;
-        for (NodeId nd : group.nodes) z += graph.node(nd) ? graph.node(nd)->pos.z : 0;
-        rep.pos = {group.centre.x, group.centre.y, z / static_cast<double>(n)};
-
-        // Approach arms of all ring nodes, CCW about the ring centre.
-        struct Src {
-            std::size_t ring, k;
-            double angle;
-        };
-        std::vector<Src> srcs;
-        for (std::size_t i = 0; i < n; ++i) {
-            const auto jt = lay.ring_junctions.find(group.nodes[i]);
-            if (jt == lay.ring_junctions.end()) continue;
-            const Vec2 p = jt->second.pos.xy() - group.centre;
-            for (std::size_t k = 0; k < jt->second.arms.size(); ++k)
-                if (!ring_set.count(jt->second.arms[k].edge)) srcs.push_back({i, k, std::atan2(p.y, p.x)});
+        for (NodeId nd : group.nodes) {
+            Junction j;
+            const auto it = lay.ring_junctions.find(nd);
+            if (it != lay.ring_junctions.end()) j = it->second;
+            else j = make_joint_junction(graph, region, overrides, nd);
+            j.kind = JunctionKind::Roundabout;
+            j.group_nodes = group.nodes;
+            if (!lay.ok && !j.degraded) {
+                j.degraded = true;
+                j.degraded_reason = "roundabout: " + lay.error;
+            }
+            set.junctions.insert_or_assign(nd, std::move(j));
         }
-        std::stable_sort(srcs.begin(), srcs.end(), [](const Src& a, const Src& b) { return a.angle < b.angle; });
-        std::map<std::pair<std::size_t, std::size_t>, int> arm_index;  // (ring, k) -> rep arm
-        std::vector<std::size_t> arm_ring;
-        for (const Src& s : srcs) {
-            const Junction& j = lay.ring_junctions.at(group.nodes[s.ring]);
-            arm_index[{s.ring, s.k}] = static_cast<int>(rep.arms.size());
-            rep.arms.push_back(j.arms[s.k]);
-            rep.trims.push_back(s.k < j.trims.size() ? j.trims[s.k] : 0.0);
-            arm_ring.push_back(s.ring);
-        }
-        rep.major_arms = major_arm_indices(rep.arms);
-
-        for (std::size_t i = 0; i < n; ++i) {
-            const auto jt = lay.ring_junctions.find(group.nodes[i]);
-            if (jt == lay.ring_junctions.end()) continue;
-            const Junction& j = jt->second;
-            if (j.degraded && !rep.degraded) {
-                rep.degraded = true;
-                rep.degraded_reason = "ring node " + std::to_string(group.nodes[i].value) + ": " + j.degraded_reason;
-            }
-            for (const CrossingSpot& c : j.crossings) {
-                const auto it = arm_index.find({i, static_cast<std::size_t>(c.arm)});
-                if (it == arm_index.end()) continue;
-                CrossingSpot r = c;
-                r.arm = it->second;
-                rep.crossings.push_back(r);
-            }
-            rep.gore.insert(rep.gore.end(), j.gore.begin(), j.gore.end());
-        }
-        rep.carriageway = lay.carriageway;
-        {
-            PathsD pav;
-            for (const auto& [nd, j] : lay.ring_junctions)
-                for (const Ring& r : j.pavements) pav.push_back(to_path(r));
-            if (!pav.empty()) {
-                PathsD occupied = to_paths(lay.carriageway);
-                for (const Ring& r : lay.island) occupied.push_back(to_path(r));
-                rep.pavements = from_paths(Difference(Union(pav, FillRule::NonZero, 3),
-                                                      Union(occupied, FillRule::NonZero, 3), FillRule::NonZero, 3));
-            }
-        }
-
-        // ---- one connector per (inbound lane, outbound lane of another arm), routed round the ring
-        const auto find_conn = [&](RoundaboutConnectorRole role, int ring, EdgeId from_edge, int from_slot,
-                                   EdgeId to_edge, int to_slot) -> const RoundaboutConnector* {
-            for (const RoundaboutConnector& c : lay.connectors)
-                if (c.role == role && c.ring_index == ring && (!from_edge || c.from_edge == from_edge) &&
-                    c.from_slot == from_slot && (!to_edge || c.to_edge == to_edge) &&
-                    (to_slot < 0 || c.to_slot == to_slot))
-                    return &c;
-            return nullptr;
-        };
-        for (std::size_t a = 0; a < rep.arms.size(); ++a)
-            for (std::size_t la = 0; la < rep.arms[a].lanes.size(); ++la) {
-                const LaneRef& lin = rep.arms[a].lanes[la];
-                if (!lin.inbound) continue;
-                for (std::size_t b = 0; b < rep.arms.size(); ++b) {
-                    if (b == a || arm_ring[b] == arm_ring[a]) continue;
-                    for (std::size_t lb = 0; lb < rep.arms[b].lanes.size(); ++lb) {
-                        const LaneRef& lout = rep.arms[b].lanes[lb];
-                        if (lout.inbound) continue;
-                        std::vector<Vec3> best;
-                        double best_len = 0;
-                        for (const RoundaboutConnector& entry : lay.connectors) {
-                            if (entry.role != RoundaboutConnectorRole::Entry ||
-                                entry.ring_index != static_cast<int>(arm_ring[a]) ||
-                                entry.from_edge != rep.arms[a].edge || entry.from_slot != lin.slot)
-                                continue;
-                            const int k = entry.to_slot;
-                            std::vector<Vec3> path = entry.path;
-                            std::size_t m = arm_ring[a];
-                            for (std::size_t step = 0; step < n; ++step) {
-                                const RoundaboutConnector* rg = find_conn(RoundaboutConnectorRole::Ring,
-                                                                          static_cast<int>(m), {}, k, {}, k);
-                                if (!rg) break;
-                                if ((m + 1) % n == arm_ring[b]) {
-                                    // Last ring edge: leave on any ring lane that can exit, changing lane
-                                    // along this edge when it is not the one we entered on.
-                                    for (const RoundaboutConnector& ex : lay.connectors) {
-                                        if (ex.role != RoundaboutConnectorRole::Exit ||
-                                            ex.ring_index != static_cast<int>(arm_ring[b]) ||
-                                            ex.to_edge != rep.arms[b].edge || ex.to_slot != lout.slot)
-                                            continue;
-                                        const RoundaboutConnector* rg2 = find_conn(
-                                            RoundaboutConnectorRole::Ring, static_cast<int>(m), {}, ex.from_slot, {},
-                                            ex.from_slot);
-                                        if (!rg2) continue;
-                                        std::vector<Vec3> cand = path;
-                                        append_path(cand, rg2 == rg ? rg->path : blend_paths(rg->path, rg2->path));
-                                        append_path(cand, ex.path);
-                                        const double len = path_length(cand);
-                                        if (cand.size() >= 2 && (best.empty() || len < best_len - 1e-9)) {
-                                            best = std::move(cand);
-                                            best_len = len;
-                                        }
-                                    }
-                                    break;
-                                }
-                                append_path(path, rg->path);
-                                m = (m + 1) % n;
-                                const RoundaboutConnector* th = find_conn(RoundaboutConnectorRole::Through,
-                                                                          static_cast<int>(m), {}, k, {}, k);
-                                if (th) append_path(path, th->path);
-                                else if (lay.ring_junctions.count(group.nodes[m])) break;
-                            }
-                        }
-                        if (best.empty()) continue;
-                        LaneConnector lc;
-                        lc.arm_from = static_cast<int>(a);
-                        lc.lane_from = static_cast<int>(la);
-                        lc.arm_to = static_cast<int>(b);
-                        lc.lane_to = static_cast<int>(lb);
-                        const double turn = wrap_angle(rep.arms[b].heading_out - wrap_angle(rep.arms[a].heading_out + kPi));
-                        lc.kind = classify_turn(turn, region.driving_side);
-                        lc.path = std::move(best);
-                        rep.connectors.push_back(std::move(lc));
-                    }
-                }
-            }
-        for (std::size_t x = 0; x < rep.connectors.size(); ++x)
-            for (std::size_t y = 0; y < rep.connectors.size(); ++y) {
-                if (x == y) continue;
-                const LaneConnector &cx = rep.connectors[x], &cy = rep.connectors[y];
-                if ((cx.arm_to == cy.arm_to && cx.lane_to == cy.lane_to) ||
-                    paths_cross(cx.path, cy.path, region.plan_crossing_junction_dz_m))
-                    rep.connectors[x].conflicts.push_back(static_cast<int>(y));
-            }
-
-        for (NodeId nd : group.nodes) set.junctions.erase(nd);
-        set.junctions.emplace(rep.node, std::move(rep));
+        res.layouts.push_back(std::move(lay));
     }
+    return res;
 }
 
 }  // namespace cp

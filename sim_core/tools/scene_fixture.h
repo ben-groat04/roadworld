@@ -7,6 +7,7 @@
 
 #include "cp/command.h"
 #include "cp/junction.h"
+#include "cp/junction_roundabout.h"
 #include "cp/road_commands.h"
 
 namespace cp::tools {
@@ -41,9 +42,16 @@ std::vector<std::string> scene_names();
 std::unique_ptr<Scene> build_scene(const std::string& name, const std::string& data_dir, std::string& error);
 
 // JSON contract version 1 (prototypes/road-draw reads exactly this).
-std::string export_scene_json(const Scene& scene, const JunctionSet& junctions);
+std::string export_scene_json(const Scene& scene, const JunctionSet& junctions, int* export_errors = nullptr);
 
-// Builds junctions for the scene (all nodes) with its overrides.
-JunctionSet scene_junctions(const Scene& scene);
+// JSON number with `decimals` places, independent of the C locale. Non-finite values come out as
+// "null" and set *finite to false.
+std::string json_number(double v, int decimals, bool* finite = nullptr);
+// JSON string literal with quotes, backslashes and control characters escaped.
+std::string json_string(const std::string& s);
+
+// Builds junctions for the scene (all nodes) with its overrides, including the roundabout post-pass
+// (whose group-level result is returned through `roundabouts` when given).
+JunctionSet scene_junctions(const Scene& scene, RoundaboutResult* roundabouts = nullptr);
 
 }  // namespace cp::tools

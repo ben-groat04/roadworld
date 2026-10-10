@@ -10,8 +10,8 @@ bool place_interchange_roundabout(Scene& sc, NodeId node, double radius, std::st
         error = "roundabout node missing";
         return false;
     }
-    if (!sc.stack.execute(make_place_roundabout(n->pos, radius, "b_road", *sc.region))) {
-        error = "place_roundabout failed";
+    if (!sc.stack.execute(make_place_roundabout(n->pos, radius, default_ring_road_type(*sc.region), *sc.region))) {
+        error = "place_roundabout failed: " + check_place_roundabout(sc.graph, n->pos, radius, default_ring_road_type(*sc.region), *sc.region);
         return false;
     }
     error.clear();

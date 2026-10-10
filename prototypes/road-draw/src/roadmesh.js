@@ -177,10 +177,17 @@ function buildRoadGroup(r) {
     bk.quad(v[0], v[1], v[5], v[4], neg(ln)); bk.quad(v[3], v[2], v[6], v[7], ln);
     bk.quad(v[0], v[3], v[7], v[4], neg(f)); bk.quad(v[1], v[2], v[6], v[5], f);
   };
+  // A span over another road's corridor (it passes >2 m above that road's centreline within both half-widths + 1 m, in plan) or over water (base terrain under the span below T.water) is always a real bridge, however short.
+  const spanCrosses = (a, b) => {
+    for (let k = a; k <= b; k++) { const s = S[k]; if (hB(s.x, s.y) < T.water + 0.2) return true; }
+    for (const r2 of (typeof roads !== 'undefined' ? roads : [])) { if (r2 === r || !r2.samples || r2.samples.length < 2) continue; const lim = hw + ROAD_TYPES[r2.type].total / 2 + 1;
+      for (let k = a; k <= b; k++) { const s = S[k]; for (const q of r2.samples) { if (Math.abs(q.x - s.x) > lim || Math.abs(q.y - s.y) > lim) continue; if (Math.hypot(q.x - s.x, q.y - s.y) < lim && s.z - q.z > 2) return true; } } }
+    return false;
+  };
   const MIN_BRIDGE = 20;   // m of flagged span: shorter runs render as a solid-fill block, not a bridge
   for (const [a, b] of runs(s => s.br)) {
     if (b <= a) continue;
-    if (S[b].s - S[a].s < MIN_BRIDGE) {   // too short to be a bridge (fill only briefly exceeds the cap): a solid-fill abutment block with parapets, no deck slab or piers
+    if (S[b].s - S[a].s < MIN_BRIDGE && !spanCrosses(Math.max(0, a - 1), Math.min(n - 1, b + 1))) {   // too short to be a bridge (fill only briefly exceeds the cap): a solid-fill abutment block with parapets, no deck slab or piers
       const sa = Math.max(0, a - 1), sb = Math.min(n - 1, b + 1);
       extrude(sa, sb, -hw, hw, k => Math.min(gMin2(S[k], -1.0, 1.0, -hw, hw), S[k].z + zo - DECK_T) - 1.0, k => S[k].z + zo - 0.03, { side: CB.abutment.c, noTop: true });
       for (const sg of [1, -1]) extrude(sa, sb, sg > 0 ? hw - 0.4 : -hw + 0.1, sg > 0 ? hw - 0.1 : -hw + 0.4, k => S[k].z + zo - 0.03, k => S[k].z + zo + PARAPET_H, { top: CB.parapet.d, side: CB.parapet.c });
@@ -222,6 +229,7 @@ function buildRoadGroup(r) {
     // drop stations where the offset (outer) face folds back relative to the inner line (inside of tight curves), or the line reverses
     const st = []; for (const q of st0) {
       const pr = st[st.length - 1]; if (!pr) { st.push(q); continue; }
+      if (q.dup) { if (pr.a[0] === q.a[0] && pr.a[1] === q.a[1]) st.push(q); continue; }   // panel step: second station at the same place, new top level
       const dA = [q.a[0] - pr.a[0], q.a[1] - pr.a[1]], dB = [q.a[0] + q.u[0] * WALL_T - pr.a[0] - pr.u[0] * WALL_T, q.a[1] + q.u[1] * WALL_T - pr.a[1] - pr.u[1] * WALL_T];
       const la = Math.hypot(...dA), lb = Math.hypot(...dB);
       if (la < 1e-6 || lb < 0.25 * la || dA[0] * dB[0] + dA[1] * dB[1] < 0.3 * la * lb) continue;
@@ -237,6 +245,10 @@ function buildRoadGroup(r) {
     for (let i = 0; i + 1 < st.length; i++) {
       const p = st[i], q = st[i + 1], hi = [p.u[0], p.u[1], 0], lo = [-p.u[0], -p.u[1], 0];
       const sl = Math.hypot(q.a[0] - p.a[0], q.a[1] - p.a[1]);
+      if (q.dup && sl < 1e-9) {   // closed vertical face at a panel step, facing the lower panel
+        const tg = hdir(st[Math.max(0, i - 1)].a, p.a), lz = Math.min(p.zt, q.zt), hz = Math.max(p.zt, q.zt), sgn = q.zt > p.zt ? -1 : 1;
+        WB.c.quad(W3(p, 0, lz), W3(p, WALL_T, lz), W3(p, WALL_T, hz), W3(p, 0, hz), tg.map(v => v * sgn)); continue;
+      }
       while (nextJ <= acc + sl) {   // vertical construction joint every 8 m on the visible face
         const t = (nextJ - acc) / (sl || 1), d = [(q.a[0] - p.a[0]) / (sl || 1) * 0.04, (q.a[1] - p.a[1]) / (sl || 1) * 0.04];
         const jq = { zb: p.zb + (q.zb - p.zb) * t, zt: p.zt + (q.zt - p.zt) * t }, zt = wt(jq), o = -0.012;
@@ -307,19 +319,16 @@ function buildRoadGroup(r) {
       const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go, hB(q.x, q.y), hB(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)) - 1.0, top = Math.min(q.top, q.zTop + 0.7, Math.max(Math.min(gi, go) + 0.55, zb + 0.1));   // fill wall: barrier-height cap (+0.55 above road level)
       topRaw.push(top); zbA.push(zb); uA.push(u);
     }
-    // smooth coping line: cut walls use a moving-max then moving-average envelope (always >= the raw top, so the retained ground never pokes over the coping), fill walls a plain moving average;
-    // then a gradient limiter that only ever raises the top (max WALL_SLOPE m per m, walls slope rather than saw-tooth with the 0.5 m grid), then monotone linear tapers into the ground at free ends
-    const HW = 12, WALL_SLOPE = 0.25, movF = (a, f) => a.map((_, i) => { let v = f.init, c = 0; for (let j = Math.max(0, i - HW); j <= Math.min(m - 1, i + HW); j++) { v = f.acc(v, a[j]); c++; } return f.fin(v, c); });
-    const AVG = { init: 0, acc: (v, x) => v + x, fin: (v, c) => v / c }, MAX = { init: -1e9, acc: Math.max, fin: v => v };
-    const topSm = run.cut ? movF(movF(topRaw, MAX), AVG) : movF(topRaw, AVG);
-    for (let i = 1; i < m; i++) topSm[i] = Math.max(topSm[i], topSm[i - 1] - WALL_SLOPE * (cum[i] - cum[i - 1]));
-    for (let i = m - 2; i >= 0; i--) topSm[i] = Math.max(topSm[i], topSm[i + 1] - WALL_SLOPE * (cum[i + 1] - cum[i]));
-    const tgtA = Math.min(topSm[0], gSm[0] - 0.1), tgtB = Math.min(topSm[m - 1], gSm[m - 1] - 0.1), TL = Math.min(TAPER_L * 1.5, tot / 2);
+    // Stepped coping: fixed-length panels (PANEL_L m), each with a level top quantised UP to PANEL_Q m. A panel's required top is the max of the raw tops over its stations (so retained ground / road edge is always covered).
+    // Hysteresis: the top rises as soon as a panel needs it, but only steps down when the lower need persists for two panels (no single-panel dip). A step is two stations at one place with a closed vertical face (see wallStations).
+    const PANEL_L = 4, PANEL_Q = 0.25, nP = Math.max(1, Math.round(tot / PANEL_L)), pIdx = i => Math.min(nP - 1, Math.floor(cum[i] / (tot / nP) + 1e-9));
+    const need = new Array(nP).fill(-1e9); for (let i = 0; i < m; i++) { const p = pIdx(i); need[p] = Math.max(need[p], topRaw[i], zbA[i] + 0.3); }
+    const lvl = need.map(v => Math.ceil((v - 1e-6) / PANEL_Q) * PANEL_Q), pl = [lvl[0]];
+    for (let p = 1, cur = lvl[0]; p < nP; p++) { if (lvl[p] > cur) cur = lvl[p]; else if (lvl[p] < cur) { const tg = Math.max(lvl[p], p + 1 < nP ? lvl[p + 1] : lvl[p]); if (tg < cur) cur = tg; } pl.push(cur); }
     for (let i = 0; i < m; i++) {
-      let zt = topSm[i];
-      if (tapA) zt = Math.min(zt, tgtA + (topSm[Math.min(m - 1, Math.round(TL * 2))] - tgtA) * clamp(cum[i] / TL, 0, 1));
-      if (tapB) zt = Math.min(zt, tgtB + (topSm[Math.max(0, m - 1 - Math.round(TL * 2))] - tgtB) * clamp((tot - cum[i]) / TL, 0, 1));
-      st.push({ a: [rs[i].x, rs[i].y], u: uA[i], zb: zbA[i], zt: Math.max(zbA[i] + 0.05, zt) });
+      const p = pIdx(i), pp = i > 0 ? pIdx(i - 1) : p, a = [rs[i].x, rs[i].y];
+      if (p !== pp && pl[p] !== pl[pp]) { st.push({ a, u: uA[i], zb: zbA[i], zt: pl[pp] }); st.push({ a, u: uA[i], zb: zbA[i], zt: pl[p], dup: true }); }
+      else st.push({ a, u: uA[i], zb: zbA[i], zt: pl[p] });
     }
     wallStations(st);
     }

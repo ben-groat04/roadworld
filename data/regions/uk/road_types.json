@@ -64,6 +64,27 @@
       "street_lights": { "spacing_m": 40, "style": "column_10m", "sides": "single" }
     },
     {
+      "id": "roundabout_ring",
+      "name": "Roundabout circulatory carriageway",
+      "roundabout_ring": true,
+      "speed_limit": 20,
+      "design_speed_kph": 40,
+      "road_class": 60,
+      "corner_radius_m": 8,
+      "one_way_variant": [
+        { "lane": "pavement", "width_m": 2.0 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "driving",  "width_m": 3.5, "dir": "forward" },
+        { "lane": "driving",  "width_m": 3.5, "dir": "forward" },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "pavement", "width_m": 2.0 }
+      ],
+      "vertical_k": { "crest": 10, "sag": 9 },
+      "min_radius_m": 12,
+      "advisory_max_grade_pct": 5,
+      "markings": "urban_single"
+    },
+    {
       "id": "a_road_dual",
       "name": "A road / dual carriageway",
       "dual": true,

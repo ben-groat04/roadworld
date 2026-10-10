@@ -1,4 +1,5 @@
-// JSON exporter, contract version 1. See prototypes/road-draw/fixtures/README or docs/junctions.md.
+// JSON exporter, contract version 1 (+ the "roundabouts" and "roundaboutProblems" arrays).
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <sstream>
@@ -7,26 +8,61 @@
 #include "scene_fixture.h"
 
 namespace cp::tools {
+
+std::string json_number(double v, int decimals, bool* finite) {
+    if (!std::isfinite(v)) {
+        if (finite) *finite = false;
+        return "null";
+    }
+    char b[400];
+    const auto r = std::to_chars(b, b + sizeof b, v == 0 ? 0.0 : v, std::chars_format::fixed, decimals);
+    if (r.ec != std::errc()) {
+        if (finite) *finite = false;
+        return "null";
+    }
+    std::string s(b, r.ptr);
+    // "-0.000" -> "0.000"
+    if (!s.empty() && s[0] == '-' && s.find_first_of("123456789") == std::string::npos) s.erase(0, 1);
+    return s;
+}
+
+std::string json_string(const std::string& s) {
+    std::string out = "\"";
+    for (unsigned char c : s) {
+        switch (c) {
+            case '"': out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            case '\b': out += "\\b"; break;
+            case '\f': out += "\\f"; break;
+            default:
+                if (c < 0x20) {
+                    char u[8];
+                    std::snprintf(u, sizeof u, "\\u%04x", c);
+                    out += u;
+                } else {
+                    out += static_cast<char>(c);
+                }
+        }
+    }
+    out += '"';
+    return out;
+}
+
 namespace {
 
 struct W {
     std::string out;
+    int errors = 0;  // non-finite numbers written as null
     void raw(const std::string& s) { out += s; }
-    void num(double v) {
-        char b[48];
-        std::snprintf(b, sizeof b, "%.3f", v == 0 ? 0.0 : v);  // avoid "-0.000"
-        std::string s = b;
-        if (s == "-0.000") s = "0.000";
-        out += s;
+    void num(double v, int decimals = 3) {
+        bool finite = true;
+        out += json_number(v, decimals, &finite);
+        if (!finite) ++errors;
     }
-    void str(const std::string& s) {
-        out += '"';
-        for (char c : s) {
-            if (c == '"' || c == '\\') out += '\\';
-            out += c;
-        }
-        out += '"';
-    }
+    void str(const std::string& s) { out += json_string(s); }
     void pt(double x, double y, double z) {
         out += '[';
         num(x);
@@ -65,25 +101,11 @@ void poly_set(W& w, const Junction& j, const PolygonSet& ps) {
     w.raw("]");
 }
 
-// Raised islands: the roundabout central island and splitters (rebuilt from the graph, since
-// Junction has no islands field), or Junction::islands if it ever gains one.
-template <class J>
-void islands(W& w, const Scene& sc, const J& j) {
-    if constexpr (requires { j.islands; }) {
-        poly_set(w, j, j.islands);
-    } else {
-        PolygonSet ps;
-        if (j.kind == JunctionKind::Roundabout)
-            for (const JunctionGroup& g : recognise_roundabouts(sc.graph, *sc.region)) {
-                if (g.nodes.empty() || g.nodes[0] != j.node) continue;
-                const RoundaboutLayout lay = build_roundabout(g, sc.graph, *sc.region, sc.overrides);
-                if (!lay.ok) break;
-                ps = lay.island;
-                for (const SplitterIsland& s : lay.splitters) ps.push_back(s.polygon);
-                break;
-            }
-        poly_set(w, j, ps);
-    }
+// The island polygons shown on a roundabout's first ring node (older viewers read them from
+// junction.islands); the same polygons are in the group-level "roundabouts" array.
+void islands(W& w, const std::map<NodeId, PolygonSet>& by_node, const Junction& j) {
+    const auto it = by_node.find(j.node);
+    poly_set(w, j, it == by_node.end() ? PolygonSet{} : it->second);
 }
 
 const char* kind_name(const Junction& j) {
@@ -107,8 +129,20 @@ const char* turn_name(TurnKind k) {
 
 }  // namespace
 
-std::string export_scene_json(const Scene& sc, const JunctionSet& js) {
+std::string export_scene_json(const Scene& sc, const JunctionSet& js, int* export_errors) {
     W w;
+    // Group-level roundabout results (islands, splitters, give-way), derived from the graph.
+    const RoundaboutScan scan = find_roundabouts(sc.graph, *sc.region);
+    std::vector<RoundaboutLayout> layouts;
+    std::map<NodeId, PolygonSet> compat;
+    for (const JunctionGroup& g : scan.groups) {
+        layouts.push_back(build_roundabout(g, sc.graph, *sc.region, sc.overrides));
+        const RoundaboutLayout& lay = layouts.back();
+        if (!lay.ok) continue;
+        PolygonSet ps = lay.island;
+        for (const SplitterIsland& s : lay.splitters) ps.push_back(s.polygon);
+        compat[g.nodes[0]] = std::move(ps);
+    }
     w.raw("{\"version\":1,\"region\":");
     w.str(sc.region->id);
     w.raw(",\"drivingSide\":");
@@ -141,9 +175,7 @@ std::string export_scene_json(const Scene& sc, const JunctionSet& js) {
             w.raw(",\"z\":");
             w.num(p.z);
             w.raw(",\"h\":");
-            char hb[32];
-            std::snprintf(hb, sizeof hb, "%.5f", h);
-            w.raw(hb);
+            w.num(h, 5);
             w.raw(std::string(",\"structure\":\"") + st + "\"}");
             if (s >= L) break;
         }
@@ -161,7 +193,7 @@ std::string export_scene_json(const Scene& sc, const JunctionSet& js) {
         w.raw(",\"pavements\":");
         poly_set(w, j, j.pavements);
         w.raw(",\"islands\":");
-        islands(w, sc, j);
+        islands(w, compat, j);
         w.raw(",\"gore\":");
         poly_set(w, j, j.gore);
         w.raw(",\"connectors\":[");
@@ -192,7 +224,79 @@ std::string export_scene_json(const Scene& sc, const JunctionSet& js) {
         }
         w.raw("]}");
     }
-    w.raw("]}\n");
+    w.raw("],\n\"roundabouts\":[");
+    for (std::size_t gi = 0; gi < layouts.size(); ++gi) {
+        const RoundaboutLayout& lay = layouts[gi];
+        const JunctionGroup& g = lay.group;
+        if (gi) w.raw(",\n");
+        const auto zof = [&](Vec2 p, NodeId ring_node) {
+            const Junction* jn = js.find(ring_node);
+            return jn ? nearest_arm_z(*jn, p) : (sc.graph.node(ring_node) ? sc.graph.node(ring_node)->pos.z : 0.0);
+        };
+        const auto ring_poly = [&](const std::vector<Vec2>& poly, NodeId ring_node) {
+            w.raw("[");
+            for (std::size_t k = 0; k < poly.size(); ++k) {
+                if (k) w.raw(",");
+                w.pt(poly[k].x, poly[k].y, zof(poly[k], ring_node));
+            }
+            w.raw("]");
+        };
+        w.raw("{\"nodes\":[");
+        for (std::size_t k = 0; k < g.nodes.size(); ++k) w.raw((k ? "," : "") + std::to_string(g.nodes[k].value));
+        w.raw("],\"edges\":[");
+        for (std::size_t k = 0; k < g.ring_edges.size(); ++k) w.raw((k ? "," : "") + std::to_string(g.ring_edges[k].value));
+        w.raw("],\"centre\":");
+        w.pt(g.centre.x, g.centre.y, zof(g.centre, g.nodes[0]));
+        w.raw(",\"radius\":");
+        w.num(g.radius);
+        w.raw(std::string(",\"clockwise\":") + (g.clockwise ? "true" : "false") + ",\"ok\":" + (lay.ok ? "true" : "false") +
+              ",\"error\":");
+        if (lay.ok) w.raw("null");
+        else w.str(lay.error);
+        w.raw(",\"arms\":[");
+        for (std::size_t k = 0; k < g.arms.size(); ++k) {
+            if (k) w.raw(",");
+            w.raw("{\"edge\":" + std::to_string(g.arms[k].edge.value) +
+                  ",\"ringNode\":" + std::to_string(g.nodes[static_cast<std::size_t>(g.arms[k].ring_index)].value) +
+                  ",\"entry\":" + (g.arms[k].entry ? "true" : "false") + ",\"exit\":" + (g.arms[k].exit ? "true" : "false") + "}");
+        }
+        w.raw("],\"island\":[");
+        for (std::size_t k = 0; k < lay.island.size(); ++k) {
+            if (k) w.raw(",");
+            ring_poly(lay.island[k], g.nodes[0]);
+        }
+        w.raw("],\"splitters\":[");
+        for (std::size_t k = 0; k < lay.splitters.size(); ++k) {
+            if (k) w.raw(",");
+            const RoundaboutArm& arm = g.arms[static_cast<std::size_t>(lay.splitters[k].arm)];
+            w.raw("{\"edge\":" + std::to_string(arm.edge.value) + ",\"polygon\":");
+            ring_poly(lay.splitters[k].polygon, g.nodes[static_cast<std::size_t>(arm.ring_index)]);
+            w.raw("}");
+        }
+        w.raw("],\"giveWay\":[");
+        for (std::size_t k = 0; k < lay.give_way.size(); ++k) {
+            const GiveWay& gw = lay.give_way[k];
+            if (k) w.raw(",");
+            w.raw("{\"node\":" + std::to_string(gw.node.value) + ",\"connector\":" + std::to_string(gw.connector) + ",\"yieldsTo\":[");
+            for (std::size_t q = 0; q < gw.yields_to.size(); ++q) w.raw((q ? "," : "") + std::to_string(gw.yields_to[q]));
+            w.raw("]}");
+        }
+        w.raw("]}");
+    }
+    w.raw("],\n\"roundaboutProblems\":[");
+    for (std::size_t pi = 0; pi < scan.problems.size(); ++pi) {
+        const RoundaboutProblem& p = scan.problems[pi];
+        if (pi) w.raw(",");
+        w.raw("{\"nodes\":[");
+        for (std::size_t k = 0; k < p.nodes.size(); ++k) w.raw((k ? "," : "") + std::to_string(p.nodes[k].value));
+        w.raw("],\"edges\":[");
+        for (std::size_t k = 0; k < p.edges.size(); ++k) w.raw((k ? "," : "") + std::to_string(p.edges[k].value));
+        w.raw("],\"what\":");
+        w.str(p.what);
+        w.raw("}");
+    }
+    w.raw("],\n\"exportErrors\":" + std::to_string(w.errors) + "}\n");
+    if (export_errors) *export_errors = w.errors;
     return w.out;
 }
 

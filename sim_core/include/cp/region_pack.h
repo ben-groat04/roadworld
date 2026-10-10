@@ -57,6 +57,25 @@ struct RoadType {
     double min_radius = 0;          // m, advisory (0 = unset)
     double advisory_max_grade = 0;  // rise/run, advisory (0 = unset)
     std::string markings;
+    // True for the circulatory carriageway of a roundabout: a one-way type whose closed loops form a
+    // roundabout group (docs/junctions.md section 7). Never set on two_way or dual types.
+    bool roundabout_ring = false;
+};
+
+// Roundabout tool and layout tunables (region.json "roundabout" object). The values here are the
+// fallbacks used when a pack omits a field; they are not tied to any region.
+struct RoundaboutRules {
+    double entry_corner_radius = 8.0;        // m, kerb fillet between an approach and the ring-out edge
+    double exit_corner_radius = 12.0;        // m, between the ring-in edge and an approach
+    double ring_corner_radius_factor = 1.0;  // island-side fillet = factor * ring radius
+    double max_arc = 1.62;                   // rad, longest ring edge the tool makes (about 93 degrees)
+    int max_ring_edges = 16;                 // tool: most edges in the ring it draws
+    double min_island_radius = 3.0;          // m, smallest central island (layout and tool)
+    double min_edge_length = 4.0;            // m, shortest ring edge or approach stub the tool makes
+    double min_tool_radius = 8.0;            // m, tool: smallest centreline radius
+    double max_tool_radius = 100.0;          // m, tool: largest centreline radius
+    double splitter_length = 12.0;           // m beyond the trim line, two-way approaches only
+    double splitter_width = 1.8;             // m at the ring end
 };
 
 struct RegionPack {
@@ -65,6 +84,7 @@ struct RegionPack {
     DrivingSide driving_side = DrivingSide::Left;
     double headroom_m = 0;
     double plan_crossing_junction_dz_m = 0;
+    RoundaboutRules roundabout;
     std::map<std::string, LaneType> lane_types;
     std::map<std::string, RoadType> road_types;
 

@@ -28,7 +28,12 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "export_scene: %s\n", err.c_str());
         return 1;
     }
-    const std::string json = cp::tools::export_scene_json(*sc, cp::tools::scene_junctions(*sc));
+    int export_errors = 0;
+    const std::string json = cp::tools::export_scene_json(*sc, cp::tools::scene_junctions(*sc), &export_errors);
+    if (export_errors > 0) {
+        std::fprintf(stderr, "export_scene: %d non-finite number(s) written as null\n", export_errors);
+        return 3;
+    }
     std::FILE* f = out_path.empty() ? stdout : std::fopen(out_path.c_str(), "wb");
     if (!f) {
         std::fprintf(stderr, "export_scene: cannot write %s\n", out_path.c_str());

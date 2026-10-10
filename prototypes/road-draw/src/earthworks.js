@@ -10,6 +10,7 @@ const VERGE = 1.5;          // flat graded verge beside the road edge (formation
 const WALL_MIN_RUN = 8;     // samples (2 m apart): a wall run is at least 16 m long (>= 15 m)
 const WALL_GAP = 8;         // gaps between wall runs shorter than this many samples are bridged (no flicker)
 const PORTAL_WALL = 12;     // samples (24 m): the last stretch before a tunnel portal is walled on both sides (cutting sides taper up into full-height walls that meet the headwall); further out the cutting has ordinary slopes
+const PLANE_OVER = 0.6;     // m: grading runs this far past the portal plane, under the 2 m thick headwall, so the bilinear ground at the plane stays at formation
 const WALL_PAD = 5;         // samples: a wall run is padded this far (10 m) beyond the stations that need it, so the wall tapers out before the real need ends
 const WALL_RAMP = 10;       // m: beside a wall end, the ground outside the wall face blends from slope to natural over this run (< the 12 m end zone of ground_hidden_by_walls)
 const slopeV = e => e > VERGE ? e - VERGE : 0;   // slope run beyond the verge
@@ -68,9 +69,9 @@ function classify(r, ty) {
   for (const [k, sg] of [[0, 1], [1, -1]]) {
     const t = typ[k], w = new Array(n).fill(false);
     for (let i = 0; i < n; i++) if (!lock[i]) { t[i] = needsWall(S[i], hw, sg); w[i] = t[i] > 0; }
-    for (let i = 0; i < n; i++) if (tu[i]) {   // portal approach: walls both sides for PORTAL_WALL samples before the entry / after the exit
-      if (i === 0 || !tu[i - 1]) for (let q = i - 1; q >= Math.max(0, i - PORTAL_WALL) && !lock[q]; q--) w[q] = true;
-      if (i === n - 1 || !tu[i + 1]) for (let q = i + 1; q <= Math.min(n - 1, i + PORTAL_WALL) && !lock[q]; q++) w[q] = true;
+    for (let i = 0; i < n; i++) if (tu[i] || br[i]) {   // portal / abutment approach (the embankment ends against a bridge over falling ground: a slope cannot fit there): walls both sides for PORTAL_WALL samples before the entry / after the exit
+      if (i === 0 || !(tu[i] ? tu[i - 1] : br[i - 1])) for (let q = i - 1; q >= Math.max(0, i - PORTAL_WALL) && !lock[q]; q--) w[q] = true;
+      if (i === n - 1 || !(tu[i] ? tu[i + 1] : br[i + 1])) for (let q = i + 1; q <= Math.min(n - 1, i + PORTAL_WALL) && !lock[q]; q++) w[q] = true;
     }
     closeGaps(w, WALL_GAP); for (let i = 0; i < n; i++) if (lock[i]) w[i] = false;
     dilate(w, WALL_PAD, lock); growShort(w, WALL_MIN_RUN, lock);
@@ -145,7 +146,8 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
         const ry = y0 + j * res - A.y;
         for (let i = i0; i <= i1; i++) {
           const rx = x0 + i * res - A.x;
-          let t = (rx * dx + ry * dy) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+          let t = (rx * dx + ry * dy) / L2; if ((B.tu && !A.tu && t > 1 + PLANE_OVER / Math.sqrt(L2)) || (A.tu && !B.tu && t < -PLANE_OVER / Math.sqrt(L2))) continue;   // tunnel portal: grading stops exactly at the portal plane (the first tunnel station) (the headwall hides the step); bridges keep the rounded embankment end
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
           const ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey; if (d2 > R2) continue;
           const dd = Math.sqrt(d2), o = j * nx + i; if (dd >= rqD[o]) continue;   // nearest station of this road decides (one zf, one wall flag per texel)
           rqD[o] = dd; rqZ[o] = A.z + t * dz - fd; const E = (A.br || A.tu) ? B : (B.br || B.tu) ? A : t < 0.5 ? A : B; const lf = (dx * ry - dy * rx) > 0; rqW[o] = lf ? E.wL : E.wR; { const wa = (lf ? A.wwL : A.wwR) ?? 1, wb = (lf ? B.wwL : B.wwR) ?? 1; rqWw[o] = (A.br || A.tu) ? wb : (B.br || B.tu) ? wa : wa + (wb - wa) * t; }   // cross > 0: texel on the left
@@ -208,7 +210,7 @@ function slopeReach(r, ty) {
     for (const sg of endish ? [1, -1, 2, 3] : [1, -1]) { if (sg === 1 ? s.wL : sg === -1 ? s.wR : false) continue;
       const nx = sg > 1 ? Math.cos(s.h) * (sg === 2 ? 1 : -1) : -Math.sin(s.h) * sg, ny = sg > 1 ? Math.sin(s.h) * (sg === 2 ? 1 : -1) : Math.cos(s.h) * sg;
       for (let e = 0.5; hw + e <= cap; e += 1) { const b = hBase(s.x + nx * (hw + e), s.y + ny * (hw + e)), v = b > zf ? zf + slopeV(e) / bt : zf - slopeV(e) / bt; if (b > zf ? v >= b : v <= b) { if (e > mx) mx = e; break; } if (hw + e + 1 > cap && e > mx) mx = e; } } }
-  r._reach = Math.min(cap, hw + mx + 2.5); r._reachVer = r.ver; return r._reach;
+  r._reach = S.some(q => q.br || q.tu) ? cap : Math.min(cap, hw + mx + 2.5); /* embankment ends at bridges fall away along the road too: full reach */ r._reachVer = r.ver; return r._reach;
 }
 // Wall weight per sample and side (wwL / wwR in 0..1): 0 at either end of a wall run, 1 further than WALL_RAMP m inside it. The ground OUTSIDE a wall's
 // outer face blends from the 1:batter slope (weight 0) to natural ground (weight 1), so a wall end never leaves a bare step beside it. Runs and
@@ -220,7 +222,7 @@ function wallWeights(S) {
     while (i < n) { if (!S[i][fl]) { S[i][key] = 0; i++; continue; } let j = i; while (j < n && S[j][fl]) j++;
       const cum = [0]; for (let k = i + 1; k < j; k++) cum.push(cum[k - i - 1] + Math.hypot(S[k].x - S[k - 1].x, S[k].y - S[k - 1].y));
       const tot = cum[cum.length - 1];
-      for (let k = i; k < j; k++) { const free0 = i > 0 && !S[i - 1].br && !S[i - 1].tu, free1 = j < n && !S[j].br && !S[j].tu;   // only free run ends taper: structures (abutment, portal) and road ends hide the wall end
+      for (let k = i; k < j; k++) { const free0 = i === 0 || (!S[i - 1].br && !S[i - 1].tu), free1 = j === n || (!S[j].br && !S[j].tu);   // only free run ends (incl. the road's own ends) taper: structures (abutment, portal) hide the wall end
         const d = Math.min(free0 ? cum[k - i] : 1e9, free1 ? tot - cum[k - i] : 1e9) + 1e-9, u = Math.min(1, d / WALL_RAMP); S[k][key] = u * u * (3 - 2 * u); }   // run end -> 0 (smoothstep)
       i = j; }
   }
@@ -230,8 +232,8 @@ function roadsData() {
   for (const r of roads) if (r.samples && r.samples.length > 1 && !r.imported) wallWeights(r.samples);
   return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = slopeReach(r, ty), sb = [], full = r.samples, dec = [];
     const pk = a => ({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, wwL: a.wwL, wwR: a.wwR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR });
-    for (let i = 0; i < full.length; i += 2) dec.push(pk(full[i]));   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
-    if ((full.length - 1) % 2) dec.push(pk(full[full.length - 1])); for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
+    for (let i = 0; i < full.length; i++) { const a = full[i]; if (i % 2 === 0 || i === full.length - 1 || !!full[i - 1].tu !== !!a.tu || !!full[i + 1].tu !== !!a.tu) dec.push(pk(a)); }   // every 2nd sample, plus the last graded / first tunnel sample at each portal (the portal plane stays exact)   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
+    for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
     return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb }; }).concat(typeof inspectFootprints === 'function' ? inspectFootprints() : []);   // inspect.js junction surfaces
 }
 // Recompute GH inside box {x0,y0,x1,y1} (world metres) from base + all roads. Calls onGroundChanged(box) with the snapped box.
