@@ -13,3 +13,23 @@ jobs:
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build --config Release
       - run: ctest --test-dir build -C Release --output-on-failure
+
+  unreal_wrappers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check every sim_core source has an Unreal wrapper
+        run: |
+          missing=0
+          for f in sim_core/src/*.cpp; do
+            w="unreal/CityPainter/Plugins/CityPainterSim/Source/CityPainterSim/Private/SimCore/Wrap_$(basename "$f")"
+            if [ ! -f "$w" ]; then
+              echo "ERROR: missing Unreal wrapper '$w' for '$f'"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Create the missing Wrap_*.cpp files in unreal/CityPainter/Plugins/CityPainterSim/Source/CityPainterSim/Private/SimCore/ (copy an existing wrapper and change the include)."
+            exit 1
+          fi
+          echo "All sim_core sources have Unreal wrappers."
