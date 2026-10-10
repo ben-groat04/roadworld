@@ -70,8 +70,8 @@ document.getElementById('help').addEventListener('click', () => { state.help = f
 
 // ===== Main loop =====
 let lastT = performance.now();
-function frame(now) {
-  requestAnimationFrame(frame);
+function frame(now) { requestAnimationFrame(frame); tick(now); }
+function tick(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
   updateCamera(dt);
   if (mouseDirty) processMouse();
@@ -79,9 +79,7 @@ function frame(now) {
   if (overlayDirty) { overlayDirty = false; buildOverlay(); }
   if (needsUI) { needsUI = false; renderProfile(); renderHud(); }
   if (needsRender || performance.now() - state.flash < 300) {
-    needsRender = false;
-    scaleOverlay(); updateShadow();
-    renderer.render(scene, camera);
+    needsRender = false; drawScene();
   }
 }
 resize();
@@ -97,5 +95,5 @@ window.__proto = {
     state.draw = { pts: pts.map(p => ({ x: p[0], y: p[1], z: p[2] != null ? p[2] : hAt(p[0], p[1]) })), hs: null, attach: pts.map(() => 'free') };
     finishRoad(); dirty();
   },
-  renderNow() { syncRoads(); buildOverlay(); scaleOverlay(); updateShadow(); renderer.render(scene, camera); },
+  renderNow() { syncRoads(); buildOverlay(); drawScene(true); },
 };
