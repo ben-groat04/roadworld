@@ -18,6 +18,7 @@ add_library(sim_core
   src/junction_roundabout.cpp
   src/markings.cpp
   src/render_mesh.cpp
+  src/test_layouts.cpp
 )
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/clipper2 ${CMAKE_BINARY_DIR}/clipper2)
 target_link_libraries(sim_core PUBLIC clipper2)

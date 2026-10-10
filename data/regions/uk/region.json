@@ -7,6 +7,17 @@
   "headroom_m": 5.3,
   "_headroom_source": "UK standard headroom 5.03 m plus allowance; tune by eye",
   "plan_crossing_junction_dz_m": 1.0,
+  "grading": {
+    "_comment": "Ground grading and earthwork limits (cp::GradingRules); tuned by eye in the road-draw prototype. wall_cap_m is also the height above which the road must be a bridge or tunnel.",
+    "formation_drop_m": 0.15,
+    "batter": 2.0,
+    "verge_m": 1.5,
+    "wall_thickness_m": 1.5,
+    "wall_start_m": 12,
+    "wall_cap_m": 12,
+    "wall_slack_m": 0.75,
+    "tunnel_clear_height_m": 5.5
+  },
   "roundabout": {
     "_comment": "Roundabout tool and layout tunables; tuned by eye. Roundabout-ness itself comes from the roundabout_ring flag on a road type.",
     "entry_corner_radius_m": 8,

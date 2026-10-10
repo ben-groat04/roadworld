@@ -20,6 +20,7 @@ add_executable(sim_core_tests
   test_markings.cpp
   test_export_scene.cpp
   test_render_mesh.cpp
+  test_test_layouts.cpp
 )
 target_link_libraries(sim_core_tests PRIVATE sim_core scene_tools)
 target_include_directories(sim_core_tests SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party)

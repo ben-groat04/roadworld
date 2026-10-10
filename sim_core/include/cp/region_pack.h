@@ -41,6 +41,30 @@ struct CrossSectionSlot {
     SlotSide side = SlotSide::Nearside;
 };
 
+// How street light columns are laid out along a road ("street_lights" object of a road type; docs:
+// sim_core/include/cp/street_lights.h). `staggered` and `single_side` spacing is between consecutive
+// columns along the road; `opposite` spacing is between stations (a column on each side at every one).
+enum class LightArrangement {
+    SingleSide,          // nearside of the run direction (outside of the bend on tight curves)
+    Staggered,           // alternating sides, nearside first
+    Opposite,            // a column on each side at every station
+    CentralReservation,  // dual types: twin-arm columns in the median between two carriageways
+};
+
+struct StreetLightRules {
+    bool lit = false;
+    double spacing = 30;             // m
+    LightArrangement arrangement = LightArrangement::SingleSide;
+    double setback = 0.8;            // m, column centre from the carriageway edge when there is no footway
+    double footway_inset = 0.3;      // m, column centre in from the back of the footway
+    double mounting_height = 8;      // m, luminaire height above the column base
+    double outreach = 1.0;           // m, bracket / arm length toward the carriageway
+    std::string style;               // renderer mesh id
+    // Roundabout ring types: > 0 adds one column on the central island when the island radius is at
+    // least this (m). 0 = never.
+    double island_min_radius = 0;
+};
+
 struct RoadType {
     std::string id;
     std::string name;
@@ -70,6 +94,7 @@ struct RoadType {
     // True for the circulatory carriageway of a roundabout: a one-way type whose closed loops form a
     // roundabout group (docs/junctions.md section 7). Never set on two_way or dual types.
     bool roundabout_ring = false;
+    StreetLightRules street_lights;  // optional "street_lights" object; unset = unlit
 };
 
 // Roundabout tool and layout tunables (region.json "roundabout" object). The values here are the
@@ -88,6 +113,19 @@ struct RoundaboutRules {
     double splitter_width = 1.8;             // m at the ring end
 };
 
+// Ground grading and earthwork limits (region.json "grading" object, used by grading.h). The values
+// here are the fallbacks used when a pack omits a field; they are not tied to any region.
+struct GradingRules {
+    double formation_drop = 0.15;      // m, formation level below the road surface
+    double batter = 2.0;               // horizontal : vertical of cutting/embankment slopes
+    double verge = 1.5;                // m, flat graded verge beside the road edge before the batter starts
+    double wall_thickness = 1.5;       // m, solid retaining wall beside the road edge
+    double wall_start = 12.0;          // m, slope height above which a retaining wall replaces the slope
+    double wall_cap = 12.0;            // m, height above which the road needs a bridge or tunnel
+    double wall_slack = 0.75;          // m, a slope may exceed wall_start by this much before a wall is needed
+    double tunnel_clear_height = 5.5;  // m, tunnel springline height above the road (side-wall headroom)
+};
+
 struct RegionPack {
     std::string id;
     int version = 0;
@@ -95,6 +133,7 @@ struct RegionPack {
     double headroom_m = 0;
     double plan_crossing_junction_dz_m = 0;
     RoundaboutRules roundabout;
+    GradingRules grading;
     std::map<std::string, LaneType> lane_types;
     std::map<std::string, RoadType> road_types;
 

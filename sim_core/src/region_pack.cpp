@@ -292,6 +292,21 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
                               r.entry_corner_radius < 0 || r.exit_corner_radius < 0 || r.ring_corner_radius_factor < 0))
             err.set(c + ": a value is out of range");
     }
+    if (const json* gr = optional_member(rj, "grading")) {
+        GradingRules& g = pack.grading;
+        const std::string c = "region.grading";
+        g.formation_drop = opt_number(*gr, "formation_drop_m", g.formation_drop, c, err);
+        g.batter = opt_number(*gr, "batter", g.batter, c, err);
+        g.verge = opt_number(*gr, "verge_m", g.verge, c, err);
+        g.wall_thickness = opt_number(*gr, "wall_thickness_m", g.wall_thickness, c, err);
+        g.wall_start = opt_number(*gr, "wall_start_m", g.wall_start, c, err);
+        g.wall_cap = opt_number(*gr, "wall_cap_m", g.wall_cap, c, err);
+        g.wall_slack = opt_number(*gr, "wall_slack_m", g.wall_slack, c, err);
+        g.tunnel_clear_height = opt_number(*gr, "tunnel_clear_height_m", g.tunnel_clear_height, c, err);
+        if (!err.failed() && (!(g.batter > 0.1) || g.formation_drop < 0 || g.verge < 0 || !(g.wall_thickness > 0) ||
+                              !(g.wall_start > 0) || !(g.wall_cap > 0) || g.wall_slack < 0 || !(g.tunnel_clear_height > 0)))
+            err.set(c + ": a value is out of range");
+    }
 
     const json tj = parse_json(road_types_text, "road_types.json", err);
     const json* arr = require(tj, "road_types", "road_types.json", err);
