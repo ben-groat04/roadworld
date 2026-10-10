@@ -2,8 +2,8 @@
 // right-hand traffic, km/h, other widths / radii / marking rules, no road type id shared with the UK pack) and checks
 // that outputs reflect TESTLAND's numbers. A UK value hard-coded in sim_core shows up here as a mismatch.
 //
-// Test cases marked should_fail() document a KNOWN leak of a UK assumption into the core; the comment above each
-// names the file:line. Fix the core, then delete the decorator.
+// Test cases marked should_fail() would document a KNOWN leak of a UK assumption into the core (the comment above
+// each names the file:line; fix the core, then delete the decorator). There are none at present.
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -1387,6 +1387,101 @@ TEST_CASE("testland merge/diverge: slip joins and leaves the nearside lane of a 
     }
 }
 
+TEST_CASE("testland merge/diverge: odd-arm taper and gore length come from testland's junction.merge table") {
+    const RegionPack& tp = base_pack();
+    REQUIRE(tp.junction.merge.taper_length.size() == 4);
+    // the lookup itself, in testland's km/h bands (UK: 75 up to 80, 110 up to 100, else 150)
+    CHECK(merge_taper_length(tp, 70 * kKph) == Near{60, 1e-9});
+    CHECK(merge_taper_length(tp, 80 * kKph) == Near{95, 1e-9});
+    CHECK(merge_taper_length(tp, 110 * kKph) == Near{125, 1e-9});
+    CHECK(merge_taper_length(tp, 125 * kKph) == Near{160, 1e-9});
+    // end to end: a merge onto the expressway and onto a collector, edges long enough that no clamp bites
+    struct Row { const char* type; double taper; };
+    for (const Row& r : {Row{"collector", 60}, Row{"expressway_dual", 160}}) {
+        INFO(r.type);
+        Net n;
+        build_slip(n, r.type, true, 25, 600);
+        const JunctionSet js = n.junctions();
+        const Junction* j = js.find(n.centre);
+        REQUIRE(j);
+        REQUIRE(j->cls == NodeClass::Merge);
+        const int oi = odd_arm(*j);
+        REQUIRE(oi >= 0);
+        CHECK(j->trims[static_cast<std::size_t>(oi)] == Near{r.taper, 1e-6});
+    }
+    // gore length: the pair arms are trimmed at nose + gore_length, so lengthening it by 5 m moves both trims by 5 m
+    const auto pair_trims = [](double gore) {
+        RegionPack p = base_pack();
+        p.junction.merge.gore_length = gore;
+        Net n;
+        n.region = std::make_shared<const RegionPack>(std::move(p));
+        n.g.set_region(n.region);
+        build_slip(n, "collector", true, 25, 600);
+        const JunctionSet js = n.junctions();
+        const Junction* j = js.find(n.centre);
+        REQUIRE(j);
+        REQUIRE(j->cls == NodeClass::Merge);
+        std::vector<double> t;
+        for (std::size_t i = 0; i < j->arms.size(); ++i)
+            if (static_cast<int>(i) != odd_arm(*j)) t.push_back(j->trims[i]);
+        return t;
+    };
+    const std::vector<double> a = pair_trims(14), b = pair_trims(19);
+    REQUIRE(a.size() == 2);
+    REQUIRE(b.size() == 2);
+    CHECK(b[0] - a[0] == Near{5, 1e-6});
+    CHECK(b[1] - a[1] == Near{5, 1e-6});
+    CHECK(tp.junction.merge.gore_length == Near{14, 1e-12});  // not the 10 m the core used to hard-code
+}
+
+TEST_CASE("testland junction.default_corner_radius and the turn-pocket default tables come from testland") {
+    // no corner-radius rule and no road-type radius: the pack's fallback (testland 7.5 m; the old constant was 6 m)
+    {
+        RegionPack p = base_pack();
+        p.junction.corner_radius.clear();
+        for (auto& [id, rt] : p.road_types) rt.corner_radius = 0;
+        Net n;
+        n.region = std::make_shared<const RegionPack>(std::move(p));
+        n.g.set_region(n.region);
+        for (double d : {0.0, 90.0, 180.0}) n.spoke(d, 150, "collector");
+        const auto arms = collect_arms(n.g, n.centre, *n.region);
+        const auto radii = resolve_corner_radii(n.centre, arms, JunctionOverrides{}, n.region.get());
+        REQUIRE(radii.size() == 3);
+        for (double r : radii) CHECK(r == Near{7.5, 1e-9});
+    }
+    // empty speed tables fall back to default_storage_m / default_taper_ratio (testland 26 m / 1:18; old constants 20 / 15)
+    for (DrivingSide side : {DrivingSide::Right, DrivingSide::Left}) {
+        RegionPack p = base_pack();
+        p.driving_side = side;
+        p.junction.turn_pockets.storage.clear();
+        p.junction.turn_pockets.taper_ratio.clear();
+        Net n(side);
+        n.region = std::make_shared<const RegionPack>(std::move(p));
+        n.g.set_region(n.region);
+        n.spoke(180, 200, "rural_trunk");
+        n.spoke(0, 200, "rural_trunk");
+        n.spoke(90, 200, "farm_track");
+        const JunctionSet js = n.junctions();
+        const Junction* j = js.find(n.centre);
+        REQUIRE(j);
+        REQUIRE(j->pockets.size() == 1);
+        CHECK(j->pockets[0].storage_length == Near{26, 1e-6});
+        CHECK(j->pockets[0].taper_length == Near{18 * 3.05, 1e-6});
+    }
+}
+
+TEST_CASE("testland render defaults: a footway uses testland's footway_crossfall (0.025), not the UK 0.02") {
+    Net n;
+    // the local street sets crossfall and kerb_upstand_m but no footway_crossfall
+    const EdgeId e = n.road({0, 0, 0}, {200, 0, 0}, "local");
+    const SurfaceProfile prof = make_surface_profile(*n.region, *n.g.edge(e));
+    REQUIRE(prof.valid());
+    // nearside is the RIGHT (-y); the footway runs from 5.3 to 7.0 m
+    const double inner = prof.offset(-5.5, false), outer = prof.offset(-6.9, false);
+    CHECK(std::fabs(outer - inner) == Near{0.025 * 1.4, 0.002});
+    CHECK(base_pack().render.footway_crossfall == Near{0.025, 1e-12});
+}
+
 // ============================================================================================ 6. layout I/O
 
 namespace {
@@ -1458,15 +1553,30 @@ TEST_CASE("testland layout I/O: crossing roads split when their height differenc
     CHECK(nodes_for(1.6) == 4);  // above: no junction
 }
 
-// A layout without "region" silently becomes a UK layout (and a left-driving one).
-// LEAK: sim_core/include/cp/layout_io.h:89 (`std::string region = "uk"`), sim_core/src/layout_io.cpp:188 (default "uk")
-// and :189 (default driving side "left").
-TEST_CASE("layout I/O: a layout without a region id does not silently become UK" * doctest::should_fail()) {
+// A layout that does not name its region or driving side is not silently a UK / left-driving one: the parser leaves
+// both unset, the file loader demands the region, and a caller-supplied pack is inherited (and checked when stated).
+TEST_CASE("layout I/O: a layout without a region id does not silently become UK") {
+    const char* text = R"({ "roads": [ { "type": "local", "points": [[0, 0], [100, 0]] } ] })";
     LayoutDoc d;
     std::string err;
-    const bool ok = parse_layout(R"({ "roads": [ { "type": "local", "points": [[0, 0], [100, 0]] } ] })", d, err);
-    // Either the parse demands an explicit region (ok == false) or the document does not claim to be UK.
-    CHECK((!ok || d.region != "uk"));
+    REQUIRE_MESSAGE(parse_layout(text, d, err), err);
+    CHECK(d.region.empty());
+    CHECK_FALSE(d.driving_side.has_value());
+    // nothing says which pack to load
+    CHECK_FALSE(load_layout(text, CP_DATA_DIR, err));
+    CHECK(err.find("region") != std::string::npos);
+    // a caller that supplies the pack: the layout inherits its region and its driving side
+    auto l = load_layout(text, tl(), err);
+    REQUIRE_MESSAGE(l, err);
+    CHECK(l->doc.region == "testland");
+    CHECK(l->doc.driving_side == DrivingSide::Right);
+    CHECK(l->region->id == "testland");
+    // a stated region that differs from the supplied pack is an error, not a silent switch
+    CHECK_FALSE(load_layout(R"({ "region": "uk", "roads": [ { "type": "local", "points": [[0, 0], [100, 0]] } ] })", tl(), err));
+    CHECK(err.find("region") != std::string::npos);
+    // an unstated layout is not UK: UK road types are unknown to the testland pack
+    CHECK_FALSE(load_layout(R"({ "roads": [ { "type": "b_road", "points": [[0, 0], [100, 0]] } ] })", tl(), err));
+    CHECK(err.find("b_road") != std::string::npos);
 }
 
 // ============================================================================================ 7. units
@@ -1481,10 +1591,9 @@ const char* kMinimalRules(const char* unit, std::string& storage) {
 
 }  // namespace
 
-// The two parsers spell the speed units differently: region.json takes "km/h" and "mps" but not "ms",
-// marking_rules.json takes "ms" but not "km/h" or "mps". A pack author using one spelling in both files hits an error.
-// LEAK (duplicated unit table): sim_core/src/region_pack.cpp:134-137 vs sim_core/src/markings.cpp:325-329.
-TEST_CASE("speed unit spellings are accepted identically by region.json and marking_rules.json" * doctest::should_fail()) {
+// Both files use the one table in cp/units.h (mph, km/h, kph, kmh, m/s, mps, ms); they used to spell it differently
+// (region.json took "km/h" and "mps" but not "ms", marking_rules.json the other way round).
+TEST_CASE("speed unit spellings are accepted identically by region.json and marking_rules.json") {
     auto lt = parse_lane_types(R"({"lane_types":[{"id":"driving","users":["car"],"may_park":false,"connects_at_junctions":true,"surface":"asphalt"}]})");
     REQUIRE(lt);
     for (const char* unit : {"mph", "kph", "km/h", "kmh", "ms", "m/s", "mps"}) {

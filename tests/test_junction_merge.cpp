@@ -149,10 +149,10 @@ void check_slip(const Junction& j, DrivingSide side, bool merge) {
 }  // namespace
 
 TEST_CASE("merge_taper_length by design speed") {
-    CHECK(merge_taper_length(50 / 3.6) == doctest::Approx(75));
-    CHECK(merge_taper_length(70 / 3.6) == doctest::Approx(75));
-    CHECK(merge_taper_length(100 / 3.6) == doctest::Approx(110));
-    CHECK(merge_taper_length(120 / 3.6) == doctest::Approx(150));
+    CHECK(merge_taper_length(*pack(DrivingSide::Left), 50 / 3.6) == doctest::Approx(75));
+    CHECK(merge_taper_length(*pack(DrivingSide::Left), 70 / 3.6) == doctest::Approx(75));
+    CHECK(merge_taper_length(*pack(DrivingSide::Left), 100 / 3.6) == doctest::Approx(110));
+    CHECK(merge_taper_length(*pack(DrivingSide::Left), 120 / 3.6) == doctest::Approx(150));
 }
 
 TEST_CASE("merge: slip joins the nearside lane of a 2-lane one-way carriageway") {
@@ -177,7 +177,7 @@ TEST_CASE("merge: a 75 m and a 150 m taper are emitted in full on long edges") {
         const Junction& j = n.junction();
         REQUIRE(j.cls == NodeClass::Merge);
         const double speed = n.region->road_type(type)->design_speed;
-        const double taper = merge_taper_length(speed);
+        const double taper = merge_taper_length(*n.region, speed);
         CHECK(taper >= 75);
         CHECK(j.trims[static_cast<std::size_t>(odd_arm(j))] == doctest::Approx(taper));
         const JunctionArm& O = j.arms[static_cast<std::size_t>(odd_arm(j))];

@@ -86,9 +86,9 @@ struct Builder {
     // One slip road. The canonical polyline is the north-west diverge (EB off-slip), from the
     // dual (first) to the terminal (last); the other three are mirrors/rotations of it.
     //   mirror_x: x -> -x and reverse (on-slip);  rot180: (x,y) -> (-x,-y).
-    void slip(bool mirror_x, bool rot180) {
+    void slip(bool mirror_x, bool rot180, double dual_off) {
         std::vector<Vec3> pts = {
-            {-D::slip_x, D::dual_offset, 0}, {-190, 23, 1.5}, {-120, 52, 3.7}, {-50, 72, 5.4}, {0, D::rb_y, 6.25}};
+            {-D::slip_x, dual_off, 0}, {-190, 23, 1.5}, {-120, 52, 3.7}, {-50, 72, 5.4}, {0, D::rb_y, 6.25}};
         double h0 = 10 * kDeg, h1 = 0;  // heading leaving the dual / arriving at the terminal
         if (mirror_x) {
             for (auto& p : pts) p.x = -p.x;
@@ -111,6 +111,14 @@ struct Builder {
 
 }  // namespace
 
+double interchange_dual_offset(const RegionPack& region) {
+    const RoadType* rt = region.road_type("a_road_dual");
+    if (!rt) return 0;
+    double w = 0;
+    for (const CrossSectionSlot& slot : rt->carriageway) w += slot.width;
+    return w / 2 + rt->median_gap / 2;
+}
+
 const char* test_layout_name(TestLayout layout) {
     switch (layout) {
         case TestLayout::Interchange: return "interchange";
@@ -130,7 +138,11 @@ bool build_test_layout(TestLayout layout, RoadGraph& graph, CommandStack<RoadGra
 bool build_interchange_layout(RoadGraph& graph, CommandStack<RoadGraph>& stack, const RegionPack& region,
                               std::string& error) {
     Builder b{graph, stack, {}};
-    const double o = D::dual_offset;
+    const double o = interchange_dual_offset(region);
+    if (!(o > 0)) {
+        error = "road type a_road_dual missing from the region pack";
+        return false;
+    }
     const double dual_end = 400;
 
     // East-west A-road dual carriageway: eastbound on the north side (left-hand traffic).
@@ -144,10 +156,10 @@ bool build_interchange_layout(RoadGraph& graph, CommandStack<RoadGraph>& stack, 
     b.draw({0, -250, 0}, kPi / 2, mi, {0, 350, 0}, kPi / 2, "b_road", false, false, false);
 
     // Slips: EB off (to the north terminal), EB on, WB off (south), WB on.
-    b.slip(false, false);
-    b.slip(true, false);
-    b.slip(false, true);
-    b.slip(true, true);
+    b.slip(false, false, o);
+    b.slip(true, false, o);
+    b.slip(false, true, o);
+    b.slip(true, true, o);
 
     // T-junction: residential side road to the east, 150 m north of the roundabout.
     b.draw({0, D::tee_y, 0}, 0.0, {}, {160, D::tee_y, 0}, 0.0, "residential", false, true, false);
@@ -157,7 +169,7 @@ bool build_interchange_layout(RoadGraph& graph, CommandStack<RoadGraph>& stack, 
     }
 
     // Bridge: minor road over the dual, +-20 m of the crossing. Find the minor-road piece covering y = 0
-    // (the dual edges also pass near (0, +-5.5)).
+    // (the dual edges also pass near (0, +-o)).
     EdgeId mid;
     double s_mid = 0;
     for (const auto& [id, e] : graph.edges()) {

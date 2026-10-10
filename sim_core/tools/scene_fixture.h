@@ -14,7 +14,7 @@ namespace cp::tools {
 
 // Geometry of the `interchange` fixture (metres, x east, y north; dual along the x axis).
 struct InterchangeDims {
-    static constexpr double dual_offset = 5.5;      // each carriageway centre is +-5.5 m from y = 0
+    // The dual-carriageway offset is not a constant: cp::interchange_dual_offset(region) (cp/test_layouts.h).
     static constexpr double deck_z = 7.0;            // bridge deck level over the dual
     static constexpr double deck_depth = 0.8;        // structure depth under the deck level
     static constexpr double rb_y = 80.0;             // north roundabout centre on the minor road

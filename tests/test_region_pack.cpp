@@ -1,5 +1,6 @@
 #include "doctest/doctest.h"
 #include "cp/region_pack.h"
+#include "cp/units.h"
 
 using namespace cp;
 
@@ -299,4 +300,85 @@ TEST_CASE("structures block is optional, validated, and set in the UK pack") {
     auto uk = load_region_pack_by_id(CP_DATA_DIR, "uk");
     REQUIRE_MESSAGE(uk, uk.error);
     CHECK(uk->structures.max_pier_spacing == doctest::Approx(30));
+}
+
+TEST_CASE("speed unit spellings: one table for every loader, both packs' units are known") {
+    double f = 0;
+    for (const char* u : {"kph", "km/h", "kmh"}) {
+        REQUIRE(speed_unit_to_mps(u, f));
+        CHECK(f == doctest::Approx(1.0 / 3.6));
+    }
+    for (const char* u : {"m/s", "mps", "ms"}) {
+        REQUIRE(speed_unit_to_mps(u, f));
+        CHECK(f == doctest::Approx(1.0));
+    }
+    REQUIRE(speed_unit_to_mps("mph", f));
+    CHECK(f == doctest::Approx(0.44704));
+    f = 42;
+    CHECK_FALSE(speed_unit_to_mps("knots", f));
+    CHECK(f == 42);  // unchanged on failure
+    auto lt = parse_lane_types(R"({"lane_types":[{"id":"driving","surface":"asphalt","connects_at_junctions":true,"users":["car"]}]})");
+    REQUIRE_MESSAGE(lt, lt.error);
+    const std::string rtj = road_types(R"({"lane":"driving","width_m":3.0})");
+    for (const char* u : {"mph", "kph", "km/h", "kmh", "m/s", "mps", "ms"}) {
+        const auto p = parse_region_pack(*lt, std::string(R"({"id":"t","driving_side":"left","speed_unit":")") + u + "\"}", rtj);
+        CHECK_MESSAGE(p, u << ": " << p.error);
+    }
+    CHECK_FALSE(parse_region_pack(*lt, R"({"id":"t","driving_side":"left","speed_unit":"knots"})", rtj));
+}
+
+TEST_CASE("render, merge, default corner radius, turn-pocket defaults and splitter taper floor: defaults, parsing, validation") {
+    auto lt = parse_lane_types(R"({"lane_types":[{"id":"driving","surface":"asphalt","connects_at_junctions":true,"users":["car"]}]})");
+    REQUIRE_MESSAGE(lt, lt.error);
+    const std::string rtj = road_types(R"({"lane":"driving","width_m":3.0})");
+    const auto with = [&](const std::string& extra) {
+        return parse_region_pack(*lt, std::string(R"({"id":"t","driving_side":"left","speed_unit":"kph",)") + extra + "}", rtj);
+    };
+    auto plain = with(R"("version":1)");
+    REQUIRE_MESSAGE(plain, plain.error);
+    CHECK(plain->render.crossfall == doctest::Approx(0.025));
+    CHECK(plain->render.kerb_upstand == doctest::Approx(0.125));
+    CHECK(plain->junction.default_corner_radius == doctest::Approx(6));
+    CHECK(plain->junction.merge.gore_length == doctest::Approx(10));
+    CHECK(plain->junction.merge.taper_length_for(30) == doctest::Approx(75));  // empty table: default_taper_length
+    CHECK(plain->junction.turn_pockets.default_storage == doctest::Approx(20));
+    CHECK(plain->junction.turn_pockets.default_taper_ratio == doctest::Approx(15));
+    CHECK(plain->roundabout.splitter_min_taper == doctest::Approx(8));
+
+    auto set = with(R"("render":{"crossfall":0.03,"kerb_upstand_m":0.15,"footway_crossfall":0.01,"verge_crossfall":0.08},
+        "roundabout":{"splitter_min_taper_m":5},
+        "junction":{"default_corner_radius_m":9,
+          "merge":{"taper_length":[{"max_speed_kph":50,"length_m":40},{"length_m":90}],"default_taper_length_m":33,"gore_length_m":12},
+          "turn_pockets":{"default_storage_m":31,"default_taper_ratio":13}})");
+    REQUIRE_MESSAGE(set, set.error);
+    CHECK(set->render.crossfall == doctest::Approx(0.03));
+    CHECK(set->render.kerb_upstand == doctest::Approx(0.15));
+    CHECK(set->render.footway_crossfall == doctest::Approx(0.01));
+    CHECK(set->render.verge_crossfall == doctest::Approx(0.08));
+    CHECK(set->roundabout.splitter_min_taper == doctest::Approx(5));
+    CHECK(set->junction.default_corner_radius == doctest::Approx(9));
+    CHECK(set->junction.merge.gore_length == doctest::Approx(12));
+    CHECK(set->junction.merge.taper_length_for(50 / 3.6) == doctest::Approx(40));
+    CHECK(set->junction.merge.taper_length_for(60 / 3.6) == doctest::Approx(90));
+    CHECK(set->junction.turn_pockets.default_storage == doctest::Approx(31));
+    CHECK(set->junction.turn_pockets.default_taper_ratio == doctest::Approx(13));
+
+    CHECK_FALSE(with(R"("render":{"crossfall":0.9})"));
+    CHECK_FALSE(with(R"("render":{"kerb_upstand_m":-0.1})"));
+    CHECK_FALSE(with(R"("junction":{"default_corner_radius_m":0})"));
+    CHECK_FALSE(with(R"("junction":{"merge":{"gore_length_m":-1}})"));
+    CHECK_FALSE(with(R"("junction":{"merge":{"taper_length":[{"max_speed_kph":90,"length_m":50},{"max_speed_kph":60,"length_m":80}]}})"));
+    CHECK_FALSE(with(R"("junction":{"turn_pockets":{"default_taper_ratio":0.5}})"));
+    CHECK_FALSE(with(R"("roundabout":{"splitter_min_taper_m":-2})"));
+
+    auto uk = load_region_pack_by_id(CP_DATA_DIR, "uk");
+    REQUIRE_MESSAGE(uk, uk.error);
+    CHECK(uk->render.crossfall == doctest::Approx(0.025));
+    CHECK(uk->render.footway_crossfall == doctest::Approx(0.02));
+    CHECK(uk->junction.merge.taper_length.size() == 3);
+    CHECK(uk->junction.merge.gore_length == doctest::Approx(10));
+    CHECK(uk->junction.default_corner_radius == doctest::Approx(6));
+    CHECK(uk->junction.turn_pockets.default_storage == doctest::Approx(20));
+    CHECK(uk->junction.turn_pockets.default_taper_ratio == doctest::Approx(15));
+    CHECK(uk->roundabout.splitter_min_taper == doctest::Approx(8));
 }

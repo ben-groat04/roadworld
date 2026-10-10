@@ -12,7 +12,13 @@ using namespace cp;
 namespace {
 
 std::unique_ptr<LoadedLayout> load(const std::string& json, std::string& err) {
-    return load_layout(json, CP_DATA_DIR, err);
+    // The layouts here do not name a region: they inherit the UK pack the caller supplies.
+    static const std::shared_ptr<const RegionPack> uk = [] {
+        auto p = load_region_pack_by_id(CP_DATA_DIR, "uk");
+        REQUIRE_MESSAGE(p, p.error);
+        return std::make_shared<const RegionPack>(*p);
+    }();
+    return load_layout(json, uk, err);
 }
 
 std::string error_of(const std::string& json) {

@@ -86,8 +86,11 @@ struct LayoutCamera {
 
 struct LayoutDoc {
     std::string name;
-    std::string region = "uk";
-    DrivingSide driving_side = DrivingSide::Left;
+    // Both optional in the file and NOT defaulted by the parser: an empty region / unset driving side means
+    // "the caller's pack decides". build_layout checks a stated value against the pack and fills both in
+    // (LoadedLayout::doc then carries the resolved values).
+    std::string region;
+    std::optional<DrivingSide> driving_side;
     std::vector<LayoutRoad> roads;
     std::vector<LayoutRoundabout> roundabouts;
     std::vector<LayoutCornerRadius> corner_radii;
@@ -114,11 +117,17 @@ struct LoadedLayout {
     LoadedLayout& operator=(const LoadedLayout&) = delete;
 };
 
-// Replays `doc` into `out` (which must be fresh). Checks the region id and driving side against `region`.
+// Replays `doc` into `out` (which must be fresh). A region id or driving side stated in the document must match
+// `region`; one the document leaves out is inherited from `region` (driving side comes from the pack unless stated).
 bool build_layout(const LayoutDoc& doc, std::shared_ptr<const RegionPack> region, LoadedLayout& out, std::string& error);
 
-// parse_layout + load the region pack from <data_dir>/regions/<id>/ + build_layout.
+// parse_layout + load the region pack from <data_dir>/regions/<id>/ + build_layout. The file must name its
+// region: nothing else says which pack to load.
 std::unique_ptr<LoadedLayout> load_layout(const std::string& json_text, const std::filesystem::path& data_dir,
+                                          std::string& error);
+// parse_layout + build_layout against a pack the caller already holds. A layout without "region" inherits
+// the pack; one that names a different region is an error.
+std::unique_ptr<LoadedLayout> load_layout(const std::string& json_text, std::shared_ptr<const RegionPack> region,
                                           std::string& error);
 std::unique_ptr<LoadedLayout> load_layout_file(const std::filesystem::path& file, const std::filesystem::path& data_dir,
                                                std::string& error);

@@ -91,7 +91,8 @@ KerbExtent kerb_extent(const RegionPack& region, const RoadType& t) {
     k.left = left;
     k.right = right;
     for (const Lane& l : lanes) {
-        if (l.lane_type != "kerb") continue;
+        const LaneType* klt = region.lane_type(l.lane_type);
+        if (!klt || klt->profile != "kerb") continue;  // by profile, not by the lane type id
         if (l.offset > 0) k.left = std::min(k.left, l.offset - l.width / 2);
         else k.right = std::min(k.right, -l.offset - l.width / 2);
     }
@@ -666,7 +667,7 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
             ArmShape sh;
             sh.spread_left = sh.spread_right = cls.splitter_width / 2;
             sh.length = out_ext + cls.splitter_length * prm.splitter_speed_factor(t->speed_limit);
-            sh.min_taper = std::max(8.0, 0.3 * (sh.length - out_ext));
+            sh.min_taper = std::max(prm.splitter_min_taper, 0.3 * (sh.length - out_ext));
             sh.what = "splitter island";
             ov.arm_shapes[{nd, arm.edge, e->a == nd}] = sh;
         }

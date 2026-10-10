@@ -85,7 +85,7 @@ JunctionArm make_arm(const RoadGraph& graph, const Edge& e, bool at_a, const Reg
         const LaneType* lt = region.lane_type(l.lane_type);
         left = std::max(left, lat + l.width / 2);
         right = std::max(right, -(lat - l.width / 2));
-        if (l.lane_type == "kerb") kerbs.push_back({lat, l.width});
+        if (lt && lt->profile == "kerb") kerbs.push_back({lat, l.width});  // by profile, not by the lane type id
         if (!lt || !lt->connects_at_junctions || l.dir == TravelDir::None) continue;
         LaneRef r;
         r.edge = e.id;
@@ -180,7 +180,7 @@ std::vector<int> major_arm_indices(const std::vector<JunctionArm>& arms) {
 
 std::vector<double> resolve_corner_radii(NodeId node, const std::vector<JunctionArm>& arms,
                                          const JunctionOverrides& overrides, const RegionPack* region) {
-    std::vector<double> r(arms.size(), kDefaultCornerRadius);
+    std::vector<double> r(arms.size(), region ? region->junction.default_corner_radius : kDefaultCornerRadius);
     for (std::size_t k = 0; k < arms.size(); ++k) {
         const std::size_t j = (k + 1) % arms.size();
         // Region default: the larger of the two arms' road-type radii (0 = n/a), else the fallback. With a
@@ -346,8 +346,8 @@ JunctionSet build_plain_junctions(const RoadGraph& graph, const RegionPack& regi
                     const double speed = t ? t->speed_limit : 0;
                     ArmShape sh;
                     (pp.left ? sh.spread_left : sh.spread_right) = R.lane_width;
-                    sh.hold = R.lookup(R.storage, speed, 20.0);
-                    sh.taper = R.lookup(R.taper_ratio, speed, 15.0) * R.lane_width;
+                    sh.hold = R.lookup(R.storage, speed, R.default_storage);
+                    sh.taper = R.lookup(R.taper_ratio, speed, R.default_taper_ratio) * R.lane_width;
                     sh.min_taper = R.min_taper_ratio * R.lane_width;
                     sh.what = "turn pocket";
                     shapes[static_cast<std::size_t>(pp.arm)] = sh;

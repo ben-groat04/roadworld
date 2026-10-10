@@ -14,13 +14,17 @@ namespace cp {
 
 // Geometry of the `interchange` layout (metres, x east, y north; dual carriageway along the x axis).
 struct InterchangeLayoutDims {
-    static constexpr double dual_offset = 5.5;   // each carriageway centre is +-5.5 m from y = 0
     static constexpr double deck_z = 7.0;        // bridge deck level over the dual
     static constexpr double rb_y = 80.0;         // north roundabout centre on the minor road
     static constexpr double rb_radius = 25.0;
     static constexpr double tee_y = 230.0;       // T-junction (150 m north of the roundabout)
     static constexpr double slip_x = 260.0;      // diverge/merge nodes at x = +-260
 };
+
+// Distance of each dual-carriageway edge from the y = 0 centre line: half the carriageway cross-section width plus
+// half the road type's median gap (`a_road_dual`; 5.4 + 1.25 = 6.65 m in the UK pack). The tools fixture
+// (sim_core/tools/scene_fixture.cpp) calls this too, so the two layouts cannot drift. Returns 0 if the type is missing.
+double interchange_dual_offset(const RegionPack& region);
 
 enum class TestLayout { Interchange };
 const char* test_layout_name(TestLayout layout);

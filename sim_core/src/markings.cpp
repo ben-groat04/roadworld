@@ -20,6 +20,7 @@
 #include "cp/geom.h"
 #include "cp/lanes.h"
 #include "cp/render_mesh.h"
+#include "cp/units.h"
 #include "json_util.h"
 #include "nlohmann/json.hpp"
 
@@ -322,11 +323,9 @@ bool flag(const json& j, const char* key, bool def, const std::string& ctx, Err&
 }
 
 double unit_to_ms(const std::string& u, Err& err) {
-    if (u == "mph") return 0.44704;
-    if (u == "kph" || u == "kmh") return 1.0 / 3.6;
-    if (u == "ms" || u == "m/s") return 1.0;
-    err.set("marking rules: unknown speed_unit \"" + u + "\"");
-    return 1.0;
+    double f = 1.0;
+    if (!speed_unit_to_mps(u, f)) err.set("marking rules: unknown speed_unit \"" + u + "\" (expected " + kSpeedUnitSpellings + ")");
+    return f;
 }
 
 MarkCond parse_cond(const json* j, double unit, const std::string& ctx, Err& err) {

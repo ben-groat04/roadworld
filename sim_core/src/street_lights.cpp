@@ -125,10 +125,10 @@ Section build_section(const Edge& e, const RoadType& rt, const RegionPack& regio
     Section sec;
     const std::vector<Lane> lanes = instantiate_lanes(e, rt, region.driving_side);
     if (lanes.empty()) return sec;
-    const double cf = rt.crossfall.value_or(P.default_crossfall);
-    const double H = rt.kerb_upstand.value_or(P.default_kerb_upstand);
-    const double fcf = rt.footway_crossfall.value_or(P.default_footway_crossfall);
-    const double vcf = rt.verge_crossfall.value_or(P.default_verge_crossfall);
+    const double cf = rt.crossfall.value_or(region.render.crossfall);
+    const double H = rt.kerb_upstand.value_or(region.render.kerb_upstand);
+    const double fcf = rt.footway_crossfall.value_or(region.render.footway_crossfall);
+    const double vcf = rt.verge_crossfall.value_or(region.render.verge_crossfall);
 
     double cw_lo = kInf, cw_hi = -kInf;
     for (const Lane& l : lanes) {
@@ -777,7 +777,7 @@ std::vector<StreetLight> roundabout_lights(Ctx& c, const RoundaboutLayout& lay) 
                 }
             const RoadType* rt = c.region.road_type(first->road_type);
             StreetLight l;
-            l.position = {g.centre.x, g.centre.y, (count ? z / count : 0.0) + (rt ? rt->kerb_upstand.value_or(c.P.default_kerb_upstand) : 0.0)};
+            l.position = {g.centre.x, g.centre.y, (count ? z / count : 0.0) + (rt ? rt->kerb_upstand.value_or(c.region.render.kerb_upstand) : 0.0)};
             l.mounting_height = r->mounting_height;
             l.outreach = r->outreach;
             l.style = r->style;

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "cp/units.h"
 #include "json_util.h"
 #include "nlohmann/json.hpp"
 
@@ -131,11 +132,10 @@ LaneTypeTable do_parse_lane_types(const std::string& text, Err& err) {
 }
 
 double speed_unit_to_mps(const std::string& unit, Err& err) {
-    if (unit == "mph") return 0.44704;
-    if (unit == "kph" || unit == "km/h" || unit == "kmh") return 1.0 / 3.6;
-    if (unit == "mps" || unit == "m/s") return 1.0;
-    err.set("region: unknown speed_unit \"" + unit + "\" (expected mph, kph or mps)");
-    return 1.0;
+    double f = 1.0;
+    if (!cp::speed_unit_to_mps(unit, f))
+        err.set("region: unknown speed_unit \"" + unit + "\" (expected " + kSpeedUnitSpellings + ")");
+    return f;
 }
 
 std::vector<CrossSectionSlot> parse_slots(const json* arr, const std::string& ctx,
@@ -349,6 +349,8 @@ void parse_roundabout_extras(const json& rb, RoundaboutRules& r, Err& err) {
             r.size_classes.push_back(k);
         }
     }
+    r.splitter_min_taper = opt_number(rb, "splitter_min_taper_m", r.splitter_min_taper, c, err);
+    if (!err.failed() && !(r.splitter_min_taper >= 0)) err.set(c + ": splitter_min_taper_m must not be negative");
     if (r.apron_island_radius_max < 0) err.set(c + ": apron_island_radius_max_m must not be negative");
 }
 
@@ -376,6 +378,16 @@ void parse_junction_rules(const json& jr, JunctionRules& r, Err& err) {
             r.corner_radius.push_back(k);
         }
     }
+    r.default_corner_radius = opt_number(jr, "default_corner_radius_m", r.default_corner_radius, c, err);
+    if (!err.failed() && !(r.default_corner_radius > 0)) err.set(c + ": default_corner_radius_m must be positive");
+    if (const json* mg = member(jr, "merge")) {
+        const std::string mc = c + ".merge";
+        MergeRules& m = r.merge;
+        m.taper_length = parse_speed_table(member(*mg, "taper_length"), "length_m", mc + ".taper_length", err);
+        m.default_taper_length = opt_number(*mg, "default_taper_length_m", m.default_taper_length, mc, err);
+        m.gore_length = opt_number(*mg, "gore_length_m", m.gore_length, mc, err);
+        if (!err.failed() && (!(m.default_taper_length > 0) || !(m.gore_length >= 0))) err.set(mc + ": a value is out of range");
+    }
     if (const json* sk = member(jr, "skew_factor")) {
         r.skew_min = opt_number(*sk, "min", r.skew_min, c + ".skew_factor", err);
         r.skew_max = opt_number(*sk, "max", r.skew_max, c + ".skew_factor", err);
@@ -396,6 +408,9 @@ void parse_junction_rules(const json& jr, JunctionRules& r, Err& err) {
         t.min_storage = opt_number(*tp, "min_storage_m", t.min_storage, tc, err);
         t.taper_ratio = parse_speed_table(member(*tp, "taper_ratio"), "ratio", tc + ".taper_ratio", err);
         t.storage = parse_speed_table(member(*tp, "storage"), "length_m", tc + ".storage", err);
+        t.default_storage = opt_number(*tp, "default_storage_m", t.default_storage, tc, err);
+        t.default_taper_ratio = opt_number(*tp, "default_taper_ratio", t.default_taper_ratio, tc, err);
+        if (!err.failed() && (!(t.default_storage > 0) || !(t.default_taper_ratio >= 1))) err.set(tc + ": default_storage_m / default_taper_ratio out of range");
         if (!err.failed() && (!(t.lane_width > 1.5 && t.lane_width < 6) || t.max_bend < 0 || t.min_minor_angle < 0 ||
                               t.max_minor_angle < t.min_minor_angle || !(t.min_taper_ratio >= 1) || t.min_storage < 0))
             err.set(tc + ": a value is out of range");
@@ -442,6 +457,18 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
                               r.entry_corner_radius < 0 || r.exit_corner_radius < 0 || r.ring_corner_radius_factor < 0))
             err.set(c + ": a value is out of range");
         if (!err.failed()) parse_roundabout_extras(*rb, r, err);
+    }
+    if (const json* rr = member(rj, "render")) {
+        RenderRules& r = pack.render;
+        const std::string c = "region.render";
+        r.crossfall = opt_number(*rr, "crossfall", r.crossfall, c, err);
+        r.kerb_upstand = opt_number(*rr, "kerb_upstand_m", r.kerb_upstand, c, err);
+        r.footway_crossfall = opt_number(*rr, "footway_crossfall", r.footway_crossfall, c, err);
+        r.verge_crossfall = opt_number(*rr, "verge_crossfall", r.verge_crossfall, c, err);
+        if (!err.failed() && !(r.crossfall >= 0 && r.crossfall <= 0.2 && r.kerb_upstand >= 0 && r.kerb_upstand <= 0.5 &&
+                               r.footway_crossfall >= 0 && r.footway_crossfall <= 0.2 && r.verge_crossfall >= 0 &&
+                               r.verge_crossfall <= 0.5))
+            err.set(c + ": a value is out of range");
     }
     if (const json* jr = member(rj, "junction")) parse_junction_rules(*jr, pack.junction, err);
     if (const json* gr = member(rj, "grading")) {
@@ -555,6 +582,12 @@ double TurnPocketRules::lookup(const std::vector<SpeedFactor>& table, double spe
     for (const SpeedFactor& f : table)
         if (speed_limit <= f.max_speed + 1e-9) return f.factor;
     return table.empty() ? fallback : table.back().factor;
+}
+
+double MergeRules::taper_length_for(double design_speed) const {
+    for (const SpeedFactor& f : taper_length)
+        if (design_speed <= f.max_speed + 1e-9) return f.factor;
+    return taper_length.empty() ? default_taper_length : taper_length.back().factor;
 }
 
 double JunctionRules::corner_radius_for(int class_a, int class_b) const {

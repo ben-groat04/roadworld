@@ -20,17 +20,13 @@
 
 namespace cp {
 
-// Parametric taper table (m) by design speed. TODO: move to the region pack (data).
-double merge_taper_length(double design_speed_ms) {
-    const double kph = design_speed_ms * 3.6;
-    if (kph <= 80.0) return 75.0;    // up to ~50 mph
-    if (kph <= 100.0) return 110.0;  // dual carriageway
-    return 150.0;                    // motorway
+// Taper length (m) by main carriageway design speed: the region pack's junction.merge.taper_length table.
+double merge_taper_length(const RegionPack& region, double design_speed_ms) {
+    return region.junction.merge.taper_length_for(design_speed_ms);
 }
 
 namespace {
 
-constexpr double kGoreLength = 10.0;  // m of gore triangle beyond the nose point
 
 using Ring = std::vector<Vec2>;
 
@@ -202,13 +198,13 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
     const double ka = A(a1).kerb_left, kb = A(a2).kerb_right;
     const double d1 = ka / std::tan(theta) + kb / std::sin(theta);
     const double d2 = ka / std::sin(theta) + kb / std::tan(theta);
-    junction.trims[static_cast<std::size_t>(a1)] = clampt(a1, d1 + kGoreLength);
-    junction.trims[static_cast<std::size_t>(a2)] = clampt(a2, d2 + kGoreLength);
+    junction.trims[static_cast<std::size_t>(a1)] = clampt(a1, d1 + region.junction.merge.gore_length);
+    junction.trims[static_cast<std::size_t>(a2)] = clampt(a2, d2 + region.junction.merge.gore_length);
     double speed = 0;
     if (const Edge* e = graph.edge(A(pi).edge))
         if (const RoadType* t = region.road_type(e->road_type)) speed = t->design_speed;
     if (speed <= 0) speed = A(pi).road_class / 3.6;
-    junction.trims[static_cast<std::size_t>(oi)] = clampt(oi, merge_taper_length(speed));
+    junction.trims[static_cast<std::size_t>(oi)] = clampt(oi, merge_taper_length(region, speed));
     const auto& tr = junction.trims;
 
     // ---- connectors
@@ -340,7 +336,7 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
         }
     }
     if (!gore_ok)
-        set_degraded(junction, "gore does not fit: the nose is " + std::to_string(std::max(d1, d2) + kGoreLength) +
+        set_degraded(junction, "gore does not fit: the nose is " + std::to_string(std::max(d1, d2) + region.junction.merge.gore_length) +
                                    " m from the node but the arms can be trimmed to only " +
                                    std::to_string(std::min(t1, t2)) + " m (edges too short for a " +
                                    std::to_string(theta * 180 / kPi) + " degree slip)");

@@ -136,6 +136,7 @@ struct RoundaboutRules {
     // scalar fields above (entry_corner_radius, exit_corner_radius, splitter_length, splitter_width).
     std::vector<RoundaboutSizeClass> size_classes;
     std::vector<SpeedFactor> splitter_speed_factors;  // empty = factor 1
+    double splitter_min_taper = 8.0;                  // m, shortest taper a splitter island may be squeezed to when space is short
     double apron_island_radius_max = 0;               // m; the apron is added when the island radius is below this
     std::string apron_surface = "paving";             // render surface of the over-run apron
 
@@ -166,11 +167,26 @@ struct TurnPocketRules {
     double min_storage = 10.0;         // m, shortest pocket lane (storage plus deceleration) accepted
     std::vector<SpeedFactor> taper_ratio;   // N of the 1:N taper by the through road speed limit (factor = N)
     std::vector<SpeedFactor> storage;       // m of pocket lane by the through road speed limit (factor = metres)
+    // Used only when the matching table above is empty.
+    double default_storage = 20.0;          // m ("default_storage_m")
+    double default_taper_ratio = 15.0;      // N of the 1:N taper ("default_taper_ratio")
     double lookup(const std::vector<SpeedFactor>& table, double speed_limit, double fallback) const;
+};
+
+// Merge / diverge geometry (region.json junction.merge).
+struct MergeRules {
+    // Taper length (m) of the odd arm by the main carriageway design speed (factor = metres); the last row is the
+    // open end. Empty = default_taper_length.
+    std::vector<SpeedFactor> taper_length;
+    double default_taper_length = 75.0;  // m ("default_taper_length_m"), used only when the table is empty
+    double gore_length = 10.0;           // m of gore triangle beyond the nose point ("gore_length_m")
+    double taper_length_for(double design_speed) const;  // design_speed in m/s
 };
 
 // Junction shaping rules (region.json "junction" object).
 struct JunctionRules {
+    double default_corner_radius = 6.0;  // m, kerb radius when neither the class table nor the road types give one
+    MergeRules merge;
     // Default corner radius by the pair of road classes meeting; first match wins, none = the larger of the two
     // road types' own corner_radius. A player override always wins.
     std::vector<CornerRadiusRule> corner_radius;
@@ -226,11 +242,24 @@ struct StructureRules {
     bool wall_allow_short_panels = false;  // true: panels are halved where the step limit is exceeded
 };
 
+// Render cross-section shape used when a road type leaves the field unset (region.json "render" object;
+// RoadType::crossfall etc. win). Crossfalls are rise over run.
+struct RenderRules {
+    double crossfall = 0.025;           // "crossfall"
+    double kerb_upstand = 0.125;        // m, "kerb_upstand_m"; also the roundabout island kerb when island_kerb_upstand is 0
+    double footway_crossfall = 0.02;    // "footway_crossfall": footways fall toward the carriageway
+    double verge_crossfall = 0.05;      // "verge_crossfall": verges fall away from the carriageway
+};
+
 struct RegionPack {
     std::string id;
     int version = 0;
     DrivingSide driving_side = DrivingSide::Left;
+    // RESERVED: read from "headroom_m" and kept, but nothing uses it yet. It is the minimum vertical clearance of a
+    // bridge soffit over a road; the structure clearance checks (structure_mesh / grading) will read it. Today those
+    // use StructureRules::pier_road_clearance and the soffit logic instead.
     double headroom_m = 0;
+    RenderRules render;
     double plan_crossing_junction_dz_m = 0;
     RoundaboutRules roundabout;
     JunctionRules junction;

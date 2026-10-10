@@ -8,6 +8,7 @@
 #include "doctest/doctest.h"
 #include "nlohmann/json.hpp"
 #include "scene_fixture.h"
+#include "cp/test_layouts.h"
 
 using namespace cp;
 using namespace cp::tools;
@@ -118,7 +119,8 @@ TEST_CASE("interchange: bridge clearance over both carriageways") {
     const Fixture& f = fx();
     const RoadGraph& g = f.scene->graph;
     // Deck: lowest bridge sample of the minor road within 12 m of each carriageway crossing.
-    for (const double cy : {InterchangeDims::dual_offset, -InterchangeDims::dual_offset}) {
+    const double dual_offset = cp::interchange_dual_offset(*f.scene->region);
+    for (const double cy : {dual_offset, -dual_offset}) {
         double deck = -1e9, road = 1e9;
         bool on_bridge = false;
         for (const auto& [id, e] : g.edges()) {

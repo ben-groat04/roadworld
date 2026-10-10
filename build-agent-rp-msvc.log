@@ -1,0 +1,94 @@
+MSBuild version 18.10.1-1.26427.6+3cd27c13e for .NET Framework
+
+  1>Checking Build System
+  Building Custom Rule C:/Users/bgbg0/Documents/Programming/roadworld/third_party/clipper2/CMakeLists.txt
+  clipper.engine.cpp
+  clipper.offset.cpp
+  clipper.rectclip.cpp
+  Generating Code...
+  clipper2.vcxproj -> C:\Users\bgbg0\Documents\Programming\roadworld\build-agent-rp-msvc\clipper2\Release\clipper2.lib
+  Building Custom Rule C:/Users/bgbg0/Documents/Programming/roadworld/sim_core/CMakeLists.txt
+  command.cpp
+  clothoid.cpp
+  clothoid_chain.cpp
+  vertical_profile.cpp
+  road_graph.cpp
+  road_commands.cpp
+  region_pack.cpp
+  lanes.cpp
+  edge_sampling.cpp
+  heightfield.cpp
+  earthworks.cpp
+  grading.cpp
+  junction.cpp
+  junction_connectors.cpp
+  layout_io.cpp
+  markings.cpp
+  triangulate.cpp
+  render_mesh.cpp
+  street_lights.cpp
+C:\Users\bgbg0\Documents\Programming\roadworld\sim_core\src\street_lights.cpp(124,109): warning C4100: 'P': unreferenced parameter [C:\Users\bgbg0\Documents\Programming\roadworld\build-agent-rp-msvc\sim_core\sim_core.vcxproj]
+  structure_mesh.cpp
+  Generating Code...
+  Compiling...
+  test_layouts.cpp
+  world_cache.cpp
+  Generating Code...
+  junction_geometry.cpp
+  junction_merge.cpp
+  junction_roundabout.cpp
+  Generating Code...
+  sim_core.vcxproj -> C:\Users\bgbg0\Documents\Programming\roadworld\build-agent-rp-msvc\sim_core\Release\sim_core.lib
+  Building Custom Rule C:/Users/bgbg0/Documents/Programming/roadworld/sim_core/tools/CMakeLists.txt
+  bench.cpp
+  bench.vcxproj -> C:\Users\bgbg0\Documents\Programming\roadworld\build-agent-rp-msvc\sim_core\tools\Release\bench.exe
+  Building Custom Rule C:/Users/bgbg0/Documents/Programming/roadworld/sim_core/tools/CMakeLists.txt
+  scene_fixture.cpp
+  scene_roundabout.cpp
+  scene_json.cpp
+  Generating Code...
+  scene_tools.vcxproj -> C:\Users\bgbg0\Documents\Programming\roadworld\build-agent-rp-msvc\sim_core\tools\Release\scene_tools.lib
+  Building Custom Rule C:/Users/bgbg0/Documents/Programming/roadworld/sim_core/tools/CMakeLists.txt
+  export_mesh.cpp
+  export_mesh.vcxproj -> C:\Users\bgbg0\Documents\Programming\roadworld\build-agent-rp-msvc\sim_core\tools\Release\export_mesh.exe
+  Building Custom Rule C:/Users/bgbg0/Documents/Programming/roadworld/sim_core/tools/CMakeLists.txt
+  export_scene.cpp
+  export_scene.vcxproj -> C:\Users\bgbg0\Documents\Programming\roadworld\build-agent-rp-msvc\sim_core\tools\Release\export_scene.exe
+  Building Custom Rule C:/Users/bgbg0/Documents/Programming/roadworld/tests/CMakeLists.txt
+  main.cpp
+  test_ids.cpp
+  test_command.cpp
+  test_clothoid.cpp
+  test_clothoid_chain.cpp
+  test_vertical_profile.cpp
+  test_road_graph.cpp
+  test_region_pack.cpp
+  test_lanes.cpp
+  test_edge_sampling.cpp
+  test_heightfield.cpp
+  test_earthworks.cpp
+  test_grading.cpp
+  test_junction_interface.cpp
+  test_junction_geometry.cpp
+  test_junction_connectors.cpp
+  test_junction_connectors_fuzz.cpp
+  test_junction_merge.cpp
+  test_junction_roundabout.cpp
+  test_junction_round3.cpp
+  Generating Code...
+  Compiling...
+  test_layout_io.cpp
+  test_markings.cpp
+  test_export_scene.cpp
+  test_render_mesh.cpp
+  test_edit_loop.cpp
+  test_street_lights.cpp
+  test_structure_mesh.cpp
+  test_test_layouts.cpp
+  test_geom.cpp
+  test_region_neutrality.cpp
+  test_world_cache.cpp
+  Generating Code...
+  sim_core_tests.vcxproj -> C:\Users\bgbg0\Documents\Programming\roadworld\build-agent-rp-msvc\tests\Release\sim_core_tests.exe
+  Building Custom Rule C:/Users/bgbg0/Documents/Programming/roadworld/CMakeLists.txt
+done 0

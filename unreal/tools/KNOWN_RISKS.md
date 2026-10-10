@@ -155,3 +155,22 @@ New-wrapper rule: every new `Private/SimCore/Wrap_<name>.cpp` must copy the FULL
 Verified matching our calls: `CreateMeshSection(int32, TArray<FVector>, TArray<int32>, TArray<FVector>, TArray<FVector2D>, TArray<FColor>, TArray<FProcMeshTangent>, bool)` (8-arg inline overload exists, still double `FVector`/`FVector2D`, so rows H1/H2 should not trigger); `FProcMeshTangent(FVector,bool)`, `(float,float,float)` ctors; `bUseAsyncCooking` and `bUseComplexAsSimpleCollision` are public members (H6 will not trigger); `IPluginManager::FindPlugin(FStringView)` exists; `FTCHARToUTF8::Get()/Length()` exist. Not checked: DefaultEngine.ini cvars.
 
 `MD_Surface` needs `#include "MaterialDomain.h"` in 5.8: hit on the first compile, fixed 10 Oct 2026. (Added to `CPRoadMeshActor.cpp`; section I has no table, so this is a plain line.)
+
+## J. Editor-Python names verified against the 5.8.3 headers (first run, 10-11 Oct 2026)
+
+Verified and corrected:
+- `AVolumetricCloud` component: Python `volumetric_cloud_component` (was guess `cloud_component`); `Components/VolumetricCloudComponent.h:264`. `VolumetricCloudComponent.material` exists (`:71`).
+- Height fog: `enable_volumetric_fog` (was `volumetric_fog`), `bEnableVolumetricFog`, `Components/ExponentialHeightFogComponent.h:136`; `fog_density` and actor property `component` (private VisibleAnywhere) work.
+- `MaterialProperty.MP_PIXEL_DEPTH_OFFSET` does NOT exist: `MP_PixelDepthOffset` is `UMETA(Hidden)` (`Engine/Public/SceneTypes.h:177`). No pixel depth offset from Python; `M_Marking` has none, markings rely on `MarkingLiftMillimetres`. The old "sign unverified" row 18 no longer applies.
+- `find_actors`: `EditorActorSubsystem` has no `get_all_level_actors_of_class`; classes from `load_class` are `unreal.Class` objects, not Python types, so `isinstance` fails (and `__name__` is missing). Now filtered with `a.get_class().is_child_of(cls)`.
+- Sun `intensity` 10 lux renders black with `ExtendDefaultLuminanceRange` and EV100 8..15; now 100000.
+- `-ExecutePythonScript` quits the editor on the tick after the script returns unless `unreal.EditorPythonScripting.set_keep_python_script_alive(True)` (`PythonScriptPlugin/.../EditorPythonScriptingLibrary.h`, ScriptName "EditorPythonScripting"); needed by the async screenshot state machine. Done in `screenshot_views.py`.
+- `unreal.AutomationLibrary.take_high_res_screenshot(res_x, res_y, filename, camera, mask_enabled, capture_hdr, tolerance, notes, delay, force_game_view)` matches `AutomationBlueprintFunctionLibrary.h:143`; absolute paths work.
+- Verified by running without warning: DirectionalLight `atmosphere_sun_light`, `atmosphere_sun_light_index`, `intensity`, `cast_shadows`, `use_temperature`, `temperature`, `cast_cloud_shadows`; SkyLight `real_time_capture`, `source_type`; PostProcessVolume `unbound`, `settings` with `override_auto_exposure_*` / `auto_exposure_*`; `rebuild_all`, `surface_materials`, `marking_materials` (dict to TMap); `LevelEditorSubsystem.load_level/save_current_level`; `UnrealEditorSubsystem.set_level_viewport_camera_info`.
+- Not exposed to Python: `world.is_partitioned_world` (logged "unknown").
+
+Other first-run facts:
+- Rendering start is fatal without `r.SkinCache.CompileShaders=True` when `r.RayTracing=True` (`RenderCore/Private/RenderUtils.cpp:1045`); added to `DefaultEngine.ini`.
+- The Open World template brings a Landscape (+64 proxies) that buried the roads: `strip_template_terrain()` deletes it. Moving an external (World Partition) actor does not dirty it, so the move is not saved: replace the actor instead.
+- Black first frames: shaders still compiling; `screenshot_views.py` now takes 160x90 probe shots until mean luminance >= 6/255 (cap `CP_PROBE_MAX_SECONDS`, default 2400). With a warm DDC this passed after 1-2 s.
+- RTX 4060 is D3D12 adapter 0 and is picked by default.

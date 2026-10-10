@@ -185,11 +185,13 @@ void parse_doc(const json& root, LayoutDoc& doc, Err& err) {
     if (const json* v = member(root, "version"); v && (!v->is_number() || v->get<double>() != 1))
         err.set("layout: unsupported \"version\" (expected 1)");
     doc.name = get_string(root, "name", "layout", err, false);
-    doc.region = get_string(root, "region", "layout", err, false, "uk");
-    const std::string side = lower(get_string(root, "driving_side", "layout", err, false, "left"));
-    if (side == "left") doc.driving_side = DrivingSide::Left;
-    else if (side == "right") doc.driving_side = DrivingSide::Right;
-    else err.set("layout: \"driving_side\" must be \"left\" or \"right\"");
+    doc.region = get_string(root, "region", "layout", err, false);  // no default: the caller's pack decides
+    if (member(root, "driving_side")) {
+        const std::string side = lower(get_string(root, "driving_side", "layout", err, false));
+        if (side == "left") doc.driving_side = DrivingSide::Left;
+        else if (side == "right") doc.driving_side = DrivingSide::Right;
+        else err.set("layout: \"driving_side\" must be \"left\" or \"right\"");
+    }
     if (err.failed()) return;
 
     const json* roads = need(root, "roads", "layout", err);
@@ -560,8 +562,8 @@ std::string layout_to_json(const LayoutDoc& doc) {
     root["format"] = "cp-test-layout";
     root["version"] = 1;
     root["name"] = doc.name;
-    root["region"] = doc.region;
-    root["driving_side"] = doc.driving_side == DrivingSide::Left ? "left" : "right";
+    if (!doc.region.empty()) root["region"] = doc.region;
+    if (doc.driving_side) root["driving_side"] = *doc.driving_side == DrivingSide::Left ? "left" : "right";
     json roads = json::array();
     for (const auto& r : doc.roads) {
         json jr = json::object();
@@ -654,11 +656,11 @@ bool build_layout(const LayoutDoc& doc, std::shared_ptr<const RegionPack> region
         error = "layout: no region pack";
         return false;
     }
-    if (doc.region != region->id) {
+    if (!doc.region.empty() && doc.region != region->id) {
         error = "layout: region \"" + doc.region + "\" does not match the loaded pack \"" + region->id + "\"";
         return false;
     }
-    if (doc.driving_side != region->driving_side) {
+    if (doc.driving_side && *doc.driving_side != region->driving_side) {
         error = "layout: \"driving_side\" does not match the region pack (one setting per save)";
         return false;
     }
@@ -675,6 +677,8 @@ bool build_layout(const LayoutDoc& doc, std::shared_ptr<const RegionPack> region
         }
     }
     out.doc = doc;
+    out.doc.region = region->id;  // resolved: stated and checked, or inherited from the pack
+    out.doc.driving_side = region->driving_side;
     out.region = region;
     out.graph.set_region(region);
     Builder b{out, {}};
@@ -700,6 +704,10 @@ std::unique_ptr<LoadedLayout> load_layout(const std::string& json_text, const st
                                           std::string& error) {
     LayoutDoc doc;
     if (!parse_layout(json_text, doc, error)) return nullptr;
+    if (doc.region.empty()) {
+        error = "layout: \"region\" is required (no region pack was supplied to inherit)";
+        return nullptr;
+    }
     auto pack = load_region_pack_by_id(data_dir, doc.region);
     if (!pack) {
         error = "layout: " + pack.error;
@@ -707,6 +715,15 @@ std::unique_ptr<LoadedLayout> load_layout(const std::string& json_text, const st
     }
     auto out = std::make_unique<LoadedLayout>();
     if (!build_layout(doc, std::make_shared<const RegionPack>(*pack), *out, error)) return nullptr;
+    return out;
+}
+
+std::unique_ptr<LoadedLayout> load_layout(const std::string& json_text, std::shared_ptr<const RegionPack> region,
+                                          std::string& error) {
+    LayoutDoc doc;
+    if (!parse_layout(json_text, doc, error)) return nullptr;
+    auto out = std::make_unique<LoadedLayout>();
+    if (!build_layout(doc, std::move(region), *out, error)) return nullptr;
     return out;
 }
 

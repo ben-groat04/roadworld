@@ -101,10 +101,21 @@ def world_partition_state():
         return "unknown (%s)" % e
 
 
+def cls_name(cls):
+    """Name of either a Python wrapper type (unreal.SkyLight) or a UClass object (from load_class)."""
+    try:
+        return cls.__name__
+    except AttributeError:
+        return cls.get_name()
+
+
 def find_actors(eas, cls):
-    return list(eas.get_all_level_actors_of_class(cls)) if hasattr(eas, "get_all_level_actors_of_class") else [
-        a for a in eas.get_all_level_actors() if isinstance(a, cls)
-    ]
+    """Level actors that are instances of cls (a Python wrapper type or a UClass). EditorActorSubsystem has no
+    *_of_class query, and isinstance() needs a Python type, so UClass objects go through is_a()."""
+    if isinstance(cls, type):
+        return [a for a in eas.get_all_level_actors() if isinstance(a, cls)]
+    return [a for a in eas.get_all_level_actors() if a.get_class().is_child_of(cls)] if hasattr(unreal.Class, "is_child_of") else [
+        a for a in eas.get_all_level_actors() if a.get_class() == cls]
 
 
 def ensure(eas, cls, label, location=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0)):
@@ -113,16 +124,16 @@ def ensure(eas, cls, label, location=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 0.0)):
     if found:
         a = found[0]
         if len(found) > 1:
-            cp.warn("%d actors of %s exist; using the first (%s)" % (len(found), cls.__name__, a.get_actor_label()))
-        cp.log("reuse %s '%s'" % (cls.__name__, a.get_actor_label()))
+            cp.warn("%d actors of %s exist; using the first (%s)" % (len(found), cls_name(cls), a.get_actor_label()))
+        cp.log("reuse %s '%s'" % (cls_name(cls), a.get_actor_label()))
         return a
     loc = unreal.Vector(location[0], location[1], location[2])
     rot = unreal.Rotator(roll=rotation[0], pitch=rotation[1], yaw=rotation[2])
     a = eas.spawn_actor_from_class(cls, loc, rot)
     if a is None:
-        raise cp.ScriptError("spawn_actor_from_class(%s) returned None" % cls.__name__)
+        raise cp.ScriptError("spawn_actor_from_class(%s) returned None" % cls_name(cls))
     a.set_actor_label(label)
-    cp.log("spawned %s '%s'" % (cls.__name__, label))
+    cp.log("spawned %s '%s'" % (cls_name(cls), label))
     return a
 
 
@@ -141,7 +152,7 @@ def configure_sun(sun):
     comp.set_mobility(unreal.ComponentMobility.MOVABLE)
     setp(comp, "atmosphere_sun_light", True, "sun")
     setp(comp, "atmosphere_sun_light_index", 0, "sun")
-    setp(comp, "intensity", 10.0, "sun")            # lux, physical-ish daylight with auto exposure
+    setp(comp, "intensity", 100000.0, "sun")        # lux: real daylight; 10 (the engine default) is for non-extended exposure and rendered black here
     setp(comp, "cast_shadows", True, "sun")
     setp(comp, "use_temperature", True, "sun")
     setp(comp, "temperature", 6500.0, "sun")
@@ -161,14 +172,12 @@ def configure_sky_light(sky):
 
 def configure_fog(fog):
     comp = fog.get_editor_property("component")
-    setp(comp, "volumetric_fog", True, "fog")
+    setp(comp, "enable_volumetric_fog", True, "fog")  # verified: bEnableVolumetricFog, ExponentialHeightFogComponent.h:136
     setp(comp, "fog_density", 0.01, "fog")
 
 
 def configure_cloud(cloud):
-    comp = cloud.get_editor_property("cloud_component")  # VERIFY property name; the actor may expose 'component'
-    if comp is None:
-        comp = cloud.get_editor_property("component")
+    comp = cloud.get_editor_property("volumetric_cloud_component")  # verified: AVolumetricCloud::VolumetricCloudComponent, Components/VolumetricCloudComponent.h:264
     mat = unreal.load_asset(CLOUD_MATERIAL)
     if mat is None:
         cp.warn("cloud material %s not found; clouds will be invisible until a material is assigned" % CLOUD_MATERIAL)
@@ -193,17 +202,44 @@ def configure_post_process(ppv):
         cp.warn("exposure limits may not have been applied (property names differ?); set them in the volume's Details panel")
 
 
+def strip_template_terrain(eas):
+    """The Open World template ships a rolling Landscape (+ 64 streaming proxies) and an SM_SkySphere. The landscape
+    buries the generated roads (found at the first screenshots) and the sky sphere fights SkyAtmosphere: delete them."""
+    n = 0
+    for a in list(eas.get_all_level_actors()):
+        cname = a.get_class().get_name()
+        if cname.startswith("Landscape") or (cname == "StaticMeshActor" and a.get_actor_label() == "SM_SkySphere"):
+            if eas.destroy_actor(a):
+                n += 1
+    if n:
+        cp.log("removed %d template terrain/sky actors (Landscape*, SM_SkySphere)" % n)
+
+
+FLOOR_Z_CM = -3000.0  # the interchange has cuttings/underpasses; a floor at z=-10 cm hid the road in the first screenshots
+
+
 def ensure_floor(eas):
+    mat_path = "%s/grass/MI_grass" % SURFACE_ROOT
+    mat = unreal.load_asset(mat_path) if asset_exists(mat_path) else None
     for a in find_actors(eas, unreal.StaticMeshActor):
         if a.get_actor_label() == "CP_Floor":
-            cp.log("reuse floor CP_Floor")
-            return a
+            if abs(a.get_actor_location().z - FLOOR_Z_CM) < 1.0:
+                cp.log("reuse floor CP_Floor")
+                return a
+            # Moving an external (World Partition) actor does not mark it dirty, so the move was silently not saved:
+            # replace it instead (spawning does dirty the package).
+            old_z = a.get_actor_location().z
+            eas.destroy_actor(a)
+            cp.log("replacing floor CP_Floor (was at z=%g cm)" % old_z)
+            break
     mesh = unreal.load_asset(PLANE_MESH)
     if mesh is None:
         raise cp.ScriptError("engine plane mesh %s not found" % PLANE_MESH)
-    a = eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(10000.0, 12500.0, -10.0), unreal.Rotator(roll=0.0, pitch=0.0, yaw=0.0))
+    a = eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(10000.0, 12500.0, FLOOR_Z_CM), unreal.Rotator(roll=0.0, pitch=0.0, yaw=0.0))
     a.set_actor_label("CP_Floor")
     a.get_editor_property("static_mesh_component").set_static_mesh(mesh)
+    if mat is not None:
+        a.get_editor_property("static_mesh_component").set_material(0, mat)
     a.set_actor_scale3d(unreal.Vector(2000.0, 2000.0, 1.0))  # plane is 100 cm: 2000x => 2 km square
     cp.log("spawned floor CP_Floor (2 km)")
     return a
@@ -244,11 +280,11 @@ def ensure_marking_materials(colours):
             colour.set_editor_property("default_value", unreal.LinearColor(0.8, 0.8, 0.8, 1.0))
             rough = mel.create_material_expression(parent, unreal.MaterialExpressionConstant, -600, 200)
             rough.set_editor_property("r", 0.55)
-            pdo = mel.create_material_expression(parent, unreal.MaterialExpressionConstant, -600, 400)
-            pdo.set_editor_property("r", MARKING_DEPTH_OFFSET_CM)
             mel.connect_material_property(colour, "", unreal.MaterialProperty.MP_BASE_COLOR)
             mel.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
-            mel.connect_material_property(pdo, "", unreal.MaterialProperty.MP_PIXEL_DEPTH_OFFSET)  # VERIFY enum name
+            # MP_PixelDepthOffset is UMETA(Hidden) in Engine/Public/SceneTypes.h:177, so Python has no
+            # unreal.MaterialProperty.MP_PIXEL_DEPTH_OFFSET: no pixel depth offset from script. Markings rely on the 3 mm mesh lift.
+            cp.warn("M_Marking has no pixel depth offset (enum hidden from Python); relying on MarkingLiftMillimetres")
             mel.recompile_material(parent)
             unreal.EditorAssetLibrary.save_loaded_asset(parent)
             cp.log("created %s" % parent_path)
@@ -316,6 +352,7 @@ def main():
     configure_fog(ensure(eas, unreal.ExponentialHeightFog, "CP_HeightFog", (0, 0, 0)))
     configure_cloud(ensure(eas, unreal.VolumetricCloud, "CP_Clouds"))
     configure_post_process(ensure(eas, unreal.PostProcessVolume, "CP_PostProcess"))
+    strip_template_terrain(eas)
     ensure_floor(eas)
     ensure(eas, unreal.PlayerStart, "CP_PlayerStart", (-3000.0, 0.0, 200.0), (0, 0, 0))
     if mesh_cls is not None:

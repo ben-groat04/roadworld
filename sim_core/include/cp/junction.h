@@ -46,6 +46,7 @@ enum class NodeClass {
 
 // Merge/Diverge test (classify_arms): all three arms one-way, the two same-direction arms
 // separated by less than kMergeMaxAngle, the odd arm at least kMergeMinOppositeAngle from both.
+// Topology thresholds of the classifier (what counts as "nearly parallel" / "opposite"), not design values: left in code.
 inline constexpr double kMergeMaxAngle = 0.7854;         // 45 degrees
 inline constexpr double kMergeMinOppositeAngle = 2.3562;  // 135 degrees
 
@@ -102,7 +103,9 @@ struct JunctionArm {
     bool one_way() const { return inbound_count() == 0 || outbound_count() == 0; }
 };
 
-inline constexpr double kArmSampleLength = 40.0;  // m; max trim of a normal junction (merge/diverge trims may reach edge_length / 2)
+// Numerical bound, not a design value: arm centrelines are sampled this far from the node and a normal junction trim
+// never exceeds it (merge/diverge trims may reach edge_length / 2). Left in code.
+inline constexpr double kArmSampleLength = 40.0;  // m
 
 // Point on the arm at arc length s from the node and lateral offset (+ left of heading_out),
 // plus the local outward heading. s is clamped to the arm centreline (0..edge_length).
@@ -321,7 +324,9 @@ struct JunctionOverrides {
 
 // ---------------------------------------------------------------- functions
 
-inline constexpr double kDefaultCornerRadius = 6.0;  // m; fallback when the region pack gives no corner_radius_m
+// Fallback only for callers with no region pack (resolve_corner_radii with a null region); with a pack the radius
+// is JunctionRules::default_corner_radius (region.json junction.default_corner_radius_m).
+inline constexpr double kDefaultCornerRadius = 6.0;  // m
 
 // Real (junction.cpp). Arms of `node` in CCW order, with lanes from instantiate_lanes using
 // region.driving_side. A loop edge (a == b) yields two arms with the same edge id.
@@ -374,10 +379,10 @@ std::vector<Vec3> make_connector_path(const JunctionArm& from_arm, const LaneRef
 void generate_geometry(Junction& junction, const RoadGraph& graph, const RegionPack& region,
                        const JunctionOverrides& overrides);
 
-// [C] Taper length (m) of a merge/diverge from the main carriageway design speed (m/s). Parametric
-// table in junction_merge.cpp (should move to the region pack). The odd arm's trim is the full taper,
+// [C] Taper length (m) of a merge/diverge from the main carriageway design speed (m/s): the region pack's
+// junction.merge.taper_length table. The odd arm's trim is the full taper,
 // clamped only to half the edge length.
-double merge_taper_length(double design_speed_ms);
+double merge_taper_length(const RegionPack& region, double design_speed_ms);
 
 // [C] For cls Merge/Diverge only: sets trims, connectors (lane add/drop and taper), corners,
 // carriageway, pavements, crossings, replacing both A and B for that node.

@@ -6,6 +6,12 @@
   "speed_unit": "km/h",
   "headroom_m": 4.6,
   "plan_crossing_junction_dz_m": 1.4,
+  "render": {
+    "crossfall": 0.033,
+    "kerb_upstand_m": 0.155,
+    "footway_crossfall": 0.025,
+    "verge_crossfall": 0.065
+  },
   "grading": {
     "formation_drop_m": 0.22,
     "batter": 2.6,
@@ -53,6 +59,7 @@
       { "max_speed_kph": 80, "factor": 1.3 },
       { "factor": 1.5 }
     ],
+    "splitter_min_taper_m": 6,
     "apron_island_radius_max_m": 12,
     "apron_surface": "grass"
   },
@@ -69,6 +76,17 @@
       { "minor_max": 85, "radius_m": 13 },
       { "radius_m": 17 }
     ],
+    "default_corner_radius_m": 7.5,
+    "merge": {
+      "taper_length": [
+        { "max_speed_kph": 70, "length_m": 60 },
+        { "max_speed_kph": 100, "length_m": 95 },
+        { "max_speed_kph": 120, "length_m": 125 },
+        { "length_m": 160 }
+      ],
+      "default_taper_length_m": 65,
+      "gore_length_m": 14
+    },
     "skew_factor": { "min": 0.7, "max": 1.35 },
     "turn_pockets": {
       "enabled": true,
@@ -80,6 +98,8 @@
       "max_minor_angle_rad": 2.0,
       "min_taper_ratio": 9,
       "min_storage_m": 12,
+      "default_storage_m": 26,
+      "default_taper_ratio": 18,
       "taper_ratio": [
         { "max_speed_kph": 40, "ratio": 12 },
         { "max_speed_kph": 60, "ratio": 17 },

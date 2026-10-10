@@ -24,6 +24,7 @@ Untested against 5.8: every VERIFY line. The script fails loudly (CP_PY_RESULT: 
 import math
 import os
 import sys
+import time
 
 sys.path.insert(0, os.environ.get("CP_PY_DIR", os.path.dirname(os.path.abspath(__file__))))
 import cp_common as cp  # noqa: E402
@@ -70,6 +71,53 @@ VIEWS = INTERCHANGE_VIEWS
 WARMUP_FIRST = 600   # frames before the first shot (shader compile / Lumen settling)
 WARMUP_NEXT = 120
 SHOT_TIMEOUT = 900   # frames to wait for a file after requesting
+PROBE_MIN_MEAN = 6.0          # mean 8-bit luminance of a 160x90 probe shot that counts as "lit"
+PROBE_INTERVAL = 300          # frames between probes
+PROBE_MAX_SECONDS = float(os.environ.get("CP_PROBE_MAX_SECONDS", "2400"))
+
+
+def png_mean(path):
+    """Mean 8-bit luminance of a small non-interlaced 8-bit PNG (stdlib only: PIL is not in the editor's Python)."""
+    import struct
+    import zlib
+    data = open(path, "rb").read()
+    pos, idat, w, h, ctype, depth = 8, b"", 0, 0, 2, 8
+    while pos + 8 <= len(data):
+        n, typ = struct.unpack(">I4s", data[pos:pos + 8])
+        body = data[pos + 8:pos + 8 + n]
+        if typ == b"IHDR":
+            w, h, depth, ctype = struct.unpack(">IIBB", body[:10])
+        elif typ == b"IDAT":
+            idat += body
+        pos += 12 + n
+    if depth != 8 or ctype not in (2, 6):
+        return 255.0  # unknown format: do not block the run
+    bpp = 3 if ctype == 2 else 4
+    raw = zlib.decompress(idat)
+    stride = w * bpp
+    prev = bytearray(stride)
+    total = 0
+    for y in range(h):
+        f = raw[y * (stride + 1)]
+        line = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if f == 1:
+                line[i] = (line[i] + a) & 255
+            elif f == 2:
+                line[i] = (line[i] + b) & 255
+            elif f == 3:
+                line[i] = (line[i] + ((a + b) >> 1)) & 255
+            elif f == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pr) & 255
+        total += sum(line[0::bpp]) + sum(line[1::bpp]) + sum(line[2::bpp])
+        prev = line
+    return total / float(w * h * 3)
 OUT_DIR = None
 STATE = {}
 
@@ -142,9 +190,49 @@ def step(s):
         set_camera(eye, target, s["pie"])
         s["phase"] = "warm"
         return
+    if phase == "probe":
+        # Shaders compile in the background and unfinished materials/lights render black. Take tiny probe shots until the
+        # picture is no longer black (or PROBE_MAX_SECONDS passes), so the real shots do not come out empty.
+        if "probe_t0" not in s:
+            s["probe_t0"] = time.time()
+        probe = os.path.join(OUT_DIR, "_probe.png")
+        if os.path.exists(probe):
+            os.remove(probe)
+        unreal.AutomationLibrary.take_high_res_screenshot(160, 90, probe)
+        s["probe_path"] = probe
+        s["probe_frame"] = s["frame"]
+        s["phase"] = "probe_wait"
+        return
+    if phase == "probe_wait":
+        p = s["probe_path"]
+        if os.path.exists(p) and os.path.getsize(p) > 0:
+            mean = png_mean(p)
+            elapsed = time.time() - s["probe_t0"]
+            if mean >= PROBE_MIN_MEAN or elapsed > PROBE_MAX_SECONDS:
+                cp.log("probe mean %.2f/255 after %.0f s (%s)" % (mean, elapsed, "ok" if mean >= PROBE_MIN_MEAN else "TIMEOUT, shooting anyway"))
+                s["probed"] = True
+                s["wait"] = WARMUP_NEXT   # let exposure adapt once the scene lit up
+                s["phase"] = "warm"
+            else:
+                if s["frame"] % 10 == 0:
+                    pass
+                cp.log("probe mean %.2f/255 after %.0f s: still dark, waiting" % (mean, elapsed))
+                s["wait"] = PROBE_INTERVAL
+                s["phase"] = "probe_idle"
+        elif s["frame"] - s["probe_frame"] > SHOT_TIMEOUT:
+            raise cp.ScriptError("probe screenshot never appeared: %s" % p)
+        return
+    if phase == "probe_idle":
+        s["wait"] -= 1
+        if s["wait"] <= 0:
+            s["phase"] = "probe"
+        return
     if phase == "warm":
         if s["wait"] > 0:
             s["wait"] -= 1
+            return
+        if not s.get("probed"):
+            s["phase"] = "probe"
             return
         name = VIEWS[s["i"]][0]
         path = os.path.join(OUT_DIR, name + ".png")
@@ -191,6 +279,10 @@ def main():
     les = subsystem("LevelEditorSubsystem")
     if not les.load_level(LEVEL):
         raise cp.ScriptError("could not load %s; run setup_look_test_level.py first" % LEVEL)
+
+    # Verified (PythonScriptPlugin EditorPythonScriptingLibrary.h, ScriptName "EditorPythonScripting"): without this the
+    # plugin requests QUIT_EDITOR on the tick after the script returns, killing the state machine below.
+    unreal.EditorPythonScripting.set_keep_python_script_alive(True)
 
     STATE.update(frame=0, i=0, wait=WARMUP_FIRST, phase="place", pie=pie, mult=mult)
     if pie:

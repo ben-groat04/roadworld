@@ -75,12 +75,6 @@ struct StreetLightParams {
     double median_slack = 3.0;           // m, a carriageway pair may be this much wider than width + median gap
     double median_heading_tol = 0.25;    // rad, how parallel (antiparallel in travel) a partner must be
     double fold_guard = 0.9;             // skip columns whose lateral offset exceeds this fraction of the radius of curvature
-
-    // Surface shape for the base height; same defaults as RenderMeshParams (the road type overrides them).
-    double default_crossfall = 0.025;
-    double default_kerb_upstand = 0.125;
-    double default_footway_crossfall = 0.02;
-    double default_verge_crossfall = 0.05;
 };
 
 // Equal-cell division of a lit length: `count` cells of `cell` m, columns at the cell midpoints.

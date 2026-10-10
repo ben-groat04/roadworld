@@ -79,12 +79,16 @@ struct RenderMeshParams {
     double max_station_step = 25.0;  // m, longest ring spacing along an edge at 2 cm (scales with the tolerance)
     double min_station_step = 0.25;  // m, shortest spacing the refinement may produce
 
-    // Used when the road type in the region pack leaves the field unset (RoadType::crossfall etc.).
+    // DEPRECATED, no longer read by render_mesh.cpp or street_lights.cpp: the fallback for a road type that leaves
+    // the field unset is the region pack's RenderRules (region.render). structure_mesh.cpp make_profile still reads
+    // these four (UK values) and should switch to region.render.*.
     double default_crossfall = 0.025;          // rise/run
     double default_kerb_upstand = 0.125;       // m
     double default_footway_crossfall = 0.02;   // rise/run, footways fall toward the carriageway
     double default_verge_crossfall = 0.05;     // rise/run, verges fall away from the carriageway
 
+    // Surface names are keys into the global surface vocabulary of data/lane_types.json (shared by all regions), not
+    // regional values; they stay in code.
     std::string default_surface = "asphalt";   // for lanes whose type has no surface, and junction carriageways
     std::string island_kerb_surface = "kerb";  // faces around islands and junction kerbs without a kerb lane type
 

@@ -5,8 +5,16 @@
   "driving_side": "left",
   "speed_unit": "mph",
   "headroom_m": 5.3,
+  "_headroom_reserved": "RESERVED: read into RegionPack::headroom_m but nothing uses it yet (minimum bridge soffit clearance over a road, for the future structure clearance checks)",
   "_headroom_source": "UK standard headroom 5.03 m plus allowance; tune by eye",
   "plan_crossing_junction_dz_m": 1.0,
+  "render": {
+    "_comment": "Cross-section shape for road types that leave crossfall / kerb_upstand_m / footway_crossfall / verge_crossfall unset (rise over run, m).",
+    "crossfall": 0.025,
+    "kerb_upstand_m": 0.125,
+    "footway_crossfall": 0.02,
+    "verge_crossfall": 0.05
+  },
   "grading": {
     "_comment": "Ground grading and earthwork limits (cp::GradingRules); tuned by eye in the road-draw prototype. wall_cap_m is also the height above which the road must be a bridge or tunnel.",
     "formation_drop_m": 0.15,
@@ -73,6 +81,7 @@
       { "max_speed_kph": 90, "factor": 1.2 },
       { "factor": 1.4 }
     ],
+    "splitter_min_taper_m": 8,
     "apron_island_radius_max_m": 9
   },
   "junction": {
@@ -89,6 +98,17 @@
       { "minor_max": 80, "radius_m": 14 },
       { "radius_m": 15 }
     ],
+    "default_corner_radius_m": 6,
+    "merge": {
+      "_comment": "Merge / diverge geometry. taper_length: odd arm trim by the main carriageway design speed (75 m up to 80 km/h, 110 m up to 100 dual, else 150 motorway); gore_length_m: gore triangle beyond the nose point. Estimates, tuned by eye.",
+      "taper_length": [
+        { "max_speed_kph": 80, "length_m": 75 },
+        { "max_speed_kph": 100, "length_m": 110 },
+        { "length_m": 150 }
+      ],
+      "default_taper_length_m": 75,
+      "gore_length_m": 10
+    },
     "skew_factor": { "min": 0.6, "max": 1.5 },
     "turn_pockets": {
       "_comment": "Ghost-island offside-turn lanes. Default on where the through road is rural A class or above and the minor road is a lesser road leaving it at roughly a right angle; none on residential or town streets. Taper 1:N and pocket lane length by the through road speed limit: estimate (TD 42 style, recalled, not checked).",
@@ -100,6 +120,8 @@
       "max_minor_angle_rad": 2.14,
       "min_taper_ratio": 8,
       "min_storage_m": 10,
+      "default_storage_m": 20,
+      "default_taper_ratio": 15,
       "taper_ratio": [
         { "max_speed_kph": 50, "ratio": 10 },
         { "max_speed_kph": 70, "ratio": 15 },

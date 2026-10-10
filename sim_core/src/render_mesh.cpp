@@ -146,10 +146,10 @@ Profile build_profile(const Edge& e, const RoadType& rt, const RegionPack& regio
     Profile pr;
     const std::vector<Lane> lanes = instantiate_lanes(e, rt, region.driving_side);
     if (lanes.empty()) return pr;
-    const double cf = rt.crossfall.value_or(P.default_crossfall);
-    const double H = rt.kerb_upstand.value_or(P.default_kerb_upstand);
-    const double fcf = rt.footway_crossfall.value_or(P.default_footway_crossfall);
-    const double vcf = rt.verge_crossfall.value_or(P.default_verge_crossfall);
+    const double cf = rt.crossfall.value_or(region.render.crossfall);
+    const double H = rt.kerb_upstand.value_or(region.render.kerb_upstand);
+    const double fcf = rt.footway_crossfall.value_or(region.render.footway_crossfall);
+    const double vcf = rt.verge_crossfall.value_or(region.render.verge_crossfall);
 
     struct L {
         double hi, lo, centre;
@@ -1383,7 +1383,7 @@ WorldMeshSet build_roundabout_mesh(const RoadGraph& graph, const RegionPack& reg
     WorldMeshSet out;
     if (!layout.ok) return out;
     const RoundaboutRules& rules = region.roundabout;
-    double H = rules.island_kerb_upstand > 0 ? rules.island_kerb_upstand : P.default_kerb_upstand;
+    double H = rules.island_kerb_upstand > 0 ? rules.island_kerb_upstand : region.render.kerb_upstand;
     const auto make_ref = [&](EdgeId id) {
         RoadRef r;
         r.e = graph.edge(id);

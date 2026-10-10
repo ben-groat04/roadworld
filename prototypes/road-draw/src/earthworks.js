@@ -27,7 +27,13 @@ const SAMPLE_STEP = 2.0;    // m: nominal station spacing (adds one step to a ru
 const DITCH_D = 0.3;        // m: depth of the shallow ditch at the toe of a cutting slope (toe_ditch_depth; 0 disables)
 const DITCH_W = 1.0;        // m: width of that ditch (toe_ditch_width)
 const END_BATTER = 4.0;     // horizontal : vertical of the run-out beyond a free road end (end_taper_batter); gentler than the side batter so an embankment / cutting eases into the ground along the road
-const MAX_TIERS = 4;        // stacked walls per side
+const MAX_TIERS = 4;        // stacked walls per side (shared structure between two roads, ownerTiers)
+const STAIR_MAX = 8;        // stacked walls per side of a terraced (stairs) section
+const STAIR_K = 6;          // the bench behind a full tier may carve at most STAIR_K * (height still to be retained) below natural ground: a new tier fades in from natural ground as the need grows
+const WALL_VIS_MIN = 0.35;  // m: a stairs wall lower than this is not built (the ground is natural there)
+const CORRIDOR_MAX = 90;    // m: terraced sections may extend this far beyond the footprint edge (grading corridor_max)
+const OVER_GROW = 3.0;      // the terrace tier height may grow to this multiple of the cap when the cap cannot reach the ground
+const TIER_PITCH = WALL_THICK + BENCH_MIN;   // m: lateral distance between neighbouring tiers of a terraced section
 const slopeV = e => e > VERGE ? e - VERGE : 0;   // slope run beyond the verge
 // wall solid spans lateral [hw, hw+WALL_THICK] from the centreline (= wall line hw+0.25, +-0.75..1.25 about it)
 function closeGaps(a, maxGap) { // fill false runs shorter than maxGap that sit between true samples
@@ -158,6 +164,43 @@ function solveTiers(cut, z0, E, bt, grd, cn, minTiers, cap) {
     L = cut ? L + cap : L - cap; a.push(amin); z.push(L - z0);
   }
 }
+// ---- Terraced sections (stairs) ----
+// Walls of height h at the lateral pitch TIER_PITCH, each retaining the ground up to the next bench. The section is evaluated on the spot from the natural ground N(e) along
+// the normal (e = lateral distance beyond the footprint edge), so it is a continuous function of the ground and of the formation level zf: a wall run starts or ends where the
+// ground says so, never at an arbitrary station. Tier k: solid at e in [k * P, k * P + T], front (road side) level f, top (back) level u. The last tier reaches the ground at
+// its back face (eps = 0) and natural ground carries on beyond it. Cut: tiers rise (u > f); fill: they fall. Between two tiers the bench is flat at u, but never more than
+// STAIR_K * eps below natural ground (eps = ground still unretained above u): where the need first appears the bench is still natural ground and the next wall grows from nothing.
+// force: the last permitted tier takes whatever is left (the hard limit: tier count or corridor): flagged over_height.
+function stairProfile(cut, zf, h, N, force) {
+  const sg = cut ? 1 : -1, T = WALL_THICK, tiers = []; let F = zf;
+  for (let k = 0; k < STAIR_MAX; k++) {
+    const a = k * TIER_PITCH, eb = a + T, last = k === STAIR_MAX - 1 || eb + TIER_PITCH > CORRIDOR_MAX;
+    const rise = sg * (N(eb) - F);
+    if (rise <= 0) return { tiers, ok: true };   // natural ground at the back face is at or below the front level: nothing to retain here
+    if (rise <= h || (last && force)) { tiers.push({ a, f: F, u: F + sg * rise, eps: 0 }); return { tiers, ok: true }; }
+    const u = F + sg * h, eps = rise - h;
+    tiers.push({ a, f: F, u, eps });
+    if (last) return { tiers, ok: false };
+    const e1 = (k + 1) * TIER_PITCH, n1 = N(e1);
+    F = cut ? Math.min(n1, Math.max(u, n1 - STAIR_K * eps)) : Math.max(n1, Math.min(u, n1 + STAIR_K * eps));
+  }
+  return { tiers, ok: false };
+}
+// Smallest tier height >= cap that reaches the ground inside the tier and corridor limits (bisection: continuous in the ground), plus whether the hard limit was needed.
+function stairHeight(cut, zf, N, cap) {
+  if (stairProfile(cut, zf, cap, N, false).ok) return { h: cap, force: false };
+  const top = cap * OVER_GROW;
+  if (!stairProfile(cut, zf, top, N, false).ok) return { h: top, force: true };
+  let lo = cap, hi = top;
+  for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (stairProfile(cut, zf, m, N, false).ok) hi = m; else lo = m; }
+  return { h: hi, force: false };
+}
+function stairsPlan(cut, z0, N, h0) { const { h, force } = stairHeight(cut, z0, N, h0); return stairsPlanH(cut, z0, N, h0, h, force); }
+function stairsPlanH(cut, z0, N, h0, h, force) {   // the plan for tier height h (a run shares the tallest of its stations)
+  const pr = stairProfile(cut, z0, h, N, force).tiers, sg = cut ? 1 : -1;
+  const last = pr.length ? pr[pr.length - 1] : null;
+  return { cut, n: pr.length, a: [], z: [], plat: false, nat: true, over: h > h0 + 1e-9 || force, full: false, stairs: true, h, force, reachE: last ? last.a + WALL_THICK : 0, alongMax: Math.max(0, sg * (N(WALL_THICK) - z0)) * Math.max(END_BATTER, 1) };
+}
 // One structure between two roads at different levels, built by the lower one: tiers rise from its formation to the neighbour's at gap ec.
 function ownerTiers(Dz, ec) {
   const nReq = Math.max(1, Math.ceil(Dz / WALL_MAX_H - 1e-9)); let nFit = 0;
@@ -192,7 +235,7 @@ function planSide(s, hw, sg, near, cutSet, minTiers) {
     // the lower road builds it when it is itself cut into the ground on this side; when it stands on fill / level ground it needs no wall of its own and the upper road retains its embankment as usual
     if (Math.abs(Dz) >= 0.25) { if (Dz > 0) return ownerTiers(Dz, owner.ec); if (owner.nat > owner.bz + 0.25) return null; }
   }
-  if (r.kind === 'fail') return { cut, n: 0, a: [], z: [], plat: false, nat: false, over: true, full: true };
+  if (r.kind === 'fail' || (r.kind === 'tiers' && r.a.length >= 2)) return stairsPlan(cut, z0, gB, WALL_MAX_H);   // one wall and a slope cannot keep the cap: terraces (as many capped tiers as the ground needs; the tier height grows only where a hard limit is hit)
   return { cut, n: r.a.length, a: r.a, z: r.z, plat: false, nat: r.nat, over, full: false };
 }
 function computeWalls(r, ty, near) {
@@ -227,6 +270,22 @@ function computeWalls(r, ty, near) {
       for (let q = i; q < j; q++) if (!wing[q]) t[q] = pl[q].cut ? 1 : 2;
       i = j;
     }
+    // one tier height per terraced run (a continuous run keeps one set of benches); the hard-limit flag is shared too
+    for (let i = 0; i < n;) {
+      const p0 = w[i] ? pl[i] : null; if (!(p0 && p0.stairs)) { i++; continue; }
+      let j = i, h = 0, fo = false; while (j < n && w[j] && pl[j] && pl[j].stairs && pl[j].cut === p0.cut) { h = Math.max(h, pl[j].h); fo = fo || pl[j].force; j++; }
+      for (let q = i; q < j; q++) { const s = S[q], nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, z0 = s.z - FORM_DROP; pl[q] = stairsPlanH(p0.cut, z0, e => hBase(s.x + nx * (hw + e), s.y + ny * (hw + e)), WALL_MAX_H, h, fo); }
+      i = j;
+    }
+    // beyond either end of a terraced run the neighbouring stations (one wall and a slope, or a single wall to the ground) blend into the terraces over WALL_RAMP: ground = alt + sw * (terraces - alt)
+    { const near = new Array(n).fill(1e9);
+      for (let pass = 0; pass < 2; pass++) for (let q = pass ? n - 1 : 0; pass ? q >= 0 : q < n; q += pass ? -1 : 1) {
+        if (w[q] && !wing[q] && pl[q] && pl[q].stairs) near[q] = 0; else { const pq = q - (pass ? -1 : 1); if (pq >= 0 && pq < n && near[pq] < 1e8) near[q] = Math.min(near[q], near[pq] + Math.abs(S[q].s - S[pq].s)); } }
+      for (let q = 0; q < n; q++) { const alt = pl[q]; if (!(w[q] && !wing[q] && alt && !alt.stairs && !alt.full && !alt.plat && near[q] > 0 && near[q] < WALL_RAMP)) continue;
+        let src = -1, bd = 1e9; for (let j = 0; j < n; j++) if (w[j] && !wing[j] && pl[j] && pl[j].stairs && pl[j].cut === alt.cut && Math.abs(S[j].s - S[q].s) < bd) { bd = Math.abs(S[j].s - S[q].s); src = j; }
+        if (src < 0) continue;
+        const u = 1 - near[q] / WALL_RAMP, s = S[q], nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg;
+        pl[q] = Object.assign(stairsPlanH(alt.cut, s.z - FORM_DROP, e => hBase(s.x + nx * (hw + e), s.y + ny * (hw + e)), WALL_MAX_H, pl[src].h, pl[src].force), { alt, sw: u * u * (3 - 2 * u) }); } }
     // Wing walls beside a structure: legacy full wall (retains the natural ground at its outer face, whatever the height) blended in from the ordinary earthworks next to it
     // (plain slope, or the adjacent run's tiers = base) by the funnel weight fw, 0 at the far end of the wing to 1 at the structure (smoothstep over min(WALL_RAMP, length)).
     for (let i = 0; i < n;) {
@@ -275,8 +334,13 @@ function rebuild(r) {
 const GK = CELL / GRID_RES;   // grid steps per base cell (8)
 const reachOfRoad = ty => ty.total / 2 + VERGE + (T.wallStart + WALL_SLACK) * T.batter + 2 + ROUND_REACH + DITCH_W;
 const endReachOfRoad = ty => ty.total / 2 + VERGE + (T.wallStart + WALL_SLACK) * Math.max(T.batter, END_BATTER) + 2 + ROUND_REACH + DITCH_W;   // run-out beyond a free road end
+function stairExtent(r) {   // [lateral reach beyond the footprint edge, run-out beyond a free end] of the terraced sides
+  let e = 0, al = 0; const S = r.samples;
+  for (let i = 0; i < S.length; i++) for (const p of [S[i].wL && S[i].pL, S[i].wR && S[i].pR]) if (p && p.stairs) { e = Math.max(e, p.reachE); if (i === 0 || i === S.length - 1) al = Math.max(al, p.alongMax); }
+  return [e, al];
+}
 function roadBox(r) {
-  const S = r.samples, ty = ROAD_TYPES[r.type], m = reachOfRoad(ty) + 1, me = endReachOfRoad(ty) + 1; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  const S = r.samples, ty = ROAD_TYPES[r.type], [sE, sA] = stairExtent(r), m = Math.max(reachOfRoad(ty), ty.total / 2 + sE + 4) + 1, me = Math.max(endReachOfRoad(ty), ty.total / 2 + sE + 4, sA + ty.total / 2 + 4) + 1; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
   for (const s of S) { if (s.x < x0) x0 = s.x; if (s.x > x1) x1 = s.x; if (s.y < y0) y0 = s.y; if (s.y > y1) y1 = s.y; }
   const b = { x0: x0 - m, y0: y0 - m, x1: x1 + m, y1: y1 + m };
   for (const s of [S[0], S[S.length - 1]]) { b.x0 = Math.min(b.x0, s.x - me); b.y0 = Math.min(b.y0, s.y - me); b.x1 = Math.max(b.x1, s.x + me); b.y1 = Math.max(b.y1, s.y + me); }
@@ -313,6 +377,21 @@ function tierEval(pl, w, e, zf, b, res, wallT, bt) {
   }
   return [cutP ? 2 : 3, Lk + (cutP ? 1 : -1) * (e - (tk + wallT)) / bt];
 }
+// Ground value of a terraced section at lateral e: same convention as tierEval. zf: formation level (lifted beyond a free end); N(e): natural ground along the normal.
+function stairEval(pl, e, zf, b, res, wallT, N) {
+  const tiers = stairProfile(pl.cut, zf, pl.h, N, pl.force).tiers, k = Math.floor(e / TIER_PITCH + 1e-12);
+  if (k >= tiers.length) return [0, 0];
+  const t = tiers[k];
+  if (e <= t.a + wallT - res) return [1, t.f];
+  if (e <= t.a + wallT) return pl.cut ? [1, t.u] : [3, t.u];
+  if (t.eps <= 0) return [0, 0];
+  return pl.cut ? [2, Math.max(t.u, b - STAIR_K * t.eps)] : [3, Math.min(t.u, b + STAIR_K * t.eps)];
+}
+// A terraced plan as old-style tiers at one station (a[k], z[k] = top relative to the formation), for the wing walls that blend into it.
+function stairAsTiers(pl, zf, N) {
+  const t = stairProfile(pl.cut, zf, pl.h, N, pl.force).tiers;
+  return { n: t.length, a: t.map(q => q.a), z: t.map(q => q.u - zf), cut: pl.cut };
+}
 // The legacy full wall at weight 1 (retains the natural ground at the texel, whatever its height).
 function fullEval(cutP, e, zf, b, res, wallT, verge, bt) {
   if (cutP) { const zfw = Math.max(zf, b - 0.1); return e <= wallT ? [1, e <= wallT - res ? zf : zfw] : [2, zfw + (e - verge) / bt]; }
@@ -327,7 +406,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
   const verge = params.verge, hb = params.roundHinge || 0, rk = params.roundK || 0, dD = params.ditchD || 0, dW = params.ditchW || 0, eB = params.endBatter || bt;
   const sv = e => e <= verge ? 0 : hb > 0 ? (e < verge + hb ? (e - verge) * (e - verge) / (2 * hb) : e - verge - hb / 2) : e - verge;   // verge -> slope hinge: parabola over hb, then the straight slope shifted out by hb/2
   const smax = d => d >= rk ? d : d <= -rk ? 0 : (d + rk) * (d + rk) / (4 * rk);   // smooth max(d, 0) over +-rk: rolls the slope over into natural ground
-  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N);
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
   for (let ri = 0; ri < roadsData.length; ri++) {
@@ -347,8 +426,9 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
       const A = S[k], B = S[k + 1];
       if ((A.br || A.tu) && (B.br || B.tu)) continue;   // bridge / tunnel stations are not graded; a segment with one structure end is graded up to the abutment / portal
       const dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy; if (L2 < 1e-12) continue;
-      const i0 = Math.max(0, Math.floor((Math.min(A.x, B.x) - R - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((Math.max(A.x, B.x) + R - x0) / res));
-      const j0 = Math.max(0, Math.floor((Math.min(A.y, B.y) - R - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((Math.max(A.y, B.y) + R - y0) / res));
+      const Rs = (k === 0 || k === S.length - 2) && rd.endExt > R ? rd.endExt : R;   // beyond a free end the terraces carry on straight (diagonal wall ends)
+      const i0 = Math.max(0, Math.floor((Math.min(A.x, B.x) - Rs - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((Math.max(A.x, B.x) + Rs - x0) / res));
+      const j0 = Math.max(0, Math.floor((Math.min(A.y, B.y) - Rs - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((Math.max(A.y, B.y) + Rs - y0) / res));
       const dz = B.z - A.z;
       const ap = rd.planes && rd.planes.length ? rd.planes.filter(pl => k >= pl.k0 && k < pl.k1) : null, pc = params.planeC ?? 1e9;
       for (let j = j0; j <= j1; j++) {
@@ -358,26 +438,53 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
           if (ap) { const px = rx + A.x, py = ry + A.y; let beyond = false; for (const pl of ap) if ((px - pl.x) * pl.nx + (py - pl.y) * pl.ny > pc) { beyond = true; break; } if (beyond) continue; }   // past a tunnel portal plane: natural ground (the headwall hides the one-texel step)
           let t = (rx * dx + ry * dy) / L2; if ((B.tu && !A.tu && t > 1 + PLANE_OVER / Math.sqrt(L2)) || (A.tu && !B.tu && t < -PLANE_OVER / Math.sqrt(L2))) continue; const tRaw = t;   // tunnel portal: grading stops exactly at the portal plane (the first tunnel station) (the headwall hides the step); bridges keep the rounded embankment end
           t = t < 0 ? 0 : t > 1 ? 1 : t;
-          const ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey; if (d2 > R2) continue;
+          let ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey, pro = 0, alongV = 0, fs = 0;
+          if ((k === 0 && tRaw < 0 && !A.br && !A.tu) || (k === S.length - 2 && tRaw > 1 && !B.br && !B.tu)) {   // beyond a free end: a terraced side carries on straight, its levels rising (cut) / falling (fill) at the run-out batter, so the walls end diagonally into the ground
+            const Eq = k === 0 ? A : B, sdL = Eq.pL && Eq.pL.stairs && Eq.wL, sdR = Eq.pR && Eq.pR.stairs && Eq.wR;
+            if (sdL || sdR) {
+              const sq = Math.sqrt(L2), crs = dx * ry - dy * rx, perp = crs / sq, along = tRaw < 0 ? -(rx * dx + ry * dy) / sq : (rx * dx + ry * dy) / sq - sq;
+              const aL = sdL ? Eq.pL.alongMax : 0, aR = sdR ? Eq.pR.alongMax : 0;
+              if (Math.abs(perp) <= R && along <= (perp > 0 ? aL : aR) + hw) {
+                pro = 1; alongV = along; ex = rx - tRaw * dx; ey = ry - tRaw * dy; d2 = perp * perp;
+                if (Math.abs(perp) < hw) { pro = 2; const sL = sdL ? (Eq.pL.cut ? 1 : -1) : 0, sR = sdR ? (Eq.pR.cut ? 1 : -1) : 0, u = (perp + hw) / (2 * hw); fs = sR + (sL - sR) * u; }
+              }
+            }
+          }
+          if (!pro && d2 > R2) continue;
           const dd = Math.sqrt(d2), o = j * nx + i; if (dd >= rqD[o]) continue;   // nearest station of this road decides (one zf, one wall flag per texel)
+          rqAl[o] = alongV; rqFl[o] = pro === 2 ? 1 : 0; rqFs[o] = fs; rqBy[o] = !pro && (tRaw < 0 || tRaw > 1) ? 1 : 0;
           rqD[o] = dd; rqEx[o] = ex; rqEy[o] = ey; rqZ[o] = A.z + t * dz - fd; { let bte = bt; if (eB > bt && dd > 0 && ((k === 0 && tRaw < 0 && !A.br && !A.tu) || (k === S.length - 2 && tRaw > 1 && !B.br && !B.tu))) { const sq = Math.sqrt(L2), along = tRaw < 0 ? -(rx * dx + ry * dy) / sq : (rx * dx + ry * dy) / sq - sq; bte = bt + (eB - bt) * Math.min(1, along / dd); } rqBt[o] = bte; } const E = (A.br || A.tu) ? B : (B.br || B.tu) ? A : t < 0.5 ? A : B; const lf = (dx * ry - dy * rx) > 0; rqW[o] = lf ? E.wL : E.wR; rqP[o] = lf ? E.pL : E.pR; { const fa = lf ? A.fwL : A.fwR, fb = lf ? B.fwL : B.fwR; rqFw[o] = (A.br || A.tu) ? fb : (B.br || B.tu) ? fa : fa + (fb - fa) * t; } { const wa = (lf ? A.wwL : A.wwR) ?? 1, wb = (lf ? B.wwL : B.wwR) ?? 1; rqWw[o] = (A.br || A.tu) ? wb : (B.br || B.tu) ? wa : wa + (wb - wa) * t; }   // cross > 0: texel on the left
         }
       }
     }
     for (let o = 0; o < N; o++) {
       const dd = rqD[o]; if (dd > 1e8) continue; const zf = rqZ[o];
+      if (rqFl[o]) {   // ahead of a free end of a terraced road: the floor rises / falls with the run-out batter (cut / fill side), across the width it is a crossfall between the two
+        const lift = rqAl[o] / eB, fs = rqFs[o], zl = zf + fs * lift, b0 = base[o]; let zz = zf; if (fs > 0) zz = Math.min(b0, zl); else if (fs < 0) zz = Math.max(b0, zl);
+        fpD[o] = 0; if (zz < fpZ[o]) fpZ[o] = zz; continue; }
       if (dd <= hw) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }   // union of footprints: lowest formation wins (never pokes through any road)
       const e = dd - hw, b = base[o], cutT = b > zf; let wf = rqW[o], ww = wf ? rqWw[o] : 0, pl = wf ? rqP[o] : null; const bte = rqBt[o];
       const blk = () => blocked(o, o % nx, (o / nx) | 0, dd);   // evaluated only when a slope would be recorded
+      if (wf && pl && pl.stairs && rqBy[o]) { wf = 0; ww = 0; pl = null; }   // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
       if (wf && !(pl && pl.plat) && (wf === 1) !== cutT) { wf = 0; ww = 0; pl = null; }   // flag says cut but this texel is fill (or vice versa): plain slope
       if (wf && pl && (!pl.full || pl.wing)) {   // stacked walls (see planSide), or a wing wall blended in from the earthworks beside it
         let kind, v;
-        if (!pl.full) [kind, v] = tierEval(pl, ww, e, zf, b, res, params.wallThick, bt);
+        const fxs = (x0 + (o % nx) * res) - rqEx[o], fys = (y0 + ((o / nx) | 0) * res) - rqEy[o], uxs = rqEx[o] / dd, uys = rqEy[o] / dd;
+        if (pl.stairs) {
+          const tx = x0 + (o % nx) * res, ty = y0 + ((o / nx) | 0) * res, fx = tx - rqEx[o], fy = ty - rqEy[o], ux = rqEx[o] / dd, uy = rqEy[o] / dd;
+          [kind, v] = stairEval(pl, e, zf + (pl.cut ? 1 : -1) * rqAl[o] / eB, b, res, params.wallThick, q => baseSampler(fx + ux * (hw + q), fy + uy * (hw + q)));
+          if (pl.alt && pl.sw < 1) {   // beside a terraced run: blend with the station's own plan (one wall and a slope, or a wall to the ground)
+            const [ka, va] = tierEval(pl.alt, ww, e, zf, b, res, params.wallThick, bt), eff = (kk, vv) => kk === 1 ? vv : kk === 0 ? b : pl.cut ? Math.min(b, vv) : Math.max(b, vv);
+            const ga = eff(ka, va), gs2 = eff(kind, v); kind = pl.cut ? 2 : 3; v = ga + pl.sw * (gs2 - ga); }
+          if (ww < 1) {   // run ends (where plain slopes carry on): the terraced ground and the plain slope blend by the run weight
+            const gs = kind === 1 ? v : kind === 0 ? b : pl.cut ? Math.min(b, v) : Math.max(b, v), gp = pl.cut ? Math.min(b, zf + sv(e) / bt) : Math.max(b, zf - sv(e) / bt);
+            const gg = gp + ww * (gs - gp); kind = pl.cut ? 2 : 3; v = gg; }
+        } else if (!pl.full) [kind, v] = tierEval(pl, ww, e, zf, b, res, params.wallThick, bt);
         else {   // wing: (1 - fw) * ordinary earthworks (adjacent run's tiers, else the plain slope) + fw * full wall
-          let [kb, vb] = pl.base ? tierEval(pl.base, ww, e, zf, b, res, params.wallThick, bt) : [pl.cut ? 2 : 3, pl.cut ? zf + sv(e) / bt : zf - sv(e) / bt];
+          let [kb, vb] = pl.base && !(pl.base.stairs && rqBy[o]) ? (pl.base.stairs ? stairEval(pl.base, e, zf, b, res, params.wallThick, q => baseSampler(fxs + uxs * (hw + q), fys + uys * (hw + q))) : tierEval(pl.base, ww, e, zf, b, res, params.wallThick, bt)) : [pl.cut ? 2 : 3, pl.cut ? zf + sv(e) / bt : zf - sv(e) / bt];
           const [kf, vf] = fullEval(pl.cut, e, zf, b, res, params.wallThick, verge, bt);
           if (kb === 0) { kb = kf; vb = pl.cut ? b + rk : b - rk; }   // natural ground carries on beside the adjacent wall: nothing to carve
-          kind = kb === 1 || kf === 1 ? 1 : kf; v = vb + rqFw[o] * (vf - vb);
+          kind = kb === 1 || kf === 1 ? 1 : kf; const vfe = kb === 1 && kf !== 1 ? (pl.cut ? Math.min(vf, b) : Math.max(vf, b)) : vf; v = vb + rqFw[o] * (vfe - vb);   // a solid of the adjacent terraces beside the wing: where the full wall has only a slope, the ground there is natural, not the slope level
         }
         if (kind === 0) continue;
         if (kind === 1) { fpD[o] = 0; const zw = pl.cut ? Math.min(v, b) : v; if (zw < fpZ[o]) fpZ[o] = zw; continue; }
@@ -429,29 +536,31 @@ function markMedians() {
 // Slope reach of road r: farthest lateral distance (from the footprint edge) at which a batter slope still meets the base ground on any unwalled side
 // (reach = max |cut/fill| * batter + margin, never more than the wall-start reach). Cached per road version.
 function slopeReach(r, ty) {
-  const hw = ty.total / 2, cap = reachOfRoad(ty), capE = endReachOfRoad(ty), bt = T.batter; let mx = 0, tiers = false;
+  const hw = ty.total / 2, cap = reachOfRoad(ty), capE = endReachOfRoad(ty), bt = T.batter; let mx = 0, tiers = false, stairE = 0;
   const S = r.samples;
   for (let i = 0; i < S.length; i += 2) { const s = S[i]; if (s.br || s.tu) continue;
     const zf = s.z - FORM_DROP;
     const endish = i === 0 || i + 2 >= S.length - 1 || (S[i - 2] && (S[i - 2].br || S[i - 2].tu)) || (S[i + 2] && (S[i + 2].br || S[i + 2].tu));   // road end or next to a bridge / tunnel: the embankment also falls away along the road (cone around the end)
-    for (const sg of endish ? [1, -1, 2, 3] : [1, -1]) { if (sg === 1 ? s.wL : sg === -1 ? s.wR : false) { const p = sg === 1 ? s.pL : s.pR; if (p && !p.full) tiers = true; continue; }
+    for (const sg of endish ? [1, -1, 2, 3] : [1, -1]) { if (sg === 1 ? s.wL : sg === -1 ? s.wR : false) { const p = sg === 1 ? s.pL : s.pR; if (p && !p.full) tiers = true; if (p && p.stairs) stairE = Math.max(stairE, p.reachE); continue; }
       const nx = sg > 1 ? Math.cos(s.h) * (sg === 2 ? 1 : -1) : -Math.sin(s.h) * sg, ny = sg > 1 ? Math.sin(s.h) * (sg === 2 ? 1 : -1) : Math.cos(s.h) * sg;
       const bd = sg > 1 && !(i === 0 || i + 2 >= S.length - 1) ? bt : sg > 1 ? Math.max(bt, END_BATTER) : bt, cp = sg > 1 ? capE : cap;   // run-out batter only beyond a free road end (not beside a bridge / tunnel)
       for (let e = 0.5; hw + e <= cp; e += 1) { const b = hBase(s.x + nx * (hw + e), s.y + ny * (hw + e)), v = b > zf ? zf + slopeV(e) / bd : zf - slopeV(e) / bd; if (b > zf ? v >= b : v <= b) { if (e > mx) mx = e; break; } if (hw + e + 1 > cp && e > mx) mx = e; } } }
   const structs = S.some(q => q.br || q.tu);
-  r._reach = structs || tiers ? Math.max(cap, Math.min(capE, hw + mx + 2.5 + ROUND_REACH + DITCH_W)) : Math.min(capE, hw + mx + 2.5 + ROUND_REACH + DITCH_W); /* embankment ends at bridges fall away along the road too: full reach */ return r._reach;
+  r._reach = structs || tiers ? Math.max(cap, Math.min(capE, hw + mx + 2.5 + ROUND_REACH + DITCH_W)) : Math.min(capE, hw + mx + 2.5 + ROUND_REACH + DITCH_W); /* embankment ends at bridges fall away along the road too: full reach */
+  if (stairE > 0) r._reach = Math.max(r._reach, hw + stairE + 4);   // terraced sides reach as far as their last tier
+  return r._reach;
 }
 // Wall weight per sample and side (wwL / wwR in 0..1): 0 at either end of a wall run, 1 further than WALL_RAMP m inside it. The ground OUTSIDE a wall's
 // outer face blends from the 1:batter slope (weight 0) to natural ground (weight 1), so a wall end never leaves a bare step beside it. Runs and
 // medians are final here (markMedians has already cleared median sides).
 function wallWeights(S) {
   const n = S.length;
-  for (const [fl, key] of [['wL', 'wwL'], ['wR', 'wwR']]) {
+  for (const [fl, key, pk] of [['wL', 'wwL', 'pL'], ['wR', 'wwR', 'pR']]) {
     let i = 0;
     while (i < n) { if (!S[i][fl]) { S[i][key] = 0; i++; continue; } let j = i; while (j < n && S[j][fl]) j++;
       const cum = [0]; for (let k = i + 1; k < j; k++) cum.push(cum[k - i - 1] + Math.hypot(S[k].x - S[k - 1].x, S[k].y - S[k - 1].y));
       const tot = cum[cum.length - 1];
-      for (let k = i; k < j; k++) { const free0 = i === 0 || (!S[i - 1].br && !S[i - 1].tu), free1 = j === n || (!S[j].br && !S[j].tu);   // only free run ends (incl. the road's own ends) taper: structures (abutment, portal) hide the wall end
+      for (let k = i; k < j; k++) { const stairsRun = !!(S[i][pk] && S[i][pk].stairs), free0 = (i === 0 && !stairsRun) || (i > 0 && !S[i - 1].br && !S[i - 1].tu), free1 = (j === n && !stairsRun) || (j < n && !S[j].br && !S[j].tu);   // a terraced run keeps full weight up to the road's own end (its walls end diagonally beyond it)   // only free run ends (incl. the road's own ends) taper: structures (abutment, portal) hide the wall end
         const ramp = (free0 && free1) || tot < 1e-6 ? WALL_RAMP : Math.min(WALL_RAMP, tot), d = Math.min(free0 ? cum[k - i] : 1e9, free1 ? tot - cum[k - i] : 1e9) + 1e-9, u = Math.min(1, d / ramp); S[k][key] = u * u * (3 - 2 * u); }   // run end -> 0 (smoothstep)
       i = j; }
   }
@@ -462,6 +571,7 @@ function roadsData() {
   for (const r of rs) {   // walls with the neighbouring roads' earthworks in place (structures are final here, also for imported roads)
     const near = rs.filter(o => o !== r && !(o.bbox.x1 < r.bbox.x0 || o.bbox.x0 > r.bbox.x1 || o.bbox.y1 < r.bbox.y0 || o.bbox.y0 > r.bbox.y1)).map(o => ({ hw: ROAD_TYPES[o.type].total / 2, bbox: o.bbox, S: o.samples }));
     computeWalls(r, ROAD_TYPES[r.type], near);
+    r.bbox = roadBox(r);
   }
   markMedians();
   for (const r of rs) wallWeights(r.samples);
@@ -474,7 +584,8 @@ function roadsData() {
     for (let k = 0; k < dec.length; k++) { const a = dec[k], pr = dec[k - 1], nx_ = dec[k + 1]; if (!a.tu) continue;
       if (pr && !pr.tu) { let k0 = k; while (k0 > 0 && plen(k0, k) < span) k0--; planes.push({ k0, k1: k, x: a.x, y: a.y, nx: Math.cos(a.h), ny: Math.sin(a.h) }); }
       if (nx_ && !nx_.tu) { let k1 = k; while (k1 < dec.length - 1 && plen(k, k1) < span) k1++; planes.push({ k0: k, k1, x: a.x, y: a.y, nx: -Math.cos(a.h), ny: -Math.sin(a.h) }); } }
-    return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb, planes, nbr: [], core: { x0: Math.min(...r.samples.map(q => q.x)) - ty.total / 2, x1: Math.max(...r.samples.map(q => q.x)) + ty.total / 2, y0: Math.min(...r.samples.map(q => q.y)) - ty.total / 2, y1: Math.max(...r.samples.map(q => q.y)) + ty.total / 2 } }; });
+    const endExt = (() => { let m = 0; for (const q of [full[0], full[full.length - 1]]) for (const pp of [q.wL && q.pL, q.wR && q.pR]) if (pp && pp.stairs) m = Math.max(m, pp.alongMax + ty.total / 2 + 2); return m; })();
+    return { hw: ty.total / 2, reach: R, endExt, bbox: r.bbox, samples: dec, segBoxes: sb, planes, nbr: [], core: { x0: Math.min(...r.samples.map(q => q.x)) - ty.total / 2, x1: Math.max(...r.samples.map(q => q.x)) + ty.total / 2, y0: Math.min(...r.samples.map(q => q.y)) - ty.total / 2, y1: Math.max(...r.samples.map(q => q.y)) + ty.total / 2 } }; });
   rdOut.forEach((a, i) => { a.nbr = []; rdOut.forEach((b, j) => { if (i !== j && !(b.bbox.x1 < a.bbox.x0 || b.bbox.x0 > a.bbox.x1 || b.bbox.y1 < a.bbox.y0 || b.bbox.y0 > a.bbox.y1)) a.nbr.push(j); }); });   // roads whose reach boxes overlap: a slope may not reach across them
   return rdOut.concat(typeof inspectFootprints === 'function' ? inspectFootprints() : []);   // inspect.js junction surfaces
 }
@@ -510,7 +621,7 @@ function wallRuns(r) {   // one run per side and tier; the tier's lateral offset
     // the grading interpolates weights linearly between its decimated stations (every 2nd sample): do the same, so wall heights meet the graded ground
     const val = (q, key) => key === 'fwL' ? (q.pL && q.pL.wing ? q.pL.fw : 0) : key === 'fwR' ? (q.pR && q.pR.wing ? q.pR.fw : 0) : q[key];
     const chord = (i, ref, key) => { if (i % 2 === 0 || i === S.length - 1 || ref !== S[i]) return val(ref, key); const a = S[i - 1], b = S[Math.min(i + 1, S.length - 1)]; return wFlag(a) && wFlag(b) ? (val(a, key) + val(b, key)) / 2 : val(ref, key); };
-    for (let k = 0; k < MAX_TIERS; k++) {
+    for (let k = 0; k < STAIR_MAX; k++) {
       let cur = null;
       for (let i = 0; i < S.length; i++) {
         const s = S[i];
@@ -518,7 +629,22 @@ function wallRuns(r) {   // one run per side and tier; the tier's lateral offset
         if (!ref) { cur = null; continue; }
         const pref = (ref === s && i % 2 === 1 && i + 1 < S.length && wFlag(S[i + 1])) ? S[i + 1] : ref;   // the grading takes the plan of the decimated station at or after an odd sample (its t >= 0.5 rule)
         const p = side === 'L' ? pref.pL : pref.pR, wk = side === 'L' ? 'wwL' : 'wwR', w = chord(i, ref, wk) ?? 1, nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, zf = s.z - FORM_DROP;
-        const wing = !!(p && p.wing), tp = wing ? p.base : p && !p.full ? p : null, fw = wing ? chord(i, ref, side === 'L' ? 'fwL' : 'fwR') : 0;   // tp: the tiers in play (own plan, or the adjacent run's beside a wing)
+        const wing = !!(p && p.wing), tp = wing ? (p.base && p.base.stairs ? stairAsTiers(p.base, zf, e => hBase(s.x + nx * (hw + e), s.y + ny * (hw + e))) : p.base) : p && !p.full ? p : null, fw = wing ? chord(i, ref, side === 'L' ? 'fwL' : 'fwR') : 0;   // tp: the tiers in play (own plan, or the adjacent run's beside a wing)
+        if (p && p.stairs) {   // terraced section: the walls come from the same profile the grading evaluates
+          const stN = (q, ox, oy) => e => hBase(ox + nx * (hw + e), oy + ny * (hw + e)), sgT = p.cut ? 1 : -1;
+          const wwq = (chord(i, ref, wk) ?? 1) * (p.sw ?? 1), tierPt = (ox, oy, zfq) => { const t = stairProfile(p.cut, zfq, p.h, stN(0, ox, oy), p.force).tiers[k]; if (!t || Math.abs(t.u - t.f) * wwq < WALL_VIS_MIN) return null;
+            return { x: ox + nx * (hw + t.a), y: oy + ny * (hw + t.a), zTop: p.cut ? t.u : t.f, zBot: p.cut ? t.f : t.u, top: p.cut ? t.u + 0.3 : k === 0 ? s.z + 1.0 : t.f + 0.4, h: s.h, nat: t.eps <= 0 }; };
+          const q0 = tierPt(0, s.x, s.y, 0), main = tierPt(s.x, s.y, zf);
+          const ext = [];   // beyond a free road end the wall carries on straight while it still retains something (its levels rise / fall at the run-out batter)
+          if ((i === 0 || i === S.length - 1) && main) for (let a = SAMPLE_STEP; a <= p.alongMax + 2; a += SAMPLE_STEP) { const dirx = Math.cos(s.h) * (i === 0 ? -1 : 1), diry = Math.sin(s.h) * (i === 0 ? -1 : 1), e1 = tierPt(s.x + dirx * a, s.y + diry * a, zf + sgT * a / END_BATTER); if (!e1) break; ext.push(e1); }
+          if (!main) { cur = null; continue; }
+          if (!cur || cur.cut !== p.cut) { cur = { side, cut: p.cut, lo: 0, hi: WALL_THICK, tier: k, over: false, pts: [] }; runs.push(cur); }
+          if (p.over) cur.over = true;
+          if (i === 0) for (let q = ext.length - 1; q >= 0; q--) cur.pts.push(ext[q]);
+          cur.pts.push(main);
+          if (i !== 0) for (const e1 of ext) cur.pts.push(e1);
+          continue;
+        }
         let cut, off = 0, zTop, zBot, top;
         const out = hBase(s.x + nx * (hw + WALL_THICK), s.y + ny * (hw + WALL_THICK)); cut = p ? p.cut : out > zf;
         const sgn = cut ? 1 : -1;
