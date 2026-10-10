@@ -579,7 +579,7 @@ function buildEarthworks(r) {
       for (const [d, z] of [[m.edge, m.z0], [m.d1, m.z1], [dExt, zExt]]) {
         const x = s.x + nx * d, y = s.y + ny * d; pos.push(x, z, -y); terrainColour(x, y, o); col.push(o[0], o[1], o[2]);
       }
-      base[i] = v0 / 3;
+      base[i] = v0;
     }
     for (let i = 0; i + 1 < n; i++) {
       if (base[i] < 0 || base[i + 1] < 0) continue;
