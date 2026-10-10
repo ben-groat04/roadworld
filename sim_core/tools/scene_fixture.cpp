@@ -1,5 +1,7 @@
 #include "scene_fixture.h"
 
+#include "cp/junction_roundabout.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -193,6 +195,10 @@ std::unique_ptr<Scene> build_scene(const std::string& name, const std::string& d
     return nullptr;
 }
 
-JunctionSet scene_junctions(const Scene& scene) { return build_junctions(scene.graph, *scene.region, scene.overrides); }
+JunctionSet scene_junctions(const Scene& scene) {
+    JunctionSet js = build_junctions(scene.graph, *scene.region, scene.overrides);
+    apply_roundabouts(js, scene.graph, *scene.region, scene.overrides);
+    return js;
+}
 
 }  // namespace cp::tools

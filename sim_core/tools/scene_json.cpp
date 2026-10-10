@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <sstream>
 
+#include "cp/junction_roundabout.h"
 #include "scene_fixture.h"
 
 namespace cp::tools {
@@ -64,11 +65,25 @@ void poly_set(W& w, const Junction& j, const PolygonSet& ps) {
     w.raw("]");
 }
 
-// Junction::islands (roundabout central island etc.) is optional until the field exists.
+// Raised islands: the roundabout central island and splitters (rebuilt from the graph, since
+// Junction has no islands field), or Junction::islands if it ever gains one.
 template <class J>
-void islands(W& w, const J& j) {
-    if constexpr (requires { j.islands; }) poly_set(w, j, j.islands);
-    else w.raw("[]");
+void islands(W& w, const Scene& sc, const J& j) {
+    if constexpr (requires { j.islands; }) {
+        poly_set(w, j, j.islands);
+    } else {
+        PolygonSet ps;
+        if (j.kind == JunctionKind::Roundabout)
+            for (const JunctionGroup& g : recognise_roundabouts(sc.graph, *sc.region)) {
+                if (g.nodes.empty() || g.nodes[0] != j.node) continue;
+                const RoundaboutLayout lay = build_roundabout(g, sc.graph, *sc.region, sc.overrides);
+                if (!lay.ok) break;
+                ps = lay.island;
+                for (const SplitterIsland& s : lay.splitters) ps.push_back(s.polygon);
+                break;
+            }
+        poly_set(w, j, ps);
+    }
 }
 
 const char* kind_name(const Junction& j) {
@@ -146,7 +161,7 @@ std::string export_scene_json(const Scene& sc, const JunctionSet& js) {
         w.raw(",\"pavements\":");
         poly_set(w, j, j.pavements);
         w.raw(",\"islands\":");
-        islands(w, j);
+        islands(w, sc, j);
         w.raw(",\"gore\":");
         poly_set(w, j, j.gore);
         w.raw(",\"connectors\":[");
