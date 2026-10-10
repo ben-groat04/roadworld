@@ -127,19 +127,19 @@ std::array<double, 3> SimToUE(const cp::Vec3& P)
 	return SimToUE(P.x, P.y, P.z);
 }
 
-using TileIndex = std::map<std::pair<std::int32_t, std::int32_t>, std::size_t>;
+using TileIndex = std::map<std::pair<std::int64_t, std::int64_t>, std::size_t>;
 
 FTile& TileFor(FOutput& Out, TileIndex& Index, cp::TileKey Key, double TileSizeM)
 {
-	const auto Id = std::make_pair(Key.x, Key.y);
+	const auto Id = std::make_pair(Key.i, Key.j);
 	auto It = Index.find(Id);
 	if (It != Index.end())
 	{
 		return Out.Tiles[It->second];
 	}
 	FTile Tile;
-	Tile.TileX = Key.x;
-	Tile.TileY = Key.y;
+	Tile.TileX = Key.i;
+	Tile.TileY = Key.j;
 	const cp::Vec3 O = cp::tile_origin(Key, TileSizeM);
 	const auto UE = SimToUE(O);
 	Tile.Origin[0] = UE[0];
@@ -348,7 +348,7 @@ FOutput BuildRender(FWorld& W, const FSettings& S)
 		const auto ChunkOrigin = SimToUE(Chunk.origin);
 		if (std::abs(ChunkOrigin[0] - Tile.Origin[0]) > 1e-6 || std::abs(ChunkOrigin[1] - Tile.Origin[1]) > 1e-6 || std::abs(ChunkOrigin[2] - Tile.Origin[2]) > 1e-6)
 		{
-			Out.Messages.push_back("chunk origin differs from tile_origin() for tile " + std::to_string(Chunk.tile.x) + "," + std::to_string(Chunk.tile.y));
+			Out.Messages.push_back("chunk origin differs from tile_origin() for tile " + std::to_string(Chunk.tile.i) + "," + std::to_string(Chunk.tile.j));
 		}
 		for (const auto& SPair : Chunk.surfaces)
 		{

@@ -72,7 +72,7 @@ struct FSection
 
 struct FTile
 {
-	std::int32_t TileX = 0, TileY = 0;           // sim tile key (x east, y north)
+	std::int64_t TileX = 0, TileY = 0;           // sim tile key (cp::TileKey i east, j north), 64-bit like TileKey
 	double Origin[3] = {0, 0, 0};                // UE cm (X north, Y east, Z up), actor space
 	std::vector<FSection> Surfaces;
 	std::vector<FSection> Markings;              // one per colour id

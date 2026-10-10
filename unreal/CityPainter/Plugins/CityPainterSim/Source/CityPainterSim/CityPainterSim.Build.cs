@@ -27,6 +27,24 @@ public class CityPainterSim : ModuleRules
 		string SimCore = Path.Combine(RepoRoot, "sim_core");
 		string ThirdParty = Path.Combine(RepoRoot, "third_party");
 
+		// Guard: every sim_core/src/*.cpp needs a Private/SimCore/Wrap_<name>.cpp that includes it, otherwise the
+		// build fails much later with an unresolved external (LNK2019) that does not name the cause.
+		string WrapperDir = Path.Combine(ModuleDirectory, "Private", "SimCore");
+		foreach (string Src in Directory.GetFiles(Path.Combine(SimCore, "src"), "*.cpp"))
+		{
+			string Name = Path.GetFileName(Src);
+			string Wrapper = Path.Combine(WrapperDir, "Wrap_" + Name);
+			if (!File.Exists(Wrapper))
+			{
+				throw new BuildException("sim_core/src/" + Name + " has no wrapper. Add " + Wrapper
+					+ " (copy Wrap_region_pack.cpp, including its full #pragma warning list, and change the #include to sim_core/src/" + Name + ").");
+			}
+			if (!File.ReadAllText(Wrapper).Contains("sim_core/src/" + Name))
+			{
+				throw new BuildException(Wrapper + " does not include sim_core/src/" + Name + ".");
+			}
+		}
+
 		PublicIncludePaths.Add(Path.Combine(SimCore, "include"));
 		// third_party/ holds nlohmann/json.hpp (included as "nlohmann/json.hpp"); Clipper2 headers are included as
 		// "clipper2/clipper.h" and live under third_party/clipper2/include. Clipper2's .cpp files are compiled via
