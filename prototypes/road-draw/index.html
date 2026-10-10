@@ -512,15 +512,19 @@ function dropShort(a, minRun) {
 function classify(r, ty) {
   const S = r.samples, n = S.length, off = wallLineOf(ty);
   const br = new Array(n).fill(false), tu = new Array(n).fill(false);
-  const cL = br.slice(), fL = br.slice(), cR = br.slice(), fR = br.slice();
+  const mb = br.slice(), mt = br.slice(), cL = br.slice(), fL = br.slice(), cR = br.slice(), fR = br.slice();
   for (let i = 0; i < n; i++) {
     const s = S[i], nx = -Math.sin(s.h), ny = Math.cos(s.h), dz = s.z - hBase(s.x, s.y), form = s.z - FORM_DROP;
     s.eL = hBase(s.x + nx * off, s.y + ny * off); s.eR = hBase(s.x - nx * off, s.y - ny * off);   // same (linear mesh) base heights the grader uses
     br[i] = dz > T.wallCap; tu[i] = dz < -T.wallCap;
+    // a wall may never exceed wallCap: judge the whole cross-section (both formation edges), not just the centreline
+    mb[i] = br[i] || form - s.eL > T.wallCap || form - s.eR > T.wallCap; mt[i] = tu[i] || s.eL - form > T.wallCap || s.eR - form > T.wallCap;
+    br[i] = mb[i]; tu[i] = mt[i] && !mb[i];
     cL[i] = s.eL - form > T.wallStart; fL[i] = form - s.eL > T.wallStart;
     cR[i] = s.eR - form > T.wallStart; fR[i] = form - s.eR > T.wallStart;
   }
   for (const a of [br, tu]) { closeGaps(a, 8); dropShort(a, 8); }
+  for (let i = 0; i < n; i++) { if (mb[i]) br[i] = true; else if (mt[i]) tu[i] = true; }   // smoothing may extend, never shrink below the cap rule
   for (let i = 0; i < n; i++) if (br[i] && tu[i]) tu[i] = false;
   for (const a of [cL, fL, cR, fR]) { for (let i = 0; i < n; i++) if (br[i] || tu[i]) a[i] = false; closeGaps(a, 6); dropShort(a, 4); for (let i = 0; i < n; i++) if (br[i] || tu[i]) a[i] = false; }
   for (let i = 0; i < n; i++) {
@@ -576,7 +580,7 @@ function findMedian(r, ty, s, sg, hw) {
     for (const t of r2.samples) {
       const dx = t.x - s.x, dy = t.y - s.y; if (Math.abs(dx) > lim || Math.abs(dy) > lim) continue;
       const D = Math.hypot(dx, dy), lat = dx * nx + dy * ny;
-      if (D > lim || lat < ty.total * 0.8 || Math.abs(D - lat) > 1.5 || Math.abs(Math.sin(t.h - s.h)) > 0.3) continue;
+      if (D > lim || Math.abs(lat - (ty.gap + ty.total)) > 2 || Math.abs(D - lat) > 1.5 || Math.cos(t.h - s.h) > -0.96) continue;   // opposite direction, heading within ~16 deg
       if (!best || lat < best.lat) best = { lat, z: t.z - FORM_DROP };
     }
   }
@@ -584,13 +588,78 @@ function findMedian(r, ty, s, sg, hw) {
   const z0 = s.z - FORM_DROP;
   return { kind: 'median', edge: hw, z0, d1: best.lat / 2 + 0.3, mid: best.lat / 2, z1: Math.min(z0, best.z), cut: false };
 }
+// Junctions: stations within (other half-width + 6 m) of another road's centreline at a real angle (crossing / attaching) get no slopes or walls;
+// one shared flat platform per crossing (owned by the lower-id road) covers both corridors instead.
+function hull2(P) {
+  P = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); if (P.length < 3) return P;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];
+  for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  lo.pop(); up.pop(); return lo.concat(up);
+}
+function marchPt(x, y, ux, uy, z0, hLimit) {
+  const bt = T.batter, base = d => hBase(x + ux * d, y + uy * d), g0 = base(0.01) - z0, cut = g0 > 0;
+  if (Math.abs(g0) < 1e-3) return { d1: 0, z1: z0, cut };
+  const f = d => { const zs = cut ? z0 + d / bt : z0 - d / bt; return cut ? zs - base(d) : base(d) - zs; };
+  let lo = 0, hi = -1; const dMax = hLimit * bt;
+  for (let d = 0.5; d < dMax + 0.5; d += 0.5) { const dd = Math.min(d, dMax); if (f(dd) >= 0) { hi = dd; break; } lo = dd; }
+  if (hi < 0) hi = dMax;
+  else for (let it = 0; it < 10; it++) { const m = (lo + hi) / 2; if (f(m) >= 0) hi = m; else lo = m; }
+  return { d1: hi, z1: base(hi), cut };
+}
+function platRing(P) {   // per hull vertex: outward unit, slope toe distance / height, mask toe point (cached)
+  if (P.ring) return P.ring;
+  const H = P.hull, m = H.length, cx = H.reduce((a, p) => a + p[0], 0) / m, cy = H.reduce((a, p) => a + p[1], 0) / m; P.cx = cx; P.cy = cy;
+  return P.ring = H.map((p, k) => {
+    const a = H[(k + m - 1) % m], b = H[(k + 1) % m]; let ux = b[1] - a[1], uy = -(b[0] - a[0]); const l = Math.hypot(ux, uy) || 1; ux /= l; uy /= l;
+    if (ux * (p[0] - cx) + uy * (p[1] - cy) < 0) { ux = -ux; uy = -uy; }
+    const mm = marchPt(p[0], p[1], ux, uy, P.z, 60), e = Math.max(0, mm.d1 - 1);
+    return { ux, uy, ...mm, toe: [p[0] + ux * e, p[1] + uy * e] };
+  });
+}
+function findJunctions(r, ty, hw) {
+  const S = r.samples, n = S.length, jn = new Array(n).fill(false), plats = [];
+  for (const r2 of roads) {
+    if (r2 === r || !r2.samples) continue;
+    const ty2 = ROAD_TYPES[r2.type], hw2 = ty2.total / 2, lim = hw2 + 6, fl = new Array(n).fill(false);
+    for (let i = 0; i < n; i++) {
+      const s = S[i]; if (s.bridge || s.tunnel) continue;
+      for (const t of r2.samples) {
+        const dx = t.x - s.x, dy = t.y - s.y; if (Math.abs(dx) > lim || Math.abs(dy) > lim || Math.hypot(dx, dy) > lim) continue;
+        if (Math.abs(Math.sin(t.h - s.h)) < 0.34) continue;
+        fl[i] = true; break;
+      }
+    }
+    for (let i = 0; i < n; i++) if (fl[i]) jn[i] = true;
+    if (r.id > r2.id) continue;
+    for (let i = 0; i < n;) {
+      if (!fl[i]) { i++; continue; }
+      let j = i; while (j < n && fl[j]) j++;
+      const pts = [], zs = [], cl = hw + 6;
+      for (let k = i; k < j; k++) { const s = S[k], nx = -Math.sin(s.h), ny = Math.cos(s.h), o = hw + 3; zs.push(s.z); pts.push([s.x + nx * o, s.y + ny * o], [s.x - nx * o, s.y - ny * o]); }
+      for (const t of r2.samples) {
+        if (t.bridge || t.tunnel) continue;
+        let near = false; for (let k = i; k < j && !near; k++) near = Math.hypot(S[k].x - t.x, S[k].y - t.y) < cl;
+        if (!near) continue;
+        const nx = -Math.sin(t.h), ny = Math.cos(t.h), o = hw2 + 3; zs.push(t.z); pts.push([t.x + nx * o, t.y + ny * o], [t.x - nx * o, t.y - ny * o]);
+      }
+      const h = hull2(pts);
+      if (h.length >= 3) plats.push({ hull: h, z: zs.reduce((a, b) => a + b, 0) / zs.length - FORM_DROP });
+      i = j;
+    }
+  }
+  return { jn, plats };
+}
 function crossSections(r) {
-  if (r.xs) return r.xs;
+  const sig = roads.map(q => q.id + ':' + (q.ver || 0)).join();
+  if (r.xs && r.xsSig === sig) return r.xs;
+  r.xsSig = sig;
   const ty = ROAD_TYPES[r.type], S = r.samples, n = S.length, hw = ty.total / 2, xs = new Array(n);
   const raw = [[], []], wall = [new Array(n).fill(false), new Array(n).fill(false)];
+  const J = findJunctions(r, ty, hw); r.plats = J.plats;
   for (let i = 0; i < n; i++) {
     const s = S[i];
-    if (s.bridge || (s.tunnel && !s.tp)) { raw[0].push(null); raw[1].push(null); continue; }
+    if (s.bridge || (s.tunnel && !s.tp) || J.jn[i]) { raw[0].push(null); raw[1].push(null); continue; }
     for (let q = 0; q < 2; q++) {
       const md = findMedian(r, ty, s, q ? -1 : 1, hw);
       if (md) { raw[q].push(md); wall[q][i] = false; continue; }   // median between carriageways: flat fill, never a slope/wall trench
@@ -604,7 +673,7 @@ function crossSections(r) {
     if (i === n - 1 || !S[i + 1].tunnel) for (let k = i + 1; k <= Math.min(n - 1, i + PZ) && !S[k].tunnel && !S[k].bridge; k++) near[k] = true;
   }
   for (let q = 0; q < 2; q++) {
-    const w = wall[q], med = i => raw[q][i] && raw[q][i].kind === 'median', skip = i => S[i].bridge || (S[i].tunnel && !S[i].tp) || med(i);
+    const w = wall[q], med = i => raw[q][i] && raw[q][i].kind === 'median', skip = i => S[i].bridge || (S[i].tunnel && !S[i].tp) || J.jn[i] || med(i);
     for (let i = 0; i < n; i++) if (skip(i)) w[i] = false;
     closeGaps(w, 6); dropShort(w, 4);
     for (let i = 0; i < n; i++) if (skip(i)) w[i] = false; else if (S[i].tp || near[i]) w[i] = true;
@@ -673,6 +742,19 @@ function buildEarthworks(r) {
       for (let c = 0; c + 1 < A.R; c++) { const a = A.v0 + c, b = a + 1, a2 = B.v0 + c, b2 = a2 + 1; tri(a, a2, b); tri(b, a2, b2); }
     }
   }
+  for (const P of r.plats || []) {   // junction platform: flat fan + 1:batter slope ring to natural ground
+    const H = P.hull, m = H.length, R = platRing(P), c0 = addV(P.cx, P.cy, P.z, 0), ring = [];
+    for (let k = 0; k < m; k++) {
+      const p = H[k], { ux, uy, d1, z1, cut } = R[k], dE = d1 + 1, zc = cut ? z1 + 1 / bt : z1 - 1 / bt;
+      ring.push(addV(p[0], p[1], P.z, 0)); addV(p[0] + ux * d1, p[1] + uy * d1, z1, 0);
+      terrN.push(addV(p[0] + ux * dE, p[1] + uy * dE, Math.min(zc, hBase(p[0] + ux * dE, p[1] + uy * dE) - 0.05), 0));
+    }
+    for (let k = 0; k < m; k++) {
+      const a = ring[k], b = ring[(k + 1) % m];
+      tri(c0, a, b);
+      for (let c = 0; c < 2; c++) { tri(a + c, b + c, a + c + 1); tri(a + c + 1, b + c, b + c + 1); }
+    }
+  }
   if (!idx.length) return g;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -708,6 +790,7 @@ function drawMask() {
       i = j;
     }
   }
+  for (const r of roads) for (const P of r.plats || []) { c.beginPath(); platRing(P).forEach(q => c.lineTo(q.toe[0], q.toe[1])); c.closePath(); c.fill(); }
   maskTex.needsUpdate = true; maskDirty = false;
 }
 // Compat wrappers (input.js / ui.js call these): they now just invalidate and redraw the mask.
