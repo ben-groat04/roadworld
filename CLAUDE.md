@@ -15,3 +15,7 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - Objects are referenced by stable `cp::Id<Tag>`; IDs are never reused.
 - World coordinates are doubles (20 km+ maps).
 - Lane graph and junction rules are driving-side agnostic: one setting per save, everything mirrors from it.
+
+## Working style (from the person)
+- The main session (Opus) plans, asks questions, reviews and coordinates. **All coding is delegated to Sonnet subagents** (`Agent` with `model: sonnet`), never written by the main session.
+- Ask the person for input often on design and UX decisions; keep reversible choices moving.
