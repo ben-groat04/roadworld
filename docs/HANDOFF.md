@@ -41,7 +41,7 @@ Written 10 Oct 2026 at the end of the first cloud session. Branch: `claude/pract
 - Unreal: ProceduralMeshComponent for now (Geometry Script is evaluated in the look test). World Partition from day one. **Landscape can't be edited at runtime in shipped games**, so the plan is our own height-texture-driven ground mesh (as in the prototype), with Virtual Heightfield Mesh as the fallback; terrain is stored as tiles in sim_core (coarse everywhere, 0.5 m where roads touch).
 - Photorealism verdicts: adopt Lumen (test on runtime meshes; compare with Lumen Lite), VSM, TSR/DLSS, RVT for road–terrain blending, geometry markings, a custom terrain material and water. Avoid depending on Mesh Terrain, the Water plugin, stock HLOD for generated content, and Mass.
 
-## 5. In flight when the cloud session ended (verify; may be partial in WIP commits)
+## 5. Stopped mid-work at handoff (all 9 agents were stopped deliberately before the usage limit; their partial edits are in the final WIP commit, unreviewed and possibly not compiling. Re-run the checks, then finish or redo each item below as a fresh, scoped agent)
 
 - Prototype realism round (from a cold-read review scoring 3/10):
   - **earthworks.js:** sloped tunnel approach; tight-curve high-fill curtains (the person's own scene); walls only where a slope can't fit, with a 15 m minimum; a flat graded verge; the `no_bare_steps` check; a `tight_curve_fill` scenario.
