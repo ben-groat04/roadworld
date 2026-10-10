@@ -21,5 +21,7 @@ Cuttings and embankments (1:2 slopes), retaining walls, bridges, tunnels and wat
 `node prototypes/road-draw/test-geom.mjs` checks `src/geom.js` directly.
 
 Scene invariants: once, `cd prototypes/road-draw && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install` (uses your installed Edge/Chrome, downloads no browser); then `npm run check` (= `node build.mjs && node tools/scene.mjs --check`). Screenshots: `node tools/scene.mjs <outDir> [view ...]`.
+Close-ups: `node tools/scene.mjs <outDir> --cam x,y,z,tx,ty,tz [--scenario canonical|interchange] [--name file]` renders from camera position (x,y,z) looking at (tx,ty,tz), world metres, z up, and writes `<name>.png` (default `cam.png`).
+The terrain-following camera keeps the camera at least 3 m above ground, so very low cameras are lifted.
 
 Not production code: findings feed the real tool in Unreal.

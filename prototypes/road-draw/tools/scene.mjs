@@ -64,10 +64,15 @@ const VIEWS = {
 
 let loaded = null;   // set by the interchange view after window.__inspect.load()
 const CHECK_MODE = process.argv.includes('--check');
-const argv = process.argv.slice(2).filter(a => a !== '--check');
+const optVal = k => { const i = process.argv.indexOf(k); return i < 0 ? null : process.argv[i + 1]; };
+const CAM = optVal('--cam'), SCENARIO = optVal('--scenario') || 'canonical', CAM_NAME = optVal('--name') || 'cam';   // custom camera: --cam x,y,z,tx,ty,tz [--scenario canonical|interchange] [--name file]
+const camNums = CAM ? CAM.split(',').map(Number) : null;
+if (CAM && (camNums.length !== 6 || camNums.some(isNaN))) { console.error('--cam wants x,y,z,tx,ty,tz (world metres; z up)'); process.exit(2); }
+if (!['canonical', 'interchange'].includes(SCENARIO)) { console.error('unknown --scenario ' + SCENARIO + '; have: canonical interchange'); process.exit(2); }
+const argv = []; { const a = process.argv.slice(2); for (let i = 0; i < a.length; i++) { if (a[i] === '--check') continue; if (['--cam', '--scenario', '--name'].includes(a[i])) { i++; continue; } argv.push(a[i]); } }
 const outDir = resolve(argv[0] || '.');
 const wanted = argv.slice(1);
-const names = wanted.length ? wanted : Object.keys(VIEWS);
+const names = CAM ? [] : wanted.length ? wanted : Object.keys(VIEWS);
 for (const n of names) if (!VIEWS[n]) { console.error('unknown view ' + n + '; have: ' + Object.keys(VIEWS).join(' ')); process.exit(2); }
 mkdirSync(outDir, { recursive: true });
 
@@ -151,6 +156,44 @@ const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOT
 
 if (CHECK_MODE) {
   const results = await page.evaluate(CHECKS_IN_PAGE);
+  // terrain_covers_view: for every fixed canonical view, each screen sample whose ray lands on the graded world must show rendered pixels, never the void
+  { const bad = [];
+    for (const name of Object.keys(VIEWS)) {
+      if (name === 'interchange') continue;
+      const v = VIEWS[name](), r = await page.evaluate(({ v, name }) => {
+        const P = window.__proto, az = Math.atan2(-Math.cos(v.look * Math.PI / 180), Math.sin(v.look * Math.PI / 180)), W = 2048;
+        P.setView(v.target[0], v.target[1], v.dist, az, (90 - v.elev) * Math.PI / 180); P.renderNow();
+        const scene = P.scene, cam = P.camera, THREE = P.THREE, cv = document.getElementById('view'), gl = cv.getContext('webgl2');
+        const kids = scene.children.map(c => [c, c.visible]), bg = scene.background, fogOn = scene.fog;
+        const px = (x, y) => { const o = new Uint8Array(4); gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, o); return o; };
+        const bw = gl.drawingBufferWidth, bh = gl.drawingBufferHeight;
+        // reference "void" pixel: everything hidden, flat sentinel background
+        for (const c of scene.children) c.visible = false; scene.background = new THREE.Color(0xff00ff);
+        P.renderNow(); const ref = px(5, 5);
+        for (const [c, vis] of kids) c.visible = vis;
+        // the dark apron and sky dome would hide a void: hide them, keep everything real
+        for (const c of scene.children) if (c.isMesh && ((c.geometry.type === 'PlaneGeometry' && c.geometry.parameters.width > 10000) || c.renderOrder === -10)) c.visible = false;
+        P.renderNow();
+        const cams = cam.position.clone(), n = new THREE.Vector3(), d = new THREE.Vector3();
+        let tested = 0, voidN = 0, first = null;
+        for (let j = 1; j < 24; j++) for (let i = 1; i < 40; i++) {
+          const sx = i / 40, sy = j / 24; n.set(sx * 2 - 1, 1 - sy * 2, 0.5).unproject(cam); d.copy(n).sub(cams).normalize();   // three: x east, y up, z = -north
+          let hit = null, entered = false;
+          for (let k = 2; k < 14000; k += 2) { const x = cams.x + d.x * k, y = -(cams.z + d.z * k), z = cams.y + d.y * k;
+            if (x < 3 || x > W - 3 || y < 3 || y > W - 3) continue;   // only samples on the world proper (edge skirt excluded)
+            if (z <= P.groundAt(x, y)) { if (entered) hit = [x, y]; break; }   // a ray already below ground on entering the world hit the edge skirt / outside, not the world surface
+            entered = true; }
+          if (!hit) continue; tested++;
+          const o = px(Math.floor(sx * bw), Math.floor((1 - sy) * bh));
+          if (Math.abs(o[0] - ref[0]) + Math.abs(o[1] - ref[1]) + Math.abs(o[2] - ref[2]) < 6) { voidN++; if (!first) first = hit; }
+        }
+        for (const [c, vis] of kids) c.visible = vis; scene.background = bg; P.renderNow();
+        return { name, tested, voidN, first, ref: Array.from(ref) };
+      }, { v, name });
+      if (r.voidN) bad.push(`${r.name}: ${r.voidN}/${r.tested} samples void, first at (${r.first[0].toFixed(0)},${r.first[1].toFixed(0)})`);
+      else if (r.tested < 20) bad.push(`${r.name}: only ${r.tested} samples hit the world (test not meaningful)`);
+    }
+    results.push({ name: 'terrain_covers_view', pass: bad.length === 0, msg: bad.length ? bad.join(' | ') : `all ${Object.keys(VIEWS).length - 1} fixed views: every screen ray that lands on the world shows rendered ground/structure, never void` }); }
   await page.waitForTimeout(300);
   const consoleErrs = [...new Set(errors)];
   results.push({ name: 'no_console_errors', pass: consoleErrs.length === 0, msg: consoleErrs.length ? consoleErrs.join(' | ') : '0 errors' });
@@ -219,6 +262,20 @@ for (const name of names.sort((a, b) => (a === 'interchange') - (b === 'intercha
   await page.screenshot({ path: resolve(outDir, name + '.png') });
 }
 
+if (CAM) {   // custom camera: the target is moved along the view ray onto the ground so the terrain-following camera loop does not shift the view
+  if (SCENARIO === 'interchange') { const fx = ['interchange.json', 'sample.json'].map(f => resolve(HERE, '..', 'fixtures', f)).find(existsSync); await page.evaluate(j => window.__inspect.load(j, 'fixture'), readFileSync(fx, 'utf8')); }
+  const camInfo = await page.evaluate(({ c }) => {
+    const P = window.__proto, [px, py, pz, tx, ty, tz] = c, L = Math.hypot(tx - px, ty - py, tz - pz) || 1, d = [(tx - px) / L, (ty - py) / L, (tz - pz) / L];
+    let t = L; for (let k = 1; k < 8000; k += 1) { if (pz + d[2] * k <= P.hAt(px + d[0] * k, py + d[1] * k)) { t = k; break; } }
+    const gx = px + d[0] * t, gy = py + d[1] * t, gz = P.hAt(gx, gy), dist = Math.hypot(gx - px, gy - py, gz - pz) || 1;
+    const polar = Math.atan2(Math.hypot(px - gx, py - gy), pz - gz), az = Math.atan2(px - gx, -(py - gy));
+    P.setView(gx, gy, dist, az, Math.min(Math.max(polar, 0.05), 1.55)); P.renderNow();
+    return { ground: [gx, gy, gz], camera: [P.camera.position.x, -P.camera.position.z, P.camera.position.y] };
+  }, { c: camNums });
+  console.log('cam: looking at ground (' + camInfo.ground.map(v => v.toFixed(1)).join(', ') + '), camera at (' + camInfo.camera.map(v => v.toFixed(1)).join(', ') + ')');
+  await page.waitForTimeout(250); await page.evaluate(() => window.__proto.renderNow());
+  await page.screenshot({ path: resolve(outDir, CAM_NAME + '.png') }); names.push(CAM_NAME);
+}
 await browser.close();
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
 console.log(`wrote ${names.length} view(s) to ${outDir} in ${secs}s: ${names.join(' ')}`);

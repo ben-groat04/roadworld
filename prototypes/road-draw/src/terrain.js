@@ -96,8 +96,8 @@ function onGroundChanged(box) {
   gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0); gl.bindTexture(gl.TEXTURE_2D, prev);
 }
 
-// ===== Ground clipmap: concentric rings at 0.5, 1, 2, 4, 8, 16 m, all centred on one point snapped to 16 m so every ring's grid lines up exactly =====
-const RING_N = 256, RING_SP = [0.5, 1, 2, 4, 8, 16];
+// ===== Ground clipmap: concentric rings at 0.5, 1, 2, 4, 8, 16 m, all centred on one point snapped to the coarsest spacing so every ring's grid lines up exactly =====
+const RING_N = 256, RING_SP = [0.5, 1, 2, 4, 8, 16, 32, 64];   // each ring reaches 128*sp from the camera: the old 16 m outer ring (2 km) left the far part of the 2 km world void when the camera sat 1.7+ km from it (overview); max orbit distance is 3.8 km so the 64 m ring (8 km) covers every view
 const GLSL_H = `
 const float G_RES = ${GRID_RES.toFixed(3)};
 const float G_WORLD = ${WORLD.toFixed(1)};
@@ -213,7 +213,7 @@ const rings = RING_SP.map((sp, k) => {
 scene.add(terrain);
 // Clipmap re-centre: only moves the shared uCentre uniform (snapped to 16 m so all rings stay aligned). Geometry is never rebuilt; vertices are offset on the GPU.
 function updateClipmap() {
-  const cx = Math.round(camera.position.x / 16) * 16, cy = Math.round(-camera.position.z / 16) * 16, c = ringU.uCentre.value;
+  const SNAP = RING_SP[RING_SP.length - 1], cx = Math.round(camera.position.x / SNAP) * SNAP, cy = Math.round(-camera.position.z / SNAP) * SNAP, c = ringU.uCentre.value;
   if (c.x !== cx || c.y !== cy) c.set(cx, cy);
 }
 
