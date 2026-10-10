@@ -73,8 +73,7 @@ function rebuild(r) {
 }
 
 // ===== Graded ground: GH (0.5 m grid of final heights) =====
-const GRID_RES = 0.5, GN = WORLD / GRID_RES + 1;
-const GH = new Float32Array(GN * GN);
+// GRID_RES, GN, GH, groundAt and onGroundChanged are declared in terrain.js (loads earlier).
 const GK = CELL / GRID_RES;   // grid steps per base cell (8)
 const reachOfRoad = ty => ty.total / 2 + T.wallStart * T.batter + 2;
 function roadBox(r) {
@@ -88,11 +87,6 @@ function baseIJ(i, j) {
   const ci = Math.min((i / GK) | 0, TN - 2), cj = Math.min((j / GK) | 0, TN - 2), u = (i - ci * GK) / GK, v = (j - cj * GK) / GK, k = cj * TN + ci;
   const a = TH[k], b = TH[k + 1], c = TH[k + TN], d = TH[k + TN + 1];
   return u >= v ? a + u * (b - a) + v * (d - b) : a + u * (d - c) + v * (c - a);
-}
-for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) GH[j * GN + i] = baseIJ(i, j);
-function groundAt(x, y) {   // bilinear graded height
-  const fx = clamp(x / GRID_RES, 0, GN - 1.0001), fy = clamp(y / GRID_RES, 0, GN - 1.0001), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, k = j * GN + i;
-  return GH[k] * (1 - u) * (1 - v) + GH[k + 1] * u * (1 - v) + GH[k + GN] * (1 - u) * v + GH[k + GN + 1] * u * v;
 }
 // ---- Pure core (portable to C++): plain arrays and numbers only, no THREE / DOM / globals. ----
 // roadsData: [{ hw, reach, bbox:{x0,y0,x1,y1}, samples:[{x,y,z,h,br,tu,wL,wR}] }]; params: { formDrop, batter, wallThick }.
@@ -140,8 +134,10 @@ const TILE_M = 64;
 const tileOut = new Float32Array((TILE_M / GRID_RES) * (TILE_M / GRID_RES));
 const gridBase = (x, y) => baseIJ(Math.round(x / GRID_RES), Math.round(y / GRID_RES));   // base sampler for grid-aligned texels
 function roadsData() {
-  return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = reachOfRoad(ty), sb = []; for (let i = 0; i + 1 < r.samples.length; i += 4) { const a = r.samples[i], b = r.samples[Math.min(i + 4, r.samples.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
-    return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: r.samples, segBoxes: sb }; });
+  return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = reachOfRoad(ty), sb = [], full = r.samples, dec = [];
+    for (let i = 0; i < full.length; i += 2) { const a = full[i], b = full[Math.min(i + 1, full.length - 1)], c = full[Math.min(i + 2, full.length - 1)]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, br: a.br || b.br || (i > 0 && full[i - 1].br), tu: a.tu || b.tu || (i > 0 && full[i - 1].tu) }); }   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
+    if ((full.length - 1) % 2) { const a = full[full.length - 1]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, br: a.br, tu: a.tu }); } for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
+    return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb }; });
 }
 // Recompute GH inside box {x0,y0,x1,y1} (world metres) from base + all roads. Calls onGroundChanged(box) with the snapped box.
 function gradeRegion(box) {
