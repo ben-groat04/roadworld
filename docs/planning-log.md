@@ -1,13 +1,13 @@
 # City Painter: Planning Log
 
-Living plan for a photorealistic, sandbox city builder with a "city painter" focus. Code is written with Claude Code, so this doc is for planning only. Companion docs: the v0 kickoff brief (docs/v0-brief.md), v0 pre-research findings (docs/pre-research.md) and UK road marking rules (docs/road-marking-rules.md). Last updated: 10 Oct 2026.
+Living plan for a photorealistic, sandbox city builder with a "city painter" focus. Code is written with Claude Code, so this doc is for planning only. Companion docs: the road graph data model (docs/road-graph-model.md), the v0 kickoff brief (docs/v0-brief.md), v0 pre-research findings (docs/pre-research.md) and UK road marking rules (docs/road-marking-rules.md). Last updated: 10 Oct 2026.
 
 ## 1. Vision
 
 - A city builder leaning toward painting and creating rather than economy management.
 - Photorealistic when zoomed in, statistical (but still visible) when zoomed out.
 - Sandbox only for now: no demand, economy, services or utilities. These come later.
-- UK visual theme to start.
+- UK visual theme to start. UK is only the first region pack, used for prototyping: the core stays region-agnostic, and all region-specific rules (road types, markings, clearances, units) live in swappable data packs.
 
 ## 2. Decisions made
 
@@ -211,3 +211,4 @@ Sorted by when they are needed. Licences and current feature status are unverifi
 - Round 23: first extraction of UK road marking rules (Traffic Signs Manual Chapter 5, sections 1 to 5) written up as the doc City Painter: UK road marking rules (draft). Roundabouts, grade-separated junctions, yellow boxes, arrows and the Chapter 3 and 6 markings are still to extract.
 - Round 24: road marking research stopped at the draft reference. Markings must be generated sensibly, with exact numbers tuned by eye by the person, and no further extraction is planned.
 - Round 25: audit of all four docs. Section 2 of this log regrouped by topic (engine and workflow, targets and platform, roads, junctions, elevation and terrain, water, parcels and zoning, buildings, scenery, traffic). Duplicates merged and superseded statements reconciled, with no decisions removed. Companion doc paths added, and brief and pre-research cross-references aligned with the repo file names.
+- Round 26: work started in the repo. Project skeleton built (headless sim_core, command and undo stack, stable IDs, doctest tests, CI). UK confirmed as the first region pack only, with the core region-agnostic. Road graph data model agreed: edges only (no Road layer above them), dual carriageways and motorways drawn as one stroke but placed as two independently editable one-way edges, draggable clicked-point handles, automatic vertical curve length, one-way as a per-edge toggle. Engine is Unreal 5.8. The road drawing UX prototype is a throwaway browser tool (2D plan plus height profile).

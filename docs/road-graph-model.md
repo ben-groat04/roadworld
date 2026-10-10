@@ -1,6 +1,6 @@
 # City Painter: road graph data model (proposal v1)
 
-10 Oct 2026. Status: **proposal, awaiting the person's answers** (questions marked **Q**). Nothing in `sim_core` implements this yet.
+10 Oct 2026. Status: **agreed v1** (answers recorded in §7). Nothing in `sim_core` implements this yet.
 
 ## 1. Principles
 
@@ -16,12 +16,11 @@
 World
  ├─ settings: DrivingSide
  ├─ Node        { id, pos: Vec3, kind: End | Junction | Joint }
- ├─ Edge        { id, road, a: NodeId, b: NodeId,
+ ├─ Edge        { id, a: NodeId, b: NodeId,
  │                horizontal: ControlPoint[] + fitted Primitive[],
  │                vertical:   VerticalProfile,
  │                structure:  Span[]  (ground | bridge | tunnel over s-ranges),
  │                type: RoadTypeId, direction: TwoWay | OneWayAtoB }
- ├─ Road        { id, edges: EdgeId[] (ordered), name? }      ← Q1
  ├─ JunctionGroup { id, nodes: NodeId[], kind: Plain | Roundabout }
  └─ Overrides   { connector overrides, lane overrides, corner radii } keyed by stable keys (§5)
 ```
@@ -46,11 +45,13 @@ A list of `{s0, s1, kind}` along the edge. The bridge and tunnel tool writes spa
 A road type defines the cross-section for **one direction of travel, from the centre outwards to the nearside**. Two-way roads mirror it for the other direction. A median is a centre slot.
 
 ```
-residential_street: centre: []      half: [driving 3.0, parking 2.0, kerb, pavement 2.0]
-a_road_dual:        centre: [median 2.5 w/ barrier]  half: [driving 3.65 (offside), driving 3.65, hard_strip 1.0, verge 2.0]
-motorway:           centre: [central_reservation 3.0] half: [driving 3.65 ×3, hard_shoulder 3.3, verge]
+residential_street: two-way, half: [driving 3.0, parking 2.0, kerb, pavement 2.0]
+a_road_dual:        carriageway (one-way): [driving 3.65 ×2, hard_strip 1.0, verge 2.0], median_gap 2.5
+motorway:           carriageway (one-way): [driving 3.65 ×3, hard_shoulder 3.3, verge], median_gap 3.0
 one-way variant:    explicit cross-section, all driving lanes forward
 ```
+
+**Dual carriageways and motorways (agreed):** drawn as **one stroke**, but placing it creates **two independent one-way edges** offset either side of the stroke by `median_gap/2 + carriageway half-width`, travelling in opposite directions per `DrivingSide`. After placement each carriageway is a normal one-way edge: dragged, split, bridged or deleted on its own, so carriageways can diverge freely at grade-separated junctions. The median and central reservation surface is *derived*: generated between nearby parallel, opposite-direction one-way edges of a dual type, not stored as a link.
 
 Plus: design speed, speed limit, street light spacing and style, marking class, default vertical-curve K values, and max cut/fill before forced structure.
 
@@ -69,7 +70,7 @@ Regeneration is triggered by dirty flags set by commands: an edit dirties its ed
 
 ## 4. Topology rules
 
-- **Connecting into the middle of an edge splits it**: the old edge ID is retired and two new edges are created with a new Junction node between them. The Road (Q1) keeps its ID and now lists both edges.
+- **Connecting into the middle of an edge splits it**: the old edge ID is retired and two new edges are created with a new Junction node between them. There is no player-level Road object above edges (agreed): whole-road selection, if wanted later, is a derived walk along connected edges of the same type.
 - **Plan-view crossings:** two edges that cross in plan form a junction only if |Δz| at the crossing is < 1.0 m. Otherwise they must clear by at least the region pack's headroom (UK: about 5.3 m), or one must be a tunnel. Anything in between is invalid ("breaks graphically"). The numbers are tunable.
 - **Starting a road from an existing road** snaps to it and inherits its z there (planning log rule).
 - **Roundabouts:** a JunctionGroup of kind Roundabout whose ring is a closed loop of one-way edges (circulation from `DrivingSide`) with entry and exit nodes. The roundabout tool emits exactly that. Hand-drawn rings are *recognised* (closed, one-way, every node on the ring is a junction) and promoted to the same group.
@@ -84,10 +85,10 @@ Regeneration is triggered by dirty flags set by commands: an edit dirties its ed
 
 `DrawRoad` (composite: create nodes and edges, split edges, apply terrain grading), `MoveControlPoint`, `DeleteEdge`, `ChangeRoadType` (upgrade tool), `SetDirection`/`ReverseEdge`, `SetStructureSpan`, `PlaceRoundabout`, `SetConnectorOverride`, `SetCornerRadius`. Each records exactly what it needs to revert.
 
-## 7. Questions for the person
+## 7. Decisions (answered 10 Oct 2026)
 
-- **Q1. Road vs edge.** Keep a player-level *Road* (the stroke you drew, stable ID, later a street name and select-whole-road for upgrades) above graph *edges* that split at junctions? Recommended: yes.
-- **Q2. Dual carriageways.** Draw an A road or motorway as one stroke with a median (CS1-style, easy to draw), and let it auto-split into two one-way carriageways where they diverge (grade-separated junctions)? Or always draw each carriageway separately? Recommended: one stroke, with an explicit "split carriageways" edit.
-- **Q3. Editing after drawing.** Can you drag individual clicked points later (handles), or do you edit only by redrawing or deleting? Recommended: draggable handles.
-- **Q4. Vertical curves.** Length automatic from design speed, or also player-adjustable per break? Recommended: automatic, with an override later.
-- **Q5. One-way roads.** A per-edge toggle that swaps in the type's one-way cross-section? Recommended: yes, with a reverse-direction tool.
+- **Q1. Road vs edge:** edges only. No Road layer above the graph.
+- **Q2. Dual carriageways:** drawn as one stroke, then placed as two individually editable one-way edges (see §2).
+- **Q3. Editing:** clicked points stay as draggable handles, and the clothoid refits live.
+- **Q4. Vertical curves:** length is automatic from design speed (K-values). A per-break override is possible later.
+- **Q5. One-way:** per-edge toggle that swaps in the type's one-way cross-section, plus a reverse-direction tool.
