@@ -31,3 +31,6 @@ Expect about 30–50 GB. After installing, open `Engine/Config/Windows/Windows_S
 1. Clone this repo and `git lfs pull`.
 2. Build sim_core with CMake (step 2) and confirm the tests pass.
 3. Create a blank **C++** project from the UE 5.8 launcher and confirm it compiles and opens. That proves the toolchain before we add our plugin.
+
+## 4. Open the Unreal project (skeleton)
+Once step 3 passes, follow `unreal/README.md`: generate project files for `unreal/CityPainter/CityPainter.uproject`, build **Development Editor / Win64** in Visual Studio, then place `CPRoadNetworkActor` in a level. The plugin compiles `sim_core` directly from the repo, so keep the whole repo checked out (do not copy `unreal/` elsewhere).

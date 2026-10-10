@@ -1,0 +1,14 @@
+# Unreal generated output (the root .gitignore already ignores these names; repeated here so unreal/ stands alone)
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+.vs/
+.idea/
+*.sln
+*.suo
+*.VC.db
+*.opensdf
+*.sdf
+*.xcworkspace
+*.xcodeproj
