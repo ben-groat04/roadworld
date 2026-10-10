@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const dir = new URL('./', import.meta.url);
 const rd = f => readFileSync(new URL(`src/${f}`, dir), 'utf8');
 // Fixed concatenation order; this is the load order inside the single module scope.
-const APP = ['config.js', 'scene.js', 'terrain.js', 'earthworks.js', 'roadmesh.js', 'input.js', 'ui.js'];
+const APP = ['config.js', 'scene.js', 'terrain.js', 'earthworks.js', 'roadmesh.js', 'inspect.js', 'input.js', 'ui.js'];
 const body = s => s.replace(/\n+$/, '') + '\n';
 let html = rd('shell.html');
 html = html.replace('<!--GEOM-->', () => body(rd('geom.js')).trimEnd());

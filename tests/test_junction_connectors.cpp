@@ -300,8 +300,13 @@ TEST_CASE("A: overrides: disable, enable u-turn, custom curve, lane switch survi
         JunctionOverrides ov4;
         for (const auto& l : a.lanes) ov4.lane_connects[{n.centre, a.edge, l.slot}] = false;
         const Junction j = n.build(ov4);
-        for (const auto& c : j.connectors) CHECK(c.arm_from != 1);
-        for (const auto& c : j.connectors) CHECK(c.arm_to != 1);
-        CHECK(j.connectors.size() == 2);
+        // The lanes stay in the distribution; their connectors are emitted disabled.
+        CHECK(j.connectors.size() == 6);
+        int enabled = 0;
+        for (const auto& c : j.connectors) {
+            if (c.arm_from == 1 || c.arm_to == 1) CHECK_FALSE(c.enabled);
+            enabled += c.enabled;
+        }
+        CHECK(enabled == 2);
     }
 }

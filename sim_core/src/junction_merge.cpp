@@ -10,7 +10,10 @@
 // slip's long gore both fit on long enough edges).
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <string>
 #include <tuple>
+#include <type_traits>
 
 #include "clipper2/clipper.h"
 #include "cp/junction.h"
@@ -130,6 +133,29 @@ bool paths_cross(const std::vector<Vec3>& p, const std::vector<Vec3>& q, double 
     return false;
 }
 
+// Junction::degraded is being added by another agent (a flag and/or a reason string); these
+// helpers compile against whichever of bool / string / optional<string> (+ degraded_reason) it is,
+// and are no-ops until the field exists.
+template <class J>
+void set_degraded(J& j, const std::string& reason) {
+    if constexpr (requires { j.degraded; }) {
+        using T = std::remove_cvref_t<decltype(j.degraded)>;
+        if constexpr (std::is_same_v<T, bool>) j.degraded = true;
+        else if constexpr (std::is_assignable_v<T&, std::string>) j.degraded = reason;
+    }
+    if constexpr (requires { j.degraded_reason; }) j.degraded_reason = reason;
+}
+template <class J>
+void clear_degraded(J& j) {
+    if constexpr (requires { j.degraded; }) {
+        using T = std::remove_cvref_t<decltype(j.degraded)>;
+        if constexpr (std::is_same_v<T, bool>) j.degraded = false;
+        else if constexpr (std::is_same_v<T, std::string>) j.degraded.clear();
+        else if constexpr (std::is_assignable_v<T&, std::nullopt_t>) j.degraded = std::nullopt;
+    }
+    if constexpr (requires { j.degraded_reason; }) j.degraded_reason = {};
+}
+
 }  // namespace
 
 void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const RegionPack& region,
@@ -142,6 +168,7 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
     junction.gore.clear();
     junction.crossings.clear();
     junction.corners.clear();
+    clear_degraded(junction);
     if (n != 3) return;
     const bool merge = junction.cls == NodeClass::Merge;
     const auto& arms = junction.arms;
@@ -154,19 +181,32 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
     if (oi < 0) return;
     const int a1 = (oi + 1) % 3, a2 = (oi + 2) % 3;  // a2 is CCW of a1
 
-    // Main carriageway P = the more major of the pair; the slip Q is the other.
-    auto rank = [&](int i) {
-        const auto& a = A(i);
-        return std::tuple(a.road_class, a.half_width_left + a.half_width_right, a.lanes.size());
+    // Main carriageway P = the more major of the pair (road class, then lane count); for equal arms
+    // (a symmetric Y) the one that continues the odd arm most straight. The slip Q is the other.
+    auto pair_lanes = [&](int i) { return merge ? A(i).inbound_count() : A(i).outbound_count(); };
+    auto straight_dev = [&](int i) {
+        return std::fabs(wrap_angle(A(i).heading_out - A(oi).heading_out - kPi));
     };
-    const int pi = rank(a1) >= rank(a2) ? a1 : a2;
+    auto rank = [&](int i) { return std::tuple(A(i).road_class, pair_lanes(i)); };
+    int pi = a1;
+    if (rank(a2) > rank(a1)) pi = a2;
+    else if (rank(a2) == rank(a1) && straight_dev(a2) < straight_dev(a1) - 1e-4) pi = a2;
     const int qi = pi == a1 ? a2 : a1;
+
+    // Which side the slip is on, from the headings: Q left of P in the outward frame (positive
+    // cross product) is on the traffic's right when the pair flows toward the node (merge) and on
+    // its left when it flows away (diverge). Nearside is the driving side.
+    const bool slip_left_out = std::sin(wrap_angle(A(qi).heading_out - A(pi).heading_out)) > 0;
+    const bool slip_travel_left = merge ? !slip_left_out : slip_left_out;
+    const bool slip_nearside = slip_travel_left == (junction.side == DrivingSide::Left);
 
     // ---- trims
     auto clampt = [&](int i, double t) {
         return std::clamp(t, 0.0, A(i).edge_length / 2);
     };
     double theta = std::fabs(wrap_angle(A(a2).heading_out - A(a1).heading_out));
+    if (theta < 0.05)
+        set_degraded(junction, "slip angle below 3 degrees: nose position clamped");
     theta = std::clamp(theta, 0.05, kPi - 0.05);
     const double ka = A(a1).kerb_left, kb = A(a2).kerb_right;
     const double d1 = ka / std::tan(theta) + kb / std::sin(theta);
@@ -187,22 +227,50 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
     struct Pair { int pair_arm, pair_lane, o_lane; };
     std::vector<Pair> pairs;
     std::vector<bool> o_fed(lo.size(), false);
-    for (auto [x, y] : align(static_cast<int>(lp.size()), static_cast<int>(lo.size()), false)) {
+    // The main carriageway keeps the end of O away from the slip; the slip takes the end on its own side.
+    for (auto [x, y] : align(static_cast<int>(lp.size()), static_cast<int>(lo.size()), !slip_nearside)) {
         pairs.push_back({pi, lp[static_cast<std::size_t>(x)], lo[static_cast<std::size_t>(y)]});
         o_fed[static_cast<std::size_t>(y)] = true;
     }
-    for (auto [x, y] : align(static_cast<int>(lq.size()), static_cast<int>(lo.size()), true)) {
+    for (auto [x, y] : align(static_cast<int>(lq.size()), static_cast<int>(lo.size()), slip_nearside)) {
         pairs.push_back({qi, lq[static_cast<std::size_t>(x)], lo[static_cast<std::size_t>(y)]});
         o_fed[static_cast<std::size_t>(y)] = true;
     }
-    for (std::size_t y = 0; y < lo.size(); ++y)  // orphan O lanes: take the main carriageway's nearest lane
-        if (!o_fed[y] && !lp.empty()) pairs.push_back({pi, lp[std::min(y, lp.size() - 1)], lo[y]});
+    // Orphan O lanes take the nearest lane of the main carriageway (the one beside the unfed gap).
+    for (std::size_t y = 0; y < lo.size(); ++y) {
+        if (o_fed[y]) continue;
+        if (!lp.empty()) pairs.push_back({pi, slip_nearside ? lp.back() : lp.front(), lo[y]});
+        else if (!lq.empty()) pairs.push_back({qi, slip_nearside ? lq.back() : lq.front(), lo[y]});
+    }
 
     struct Conn { int af, lf, at, lt; };
     std::vector<Conn> cs;
     for (const Pair& p : pairs) {
         if (merge) cs.push_back({p.pair_arm, p.pair_lane, oi, p.o_lane});
         else cs.push_back({oi, p.o_lane, p.pair_arm, p.pair_lane});
+    }
+    // Enabling overrides can add connectors the lane distribution did not make, exactly as at a
+    // normal junction. Only lanes that exist can match, so a key saved while this node was a
+    // Junction is ignored for lanes that are not travelled this way now and revives if it flips back.
+    auto find_lane = [&](EdgeId e, int slot, bool inbound, int& arm, int& lane) {
+        for (int a = 0; a < 3; ++a) {
+            if (!(A(a).edge == e)) continue;
+            for (int l = 0; l < static_cast<int>(A(a).lanes.size()); ++l) {
+                const LaneRef& r = A(a).lanes[static_cast<std::size_t>(l)];
+                if (r.slot == slot && r.inbound == inbound) {
+                    arm = a;
+                    lane = l;
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    for (const auto& [ck, ov] : overrides.connectors) {
+        if (!(ck.node == junction.node) || !ov.enabled) continue;
+        int af, lf, at, lt;
+        if (find_lane(ck.from_edge, ck.from_slot, true, af, lf) && find_lane(ck.to_edge, ck.to_slot, false, at, lt))
+            cs.push_back({af, lf, at, lt});
     }
     auto key = [](const Conn& c) { return std::tie(c.af, c.lf, c.at, c.lt); };
     std::sort(cs.begin(), cs.end(), [&](const Conn& x, const Conn& y) { return key(x) < key(y); });
@@ -266,14 +334,25 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
     if (cw.empty()) cw = from_paths(strips);
     junction.carriageway = cw;
 
-    // Gore: triangle from the nose point to the inner kerbs at the trim lines, if the kerbs separate in range.
+    // Gore: triangle from the nose point to the inner kerbs at the trim lines. With full centrelines
+    // it fits whenever the edges are at least ~2x (nose distance + gore length) long; otherwise the
+    // junction is flagged degraded rather than silently losing its gore.
     const double t1 = tr[static_cast<std::size_t>(a1)], t2 = tr[static_cast<std::size_t>(a2)];
+    bool gore_ok = false;
     if (d1 < t1 - 0.05 && d2 < t2 - 0.05) {
         Ring g{arm_point(A(a1), d1, A(a1).kerb_left).pos.xy(), arm_point(A(a1), t1, A(a1).kerb_left).pos.xy(),
                arm_point(A(a2), t2, -A(a2).kerb_right).pos.xy()};
         if (area(g) < 0) std::reverse(g.begin(), g.end());
-        if (area(g) > 1e-6) junction.gore.push_back(std::move(g));
+        if (area(g) > 1e-6) {
+            junction.gore.push_back(std::move(g));
+            gore_ok = true;
+        }
     }
+    if (!gore_ok)
+        set_degraded(junction, "gore does not fit: the nose is " + std::to_string(std::max(d1, d2) + kGoreLength) +
+                                   " m from the node but the arms can be trimmed to only " +
+                                   std::to_string(std::min(t1, t2)) + " m (edges too short for a " +
+                                   std::to_string(theta * 180 / kPi) + " degree slip)");
 
     double delta = 0;
     for (const auto& a : arms)

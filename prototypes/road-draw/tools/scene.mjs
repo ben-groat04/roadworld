@@ -8,7 +8,7 @@
 // closes help, hides the profile panel, then writes <outDir>/<view>.png at 1400x800.
 // Prints console errors and exits 1 if there are any.
 import { chromium } from '/tmp/claude-0/-home-user-roadworld/60bece6d-438c-5d30-8fba-60a1ef284c2a/scratchpad/node_modules/playwright/index.mjs';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -57,10 +57,12 @@ const VIEWS = {
   dual_curve: () => ({ target: info.dualMid, dist: 90, elev: 22, look: info.dualHeading + 35 }),
   motorway: () => ({ target: [720, 1800], dist: 100, elev: 18, look: 60 }),
   tight_curve_fill: () => ({ target: [1668, 880], dist: 110, elev: 24, look: 160 }),
+  interchange: () => ({ target: [loaded.cx, loaded.cy], dist: Math.max(100, loaded.extent * 0.9), elev: 35, look: 90 }),   // sim_core scene (fixtures/interchange.json, else fixtures/sample.json); replaces the canonical scene, keep last
   overview: () => ({ target: [850, 850], dist: 2700, elev: 50, look: 100 }),
 };
 // ======================================================================================================================
 
+let loaded = null;   // set by the interchange view after window.__inspect.load()
 const CHECK_MODE = process.argv.includes('--check');
 const argv = process.argv.slice(2).filter(a => a !== '--check');
 const outDir = resolve(argv[0] || '.');
@@ -193,7 +195,11 @@ if (CHECK_MODE) {
 if (process.env.INFO) console.log(JSON.stringify(info, null, 1));
 if (!info.portal.found) errors.push('scene: no tunnel portal found (tunnel road has no tunnel samples)');
 
-for (const name of names) {
+for (const name of names.sort((a, b) => (a === 'interchange') - (b === 'interchange'))) {
+  if (name === 'interchange') {
+    const fx = ['interchange.json', 'sample.json'].map(f => resolve(HERE, '..', 'fixtures', f)).find(existsSync);
+    loaded = await page.evaluate(j => { const i = window.__inspect.load(j, 'fixture'); return { cx: i.cx, cy: i.cy, extent: i.extent }; }, readFileSync(fx, 'utf8'));
+  }
   const v = VIEWS[name]();
   await page.evaluate(({ v }) => {
     const P = window.__proto, az = Math.atan2(-Math.cos(v.look * Math.PI / 180), Math.sin(v.look * Math.PI / 180));

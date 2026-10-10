@@ -210,7 +210,7 @@ JunctionSet build_junctions(const RoadGraph& graph, const RegionPack& region, co
             generate_merge_diverge(j, graph, region, overrides);
         } else {
             j.trims = compute_trims(j.arms, j.corner_radii);
-            generate_connectors(j, j.side, overrides);
+            generate_connectors(j, j.side, overrides, region);
             generate_geometry(j, graph, region, overrides);
         }
         set.junctions.emplace(id, std::move(j));

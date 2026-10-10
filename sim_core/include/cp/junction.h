@@ -147,6 +147,7 @@ struct CrossingSpot {
     Vec3 centre;           // on the arm centreline
     double heading = 0;    // rad, direction of travel across the road (perpendicular to the arm)
     double length = 0;     // m, kerb to kerb
+    bool refuge = false;   // dual carriageway: this is one half of a crossing split at a median refuge
 };
 
 // Polygons are rings of Vec2 (implicit close), outer rings CCW, holes CW. Clipper2 is the
@@ -177,6 +178,10 @@ struct Junction {
     PolygonSet pavements;              // pavement/kerb polygons around the corners and between arms
     PolygonSet gore;                   // [C] Merge/Diverge only: nose/gore area between the two nearly parallel arms (hatching)
     std::vector<CrossingSpot> crossings;
+    // [B] true when the geometry could not be built cleanly (edges too short for the trims,
+    // duplicate headings, or a polygon that failed validation); degraded_reason says why.
+    bool degraded = false;
+    std::string degraded_reason;
 
     // [A] fills (C for Merge/Diverge):
     std::vector<LaneConnector> connectors;
@@ -198,6 +203,11 @@ struct ConnectorKey {
     int from_slot = 0;
     EdgeId to_edge;
     int to_slot = 0;
+    // Arm identity, only meaningful for a loop edge (a == b, two arms with one edge id): which
+    // end of the edge the lane is on. Set it to JunctionArm::at_a for loop edges and leave true
+    // for every other edge.
+    bool from_at_a = true;
+    bool to_at_a = true;
     friend auto operator<=>(const ConnectorKey&, const ConnectorKey&) = default;
 };
 
@@ -268,7 +278,8 @@ std::vector<double> compute_trims(const std::vector<JunctionArm>& arms, const st
 // U-turns unless an override enables one), with kind, path, conflicts. Reads junction.trims
 // (must be set), `overrides` (connector enable/disable/via, lane_connects). Order is
 // deterministic: by arm_from, lane_from, arm_to, lane_to. Does not touch other fields.
-void generate_connectors(Junction& junction, DrivingSide side, const JunctionOverrides& overrides);
+void generate_connectors(Junction& junction, DrivingSide side, const JunctionOverrides& overrides,
+                         const RegionPack& region);
 
 // [A] Pure helper, also used by C: path for one connector between two lanes given the trims.
 // `via` null = default curve. First/last points as documented at LaneConnector::path.

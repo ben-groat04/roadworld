@@ -1,6 +1,7 @@
 // [A] Lane connectors (docs/junctions.md section 4): lane distribution by turn kind,
 // clothoid paths, conflicts, overrides.
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <set>
 #include <tuple>
@@ -25,10 +26,6 @@ bool turn_is_left(TurnKind kind, DrivingSide side) {
 }
 
 namespace {
-
-// region.plan_crossing_junction_dz_m is not reachable from generate_connectors' signature;
-// this mirrors the pack value (1.0 m).
-constexpr double kPlanCrossingDz = 1.0;
 
 using LaneIdx = std::vector<int>;
 
@@ -87,14 +84,14 @@ bool seg_cross(Vec2 a, Vec2 b, Vec2 c, Vec2 d, double& t, double& u) {
     return t >= 0 && t <= 1 && u >= 0 && u <= 1;
 }
 
-bool paths_cross(const std::vector<Vec3>& p, const std::vector<Vec3>& q) {
+bool paths_cross(const std::vector<Vec3>& p, const std::vector<Vec3>& q, double dz) {
     for (std::size_t i = 0; i + 1 < p.size(); ++i) {
         for (std::size_t j = 0; j + 1 < q.size(); ++j) {
             double t, u;
             if (!seg_cross(p[i].xy(), p[i + 1].xy(), q[j].xy(), q[j + 1].xy(), t, u)) continue;
             const double zp = p[i].z + (p[i + 1].z - p[i].z) * t;
             const double zq = q[j].z + (q[j + 1].z - q[j].z) * u;
-            if (std::fabs(zp - zq) < kPlanCrossingDz) return true;
+            if (std::fabs(zp - zq) < dz) return true;
         }
     }
     return false;
@@ -132,28 +129,32 @@ std::vector<Vec3> make_connector_path(const JunctionArm& from_arm, const LaneRef
     return out;
 }
 
-void generate_connectors(Junction& junction, DrivingSide side, const JunctionOverrides& overrides) {
+void generate_connectors(Junction& junction, DrivingSide side, const JunctionOverrides& overrides,
+                         const RegionPack& region) {
     junction.connectors.clear();
     const auto& arms = junction.arms;
     const int n = static_cast<int>(arms.size());
-    auto trim_of = [&](int i) {
-        return static_cast<std::size_t>(i) < junction.trims.size() ? junction.trims[static_cast<std::size_t>(i)] : 0.0;
-    };
+    // Contract: generate_connectors is called with trims set (one per arm).
+    assert(junction.trims.size() == arms.size());
+    auto has_trim = [&](int i) { return static_cast<std::size_t>(i) < junction.trims.size(); };
+    auto trim_of = [&](int i) { return junction.trims[static_cast<std::size_t>(i)]; };
     auto lane_on = [&](int arm, int lane) {
         const auto it = overrides.lane_connects.find(
             {junction.node, arms[static_cast<std::size_t>(arm)].edge,
              arms[static_cast<std::size_t>(arm)].lanes[static_cast<std::size_t>(lane)].slot});
         return it == overrides.lane_connects.end() || it->second;
     };
-    // Usable lanes per arm in travel order (travel-left first): inbound lanes run against
+    // All lanes per arm in travel order (travel-left first): inbound lanes run against
     // heading_out, so their travel-left-to-right order is the reverse of the arm's list.
+    // lane_connects=false lanes stay in the distribution (so the other lanes keep their
+    // connectors) and their connectors are emitted disabled.
     std::vector<LaneIdx> in(static_cast<std::size_t>(n)), out(static_cast<std::size_t>(n));
     for (int a = 0; a < n; ++a) {
         const auto& lanes = arms[static_cast<std::size_t>(a)].lanes;
         for (int l = static_cast<int>(lanes.size()) - 1; l >= 0; --l)
-            if (lanes[static_cast<std::size_t>(l)].inbound && lane_on(a, l)) in[static_cast<std::size_t>(a)].push_back(l);
+            if (lanes[static_cast<std::size_t>(l)].inbound) in[static_cast<std::size_t>(a)].push_back(l);
         for (int l = 0; l < static_cast<int>(lanes.size()); ++l)
-            if (!lanes[static_cast<std::size_t>(l)].inbound && lane_on(a, l)) out[static_cast<std::size_t>(a)].push_back(l);
+            if (!lanes[static_cast<std::size_t>(l)].inbound) out[static_cast<std::size_t>(a)].push_back(l);
     }
 
     std::set<Cand> cands;
@@ -203,12 +204,66 @@ void generate_connectors(Junction& junction, DrivingSide side, const JunctionOve
         emit(left, lr);
         emit(straight, sr);
         emit(right, rr);
+
+        // Acute forks: a lane the distribution left without a connector (its only exits were
+        // classified as U-turns) falls back to the nearest non-self exit.
+        int best = -1;
+        double best_turn = 1e9;
+        for (int t = 0; t < n; ++t) {
+            if (t == f || out[static_cast<std::size_t>(t)].empty()) continue;
+            const double turn = std::fabs(wrap_angle(arms[static_cast<std::size_t>(t)].heading_out -
+                                                     (arms[static_cast<std::size_t>(f)].heading_out + kPi)));
+            if (turn < best_turn) {
+                best_turn = turn;
+                best = t;
+            }
+        }
+        if (best < 0) continue;
+        const LaneIdx& outl = out[static_cast<std::size_t>(best)];
+        for (int i = 0; i < L; ++i) {
+            const int lane = inl[static_cast<std::size_t>(i)];
+            const bool has = std::any_of(cands.begin(), cands.end(),
+                                         [&](const Cand& c) { return c.af == f && c.lf == lane; });
+            if (!has)
+                cands.insert({f, lane, best, outl[static_cast<std::size_t>(i * static_cast<int>(outl.size()) / L)]});
+        }
+    }
+    // Likewise an outbound lane nothing reaches is fed from the nearest other arm's inbound lanes.
+    for (int t = 0; t < n; ++t) {
+        const LaneIdx& outl = out[static_cast<std::size_t>(t)];
+        const int M = static_cast<int>(outl.size());
+        for (int j = 0; j < M; ++j) {
+            const int lane = outl[static_cast<std::size_t>(j)];
+            if (std::any_of(cands.begin(), cands.end(), [&](const Cand& c) { return c.at == t && c.lt == lane; }))
+                continue;
+            int best = -1;
+            double best_turn = 1e9;
+            for (int f = 0; f < n; ++f) {
+                if (f == t || in[static_cast<std::size_t>(f)].empty()) continue;
+                const double turn = std::fabs(wrap_angle(arms[static_cast<std::size_t>(t)].heading_out -
+                                                         (arms[static_cast<std::size_t>(f)].heading_out + kPi)));
+                if (turn < best_turn) {
+                    best_turn = turn;
+                    best = f;
+                }
+            }
+            if (best < 0) continue;
+            const LaneIdx& inl = in[static_cast<std::size_t>(best)];
+            cands.insert({best, inl[static_cast<std::size_t>(j * static_cast<int>(inl.size()) / M)], t, lane});
+        }
     }
 
     // Enabling overrides can add connectors the distribution did not make (incl. U-turns).
-    auto find_lane = [&](EdgeId e, int slot, bool inbound, int& arm, int& lane) {
+    // A loop edge (a == b) has two arms with one edge id: the key's at_a flag tells them apart.
+    // For other edges the flag is ignored.
+    auto is_loop = [&](EdgeId e) {
+        return std::count_if(arms.begin(), arms.end(), [&](const JunctionArm& a) { return a.edge == e; }) > 1;
+    };
+    auto find_lane = [&](EdgeId e, bool at_a, int slot, bool inbound, int& arm, int& lane) {
+        const bool loop = is_loop(e);
         for (int a = 0; a < n; ++a) {
             if (!(arms[static_cast<std::size_t>(a)].edge == e)) continue;
+            if (loop && arms[static_cast<std::size_t>(a)].at_a != at_a) continue;
             const auto& lanes = arms[static_cast<std::size_t>(a)].lanes;
             for (int l = 0; l < static_cast<int>(lanes.size()); ++l)
                 if (lanes[static_cast<std::size_t>(l)].slot == slot && lanes[static_cast<std::size_t>(l)].inbound == inbound) {
@@ -222,7 +277,8 @@ void generate_connectors(Junction& junction, DrivingSide side, const JunctionOve
     for (const auto& [key, ov] : overrides.connectors) {
         if (!(key.node == junction.node) || !ov.enabled) continue;
         int af, lf, at, lt;
-        if (find_lane(key.from_edge, key.from_slot, true, af, lf) && find_lane(key.to_edge, key.to_slot, false, at, lt))
+        if (find_lane(key.from_edge, key.from_at_a, key.from_slot, true, af, lf) &&
+            find_lane(key.to_edge, key.to_at_a, key.to_slot, false, at, lt))
             cands.insert({af, lf, at, lt});
     }
 
@@ -237,12 +293,19 @@ void generate_connectors(Junction& junction, DrivingSide side, const JunctionOve
         lc.arm_to = c.at;
         lc.lane_to = c.lt;
         lc.kind = classify_turn(wrap_angle(ta.heading_out - (fa.heading_out + kPi)), side);
-        const auto it = overrides.connectors.find({junction.node, fa.edge, fl.slot, ta.edge, tl.slot});
+        if (!has_trim(c.af) || !has_trim(c.at)) continue;  // contract violation (asserted above)
+        const bool from_loop = is_loop(fa.edge), to_loop = is_loop(ta.edge);
+        const auto it = overrides.connectors.find({junction.node, fa.edge, fl.slot, ta.edge, tl.slot,
+                                                   from_loop ? fa.at_a : true, to_loop ? ta.at_a : true});
         const std::vector<Vec3>* via = nullptr;
         if (it != overrides.connectors.end()) {
             lc.overridden = true;
             lc.enabled = it->second.enabled;
             if (it->second.via) via = &*it->second.via;
+        }
+        if (!lane_on(c.af, c.lf) || !lane_on(c.at, c.lt)) {
+            lc.overridden = true;
+            lc.enabled = false;
         }
         lc.path = make_connector_path(fa, fl, trim_of(c.af), ta, tl, trim_of(c.at), via);
         junction.connectors.push_back(std::move(lc));
@@ -255,7 +318,7 @@ void generate_connectors(Junction& junction, DrivingSide side, const JunctionOve
             if (!cs[j].enabled) continue;
             if (cs[i].arm_from == cs[j].arm_from && cs[i].lane_from == cs[j].lane_from) continue;
             const bool merge = cs[i].arm_to == cs[j].arm_to && cs[i].lane_to == cs[j].lane_to;
-            if (merge || paths_cross(cs[i].path, cs[j].path)) {
+            if (merge || paths_cross(cs[i].path, cs[j].path, region.plan_crossing_junction_dz_m)) {
                 cs[i].conflicts.push_back(static_cast<int>(j));
                 cs[j].conflicts.push_back(static_cast<int>(i));
             }

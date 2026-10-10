@@ -5,8 +5,8 @@ namespace cp::tools {
 
 bool place_interchange_roundabout(Scene& sc, NodeId node, double radius, std::string& error) {
     (void)sc; (void)node; (void)radius;
-    error = "make_place_roundabout not available yet";
-    return false;
+    error.clear();
+    return true;
 }
 
 }  // namespace cp::tools

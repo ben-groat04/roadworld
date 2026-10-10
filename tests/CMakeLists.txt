@@ -14,9 +14,11 @@ add_executable(sim_core_tests
   test_junction_interface.cpp
   test_junction_geometry.cpp
   test_junction_connectors.cpp
+  test_junction_connectors_fuzz.cpp
   test_junction_merge.cpp
+  test_export_scene.cpp
 )
-target_link_libraries(sim_core_tests PRIVATE sim_core)
+target_link_libraries(sim_core_tests PRIVATE sim_core scene_tools)
 target_include_directories(sim_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 add_test(NAME sim_core_tests COMMAND sim_core_tests)
 target_compile_definitions(sim_core_tests PRIVATE CP_DATA_DIR="${PROJECT_SOURCE_DIR}/data")

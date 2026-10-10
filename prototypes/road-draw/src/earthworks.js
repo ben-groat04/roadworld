@@ -57,6 +57,7 @@ function classify(r, ty) {
   }
 }
 function rebuild(r) {
+  if (r.imported) return true;   // inspect.js roads carry their own samples/flags (never refit)
   const ty = ROAD_TYPES[r.type];
   const ch = G.fitChain(r.pts.map(p => [p.x, p.y]), r.hs, r.he);
   if (!ch) return false;
@@ -174,7 +175,7 @@ function roadsData() {
   return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = slopeReach(r, ty), sb = [], full = r.samples, dec = [];
     for (let i = 0; i < full.length; i += 2) { const a = full[i], b = full[Math.min(i + 1, full.length - 1)], c = full[Math.min(i + 2, full.length - 1)]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR }); }   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
     if ((full.length - 1) % 2) { const a = full[full.length - 1]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR }); } for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
-    return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb }; });
+    return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb }; }).concat(typeof inspectFootprints === 'function' ? inspectFootprints() : []);   // inspect.js junction surfaces
 }
 // Recompute GH inside box {x0,y0,x1,y1} (world metres) from base + all roads. Calls onGroundChanged(box) with the snapped box.
 function gradeRegion(box) {
