@@ -18,9 +18,10 @@ public class CityPainterSim : ModuleRules
 		CppStandard = CppStandardVersion.Cpp20;
 
 		// Third-party-style warning relaxation. UE promotes some warnings to errors.
-		ShadowVariableWarningLevel = WarningLevel.Off;
-		UnsafeTypeCastWarningLevel = WarningLevel.Off;
-		bEnableUndefinedIdentifierWarnings = false;
+		// (5.8: the old ModuleRules.* properties are [Obsolete] forwarders; use CppCompileWarningSettings)
+		CppCompileWarningSettings.ShadowVariableWarningLevel = WarningLevel.Off;
+		CppCompileWarningSettings.UnsafeTypeCastWarningLevel = WarningLevel.Off;
+		CppCompileWarningSettings.UndefinedIdentifierWarningLevel = WarningLevel.Off;
 
 		// module dir = <repo>/unreal/CityPainter/Plugins/CityPainterSim/Source/CityPainterSim
 		string RepoRoot = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "..", "..", "..", ".."));
