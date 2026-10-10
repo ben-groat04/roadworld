@@ -108,7 +108,7 @@ struct Net {
     }
 
     JunctionSet junctions(RoundaboutResult* rr = nullptr) const {
-        JunctionSet js = build_junctions(g, *region, {});
+        JunctionSet js = build_plain_junctions(g, *region, {});
         RoundaboutResult r = apply_roundabouts(js, g, *region, {});
         if (rr) *rr = std::move(r);
         return js;
@@ -313,9 +313,12 @@ TEST_CASE("roundabout: malformed flagged loops are reported, not guessed") {
         s.one_way = false;
         s.start.pos = {100, 100, 0};
         s.end.pos = {160, 100, 0};
-        // A ring-type road drawn two-way: the road type is one-way only, so it is stored one-way or refused.
-        if (net.st.execute(make_draw_road(s))) CHECK(net.g.edge(net.last_edge())->one_way);
-        CHECK(scan(net).groups.size() == 1);
+        // A ring-type road drawn two-way is not a ring edge: reported, and the real ring is unaffected.
+        REQUIRE(net.st.execute(make_draw_road(s)));
+        const RoundaboutScan sc = scan(net);
+        CHECK(sc.groups.size() == 1);
+        REQUIRE(sc.problems.size() == 1);
+        CHECK(sc.problems[0].what.find("two-way") != std::string::npos);
     }
     {  // two separate valid rings
         Net net;
@@ -869,7 +872,7 @@ TEST_CASE("roundabout: the place tool validates its radius and never deletes wha
         REQUIRE(net.place(20));
         const std::string before = snapshot(net.g);
         CHECK(!net.place(22));
-        CHECK(!net.place(15, kRing, {5, 0, 0}));
+        CHECK(!net.place(18, kRing, {5, 0, 0}));
         CHECK(snapshot(net.g) == before);
         CHECK(check_place_roundabout(net.g, {0, 0, 0}, 22, kRing, *net.region).find("existing roundabout") != std::string::npos);
     }
@@ -914,4 +917,93 @@ TEST_CASE("roundabout: editing the ring is ordinary editing") {
     for (const auto& [n, j] : js.junctions) CHECK(j.kind == JunctionKind::Plain);
     REQUIRE(net.st.undo());
     CHECK(scan(net).groups.size() == 1);
+}
+
+TEST_CASE("roundabout: realistic rings give valid, non-degraded geometry at every ring node") {
+    struct Case {
+        double radius;
+        int arms;
+        bool one_lane;
+        DrivingSide side;
+    };
+    std::vector<Case> cases;
+    for (double r : {11.0, 16.0, 25.0, 45.0, 100.0})
+        for (int arms : {3, 4, 5, 6})
+            for (bool one_lane : {false, true}) cases.push_back({r, arms, one_lane, DrivingSide::Left});
+    cases.push_back({20, 4, false, DrivingSide::Right});
+    cases.push_back({30, 5, true, DrivingSide::Right});
+
+    int failures = 0;
+    for (const Case& c : cases) {
+        auto p = load_region_pack_by_id(CP_DATA_DIR, "uk");
+        REQUIRE_MESSAGE(p, p.error);
+        p.value->driving_side = c.side;
+        if (c.one_lane) {  // a second, single-lane ring type
+            RoadType one = p.value->road_types.at(kRing);
+            one.id = "ring_1lane";
+            std::vector<CrossSectionSlot> slots;
+            bool kept = false;
+            for (const CrossSectionSlot& s : one.one_way_variant) {
+                if (s.lane_type == "driving") {
+                    if (kept) continue;
+                    kept = true;
+                }
+                slots.push_back(s);
+            }
+            one.one_way_variant = slots;
+            p.value->road_types.emplace(one.id, one);
+        }
+        auto region = std::make_shared<const RegionPack>(*p);
+        Net net(c.side);
+        net.region = region;
+        net.g.set_region(region);
+        std::vector<double> bearings;
+        for (int k = 0; k < c.arms; ++k) bearings.push_back(15.0 + k * 360.0 / c.arms);
+        net.spokes(bearings, c.radius + 90);
+        const char* type = c.one_lane ? "ring_1lane" : kRing;
+        const std::string why = check_place_roundabout(net.g, {0, 0, 0}, c.radius, type, *region);
+        INFO("radius " << c.radius << " arms " << c.arms << (c.one_lane ? " 1-lane" : " 2-lane"));
+        REQUIRE_MESSAGE(why.empty(), why);
+        REQUIRE(net.place(c.radius, type));
+        RoundaboutResult rr;
+        const JunctionSet js = net.junctions(&rr);
+        REQUIRE(rr.layouts.size() == 1);
+        const RoundaboutLayout& lay = rr.layouts[0];
+        CHECK_MESSAGE(lay.ok, lay.error);
+        for (NodeId n : lay.group.nodes) {
+            const Junction* j = js.find(n);
+            REQUIRE(j);
+            CHECK(j->kind == JunctionKind::Roundabout);
+            if (j->cls != NodeClass::Junction) continue;
+            const bool bad = j->degraded || j->carriageway.empty();
+            if (bad) ++failures;
+            CHECK_MESSAGE(!j->degraded, "node " << n.value << ": " << j->degraded_reason);
+            CHECK_MESSAGE(!j->carriageway.empty(), "node " << n.value << " has no carriageway");
+            for (const PolygonSet* ps : {&j->carriageway, &j->pavements})
+                for (const auto& r : *ps) CHECK_MESSAGE(simple(r), "node " << n.value);
+            CHECK(j->corners.size() == j->arms.size());
+            for (const CornerCurve& cc : j->corners)
+                if (cc.angle < kPi - 0.01) CHECK_MESSAGE(!cc.kerb.empty(), "node " << n.value << " corner without a kerb");
+        }
+    }
+    CHECK(failures == 0);
+}
+
+TEST_CASE("roundabout: build_junctions alone already returns Roundabout-kind ring junctions") {
+    Net net;
+    net.spokes({90, 210, 330}, 100);
+    REQUIRE(net.place(20));
+    const JunctionGroup g = the_group(net);
+    const JunctionSet js = build_junctions(net.g, *net.region, {});
+    for (NodeId n : g.nodes) {
+        REQUIRE(js.find(n));
+        CHECK(js.find(n)->kind == JunctionKind::Roundabout);
+        CHECK(js.find(n)->group_nodes == g.nodes);
+    }
+    const JunctionSet part = build_junctions(net.g, *net.region, {}, {g.nodes[1]});
+    for (NodeId n : g.nodes) CHECK(part.find(n) != nullptr);
+    // Plain build: no marking.
+    const JunctionSet plain = build_plain_junctions(net.g, *net.region, {});
+    for (NodeId n : g.nodes)
+        if (plain.find(n)) CHECK(plain.find(n)->kind == JunctionKind::Plain);
 }

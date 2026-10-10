@@ -56,7 +56,7 @@ Living plan for a photorealistic, sandbox city builder with a "city painter" foc
 
 - A junction appears where roads meet. Its default lane connectors and curb geometry are **generated from the lane graph the player drew** (lane graph first, geometry second).
 - Junctions are first-class and editable: the player can override any connector, lane or corner radius. Goal: avoid CS1's janky connectors, and avoid CS:Ur's bad UI.
-- **Roundabouts: both a dedicated tool and hand-drawing.** Either route must produce the same junction object, recognised as a ring of one-way segments. Circulation direction follows the driving side setting (clockwise for left-hand traffic).
+- **Roundabouts are an explicit one-way road type** (Round 29). The ring is ordinary, individually editable one-way edges of a roundabout-ring road type, with a normal junction at every ring node; "roundabout" is a property layered on top, found by road type and never recognised by shape. The dedicated tool is only a preset that draws the ring (radius limit per region pack, UK 8 to 100 m); hand-drawing the ring type gives the same result. Circulation direction follows the driving side setting (clockwise for left-hand traffic). A roundabout that cannot be built shows a visible warning rather than silently falling back. Full-circle U-turns are allowed by default.
 - **Slip roads are hand-drawn like any road,** with no templates. The junction generator must produce sensible merge and diverge geometry and connectors from the lanes the player draws.
 - **Junction control types in v1:** priority / give way, traffic lights, zebra and signal crossings, and roundabouts. All are properties of the junction object. Zebra crossings give pedestrians priority, which the sim must model.
 
@@ -158,6 +158,7 @@ Vertical slice first: one small map with hand-drawn roads, a few junctions, parc
 
 - Economy, demand, services, utilities and citizens
 - Public transit
+- Roundabout traffic policies (how vehicles choose lanes, priority behaviour); v0 only emits which entry connectors yield to the ring
 - Time of day and weather
 - Photo mode (high relevance for a painter game)
 - Modding support
@@ -216,3 +217,5 @@ Sorted by when they are needed. Licences and current feature status are unverifi
 - Round 26: work started in the repo. Project skeleton built (headless sim_core, command and undo stack, stable IDs, doctest tests, CI). UK confirmed as the first region pack only, with the core region-agnostic. Road graph data model agreed: edges only (no Road layer above them), dual carriageways and motorways drawn as one stroke but placed as two independently editable one-way edges, draggable clicked-point handles, automatic vertical curve length, one-way as a per-edge toggle. Engine is Unreal 5.8. The road drawing UX prototype is a throwaway browser tool (2D plan plus height profile).
 - Round 27: Sonnet agents now do the coding, with Haiku for trivial edits and the main session planning and reviewing. The 2D prototype is replaced by a 3D one. Unreal: ProceduralMeshComponent for now, Geometry Script evaluated in the look test; coordinates north = +X, east = +Y; World Partition from day one. Dual carriageways and motorways: a parallel tool places both carriageways with the height reference on the centreline (level median, inner carriageway steeper on curves, as intended), and one-way mode draws a single carriageway.
 - Round 28: the 3D prototype showed that grading the terrain grid produces jagged cuttings and portals. Decision: roads own their earthwork meshes, with an invisible corridor mask on the terrain. The prototype was split into src/ modules so parallel agents can each work on one file.
+
+- Round 29: roundabouts are an explicit one-way road type (a region-pack ring type); the ring is ordinary editable edges with a junction at every ring node, found by road type and never recognised by shape; the tool is only a preset that draws it (radius limit from the region pack, 100 m in the UK pack); an unbuildable roundabout shows a visible warning; full-circle U-turns allowed; roundabout traffic policies parked for later. Decided 10 Oct 2026.

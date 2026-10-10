@@ -654,7 +654,7 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
             if (radius >= 0) ov.corner_radius[key] = radius;
         }
     }
-    JunctionSet built = build_junctions(graph, region, ov, group.nodes);
+    JunctionSet built = build_plain_junctions(graph, region, ov, group.nodes);
     lay.ring_junctions = std::move(built.junctions);
 
     // ---- give way: entries yield to the circulating (ring-in -> ring-out) connectors

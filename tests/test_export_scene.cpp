@@ -1,5 +1,6 @@
 // The `interchange` fixture (sim_core/tools/scene_fixture.cpp) and its JSON export.
 #include <algorithm>
+#include <clocale>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -15,6 +16,7 @@ namespace {
 struct Fixture {
     std::unique_ptr<Scene> scene;
     JunctionSet js;
+    RoundaboutResult rb;
     Fixture() {
         std::string err;
         scene = build_scene("interchange", CP_DATA_DIR, err);
@@ -57,7 +59,7 @@ bool ring_valid(const std::vector<Vec2>& r) {
 
 TEST_CASE("interchange fixture builds with the expected junction kinds") {
     const Fixture& f = fx();
-    int merges = 0, diverges = 0, roundabouts = 0, four = 0, three = 0;
+    int merges = 0, diverges = 0, four = 0, three = 0;
     for (const auto& [n, j] : f.js.junctions) {
         if (j.kind == JunctionKind::Roundabout) continue;
         else if (j.cls == NodeClass::Merge) ++merges;
@@ -67,7 +69,24 @@ TEST_CASE("interchange fixture builds with the expected junction kinds") {
     }
     CHECK(merges >= 2);
     CHECK(diverges >= 2);
-    CHECK(roundabouts == 1);
+    CHECK(f.rb.layouts.size() == 1);  // one roundabout GROUP, however many ring nodes it has
+    CHECK(f.rb.problems.empty());
+    REQUIRE(f.rb.layouts.size() == 1);
+    const RoundaboutLayout& lay = f.rb.layouts[0];
+    CHECK(lay.ok);
+    CHECK(lay.island.size() == 1);
+    CHECK(!lay.give_way.empty());
+    // Every ring node has a Roundabout-kind junction of the same group.
+    for (NodeId n : lay.group.nodes) {
+        const Junction* j = f.js.find(n);
+        REQUIRE(j);
+        CHECK(j->kind == JunctionKind::Roundabout);
+        CHECK(j->group_nodes == lay.group.nodes);
+        CHECK(!j->degraded);
+    }
+    int ring_kind = 0;
+    for (const auto& [n, j] : f.js.junctions) ring_kind += j.kind == JunctionKind::Roundabout ? 1 : 0;
+    CHECK(ring_kind == static_cast<int>(lay.group.nodes.size()));  // no stray roundabout junctions
     CHECK(four >= 1);
     CHECK(three >= 1);
     CHECK(f.scene->region->driving_side == DrivingSide::Left);
@@ -162,9 +181,9 @@ TEST_CASE("JSON helpers: non-finite numbers, escapes and locale independence") {
     CHECK(json_number(-2.5, 1) == "-2.5");
     CHECK(json_number(0.12345678, 5) == "0.12346");
 
-    CHECK(json_string("a\"b\c") == "\"a\\\"b\\c\"");
-    CHECK(json_string("l1\nl2\t\r") == "\"l1\nl2\t\r\"");
-    CHECK(json_string(std::string("x\x01y\x1f")) == "\"x\u0001y\u001f\"");
+    CHECK(json_string("a\"b\\c") == "\"a\\\"b\\\\c\"");
+    CHECK(json_string("l1\nl2\t\r") == "\"l1\\nl2\\t\\r\"");
+    CHECK(json_string(std::string("x\x01y\x1f")) == "\"x\\u0001y\\u001f\"");
     CHECK(json_string("plain") == "\"plain\"");
 
     // A comma-decimal C locale must not leak into the output (skipped if no such locale is installed).

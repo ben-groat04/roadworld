@@ -313,7 +313,14 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
 //   Junction: compute_trims -> generate_connectors (A) -> generate_geometry (B)
 //   Merge/Diverge: generate_merge_diverge (C)
 // If `only` is non-empty, just those nodes are built (dirty-node regeneration).
+// It ends with apply_roundabouts() (junction_roundabout.h), so ring nodes of roundabouts come out as
+// kind = Roundabout junctions; callers that also want the group-level result (islands, give-way)
+// call build_plain_junctions + apply_roundabouts themselves.
 JunctionSet build_junctions(const RoadGraph& graph, const RegionPack& region, const JunctionOverrides& overrides,
                             const std::vector<NodeId>& only = {});
+
+// The same without the roundabout post-pass.
+JunctionSet build_plain_junctions(const RoadGraph& graph, const RegionPack& region, const JunctionOverrides& overrides,
+                                  const std::vector<NodeId>& only = {});
 
 }  // namespace cp

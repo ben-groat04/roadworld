@@ -196,7 +196,7 @@ std::unique_ptr<Scene> build_scene(const std::string& name, const std::string& d
 }
 
 JunctionSet scene_junctions(const Scene& scene, RoundaboutResult* roundabouts) {
-    JunctionSet js = build_junctions(scene.graph, *scene.region, scene.overrides);
+    JunctionSet js = build_plain_junctions(scene.graph, *scene.region, scene.overrides);
     RoundaboutResult rr = apply_roundabouts(js, scene.graph, *scene.region, scene.overrides);
     if (roundabouts) *roundabouts = std::move(rr);
     return js;

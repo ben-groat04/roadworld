@@ -1,6 +1,7 @@
 // Junction orchestration and the small shared pieces: arm collection, classification,
 // major-arm derivation, override resolution. See docs/junctions.md.
 #include "cp/junction.h"
+#include "cp/junction_roundabout.h"
 
 #include <algorithm>
 #include <cmath>
@@ -188,8 +189,8 @@ std::vector<double> resolve_corner_radii(NodeId node, const std::vector<Junction
     return r;
 }
 
-JunctionSet build_junctions(const RoadGraph& graph, const RegionPack& region, const JunctionOverrides& overrides,
-                            const std::vector<NodeId>& only) {
+JunctionSet build_plain_junctions(const RoadGraph& graph, const RegionPack& region, const JunctionOverrides& overrides,
+                                  const std::vector<NodeId>& only) {
     JunctionSet set;
     std::vector<NodeId> nodes = only;
     if (nodes.empty())
@@ -215,6 +216,13 @@ JunctionSet build_junctions(const RoadGraph& graph, const RegionPack& region, co
         }
         set.junctions.emplace(id, std::move(j));
     }
+    return set;
+}
+
+JunctionSet build_junctions(const RoadGraph& graph, const RegionPack& region, const JunctionOverrides& overrides,
+                            const std::vector<NodeId>& only) {
+    JunctionSet set = build_plain_junctions(graph, region, overrides, only);
+    apply_roundabouts(set, graph, region, overrides, only);  // marks roundabout ring nodes (cheap when there are none)
     return set;
 }
 
