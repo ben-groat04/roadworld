@@ -322,5 +322,24 @@ function CHECKS_IN_PAGE() {
         if (dz >= 0.05 && dz < 5.3) { bad++; if (!w || dz > w.v) w = { x: A[p].x + (A[p + 1].x - A[p].x) * h.t, y: A[p].y + (A[p + 1].y - A[p].y) * h.t, road: roads[i].id, what: 'dz vs road#' + roads[j].id, v: dz }; }
       } }
     done('crossing_heights_match', w, bad, n, `${n} plan crossings, all dz < 0.05 m or >= 5.3 m`); }
+  // 8: no floating faces: wall/portal/earthwork vertices outside the road footprint must not stand above max(base terrain, slope/formation surface there) + 0.6 m (parapet allowance)
+  { let n = 0, bad = 0, w = null; const CELL = 8, sh = new Map();
+    for (const r of roads) r.samples.forEach((s, i) => { const key = Math.floor(s.x / CELL) * 100003 + Math.floor(s.y / CELL); let l = sh.get(key); if (!l) sh.set(key, l = []); l.push([r, i]); });
+    const xsC = new Map(); const xsOf = r => { if (!xsC.has(r)) xsC.set(r, P.crossSections(r)); return xsC.get(r); };
+    for (const m of meshes) { const kd = m.userData.kind; if (!(kd === 'wall' || kd === 'portal' || !kd)) continue; const r0 = m.userData.road; if (!r0) continue;
+      const pos = m.geometry.attributes.position.array;
+      for (let v = 0; v < pos.length; v += 3) {
+        const x = pos[v], y = -pos[v + 2], z = pos[v + 1]; let best = null, bd = 1e18;
+        const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
+        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const l = sh.get((cx + a) * 100003 + cy + b); if (!l) continue; for (const [r, i] of l) { const s = r.samples[i], d = (s.x - x) ** 2 + (s.y - y) ** 2; if (d < bd) { bd = d; best = [r, i]; } } }
+        if (!best) continue; const [r, i] = best, s = r.samples[i], hw = RT[r.type].carriageway / 2;
+        const lat = (x - s.x) * -Math.sin(s.h) + (y - s.y) * Math.cos(s.h), al = Math.abs(lat);
+        if (al <= hw + 0.4 + 0.5 || s.tunnel || s.bridge) continue; n++;
+        let surf = s.z; const xs = xsOf(r), sec = xs && xs[i] && xs[i][lat > 0 ? 'L' : 'R'];
+        if (sec && sec.kind === 'slope' && sec.d1 > sec.edge) { const t = Math.min(1, Math.max(0, (al - sec.edge) / (sec.d1 - sec.edge))); surf = sec.z0 + (sec.z1 - sec.z0) * t; } else if (sec) surf = sec.z0;
+        const ex = z - (Math.max(hAt(x, y), surf) + 0.6);
+        if (ex > 0.02) { bad++; if (!w || ex > w.v) w = { x, y, road: r.id, what: (kd || 'earthwork') + ' vertex above surface by', v: ex }; }
+      } }
+    done('no_floating_faces', w, bad, n, `${n} outer vertices all within surface + 0.6 m`); }
   return results;
 }
