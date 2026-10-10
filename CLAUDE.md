@@ -24,3 +24,4 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - **Default to parallel agents** split by file/function, each with tight scope and exact function names; continue existing agents via messages instead of spawning new ones for follow-ups.
 - **Verify with `node prototypes/road-draw/tools/scene.mjs --check`** (text invariants, ~8 s) rather than screenshot loops; screenshots only for realism judgement.
 - **Send the person progress pictures** whenever new visual results exist.
+- **The main session never audits screenshots or code itself**: visual and code review go to cold-read Sonnet agents; the main session reads only their reports.

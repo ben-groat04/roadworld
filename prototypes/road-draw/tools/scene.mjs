@@ -173,28 +173,32 @@ console.log(`wrote ${names.length} view(s) to ${outDir} in ${secs}s: ${names.joi
 if (errors.length) { console.error(errors.length + ' error(s):\n' + [...new Set(errors)].join('\n')); process.exit(1); }
 
 // ============================== numeric invariant checks (run inside the page; must be self-contained) ==============================
-// Meshes carry userData.kind (roadmesh.js / terrain.js): surface | wall | pier | deck | abutment | parapet | portal | lining | terrain | water | skirt.
-// Earthwork meshes (earthworks.js) are untagged: any untagged mesh inside a road group is 'earthwork'. 'structure' = wall/pier/deck/abutment/parapet/portal.
-// Terrain and water are not raycast (513x513 mesh): they are analytic (terrain = P.hAt, which matches the linear mesh; masked per the corridor mask).
+// Ground is ONE graded height grid: P.groundAt(x,y) (GH, 0.5 m). P.hBase / P.terrainH = original terrain. Roads are only structures now.
+// Meshes carry userData.kind (roadmesh.js): surface | wall | pier | deck | abutment | parapet | portal | lining (terrain/water/skirt live outside the road group).
+// Ground and water are analytic (not raycast): groundAt is what the clipmap terrain draws.
 function CHECKS_IN_PAGE() {
-  const P = window.__proto, THREE = P.THREE, T = P.T, hAt = P.hAt, RT = P.ROAD_TYPES, WORLD = 2048, DECK_T = 1.5;
-  P.renderNow();   // builds road meshes, cross-sections and the corridor mask
+  const P = window.__proto, THREE = P.THREE, T = P.T, RT = P.ROAD_TYPES, DECK_T = 1.5;
   const results = [];
+  const missing = ['groundAt', 'GH', 'GRID_RES', 'wallRuns', 'hBase', 'ROAD_TYPES', 'T'].filter(k => P[k] == null);
+  if (missing.includes('groundAt') || missing.includes('wallRuns')) return [{ name: 'setup', pass: false, msg: 'window.__proto lacks ' + missing.join(', ') }];
+  if (missing.length) results.push({ name: 'proto_exports', pass: false, msg: 'window.__proto lacks ' + missing.join(', ') + ' (fell back: hBase -> bilinear of P.TH)' });
+  const groundAt = P.groundAt, wallRuns = P.wallRuns, terrainH = P.terrainH || groundAt;
+  const hBase = P.hBase || ((x, y) => { const N = 513, C = 2048 / (N - 1), gx = Math.min(N - 1.0001, Math.max(0, x / C)), gy = Math.min(N - 1.0001, Math.max(0, y / C)), i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j, k = j * N + i, H = P.TH;
+    return (H[k] * (1 - fx) + H[k + 1] * fx) * (1 - fy) + (H[k + N] * (1 - fx) + H[k + N + 1] * fx) * fy; });
+  P.renderNow();   // builds road meshes (and flushes grading)
   const fmt = (x, y) => `(${x.toFixed(1)},${y.toFixed(1)})`;
   const done = (name, worst, count, total, okMsg, unit = 'm') => results.push({ name, pass: count === 0, msg: count === 0 ? okMsg : `${count}/${total} bad; worst ${worst.what} at ${fmt(worst.x, worst.y)} road#${worst.road}${unit ? ' ' + worst.v.toFixed(3) + unit : ''}` });
-  const roads = P.roads();
+  const roads = P.roads().filter(r => r.samples);
   const roadGroup = P.scene.children.find(g => g.isGroup && (() => { let f = false; g.traverse(o => { if (o.userData && o.userData.road) f = true; }); return f; })());
   if (!roadGroup) return [{ name: 'setup', pass: false, msg: 'no road group in scene' }];
-
-  // ---- corridor mask (replicates the terrain shader's eroded discard test with nearest taps) ----
-  const mc = P.maskCanvas, md = mc.getContext('2d').getImageData(0, 0, WORLD, WORLD).data;
-  const mv = (x, y) => { const i = Math.min(WORLD - 1, Math.max(0, Math.floor(x))), j = Math.min(WORLD - 1, Math.max(0, Math.floor(y))); return md[(j * WORLD + i) * 4] / 255; };
-  const masked = (x, y) => Math.min(mv(x, y), mv(x + 1, y + 1), mv(x - 1, y + 1), mv(x + 1, y - 1), mv(x - 1, y - 1)) > 0.55;
+  const isBr = s => !!(s.bridge || s.br), isTu = s => !!(s.tunnel || s.tu);
+  const latPt = (s, lat) => [s.x - Math.sin(s.h) * lat, s.y + Math.cos(s.h) * lat];
+  const track = (w, o) => (!w || o.v > w.v) ? o : w;
 
   // ---- spatial grid over every road mesh triangle (three coords: X = x, Z = -y) ----
   const CS = 4, grid = new Map(), tris = [];   // tris: [ax,ay,az,bx,by,bz,cx,cy,cz,kind,roadId]
-  const STRUCT = new Set(['wall', 'pier', 'deck', 'abutment', 'parapet', 'portal']);
-  const kindOf = o => { const k = o.userData.kind; return !k ? 'earthwork' : STRUCT.has(k) ? 'structure' : 'surface'; };
+  const STRUCT = new Set(['wall', 'pier', 'deck', 'abutment', 'parapet', 'portal', 'lining']);
+  const kindOf = o => { const k = o.userData.kind; return !k ? 'other' : STRUCT.has(k) ? 'structure' : 'surface'; };
   const meshes = []; roadGroup.traverse(o => { if (o.isMesh) meshes.push(o); });
   for (const m of meshes) {
     const k = kindOf(m), rid = m.userData.road ? m.userData.road.id : -1, pos = m.geometry.attributes.position.array, idx = m.geometry.index.array;
@@ -206,110 +210,120 @@ function CHECKS_IN_PAGE() {
       for (let i = Math.floor(x0 / CS); i <= Math.floor(x1 / CS); i++) for (let j = Math.floor(z0 / CS); j <= Math.floor(z1 / CS); j++) { const key = i * 100003 + j; let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(id); }
     }
   }
-  // Up-facing triangle hits above a point: [{y, kind, rid}]
-  const upHits = (X, Z, eps = 2e-3) => {
+  const upHits = (X, Z, eps = 2e-3) => {   // up-facing triangle hits at a plan point: [{y, kind, rid}]
     const l = grid.get(Math.floor(X / CS) * 100003 + Math.floor(Z / CS)), out = [];
     if (!l) return out;
     for (const id of l) {
-      const q = tris[id], ux = q[3] - q[0], uz = q[5] - q[2], vx = q[6] - q[0], vz = q[8] - q[2], den = uz * vx - ux * vz;   // = normal.y * 1 (cross(u,v).y)
-      if (den <= 1e-9) continue;   // down-facing or degenerate
+      const q = tris[id], ux = q[3] - q[0], uz = q[5] - q[2], vx = q[6] - q[0], vz = q[8] - q[2], den = uz * vx - ux * vz;
+      if (den <= 1e-9) continue;
       const px = X - q[0], pz = Z - q[2], b = (pz * vx - px * vz) / den, c = (uz * px - ux * pz) / den, a = 1 - b - c;
       if (a < -eps || b < -eps || c < -eps) continue;
       out.push({ y: a * q[1] + b * q[4] + c * q[7], kind: q[9], rid: q[10] });
     }
     return out;
   };
-  const latPt = (s, lat) => [s.x - Math.sin(s.h) * lat, s.y + Math.cos(s.h) * lat];
-  const inTunnel = s => s.tunnel;   // under the lining / mountain: a ray from above legitimately hits roof or ground
+  // station hash for "nearest road station" queries
+  const SC = 8, sh = new Map();
+  for (const r of roads) r.samples.forEach((s, i) => { const key = Math.floor(s.x / SC) * 100003 + Math.floor(s.y / SC); let l = sh.get(key); if (!l) sh.set(key, l = []); l.push([r, i]); });
+  const nearStation = (x, y) => { let best = null, bd = 1e18; const cx = Math.floor(x / SC), cy = Math.floor(y / SC);
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const l = sh.get((cx + a) * 100003 + cy + b); if (!l) continue; for (const [r, i] of l) { const s = r.samples[i], d = (s.x - x) ** 2 + (s.y - y) ** 2; if (d < bd) { bd = d; best = [r, i]; } } }
+    return best; };
+  // is another road's footprint/reach (excluding road r) within `reach` m of (x,y)?
+  const otherRoadNear = (x, y, r, reach) => { const cx = Math.floor(x / SC), cy = Math.floor(y / SC), n = Math.ceil(reach / SC) + 1;
+    for (let a = -n; a <= n; a++) for (let b = -n; b <= n; b++) { const l = sh.get((cx + a) * 100003 + cy + b); if (!l) continue;
+      for (const [r2, i] of l) { if (r2 === r) continue; const s = r2.samples[i]; if ((s.x - x) ** 2 + (s.y - y) ** 2 < (reach + RT[r2.type].total / 2) ** 2) return true; } }
+    return false; };
 
-  // 1 + 2: points every 2 m (samples) at lateral 0, +-half carriageway.
-  { let n = 0, bad1 = 0, bad2 = 0, w1 = null, w2 = null;
+  // road_surface_clear: points every 2 m at lateral 0, +-half carriageway. First downward hit is a road surface mesh (never wall/portal/pier/deck),
+  // and the analytic ground must be >= 5 cm below the road there (ground that is higher would hide the road, or be the first hit).
+  { let n = 0, bad = 0, w = null;
     for (const r of roads) {
       const cw = RT[r.type].carriageway / 2;
       for (const s of r.samples) {
-        if (inTunnel(s)) continue;
+        if (isTu(s)) continue;   // under the lining / mountain: a ray from above legitimately hits roof or ground
         for (const lat of [0, cw, -cw]) {
           const [x, y] = latPt(s, lat); n++;
-          const hg = hAt(x, y), mk = masked(x, y);
-          // check 1: first hit from 50 m above
+          const hg = groundAt(x, y);
           const hits = upHits(x, -y).map(h => ({ y: h.y, what: h.kind + '#' + h.rid, ok: h.kind === 'surface' }));
-          if (!mk) hits.push({ y: hg + 0.001, what: 'terrain(unmasked)', ok: false });   // the +1 mm lets a road surface exactly at grade win over unmasked terrain
+          hits.push({ y: hg + 0.05, what: 'ground (within 5 cm of road)', ok: false });   // ground counts as hit unless >= 5 cm below the surface
           if (hg <= T.water + 0.2) hits.push({ y: T.water, what: 'water', ok: false });
           hits.sort((a, b) => b.y - a.y);
           const top = hits[0];
-          if (!top || !top.ok) { bad1++; const v = top ? top.y - s.z : 0; if (!w1 || v > w1.v) w1 = { x, y, road: r.id, what: top ? top.what : 'nothing', v }; }
-          // check 2
-          if (!mk && hg > s.z - 0.05) { bad2++; const v = hg - (s.z - 0.05); if (!w2 || v > w2.v) w2 = { x, y, road: r.id, what: 'terrain above road by', v }; }
+          if (!top || !top.ok) { bad++; w = track(w, { x, y, road: r.id, what: top ? top.what : 'nothing', v: top ? top.y - s.z : 0 }); }
         }
       }
     }
-    done('road_surface_clear', w1, bad1, n, `${n} points, first hit always a road surface`);
-    done('no_terrain_in_corridor', w2, bad2, n, `${n} points, terrain masked or >= 5 cm below road`);
-  }
+    done('road_surface_clear', w, bad, n, `${n} points, first hit always a road surface, ground >= 5 cm below`); }
 
-  // 3: wall height cap (from cross-sections: wall height = |ground - formation| at the wall face)
+  // ground_under_road: every non-bridge, non-tunnel station, across the whole footprint: road - 0.6 <= groundAt <= road - 0.05
+  { let n = 0, bad = 0, w = null, hi = 0, lo = 0;
+    for (const r of roads) { const hw = RT[r.type].total / 2;
+      for (const s of r.samples) { if (isBr(s) || isTu(s)) continue;
+        for (let lat = -hw; lat <= hw + 1e-6; lat += 0.5) { const l = Math.min(hw - 0.01, Math.max(-hw + 0.01, lat)), [x, y] = latPt(s, l); n++;
+          const d = s.z - groundAt(x, y);   // want 0.05 <= d <= 0.6
+          if (d < 0.05 - 1e-4 || d > 0.6 + 1e-4) { bad++; const v = d < 0.05 ? 0.05 - d : d - 0.6; if (d < 0.05) hi++; else lo++; w = track(w, { x, y, road: r.id, what: d < 0.05 ? 'ground pokes through road by' : 'gap under road edge', v }); } } } }
+    done('ground_under_road', w, bad, n, `${n} footprint points, ground 5..60 cm below road`); if (bad) results[results.length - 1].msg += ` (poke-through ${hi}, gaps ${lo})`; }
+
+  // slopes_daylight: unwalled sides, walking outward from the footprint edge. Never overshoot the original ground (cut: above, fill: below) by > 0.3 m,
+  // and reach it (within 0.15 m) by the batter reach. Reference = P.terrainH (the exact base function GH is graded against). Skipped near other roads.
+  { let n = 0, bad = 0, w = null, nb = 0, ov = 0, nc = 0;
+    for (const r of roads) { const hw = RT[r.type].total / 2, reach = hw + T.wallStart * T.batter + 2;
+      r.samples.forEach((s, i) => { if (isBr(s) || isTu(s)) return;
+        for (const side of ['L', 'R']) { if (side === 'L' ? s.wL : s.wR) continue;
+          const sg = side === 'L' ? 1 : -1; let skip = false, worst = 0, wp = null;
+          for (let d = hw + 0.5; d <= reach + 4; d += 0.5) { const [x, y] = latPt(s, sg * d); if (otherRoadNear(x, y, r, 0) || (d > hw + 0.5 && otherRoadNear(x, y, r, 0))) { skip = true; break; }
+            const b = terrainH(x, y), g = groundAt(x, y), cut = b > s.z - 0.15, over = cut ? g - b : b - g;
+            if (over > worst) { worst = over; wp = [x, y]; }
+            if (d >= reach + 3.5 && Math.abs(g - b) > 0.15 && !skip) { nc++; bad++; w = track(w, { x, y, road: r.id, what: 'not converged to base by', v: Math.abs(g - b) }); skip = 'counted'; } }
+          if (skip === true) continue; n++;
+          if (worst > 0.3) { ov++; bad++; w = track(w, { x: wp[0], y: wp[1], road: r.id, what: 'overshoots base by', v: worst }); } } }); }
+    done('slopes_daylight', w, bad, n, `${n} unwalled side profiles reach base ground, max overshoot <= 0.3 m`); if (bad) results[results.length - 1].msg += ` (overshoot ${ov}, unconverged ${nc})`; }
+
+  // median_flat: between the two carriageways of each dual pair, groundAt has no step > 0.5 m between adjacent 0.5 m texels
+  { let n = 0, bad = 0, w = null, pairs = 0;
+    for (const r of roads) { if (!RT[r.type].dual) continue;
+      for (const s of r.samples) { if (isBr(s) || isTu(s)) continue;
+        const nx = -Math.sin(s.h), ny = Math.cos(s.h), lim = RT[r.type].gap + RT[r.type].carriageway + 3; let partner = null, bd = 1e18;
+        for (const r2 of roads) { if (r2 === r || r2.type !== r.type) continue;
+          for (const t of r2.samples) { const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy); if (d > lim) continue; const lat = dx * nx + dy * ny; if (lat > 0 && Math.abs(d - lat) < 2 && d < bd && Math.cos(t.h - s.h) < -0.7) { bd = d; partner = t; } } }
+        if (!partner) continue; pairs++;
+        const L = Math.hypot(partner.x - s.x, partner.y - s.y); let prev = null;
+        for (let d = 0; d <= L + 1e-6; d += 0.5) { const [x, y] = latPt(s, d), g = groundAt(x, y); if (prev != null) { n++; const st = Math.abs(g - prev); if (st > 0.5) { bad++; w = track(w, { x, y, road: r.id, what: 'step between texels', v: st }); } } prev = g; } } }
+    done('median_flat', w, bad, n, pairs ? `${n} texel pairs over ${pairs} dual stations, max step <= 0.5 m` : 'WARNING no dual pairs found'); if (!pairs) results[results.length - 1].pass = false; }
+
+  // wall_height_cap: from wallRuns, zTop - zBot
   { let n = 0, bad = 0, w = null, mx = 0;
-    for (const r of roads) { const xs = P.crossSections(r); if (!xs) continue;
-      r.samples.forEach((s, i) => { for (const k of ['L', 'R']) { const m = xs[i][k]; if (m.kind !== 'wall') continue; n++; const hgt = Math.abs(m.z1 - m.z0); mx = Math.max(mx, hgt);
-        if (hgt > T.wallCap + 0.5) { bad++; const [x, y] = latPt(s, k === 'L' ? m.d1 : -m.d1); if (!w || hgt > w.v) w = { x, y, road: r.id, what: k, v: hgt }; } } }); }
-    done('wall_height_cap', w, bad, n, `${n} wall sections, max height ${mx.toFixed(2)} m <= ${T.wallCap + 0.5}`); }
+    for (const r of roads) for (const run of wallRuns(r)) for (const p of run.pts) { n++; const hgt = p.zTop - p.zBot; mx = Math.max(mx, hgt);
+      if (hgt > T.wallCap + 0.5) { bad++; w = track(w, { x: p.x, y: p.y, road: r.id, what: run.side + (run.cut ? ' cut wall' : ' fill wall'), v: hgt }); } }
+    done('wall_height_cap', w, bad, n, `${n} wall stations, max height ${mx.toFixed(2)} m <= ${T.wallCap + 0.5}`); }
 
-  // 4: slope meets ground (daylight z vs base terrain) and outer overlap row below terrain
-  { let n = 0, bad = 0, w = null, miss = 0, wo = 0, bad2 = 0, w2 = null;
-    for (const r of roads) { const xs = P.crossSections(r); if (!xs) continue;
-      r.samples.forEach((s, i) => { for (const k of ['L', 'R']) { const m = xs[i][k]; if (m.kind !== 'slope' || m.d1 - m.edge < 0.05) continue;
-        const sg = k === 'L' ? 1 : -1, [x, y] = latPt(s, sg * m.d1), e = upHits(x, -y).filter(h => h.kind === 'earthwork' && h.rid === r.id);
-        if (!e.length) { miss++; continue; }
-        n++; const dz = Math.abs(e[0].y - hAt(x, y));
-        if (dz > 0.15) { bad++; if (!w || dz > w.v) w = { x, y, road: r.id, what: 'daylight dz', v: dz }; }
-        const [xo, yo] = latPt(s, sg * (m.d1 + 1 - 0.002)), eo = upHits(xo, -yo).filter(h => h.kind === 'earthwork' && h.rid === r.id);
-        if (eo.length) { wo++; const ex = eo[0].y - hAt(xo, yo); if (ex > 0) { bad2++; if (!w2 || ex > w2.v) w2 = { x: xo, y: yo, road: r.id, what: 'overlap row above terrain by', v: ex }; } }
-      } }); }
-    done('slope_meets_ground', w, bad, n, `${n} daylight points within 0.15 m (${miss} not found in mesh)`);
-    done('slope_overlap_below', w2, bad2, wo, `${wo} overlap-row points all below terrain`); }
-
-  // 5: piers/abutment bases (down-facing structure faces far below the deck near a bridge) reach below base terrain at every corner
+  // piers_grounded: down-facing foundation bases (far below the deck near a bridge) are at or below the original ground at every corner
   { let n = 0, bad = 0, w = null;
     for (const m of meshes) { if (kindOf(m) !== 'structure') continue; const r = m.userData.road; if (!r) continue;
-      const pos = m.geometry.attributes.position.array, idx = m.geometry.index.array, S = r.samples; if (!S.some(s => s.bridge)) continue;
+      const pos = m.geometry.attributes.position.array, idx = m.geometry.index.array, S = r.samples; if (!S.some(isBr)) continue;
       for (let t = 0; t < idx.length; t += 3) {
         const v = [0, 1, 2].map(q => idx[t + q] * 3), y0 = pos[v[0] + 1];
         if (Math.abs(pos[v[1] + 1] - y0) > 1e-4 || Math.abs(pos[v[2] + 1] - y0) > 1e-4) continue;
         const ux = pos[v[1]] - pos[v[0]], uz = pos[v[1] + 2] - pos[v[0] + 2], vx = pos[v[2]] - pos[v[0]], vz = pos[v[2] + 2] - pos[v[0] + 2];
         if (uz * vx - ux * vz >= -1e-9) continue;   // keep down-facing only
         const cx = pos[v[0]], cy = -pos[v[0] + 2]; let bi = 0, bd = 1e18; S.forEach((s, i) => { const d = (s.x - cx) ** 2 + (s.y - cy) ** 2; if (d < bd) { bd = d; bi = i; } });
-        let nearBr = false; for (let i = Math.max(0, bi - 8); i <= Math.min(S.length - 1, bi + 8); i++) if (S[i].bridge) nearBr = true;
+        let nearBr = false; for (let i = Math.max(0, bi - 8); i <= Math.min(S.length - 1, bi + 8); i++) if (isBr(S[i])) nearBr = true;
         if (!nearBr || y0 > S[bi].z - DECK_T - 1.2) continue;   // not a foundation base
-        for (const q of v) { n++; const x = pos[q], y = -pos[q + 2], ex = y0 - hAt(x, y); if (ex > 0) { bad++; if (!w || ex > w.v) w = { x, y, road: r.id, what: 'pier base above ground by', v: ex }; } }
+        for (const q of v) { n++; const x = pos[q], y = -pos[q + 2], ex = y0 - hBase(x, y); if (ex > 0) { bad++; w = track(w, { x, y, road: r.id, what: 'pier base above ground by', v: ex }); } }
       } }
-    done('piers_grounded', w, bad, n, n ? `${n} pier/abutment base corners all at or below terrain` : 'WARNING none found (no bridge?)'); if (!n) results[results.length - 1].pass = false; }
+    done('piers_grounded', w, bad, n, n ? `${n} pier/abutment base corners all at or below base terrain` : 'WARNING none found (no bridge?)'); if (!n) results[results.length - 1].pass = false; }
 
-  // 6: water only where the base terrain is not above water + 0.2 (replicates the water shader's bilinear height test vs the rendered triangle mesh)
-  { const TN = 513, CELL = WORLD / (TN - 1), TH = P.TH, L = T.water + 0.2; let n = 0, bad = 0, w = null;
-    for (let y = 0.5; y < WORLD; y += 1) for (let x = 0.5; x < WORLD; x += 1) {
-      const gx = x / CELL, gy = y / CELL, i = Math.min(TN - 2, Math.floor(gx)), j = Math.min(TN - 2, Math.floor(gy)), fx = gx - i, fy = gy - j, k = j * TN + i;
-      const bil = (TH[k] * (1 - fx) + TH[k + 1] * fx) * (1 - fy) + (TH[k + TN] * (1 - fx) + TH[k + TN + 1] * fx) * fy;
-      if (bil > L) continue; n++;   // water fragment drawn here
-      const ex = hAt(x, y) - L; if (ex > 0.02) { bad++; if (!w || ex > w.v) w = { x, y, road: 0, what: 'ground above water limit by', v: ex }; }
-    }
-    done('water_below_ground', w, bad, n, `${n} water fragments (1 m grid), none over ground > water+0.2`); }
+  // water_below_ground: the water shader draws wherever groundAt <= water+0.2. (a) never over a road formation sitting above that limit;
+  // (b) graded ground may only reach into the water limit within 40 m of a road station (no unexplained holes in the base terrain).
+  { const L = T.water + 0.2; let n = 0, bad = 0, w = null;
+    for (const r of roads) for (const s of r.samples) { if (isBr(s) || isTu(s) || s.z - 0.15 <= L + 0.05) continue; n++;
+      const g = groundAt(s.x, s.y); if (g <= L) { bad++; w = track(w, { x: s.x, y: s.y, road: r.id, what: 'water drawn over road formation at z=' + s.z.toFixed(1) + ', ground', v: L - g + 1e-3 }); } }
+    for (let y = 0.5; y < 2048; y += 1) for (let x = 0.5; x < 2048; x += 1) {
+      if (groundAt(x, y) > L) continue; n++;   // water fragment drawn here
+      const ex = hBase(x, y) - L; if (ex > 0.5) { const nb = nearStation(x, y); if (!nb || (nb[0].samples[nb[1]].x - x) ** 2 + (nb[0].samples[nb[1]].y - y) ** 2 > 40 * 40) { bad++; w = track(w, { x, y, road: 0, what: 'water over base ground above limit by', v: ex }); } } }
+    done('water_below_ground', w, bad, n, `${n} water fragments / road stations, none over ground or road above water+0.2`); }
 
-  // 7: median fill only between same-type, opposite-direction, near-parallel dual pairs; vertices within gap+carriageway+3 m of the pair
-  { let n = 0, bad = 0, w = null;
-    for (const r of roads) { const xs = P.crossSections(r); if (!xs) continue;
-      r.samples.forEach((s, i) => { for (const k of ['L', 'R']) { const m = xs[i][k]; if (m.kind !== 'median') continue; n++;
-        const sg = k === 'L' ? 1 : -1, nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, lim = (RT[r.type].dual ? RT[r.type].gap : 0) + (RT[r.type] ? RT[r.type].carriageway : 0) + 3;
-        let why = null, partner = null;
-        if (!RT[r.type].dual) why = 'median on non-dual road';
-        else { let bd = 1e18; for (const r2 of roads) { if (r2 === r || r2.type !== r.type) continue;
-          for (const t of r2.samples) { const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy); if (d > lim + 4) continue; const lat = dx * nx + dy * ny; if (lat > 0 && Math.abs(d - lat) < 2 && d < bd) { bd = d; partner = { t, r2 }; } } }
-          if (!partner) why = 'no paired road'; else if (Math.cos(partner.t.h - s.h) > -0.7) why = 'partner not opposite-direction near-parallel'; }
-        if (!why) for (const d of [m.edge, m.mid, m.d1]) { const vx = s.x + nx * d, vy = s.y + ny * d;
-          const dd = Math.min(Math.hypot(vx - s.x, vy - s.y), Math.hypot(vx - partner.t.x, vy - partner.t.y)); if (dd > lim) { why = 'vertex far from pair'; break; } }
-        if (why) { bad++; if (!w) w = { x: s.x, y: s.y, road: r.id, what: why, v: 0 }; }
-      } }); }
-    done('median_only_for_pairs', w, bad, n, `${n} median sections, all between opposite-direction same-type pairs`, ''); }
-  // 8: crossing_heights_match: wherever two centrelines cross or touch in plan, surface z differs by < 0.05 m (shared junction height) or >= 5.3 m (clears headroom)
+  // crossing_heights_match: wherever two centrelines cross or touch in plan, surface z differs by < 0.05 m (shared junction height) or >= 5.3 m (clears headroom)
   { let n = 0, bad = 0, w = null;
     const segX = (a, b, c, d) => { const rx = b.x - a.x, ry = b.y - a.y, sx = d.x - c.x, sy = d.y - c.y, den = rx * sy - ry * sx; if (Math.abs(den) < 1e-9) return null;
       const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / den, u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / den, e = 1e-3;
@@ -319,27 +333,30 @@ function CHECKS_IN_PAGE() {
       for (let p = 0; p + 1 < A.length; p++) for (let q = 0; q + 1 < B.length; q++) {
         const h = segX(A[p], A[p + 1], B[q], B[q + 1]); if (!h) continue;
         const za = A[p].z + (A[p + 1].z - A[p].z) * h.t, zb = B[q].z + (B[q + 1].z - B[q].z) * h.u, dz = Math.abs(za - zb); n++;
-        if (dz >= 0.05 && dz < 5.3) { bad++; if (!w || dz > w.v) w = { x: A[p].x + (A[p + 1].x - A[p].x) * h.t, y: A[p].y + (A[p + 1].y - A[p].y) * h.t, road: roads[i].id, what: 'dz vs road#' + roads[j].id, v: dz }; }
+        if (dz >= 0.05 && dz < 5.3) { bad++; w = track(w, { x: A[p].x + (A[p + 1].x - A[p].x) * h.t, y: A[p].y + (A[p + 1].y - A[p].y) * h.t, road: roads[i].id, what: 'dz vs road#' + roads[j].id, v: dz }); }
       } }
     done('crossing_heights_match', w, bad, n, `${n} plan crossings, all dz < 0.05 m or >= 5.3 m`); }
-  // 8: no floating faces: wall/portal/earthwork vertices outside the road footprint must not stand above max(base terrain, slope/formation surface there) + 0.6 m (parapet allowance)
-  { let n = 0, bad = 0, w = null; const CELL = 8, sh = new Map();
-    for (const r of roads) r.samples.forEach((s, i) => { const key = Math.floor(s.x / CELL) * 100003 + Math.floor(s.y / CELL); let l = sh.get(key); if (!l) sh.set(key, l = []); l.push([r, i]); });
-    const xsC = new Map(); const xsOf = r => { if (!xsC.has(r)) xsC.set(r, P.crossSections(r)); return xsC.get(r); };
-    for (const m of meshes) { const kd = m.userData.kind; if (!(kd === 'wall' || kd === 'portal' || !kd)) continue; const r0 = m.userData.road; if (!r0) continue;
-      const pos = m.geometry.attributes.position.array;
+
+  // no_floating_faces (wall / portal / abutment meshes):
+  //  top: no vertex outside the road footprint (+0.9 m) higher than max(groundAt, road z) + 0.6 m (parapet allowance)
+  //  bottom: the lowest vertex of every plan column (same x,y) is at most 0.3 m above groundAt (the face meets the ground)
+  { let n = 0, bad = 0, w = null, nBot = 0, badBot = 0, wBot = null;
+    for (const m of meshes) { const kd = m.userData.kind; if (!(kd === 'wall' || kd === 'portal' || kd === 'abutment')) continue; if (!m.userData.road) continue;
+      const pos = m.geometry.attributes.position.array, cols = new Map();
       for (let v = 0; v < pos.length; v += 3) {
-        const x = pos[v], y = -pos[v + 2], z = pos[v + 1]; let best = null, bd = 1e18;
-        const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
-        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const l = sh.get((cx + a) * 100003 + cy + b); if (!l) continue; for (const [r, i] of l) { const s = r.samples[i], d = (s.x - x) ** 2 + (s.y - y) ** 2; if (d < bd) { bd = d; best = [r, i]; } } }
-        if (!best) continue; const [r, i] = best, s = r.samples[i], hw = RT[r.type].carriageway / 2;
-        const lat = (x - s.x) * -Math.sin(s.h) + (y - s.y) * Math.cos(s.h), al = Math.abs(lat);
-        if (al <= hw + 0.4 + 0.5 || s.tunnel || s.bridge) continue; n++;
-        let surf = s.z; const xs = xsOf(r), sec = xs && xs[i] && xs[i][lat > 0 ? 'L' : 'R'];
-        if (sec && sec.kind === 'slope' && sec.d1 > sec.edge) { const t = Math.min(1, Math.max(0, (al - sec.edge) / (sec.d1 - sec.edge))); surf = sec.z0 + (sec.z1 - sec.z0) * t; } else if (sec) surf = sec.z0;
-        const ex = z - (Math.max(hAt(x, y), surf) + 0.6);
-        if (ex > 0.02) { (globalThis.__nf = globalThis.__nf || {})[kd || 'ew'] = ((globalThis.__nf || {})[kd || 'ew'] || 0) + 1; bad++; if (!w || ex > w.v) w = { x, y, road: r.id, what: (kd || 'earthwork') + ' vertex above surface by', v: ex }; }
-      } }
-    done('no_floating_faces', w, bad, n, `${n} outer vertices all within surface + 0.6 m`); }
+        const x = pos[v], y = -pos[v + 2], z = pos[v + 1], key = Math.round(x * 20) * 1000003 + Math.round(y * 20), c = cols.get(key);
+        if (!c) cols.set(key, { x, y, z }); else if (z < c.z) c.z = z;
+        const best = nearStation(x, y); if (!best) continue; const [r, i] = best, s = r.samples[i], hw = RT[r.type].total / 2;
+        const lat = (x - s.x) * -Math.sin(s.h) + (y - s.y) * Math.cos(s.h);
+        if (Math.abs(lat) <= hw + 0.9 || isTu(s) || isBr(s)) continue; n++;
+        const ex = z - (Math.max(groundAt(x, y), s.z) + 0.6);
+        if (ex > 0.02) { bad++; w = track(w, { x, y, road: r.id, what: kd + ' vertex above surface by', v: ex }); }
+      }
+      for (const c of cols.values()) { nBot++; const ex = c.z - groundAt(c.x, c.y) - 0.3; if (ex > 0.001) { badBot++; wBot = track(wBot, { x: c.x, y: c.y, road: m.userData.road.id, what: kd + ' bottom floats above ground by', v: ex + 0.3 }); } }
+    }
+    done('no_floating_faces', w, bad, n, `${n} outer vertices within surface + 0.6 m`);
+    const sel = results[results.length - 1];
+    if (badBot) { sel.pass = false; sel.msg = (bad ? sel.msg + ' ; ' : '') + `${badBot}/${nBot} columns: worst ${wBot.what} at ${fmt(wBot.x, wBot.y)} road#${wBot.road} ${wBot.v.toFixed(3)}m`; }
+    else sel.msg += `; ${nBot} face columns meet ground within 0.3 m`; }
   return results;
 }
