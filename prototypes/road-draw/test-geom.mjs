@@ -1,7 +1,9 @@
 // Headless checks for the prototype's geometry block: node prototypes/road-draw/test-geom.mjs
-import { readFileSync } from 'node:fs';
+// Reads 3d.html if present, else index.html.
+import { existsSync, readFileSync } from 'node:fs';
 import vm from 'node:vm';
-const html = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
+const target = ['3d.html', 'index.html'].map(f => new URL(`./${f}`, import.meta.url)).find(u => existsSync(u));
+const html = readFileSync(target, 'utf8');
 const src = html.match(/<script id="geom">([\s\S]*?)<\/script>/)[1];
 const ctx = {}; vm.createContext(ctx); vm.runInContext(src + '\nthis.G = G;', ctx);
 const G = ctx.G;
