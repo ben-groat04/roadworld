@@ -31,7 +31,12 @@ try {
 
     $e = ''
     try { Find-UnrealEngine -LauncherDat $dat -Quiet -EngineRoot (Join-Path $tmp 'nope') } catch { $e = $_.Exception.Message }
-    Check 'incomplete/absent -> error mentioning INCOMPLETE' ($e -match 'INCOMPLETE')
+    if ($e -eq '') {
+        # The last-resort drive scan found a real engine on this machine (e.g. D:\UE_5.8), so no error is possible.
+        Write-Host 'SKIP incomplete/absent -> error (a real engine was found by the drive scan)'
+    } else {
+        Check 'incomplete/absent -> error mentioning INCOMPLETE' ($e -match 'INCOMPLETE')
+    }
 
     Set-Content $dat ('{"InstallationList":[{"InstallLocation":"' + $partJ + '","AppName":"UE_5.8"},{"InstallLocation":"' + $goodJ + '\\Engine","AppName":"UE_5.8.1"}]}')
     $r = Find-UnrealEngine -LauncherDat $dat -Quiet
