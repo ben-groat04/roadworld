@@ -131,7 +131,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
   }
   for (let o = 0; o < N; o++) {
     let g;
-    if (fpD[o] < 9) { g = fpZ[o]; if (cutM[o] < g) g = cutM[o]; if (fillM[o] > -1e8 && fillM[o] < g) g = fillM[o]; } else { g = base[o]; const hc = cutM[o] < g, hf = fillM[o] > g; if (hc && hf) g = cutE[o] <= fillE[o] ? cutM[o] : fillM[o]; else if (hc) g = cutM[o]; else if (hf) g = fillM[o]; }   // never cross the base to the wrong side: take the nearer of a cut and a fill slope
+    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const hc = cutM[o] < g, hf = fillM[o] > g; if (hc && hf) g = cutE[o] <= fillE[o] ? cutM[o] : fillM[o]; else if (hc) g = cutM[o]; else if (hf) g = fillM[o]; }   // never cross the base to the wrong side: take the nearer of a cut and a fill slope
     out[o] = g;
   }
 }
@@ -150,9 +150,22 @@ function markMedians() {
           const lat = dx * nx + dy * ny; if (Math.abs(d - Math.abs(lat)) < 2 && Math.cos(t.h - s.h) < -0.7) { if (lat > 0) s.mL = true; else s.mR = true; } } } } }
   for (const r of rs) for (let i = 1; i < r.samples.length; i += 2) { const s = r.samples[i], p = r.samples[i - 1], q = r.samples[Math.min(i + 1, r.samples.length - 1)]; s.mL = p.mL || q.mL || s.mL; s.mR = p.mR || q.mR || s.mR; }
 }
+// Slope reach of road r: farthest lateral distance (from the footprint edge) at which a batter slope still meets the base ground on any unwalled side
+// (reach = max |cut/fill| * batter + margin, never more than the wall-start reach). Cached per road version.
+function slopeReach(r, ty) {
+  if (r._reachVer === r.ver && r._reach) return r._reach;
+  const hw = ty.total / 2, cap = reachOfRoad(ty), bt = T.batter; let mx = 0;
+  const S = r.samples;
+  for (let i = 0; i < S.length; i += 2) { const s = S[i]; if (s.br || s.tu) continue;
+    const zf = s.z - FORM_DROP;
+    for (const sg of [1, -1]) { if (sg > 0 ? s.wL : s.wR) continue;
+      const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg;
+      for (let e = 0.5; hw + e <= cap; e += 1) { const b = hBase(s.x + nx * (hw + e), s.y + ny * (hw + e)), v = b > zf ? zf + e / bt : zf - e / bt; if (b > zf ? v >= b : v <= b) { if (e > mx) mx = e; break; } if (hw + e + 1 > cap && e > mx) mx = e; } } }
+  r._reach = Math.min(cap, hw + mx + 2.5); r._reachVer = r.ver; return r._reach;
+}
 function roadsData() {
   markMedians();
-  return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = reachOfRoad(ty), sb = [], full = r.samples, dec = [];
+  return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = slopeReach(r, ty), sb = [], full = r.samples, dec = [];
     for (let i = 0; i < full.length; i += 2) { const a = full[i], b = full[Math.min(i + 1, full.length - 1)], c = full[Math.min(i + 2, full.length - 1)]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.mL ? 0 : a.wL, wR: a.mR ? 0 : a.wR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR }); }   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
     if ((full.length - 1) % 2) { const a = full[full.length - 1]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.mL ? 0 : a.wL, wR: a.mR ? 0 : a.wR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR }); } for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
     return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb }; });

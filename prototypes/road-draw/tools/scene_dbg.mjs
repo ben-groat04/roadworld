@@ -275,10 +275,10 @@ function CHECKS_IN_PAGE() {
           for (let d = hw + 0.5; d <= reach + 4; d += 0.5) { const [x, y] = latPt(s, sg * d); if (otherRoadNear(x, y, r, 0) || (d > hw + 0.5 && otherRoadNear(x, y, r, 0))) { skip = true; break; }
             const b = terrainH(x, y), g = groundAt(x, y), cut = b > s.z - 0.15, over = cut ? g - b : b - g;
             if (over > worst) { worst = over; wp = [x, y]; }
-            if (d >= reach + 3.5 && Math.abs(g - b) > 0.15 && !skip) { nc++; bad++; w = track(w, { x, y, road: r.id, what: 'not converged to base by', v: Math.abs(g - b) }); skip = 'counted'; } }
+            if (d >= reach + 3.5 && Math.abs(g - b) > 0.15 && !skip) { (globalThis.__d2=globalThis.__d2||[]).push(['UNC',+x.toFixed(1),+y.toFixed(1),r.id,i,side,d,+b.toFixed(2),+g.toFixed(2),+s.z.toFixed(2)]); nc++; bad++; w = track(w, { x, y, road: r.id, what: 'not converged to base by', v: Math.abs(g - b) }); skip = 'counted'; } }
           if (skip === true) continue; n++;
-          if (worst > 0.3) { ov++; bad++; w = track(w, { x: wp[0], y: wp[1], road: r.id, what: 'overshoots base by', v: worst }); } } }); }
-    done('slopes_daylight', w, bad, n, `${n} unwalled side profiles reach base ground, max overshoot <= 0.3 m`); if (bad) results[results.length - 1].msg += ` (overshoot ${ov}, unconverged ${nc})`; }
+          if (worst > 0.3) { ov++; (globalThis.__d2=globalThis.__d2||[]).push(['OV',+wp[0].toFixed(1),+wp[1].toFixed(1),r.id,i,side,+worst.toFixed(2),+s.z.toFixed(2)]); bad++; w = track(w, { x: wp[0], y: wp[1], road: r.id, what: 'overshoots base by', v: worst }); } } }); }
+    results[results.length-1].msg+=' D2'+JSON.stringify(globalThis.__d2||[]);done('slopes_daylight', w, bad, n, `${n} unwalled side profiles reach base ground, max overshoot <= 0.3 m`); if (bad) results[results.length - 1].msg += ` (overshoot ${ov}, unconverged ${nc})`; }
 
   // median_flat: between the two carriageways of each dual pair, groundAt has no step > 0.5 m between adjacent 0.5 m texels
   { let n = 0, bad = 0, w = null, pairs = 0;
