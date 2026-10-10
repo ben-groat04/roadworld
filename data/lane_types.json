@@ -6,8 +6,8 @@
     { "id": "parking",           "users": ["car"],        "may_park": true,  "connects_at_junctions": false, "surface": "asphalt" },
     { "id": "hard_shoulder",     "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "asphalt" },
     { "id": "hard_strip",        "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "asphalt" },
-    { "id": "kerb",              "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "kerb" },
-    { "id": "pavement",          "users": ["pedestrian"], "may_park": false, "connects_at_junctions": true,  "surface": "paving" },
-    { "id": "verge",             "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "grass" }
+    { "id": "kerb",              "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "kerb",    "profile": "kerb" },
+    { "id": "pavement",          "users": ["pedestrian"], "may_park": false, "connects_at_junctions": true,  "surface": "paving",  "profile": "raised" },
+    { "id": "verge",             "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "grass",   "profile": "verge" }
   ]
 }

@@ -153,3 +153,32 @@ TEST_CASE("roundabout_ring validation and fallbacks") {
     REQUIRE_MESSAGE(set, set.error);
     CHECK(set->roundabout.max_tool_radius == doctest::Approx(50));
 }
+
+TEST_CASE("render cross-section fields are optional and validated") {
+    auto lt = parse_lane_types(R"({"lane_types":[
+      {"id":"driving","surface":"asphalt","connects_at_junctions":true,"users":["car"]},
+      {"id":"kerb","surface":"kerb","profile":"kerb"}]})");
+    REQUIRE_MESSAGE(lt, lt.error);
+    CHECK(lt->at("driving").profile == "carriageway");
+    CHECK(lt->at("kerb").profile == "kerb");
+    CHECK_FALSE(parse_lane_types(R"({"lane_types":[{"id":"x","profile":"moat"}]})"));
+
+    const auto rt = [](const std::string& extra) {
+        return std::string(R"({"road_types":[{"id":"r","two_way":true,"speed_limit":50,"design_speed_kph":50,
+          "half":[{"lane":"driving","width_m":3.0}],"one_way_variant":[{"lane":"driving","width_m":3.0}],
+          "vertical_k":{"crest":10,"sag":9})") + extra + "}]}";
+    };
+    auto plain = parse_region_pack(*lt, kRegion, rt(""));
+    REQUIRE_MESSAGE(plain, plain.error);
+    CHECK_FALSE(plain->road_type("r")->crossfall.has_value());
+    CHECK_FALSE(plain->road_type("r")->kerb_upstand.has_value());
+    auto set = parse_region_pack(*lt, kRegion, rt(R"(,"crossfall":0.03,"kerb_upstand_m":0.1,"footway_crossfall":0.02,"verge_crossfall":0.05)"));
+    REQUIRE_MESSAGE(set, set.error);
+    CHECK(*set->road_type("r")->crossfall == doctest::Approx(0.03));
+    CHECK(*set->road_type("r")->kerb_upstand == doctest::Approx(0.1));
+    CHECK(*set->road_type("r")->footway_crossfall == doctest::Approx(0.02));
+    CHECK(*set->road_type("r")->verge_crossfall == doctest::Approx(0.05));
+    CHECK_FALSE(parse_region_pack(*lt, kRegion, rt(R"(,"crossfall":-0.1)")));
+    CHECK_FALSE(parse_region_pack(*lt, kRegion, rt(R"(,"kerb_upstand_m":2)")));
+    CHECK_FALSE(parse_region_pack(*lt, kRegion, rt(R"(,"crossfall":"flat")")));
+}

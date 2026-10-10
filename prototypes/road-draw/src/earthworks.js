@@ -7,10 +7,12 @@ let pend = [];   // input.js resets this on failed edits (kept for compat)
 const wallLineOf = ty => ty.total / 2;   // retaining wall face: the road's outer edge (wall mesh is 1.0 m thick, outside it)
 const WALL_THICK = 1.5;
 const VERGE = 1.5;          // flat graded verge beside the road edge (formation level) before the 1:batter slope starts
+const WALL_SLACK = 0.75;    // m: a slope may be this much higher than T.wallStart before a wall is needed (marginal need made 28 m wall stubs inside long embankments, with a notch of natural ground beside each); the grading reach still covers it
 const WALL_MIN_RUN = 8;     // samples (2 m apart): a wall run is at least 16 m long (>= 15 m)
 const WALL_GAP = 8;         // gaps between wall runs shorter than this many samples are bridged (no flicker)
 const PORTAL_WALL = 12;     // samples (24 m): the last stretch before a tunnel portal is walled on both sides (cutting sides taper up into full-height walls that meet the headwall); further out the cutting has ordinary slopes
-const PLANE_OVER = 0.6;     // m: grading runs this far past the portal plane, under the 2 m thick headwall, so the bilinear ground at the plane stays at formation
+const PLANE_OVER = TUN.planeC;   // m: grading stops at a texel this far past the portal plane (half-plane test per portal, see roadsData / gradeTile): the one-texel ramp up to natural ground then lies fully inside the 2 m thick headwall (and, within the opening, inside the discarded bore); no end cap of an earlier segment can reach further into the bore
+const PLANE_SPAN = 10;      // decimated segments (4 m each) before / after a portal that carry its plane test
 const WALL_PAD = 5;         // samples: a wall run is padded this far (10 m) beyond the stations that need it, so the wall tapers out before the real need ends
 const WALL_RAMP = 10;       // m: beside a wall end, the ground outside the wall face blends from slope to natural over this run (< the 12 m end zone of ground_hidden_by_walls)
 const slopeV = e => e > VERGE ? e - VERGE : 0;   // slope run beyond the verge
@@ -42,7 +44,7 @@ function needsWall(s, hw, sg) {
   const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, bt = T.batter, z0 = s.z - FORM_DROP;
   const base = d => hBase(s.x + nx * d, s.y + ny * d), g0 = base(hw) - z0, cut = g0 > 0;
   if (Math.abs(g0) < 1e-3) return 0;
-  const dMax = hw + VERGE + T.wallStart * bt;
+  const dMax = hw + VERGE + (T.wallStart + WALL_SLACK) * bt;
   for (let d = hw + 0.5; d < dMax + 0.5; d += 0.5) { const dd = Math.min(d, dMax), zs = cut ? z0 + slopeV(dd - hw) / bt : z0 - slopeV(dd - hw) / bt; if (cut ? zs >= base(dd) : zs <= base(dd)) return 0; if (dd >= dMax) break; }
   return cut ? 1 : 2;
 }
@@ -142,10 +144,12 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
       const i0 = Math.max(0, Math.floor((Math.min(A.x, B.x) - R - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((Math.max(A.x, B.x) + R - x0) / res));
       const j0 = Math.max(0, Math.floor((Math.min(A.y, B.y) - R - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((Math.max(A.y, B.y) + R - y0) / res));
       const dz = B.z - A.z;
+      const ap = rd.planes && rd.planes.length ? rd.planes.filter(pl => k >= pl.k0 && k < pl.k1) : null, pc = params.planeC ?? 1e9;
       for (let j = j0; j <= j1; j++) {
         const ry = y0 + j * res - A.y;
         for (let i = i0; i <= i1; i++) {
           const rx = x0 + i * res - A.x;
+          if (ap) { const px = rx + A.x, py = ry + A.y; let beyond = false; for (const pl of ap) if ((px - pl.x) * pl.nx + (py - pl.y) * pl.ny > pc) { beyond = true; break; } if (beyond) continue; }   // past a tunnel portal plane: natural ground (the headwall hides the one-texel step)
           let t = (rx * dx + ry * dy) / L2; if ((B.tu && !A.tu && t > 1 + PLANE_OVER / Math.sqrt(L2)) || (A.tu && !B.tu && t < -PLANE_OVER / Math.sqrt(L2))) continue;   // tunnel portal: grading stops exactly at the portal plane (the first tunnel station) (the headwall hides the step); bridges keep the rounded embankment end
           t = t < 0 ? 0 : t > 1 ? 1 : t;
           const ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey; if (d2 > R2) continue;
@@ -234,14 +238,18 @@ function roadsData() {
     const pk = a => ({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, wwL: a.wwL, wwR: a.wwR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR });
     for (let i = 0; i < full.length; i++) { const a = full[i]; if (i % 2 === 0 || i === full.length - 1 || !!full[i - 1].tu !== !!a.tu || !!full[i + 1].tu !== !!a.tu) dec.push(pk(a)); }   // every 2nd sample, plus the last graded / first tunnel sample at each portal (the portal plane stays exact)   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
     for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
-    return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb }; }).concat(typeof inspectFootprints === 'function' ? inspectFootprints() : []);   // inspect.js junction surfaces
+    const planes = [];   // portal planes: decimated-segment range they cut, plane point, unit normal pointing into the tunnel
+    for (let k = 0; k < dec.length; k++) { const a = dec[k], pr = dec[k - 1], nx_ = dec[k + 1]; if (!a.tu) continue;
+      if (pr && !pr.tu) planes.push({ k0: Math.max(0, k - PLANE_SPAN), k1: k, x: a.x, y: a.y, nx: Math.cos(a.h), ny: Math.sin(a.h) });
+      if (nx_ && !nx_.tu) planes.push({ k0: k, k1: Math.min(dec.length - 1, k + PLANE_SPAN), x: a.x, y: a.y, nx: -Math.cos(a.h), ny: -Math.sin(a.h) }); }
+    return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb, planes }; }).concat(typeof inspectFootprints === 'function' ? inspectFootprints() : []);   // inspect.js junction surfaces
 }
 // Recompute GH inside box {x0,y0,x1,y1} (world metres) from base + all roads. Calls onGroundChanged(box) with the snapped box.
 function gradeRegion(box) {
   const gi0 = clamp(Math.floor(box.x0 / GRID_RES), 0, GN - 1), gj0 = clamp(Math.floor(box.y0 / GRID_RES), 0, GN - 1);
   const gi1 = clamp(Math.ceil(box.x1 / GRID_RES), 0, GN - 1), gj1 = clamp(Math.ceil(box.y1 / GRID_RES), 0, GN - 1);
   if (gi1 < gi0 || gj1 < gj0) return;
-  const rd = roadsData(), TS = TILE_M / GRID_RES, params = { formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE };
+  const rd = roadsData(), TS = TILE_M / GRID_RES, params = { formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER };
   for (let tj = gj0; tj <= gj1; tj += TS) for (let ti = gi0; ti <= gi1; ti += TS) {
     const nx = Math.min(TS, gi1 - ti + 1), ny = Math.min(TS, gj1 - tj + 1);
     const tx0 = ti * GRID_RES, ty0 = tj * GRID_RES, tx1 = tx0 + nx * GRID_RES, ty1 = ty0 + ny * GRID_RES;
@@ -266,7 +274,8 @@ function wallRuns(r) {
     const sg = side === 'L' ? 1 : -1; let cur = null;
     for (let i = 0; i < S.length; i++) {
       const s = S[i];
-      if (!(side === 'L' ? s.wL : s.wR) || s.br || s.tu) { cur = null; continue; }
+      const wFlag = q => q && (side === 'L' ? q.wL : q.wR) && !q.br && !q.tu;
+      if (!(wFlag(s) || (s.tu && s.portal && (wFlag(S[i - 1]) || wFlag(S[i + 1]))))) { cur = null; continue; }   // a portal station joins the wall run beside it: the approach wall runs right up to the headwall plane
       const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, x = s.x + nx * hw, y = s.y + ny * hw, zf = s.z - FORM_DROP, out = hBase(s.x + nx * (hw + WALL_THICK), s.y + ny * (hw + WALL_THICK));
       const cut = out > zf;
       if (!cur || cur.cut !== cut) { cur = { side, cut, lo: 0, hi: WALL_THICK, pts: [] }; runs.push(cur); }
@@ -282,3 +291,73 @@ function markDirty(b) { dirtyBox = unionBox(dirtyBox, b); gradedBox = unionBox(g
 function touch(r) { if (r && r.samples) { if (!r.bbox) r.bbox = roadBox(r); markDirty(r.bbox); } }
 function flushGrade() { if (dirtyBox) { const b = dirtyBox; dirtyBox = null; gradeRegion(b); } }
 const regradeAll = () => { for (const r of roads) if (r.samples) r.bbox = roadBox(r); dirtyBox = gradedBox; if (!dirtyBox) return; flushGrade(); gradedBox = null; for (const r of roads) if (r.bbox) gradedBox = unionBox(gradedBox, r.bbox); };
+
+// ===== Tunnels: bore profile, volume data for the terrain discard, and its JS mirror =====
+// A bore is the swept cross-section of the lining's OUTER profile along the road centreline between the two portal planes (first / last tunnel station).
+// Profile (all heights above the road level z): flat floor at -floorDepth, vertical sides at lateral +-W up to the springline Hs, then a circular arch of radius R centred at height zc
+// (roof(q) = zc + sqrt(R^2 - q^2)). The outer profile is the inner one offset by `off` = lining + margin (concentric: W + off, R + off).
+function tunnelProfile(ty) {
+  const W = ty.total / 2, rise = TUN.riseK * W, Hs = TUNNEL_H, R = (W * W + rise * rise) / (2 * rise);
+  return { W, Hs, Hc: Hs + rise, R, zc: Hs + rise - R, rise };
+}
+const tunRoof = (p, q, off = 0) => p.zc + Math.sqrt(Math.max((p.R + off) * (p.R + off) - q * q, 0));
+// Tunnels of one road: [{a, b}] sample index ranges of contiguous tunnel stations (first / last = portal planes).
+function tunnelRuns(r) {
+  const S = r.samples || [], n = S.length, out = []; let i = 0;
+  while (i < n) { if (!S[i].tu) { i++; continue; } let j = i; while (j + 1 < n && S[j + 1].tu) j++; if (j > i) out.push({ a: i, b: j }); i = j + 1; }
+  return out;
+}
+// Pack every tunnel into the float table the terrain shader reads (tunData, RGBA32F, TUN_W x TUN_MAXC, declared in terrain.js): one row per chunk of <= TUN.chunk segments.
+//   texel 0: (min x, min y, min up, nSeg)   texel 1: (max x, max y, max up, 0)         (chunk AABB in plan metres / height)
+//   texel 2+2j: (x, y, road z, outer half-width Wd)   texel 3+2j: (arch centre height zc, outer arch radius Rd, end flag (1 = portal plane), 0)   for station j = 0..nSeg
+// Returns the number of chunks used.
+function packTunnels(data, W, maxRows, vols) {
+  let row = 0;
+  for (const v of vols) {
+    const m = v.st.length, off = TUN.lining + TUN.margin, p = v.prof;
+    for (let s0 = 0; s0 + 1 < m && row < maxRows; s0 += TUN.chunk, row++) {
+      const s1 = Math.min(m - 1, s0 + TUN.chunk), nSeg = s1 - s0, base = row * W * 4;
+      let x0 = 1e18, y0 = 1e18, z0 = 1e18, x1 = -1e18, y1 = -1e18, z1 = -1e18;
+      for (let j = 0; j <= nSeg; j++) {
+        const st = v.st[s0 + j], o = base + (2 + 2 * j) * 4, wd = p.W + off;
+        data[o] = st.x; data[o + 1] = st.y; data[o + 2] = st.z; data[o + 3] = wd;
+        data[o + 4] = p.zc; data[o + 5] = p.R + off; data[o + 6] = (s0 + j === 0 || s0 + j === m - 1) ? 1 : 0; data[o + 7] = 0;
+        x0 = Math.min(x0, st.x - wd - 1); x1 = Math.max(x1, st.x + wd + 1); y0 = Math.min(y0, st.y - wd - 1); y1 = Math.max(y1, st.y + wd + 1);
+        z0 = Math.min(z0, st.z - TUN.floorDepth - 0.1); z1 = Math.max(z1, st.z + p.Hc + off + 0.1);
+      }
+      data[base] = x0; data[base + 1] = y0; data[base + 2] = z0; data[base + 3] = nSeg; data[base + 4] = x1; data[base + 5] = y1; data[base + 6] = z1; data[base + 7] = 0;
+    }
+  }
+  return row;
+}
+// JS mirror of the shader's inBore(): is the point (x, y plan, up) inside any packed bore volume? Same maths, same packed table.
+function inBoreData(data, W, nRows, x, y, up) {
+  for (let c = 0; c < nRows; c++) {
+    const b = c * W * 4;
+    if (x < data[b] || x > data[b + 4] || y < data[b + 1] || y > data[b + 5] || up < data[b + 2] || up > data[b + 6]) continue;
+    const n = data[b + 3];
+    for (let i = 0; i < n; i++) {
+      const a = b + (2 + 2 * i) * 4, e = a + 8, ax = data[a], ay = data[a + 1], dx = data[e] - ax, dy = data[e + 1] - ay, L2 = dx * dx + dy * dy;
+      if (L2 < 1e-9) continue;
+      const px = x - ax, py = y - ay, t = (px * dx + py * dy) / L2;
+      if (t < (data[a + 6] > 0.5 ? 0 : -0.1) || t > (data[e + 6] > 0.5 ? 1 : 1.1)) continue;
+      const lat = (dx * py - dy * px) / Math.sqrt(L2), tc = t < 0 ? 0 : t > 1 ? 1 : t, mx = (u, v) => u + (v - u) * tc;
+      const zr = mx(data[a + 2], data[e + 2]), Wd = mx(data[a + 3], data[e + 3]), zc = mx(data[a + 4], data[e + 4]), R = mx(data[a + 5], data[e + 5]), rel = up - zr, al = Math.abs(lat);
+      if (al <= Wd && rel >= -TUN.floorDepth && rel <= zc + Math.sqrt(Math.max(R * R - al * al, 0))) return true;
+    }
+  }
+  return false;
+}
+// All tunnels in the scene as plain data: [{road, a, b, prof, st:[{x,y,z}]}]. Recomputed when roads change (roadmesh syncRoads) and packed into the shader table.
+function tunnelVolumes() {
+  const out = [];
+  for (const r of roads) { if (!r.samples || r.samples.length < 2) continue; const prof = tunnelProfile(ROAD_TYPES[r.type]);
+    for (const { a, b } of tunnelRuns(r)) out.push({ road: r, a, b, prof, st: r.samples.slice(a, b + 1).map(s => ({ x: s.x, y: s.y, z: s.z, h: s.h, s: s.s })) }); }
+  return out;
+}
+function refreshTunnels() {
+  tunData.fill(0); const vols = tunnelVolumes();
+  TUN_STATE.n = packTunnels(tunData, TUN_W, TUN_MAXC, vols); TUN_STATE.vols = vols;
+  ringU.uTunN.value = TUN_STATE.n; tunTex.needsUpdate = true; needsRender = true; shadowDirty = true;
+}
+const tunnelDiscard = (x, y, up) => inBoreData(tunData, TUN_W, TUN_STATE.n, x, y, up);

@@ -23,6 +23,10 @@ struct LaneType {
     bool may_park = false;
     bool connects_at_junctions = false;
     std::string surface;
+    // Cross-section role for the render mesh builder (optional "profile" in the data): carriageway
+    // (default; road surface with crossfall), kerb (raised upstand strip), raised (footway at kerb-top
+    // level) or verge (falls away from the carriageway).
+    std::string profile = "carriageway";
 };
 
 // One strip of a cross-section. `dir` is resolved at load: an explicit "dir" wins,
@@ -57,6 +61,12 @@ struct RoadType {
     double min_radius = 0;          // m, advisory (0 = unset)
     double advisory_max_grade = 0;  // rise/run, advisory (0 = unset)
     std::string markings;
+    // Render cross-section shape (all optional in the data; unset = the mesh builder default).
+    // Crossfalls are rise over run (positive = falls away from the crown / toward the nearside).
+    std::optional<double> crossfall;          // "crossfall": camber (two-way) or fall to the nearside
+    std::optional<double> kerb_upstand;       // "kerb_upstand_m": kerb height above the carriageway edge
+    std::optional<double> footway_crossfall;  // "footway_crossfall": footway falls toward the carriageway
+    std::optional<double> verge_crossfall;    // "verge_crossfall": verge falls away from the carriageway
     // True for the circulatory carriageway of a roundabout: a one-way type whose closed loops form a
     // roundabout group (docs/junctions.md section 7). Never set on two_way or dual types.
     bool roundabout_ring = false;

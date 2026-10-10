@@ -1,0 +1,34 @@
+Running UnrealBuildTool: dotnet "..\..\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.dll" CityPainterEditor Win64 Development -Project="C:\Users\x\roadworld\unreal\CityPainter\CityPainter.uproject" -WaitMutex -NoHotReload
+Log file: C:\Users\x\AppData\Local\UnrealBuildTool\Log.txt
+Creating makefile for CityPainterEditor (no existing makefile)
+C:\Users\x\roadworld\unreal\CityPainter\Plugins\CityPainterSim\Source\CityPainterSim\CityPainterSim.Build.cs(22,3): error CS0117: 'ModuleRules' does not contain a definition for 'ShadowVariableWarningLevel'
+C:\Users\x\roadworld\unreal\CityPainter\Plugins\CityPainterSim\Source\CityPainterSim\CityPainterSim.Build.cs(23,3): error CS0117: 'ModuleRules' does not contain a definition for 'UnsafeTypeCastWarningLevel'
+C:\Users\x\roadworld\unreal\CityPainter\Source\CityPainterEditor.Target.cs(9,22): error CS0103: The name 'BuildSettingsVersion' does not exist in the current context
+C:\Users\x\roadworld\unreal\CityPainter\Source\CityPainterEditor.Target.cs(9,22): warning CS0618: 'X' is obsolete: 'use Y'
+ERROR: Expecting to find a type to be declared in a target rules named 'CityPainterEditorTarget'.  This type must derive from the 'TargetRules' type defined by Unreal Build Tool.
+Parsing headers for CityPainterEditor
+  Running Internal UnrealHeaderTool C:\Users\x\roadworld\unreal\CityPainter\CityPainter.uproject C:\Users\x\roadworld\unreal\CityPainter\Intermediate\Build\Win64\CityPainterEditor\Development\CityPainterEditor.uhtmanifest -WarningsAsErrors
+C:\Users\x\roadworld\unreal\CityPainter\Plugins\CityPainterSim\Source\CityPainterSim\Public\CPRoadNetworkActor.h(47): Error: Unrecognized type 'FCPFoo' - type must be a UCLASS, USTRUCT or UENUM
+C:\Users\x\roadworld\unreal\CityPainter\Plugins\CityPainterSim\Source\CityPainterSim\Public\CPRoadNetworkActor.h(52): Error: Missing '*' in Expected a pointer type
+Error: Failed to generate code for CityPainterSim
+Total of 3 written
+[1/6] Compile [x64] Wrap_region_pack.cpp
+[2/6] Compile [x64] CPRoadNetworkActor.cpp
+C:\Users\x\roadworld\sim_core\include\cp\region_pack.h(9): fatal error C1083: Cannot open include file: 'nlohmann/json.hpp': No such file or directory
+C:\Users\x\roadworld\unreal\CityPainter\Plugins\CityPainterSim\Source\CityPainterSim\Private\CPRoadNetworkActor.cpp(88,25): error C2065: 'Foo': undeclared identifier
+C:\Users\x\roadworld\unreal\CityPainter\Plugins\CityPainterSim\Source\CityPainterSim\Private\CPRoadNetworkActor.cpp(88,25): error C2065: 'Foo': undeclared identifier
+C:\Users\x\roadworld\unreal\CityPainter\Plugins\CityPainterSim\Source\CityPainterSim\Private\CPRoadNetworkActor.cpp(120,10): error C2672: 'Bar': no matching overloaded function found
+C:\Users\x\roadworld\unreal\CityPainter\Plugins\CityPainterSim\Source\CityPainterSim\Private\CPRoadNetworkActor.cpp(120,10): warning C4996: 'old': deprecated
+C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.35710\include\filesystem(30): error C4577: 'noexcept' used with no exception handling mode specified; termination on exception is not guaranteed. Specify /EHsc
+C:\Users\x\roadworld\sim_core\src\markings.cpp:412:9: error: use of undeclared identifier 'qux'
+C:\Users\x\roadworld\sim_core\src\markings.cpp(77,1): warning C4458: declaration of 'x' hides class member
+[3/6] Link [x64] UnrealEditor-CityPainterSim.dll
+   Creating library C:\Users\x\roadworld\unreal\CityPainter\Intermediate\Build\Win64\x64\UnrealEditor\Development\CityPainterSim\UnrealEditor-CityPainterSim.suppressed.lib
+Wrap_region_pack.cpp.obj : error LNK2019: unresolved external symbol "public: static class cp::RegionPack __cdecl cp::RegionPack::load(class std::basic_string<char> const &)" (?load@RegionPack@cp@@SA?AV12@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z) referenced in function "void __cdecl Foo(void)" (?Foo@@YAXXZ)
+CPRoadNetworkActor.cpp.obj : error LNK2019: unresolved external symbol "int __cdecl cp::bar(void)" referenced in function "void __cdecl Baz(void)"
+C:\Users\x\roadworld\unreal\CityPainter\Binaries\Win64\UnrealEditor-CityPainterSim.dll : fatal error LNK1120: 2 unresolved externals
+LINK : fatal error LNK1181: cannot open input file 'missing.lib'
+cl : Command line error D8021 : invalid numeric argument '/Wfoo'
+Total execution time: 12.34 seconds
+Result: Failed (OtherCompilationError)
+0 error(s), 0 warning(s)

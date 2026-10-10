@@ -10,3 +10,6 @@ Intermediate/
 Saved/
 DerivedDataCache/
 prototypes/road-draw/progress/
+
+# Private reference images (Google Street View, copyrighted): never commit
+docs/reference/gsv/

@@ -55,6 +55,7 @@ function setView(tx, ty, dist, az, polar) {
 }
 const keys = new Set();
 function updateCamera(dt) {
+  if (state.freeCam) { camera.near = 0.3; camera.far = 4000; camera.updateProjectionMatrix(); return; }   // scripted camera (window.__proto.freeCam): no terrain following, can sit inside a tunnel
   const tg = controls.target, ox = tg.x, oz = tg.z;
   let mx = 0, mz = 0, rot = 0;
   if (keys.has('w') || keys.has('arrowup')) mz += 1; if (keys.has('s') || keys.has('arrowdown')) mz -= 1;

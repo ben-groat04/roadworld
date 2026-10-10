@@ -12,3 +12,8 @@ add_custom_target(export_fixtures
   COMMAND ${CMAKE_COMMAND} -E make_directory ${CP_FIXTURE_DIR}
   COMMAND export_scene --out ${CP_FIXTURE_DIR}/interchange.json interchange
   VERBATIM)
+
+# Writes render meshes as .obj per surface class for inspection:  export_mesh --out <dir> interchange
+add_executable(export_mesh export_mesh.cpp)
+target_link_libraries(export_mesh PRIVATE scene_tools)
+target_compile_definitions(export_mesh PRIVATE CP_DATA_DIR="${PROJECT_SOURCE_DIR}/data")

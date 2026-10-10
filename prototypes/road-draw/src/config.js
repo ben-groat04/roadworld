@@ -13,3 +13,6 @@ const ROAD_TYPES = {
 };
 const T = { snapAngle: 15, snapLen: 8, wallCap: 12, wallStart: 12, batter: 2, kMul: 1, minSpan: 4, water: 14 };
 const SHOULDER = 1.0, FORM_DROP = 0.15, PAVE_H = 0.12, DECK_T = 1.5, TUNNEL_H = 5.5, PARAPET_H = 1.0;
+// Tunnel bore (all metres). Inner clear profile: vertical side walls from the walkway up to TUNNEL_H (springline, = minimum headroom at the walls), then a circular arch rising
+// RISE_K * half-width to the crown. Outer (excavation) profile = inner offset by LINING_T + BORE_MARGIN, used by the terrain discard volume.
+const TUN = { lining: 0.6, margin: 0.15, floorDepth: 1.2, riseK: 0.2, headT: 2.0, planeC: 0.75, kerbH: 0.12, archN: 16, chunk: 16 };

@@ -1,0 +1,192 @@
+{
+  "_comment": "UK road marking rules. Every number is tuned by eye later; each rule carries a `source` note. Source keys: 'DfT TSM Ch5' = docs/road-marking-rules.md (Traffic Signs Manual chapter 5 sections 1-5); 'estimate' = not in that reference, a sensible placeholder. Speeds are in speed_unit (mph). Conditions (`if`): speed_max (<=), speed_min (>), width_min/width_max (driving-lane carriageway width, m), lanes_min/lanes_max (driving lanes, both directions), shoulder, one_way. A selector is a plain value or a list of {if, style|value}; the first match wins; style \"\" means no marking. Lane-type strings may list alternatives with '|'; boundary rules match either order of the two lanes; 'outside' is the area beyond the cross-section.",
+  "version": 1,
+  "speed_unit": "mph",
+  "min_mark_m": 0.3,
+  "_min_mark_source": "estimate: nothing shorter than 0.3 m is ever painted",
+
+  "colours": {
+    "white":  { "rgb": [0.90, 0.90, 0.88] },
+    "yellow": { "rgb": [0.93, 0.78, 0.15] }
+  },
+
+  "styles": {
+    "centre_low":       { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 2.0, "gap_m": 4.0 } ], "source": "DfT TSM Ch5: centre line 2 m mark / 4 m gap at 40 mph or less, 100 mm" },
+    "centre_high":      { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 3.0, "gap_m": 6.0 } ], "source": "DfT TSM Ch5: centre line 3 m / 6 m above 40 mph" },
+    "centre_wide_low":  { "colour": "white", "strands": [ { "width_m": 0.15, "mark_m": 2.0, "gap_m": 4.0 } ], "source": "DfT TSM Ch5: 150 mm on roads 10 m or more wide" },
+    "centre_wide_high": { "colour": "white", "strands": [ { "width_m": 0.15, "mark_m": 3.0, "gap_m": 6.0 } ], "source": "DfT TSM Ch5: 150 mm on roads 10 m or more wide" },
+
+    "warning_low":       { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 4.0, "gap_m": 2.0 } ], "source": "DfT TSM Ch5: warning line (inverse of centre line) 4 m / 2 m at 40 mph or less" },
+    "warning_high":      { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 6.0, "gap_m": 3.0 } ], "source": "DfT TSM Ch5: warning line 6 m / 3 m above 40 mph" },
+    "warning_wide_low":  { "colour": "white", "strands": [ { "width_m": 0.15, "mark_m": 4.0, "gap_m": 2.0 } ], "source": "DfT TSM Ch5: 150 mm on roads 10 m or wider and on four or six lanes" },
+    "warning_wide_high": { "colour": "white", "strands": [ { "width_m": 0.15, "mark_m": 6.0, "gap_m": 3.0 } ], "source": "DfT TSM Ch5: 150 mm on roads 10 m or wider and on four or six lanes" },
+
+    "lane_low":      { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 2.0, "gap_m": 4.0 } ], "source": "DfT TSM Ch5: lane line 6 m module at 40 mph or less; mark/gap split is an estimate (the reference says confirm against TSRGD)" },
+    "lane_high":     { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 2.0, "gap_m": 7.0 } ], "source": "DfT TSM Ch5: lane line 9 m module above 40 mph; mark/gap split is an estimate" },
+    "lane_high_150": { "colour": "white", "strands": [ { "width_m": 0.15, "mark_m": 2.0, "gap_m": 7.0 } ], "source": "DfT TSM Ch5: always 150 mm on 70 mph dual carriageways and motorways" },
+
+    "edge_100": { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "DfT TSM Ch5: edge line 100 mm continuous, no hard shoulder" },
+    "edge_150": { "colour": "white", "strands": [ { "width_m": 0.15, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "DfT TSM Ch5: edge line 150 mm (70 mph without a shoulder, or with a hard strip)" },
+    "edge_200": { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "DfT TSM Ch5: edge line 200 mm on motorways and 70 mph roads with a shoulder or strip" },
+
+    "double_white": { "colour": "white", "strands": [ { "offset_m": 0.1375, "width_m": 0.10, "mark_m": 1.0, "gap_m": 0.0 }, { "offset_m": -0.1375, "width_m": 0.10, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "DfT TSM Ch5 diagram 1013.1: two continuous lines 175 mm apart, 100 mm each" },
+
+    "bay_line":    { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "estimate: parking bay line (Chapter 3 not extracted), 100 mm continuous" },
+    "bay_divider": { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "estimate: bay divider, 100 mm" },
+
+    "give_way_low":  { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 0.6, "gap_m": 0.3 } ], "source": "estimate: give way line (diagram 1003), 200 mm broken, 600/300 (Chapter 3 not extracted)" },
+    "give_way_high": { "colour": "white", "strands": [ { "width_m": 0.30, "mark_m": 1.0, "gap_m": 0.5 } ], "source": "estimate: give way line on faster roads, 300 mm broken, 1000/500" },
+    "stop_line":     { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "estimate: stop line (diagram 1002), 200 mm continuous" },
+    "zebra_give_way": { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 0.6, "gap_m": 0.3 } ], "source": "estimate: zebra approach give way line" },
+
+    "fill_white": { "colour": "white", "fill": true, "source": "filled polygons (triangle, stripes, arrows) use the colour only" }
+  },
+
+  "sets": {
+    "urban_single": {
+      "boundaries": [
+        { "id": "centre", "category": "centre_line", "left": "driving", "right": "driving", "relation": "opposing",
+          "style": [ { "if": { "width_min": 10, "speed_max": 40 }, "style": "centre_wide_low" },
+                     { "if": { "width_min": 10 },                 "style": "centre_wide_high" },
+                     { "if": { "width_min": 5.5, "speed_max": 40 }, "style": "centre_low" },
+                     { "if": { "width_min": 5.5 },                "style": "centre_high" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "lanes_min": 4, "speed_max": 30 }, "value": 7 }, { "if": { "lanes_min": 4 }, "value": 10 },
+                                      { "if": { "speed_max": 30 }, "value": 5 }, { "value": 7 } ],
+                       "style": [ { "if": { "width_min": 10, "speed_max": 40 }, "style": "warning_wide_low" },
+                                  { "if": { "width_min": 10 },                 "style": "warning_wide_high" },
+                                  { "if": { "speed_max": 40 }, "style": "warning_low" },
+                                  { "style": "warning_high" } ],
+                       "source": "DfT TSM Ch5: warning line replaces the centre line on junction approaches; minimum marks 5 at 30 mph, 7 above (10 on four or six lanes)" } ],
+          "source": "DfT TSM Ch5: centre line only on carriageways of at least 5.5 m" },
+        { "id": "lane", "category": "lane_line", "left": "driving", "right": "driving", "relation": "same",
+          "style": [ { "if": { "speed_max": 40 }, "style": "lane_low" }, { "style": "lane_high" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "speed_max": 30 }, "value": 5 }, { "value": 7 } ],
+                       "style": [ { "if": { "speed_max": 40 }, "style": "warning_low" }, { "style": "warning_high" } ],
+                       "source": "DfT TSM Ch5: lane lines become warning lines on approaches to give way lines, signals and roundabouts" } ],
+          "source": "DfT TSM Ch5: lane line between same-direction lanes" },
+        { "id": "bay_line", "category": "parking_bay", "left": "driving", "right": "parking", "relation": "any",
+          "style": "bay_line", "source": "estimate: continuous line along the parking lane" }
+      ],
+      "bays": [
+        { "lane_type": "parking", "length_m": 6.0, "style": "bay_divider", "keepout_m": 10.0, "edge_clear_m": 0.06,
+          "source": "length: estimate (6 m bays); keepout: Highway Code rule 243 (no parking within 10 m of a junction)" }
+      ]
+    },
+
+    "rural_single": {
+      "boundaries": [
+        { "id": "centre", "category": "centre_line", "left": "driving", "right": "driving", "relation": "opposing",
+          "style": [ { "if": { "width_min": 10, "speed_max": 40 }, "style": "centre_wide_low" },
+                     { "if": { "width_min": 10 },                 "style": "centre_wide_high" },
+                     { "if": { "width_min": 5.5, "speed_max": 40 }, "style": "centre_low" },
+                     { "if": { "width_min": 5.5 },                "style": "centre_high" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "speed_max": 30 }, "value": 5 }, { "value": 7 } ],
+                       "style": [ { "if": { "width_min": 10, "speed_max": 40 }, "style": "warning_wide_low" },
+                                  { "if": { "width_min": 10 },                 "style": "warning_wide_high" },
+                                  { "if": { "speed_max": 40 }, "style": "warning_low" },
+                                  { "style": "warning_high" } ],
+                       "source": "DfT TSM Ch5: warning line on junction approaches" },
+                     { "kind": "curvature", "min_curvature": 0.005, "min_length_m": 20,
+                       "style": [ { "if": { "speed_min": 40, "width_min": 6.1 }, "style": "double_white" },
+                                  { "if": { "speed_max": 40 }, "style": "warning_low" },
+                                  { "style": "warning_high" } ],
+                       "source": "DfT TSM Ch5: warning line (or double white where visibility is limited, carriageway at least 6.1 m, not built-up) on bends; radius threshold 200 m is an estimate" } ],
+          "source": "DfT TSM Ch5: centre line only on carriageways of at least 5.5 m" },
+        { "id": "lane", "category": "lane_line", "left": "driving", "right": "driving", "relation": "same",
+          "style": [ { "if": { "speed_max": 40 }, "style": "lane_low" }, { "style": "lane_high" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "speed_max": 30 }, "value": 5 }, { "value": 7 } ],
+                       "style": [ { "if": { "speed_max": 40 }, "style": "warning_low" }, { "style": "warning_high" } ],
+                       "source": "DfT TSM Ch5: lane lines become warning lines on approaches" } ],
+          "source": "DfT TSM Ch5: lane line" },
+        { "id": "edge", "category": "edge_line", "left": "driving", "right": "hard_strip|hard_shoulder|verge", "relation": "any",
+          "style": [ { "if": { "speed_min": 60 }, "style": "edge_150" }, { "style": "edge_100" } ],
+          "inset_m": 0.225,
+          "source": "DfT TSM Ch5: edge line 100 mm (150 mm at 70 mph) 225 mm in from the carriageway edge; no edge line against a kerb" }
+      ],
+      "bays": []
+    },
+
+    "dual": {
+      "boundaries": [
+        { "id": "lane", "category": "lane_line", "left": "driving", "right": "driving", "relation": "same",
+          "style": [ { "if": { "speed_min": 40 }, "style": "lane_high_150" }, { "style": "lane_low" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "speed_max": 40 }, "value": 5 }, { "value": 7 } ],
+                       "style": [ { "if": { "speed_max": 40 }, "style": "warning_low" }, { "style": "warning_wide_high" } ],
+                       "source": "DfT TSM Ch5 dual carriageway junction: lane lines through the junction are warning lines, at least 7 marks at 40 mph or above and 5 below" } ],
+          "source": "DfT TSM Ch5: lane lines 150 mm on 70 mph dual carriageways" },
+        { "id": "edge", "category": "edge_line", "left": "driving", "right": "hard_strip|hard_shoulder", "relation": "any",
+          "style": [ { "if": { "speed_min": 60 }, "style": "edge_200" }, { "style": "edge_150" } ],
+          "inset_m": 0.225,
+          "source": "DfT TSM Ch5: with a hard shoulder or strip 150 mm (200 mm at 70 mph), 225 mm in from the carriageway edge" }
+      ],
+      "bays": []
+    },
+
+    "motorway": {
+      "boundaries": [
+        { "id": "lane", "category": "lane_line", "left": "driving", "right": "driving", "relation": "same",
+          "style": "lane_high_150",
+          "zones": [ { "kind": "approach", "min_marks": 7, "style": "warning_wide_high",
+                       "source": "DfT TSM Ch5: lane lines become warning lines on approaches, at least 7 marks" } ],
+          "source": "DfT TSM Ch5: always 150 mm on motorways" },
+        { "id": "edge", "category": "edge_line", "left": "driving", "right": "hard_strip|hard_shoulder", "relation": "any",
+          "style": "edge_200", "inset_m": 0.225,
+          "source": "DfT TSM Ch5: motorway edge line 200 mm, 225 mm in from the carriageway edge" }
+      ],
+      "bays": []
+    }
+  },
+
+  "junction": {
+    "give_way": {
+      "style": [ { "if": { "speed_max": 30 }, "style": "give_way_low" }, { "style": "give_way_high" } ],
+      "setback_m": 0.5,
+      "line_gap_m": 0.3,
+      "triangle": { "style": "fill_white", "gap_from_line_m": 1.0, "base_m": 1.8, "height_m": 3.0, "stroke_m": 0.2 },
+      "source": "estimate: dimensions from memory of diagrams 1003 / 1023 (Chapter 3 not extracted); setback keeps the line outside the junction trim"
+    },
+    "stop_line": {
+      "style": "stop_line", "setback_m": 0.5, "line_gap_m": 0.3,
+      "source": "estimate: only made for arms the caller names (no signal or sight-line data in v0)"
+    },
+    "zebra": {
+      "if": { "speed_max": 40 },
+      "style": "fill_white", "stripe_width_m": 0.5, "gap_m": 0.6, "band_width_m": 3.0, "clear_m": 1.0,
+      "give_way_style": "zebra_give_way", "give_way_gap_m": 1.0, "min_start_gap_m": 1.0,
+      "source": "estimate: 500 mm stripes, 600 mm gaps (500-700 mm in the regulations), band 3 m (2.4 m minimum); no studs or zig-zags (Chapter 6 not extracted)"
+    },
+    "roundabout_entry": {
+      "style": [ { "if": { "speed_max": 30 }, "style": "give_way_low" }, { "style": "give_way_high" } ],
+      "setback_m": 0.5, "line_gap_m": 0.3,
+      "source": "estimate: give way line across the entering lanes (roundabout markings not extracted from the Manual)"
+    },
+    "gore": {
+      "style": "fill_white", "stripe_width_m": 0.3, "pitch_m": 1.2, "angle_deg": 60, "min_area_m2": 0.05,
+      "edge_style": [ { "if": { "speed_min": 40 }, "style": "edge_200" }, { "style": "edge_100" } ],
+      "edge_inset_m": 0.225,
+      "source": "estimate: diagonal hatching in the gore (diagrams 1042/1043 not extracted); edge lines continue through the slip at the edge-line width"
+    },
+    "arrows": {
+      "min_inbound_lanes": 2,
+      "distances_m": [ 10.0, 26.0 ],
+      "length_m": [ { "if": { "speed_max": 40 }, "value": 4.0 }, { "if": { "speed_max": 60 }, "value": 6.0 }, { "value": 9.0 } ],
+      "width_m": 1.0,
+      "style": "fill_white",
+      "source": "DfT TSM Ch5: single-headed lane arrows 4 m (4/2 module), 6 m (6/3), 9 m at 70 mph, at least two per lane; distances from the junction are an estimate",
+      "glyphs": {
+        "ahead": [ [ [0.0,-0.08], [0.62,-0.08], [0.62,-0.4], [1.0,0.0], [0.62,0.4], [0.62,0.08], [0.0,0.08] ] ],
+        "turn": [ [ [0.0,-0.08], [0.483,-0.08], [0.7166,0.1534], [0.8721,-0.0021], [0.858,0.408], [0.4479,0.4221], [0.6034,0.2666], [0.417,0.08], [0.0,0.08] ] ],
+        "ahead_turn": [
+          [ [0.0,-0.08], [0.62,-0.08], [0.62,-0.4], [1.0,0.0], [0.62,0.4], [0.62,0.08], [0.0,0.08] ],
+          [ [0.08,0.08], [0.20,0.08], [0.391,0.271], [0.501,0.101], [0.487,0.427], [0.161,0.441], [0.271,0.271] ]
+        ],
+        "fork": { "parts": [ "turn", "turn:mirror" ] }
+      }
+    }
+  }
+}

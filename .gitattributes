@@ -8,3 +8,5 @@ unreal/**/*.fbx filter=lfs diff=lfs merge=lfs -text
 unreal/**/*.blend filter=lfs diff=lfs merge=lfs -text
 unreal/**/*.tif filter=lfs diff=lfs merge=lfs -text
 unreal/**/*.wav filter=lfs diff=lfs merge=lfs -text
+unreal/CityPainter/SourceArt/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+unreal/CityPainter/SourceArt/**/*.jpeg filter=lfs diff=lfs merge=lfs -text

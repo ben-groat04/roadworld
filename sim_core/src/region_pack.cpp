@@ -126,6 +126,12 @@ LaneTypeTable do_parse_lane_types(const std::string& text, Err& err) {
         lt.may_park = get_bool(e, "may_park", false, ctx, err);
         lt.connects_at_junctions = get_bool(e, "connects_at_junctions", false, ctx, err);
         if (optional_member(e, "surface")) lt.surface = get_string(e, "surface", ctx, err);
+        if (optional_member(e, "profile")) {
+            lt.profile = get_string(e, "profile", ctx, err);
+            if (lt.profile != "carriageway" && lt.profile != "kerb" && lt.profile != "raised" &&
+                lt.profile != "verge")
+                err.set(ctx + ": profile must be carriageway, kerb, raised or verge");
+        }
         if (err.failed()) return out;
         out.emplace(lt.id, std::move(lt));
     }
@@ -233,6 +239,17 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     rt.advisory_max_grade = opt_number(e, "advisory_max_grade_pct", 0, ctx, err) / 100.0;
     if (rt.advisory_max_grade < 0) err.set(ctx + ": advisory_max_grade_pct must not be negative");
     if (optional_member(e, "markings")) rt.markings = get_string(e, "markings", ctx, err);
+    const auto opt_shape = [&](const char* key, std::optional<double>& out, double hi) {
+        if (!optional_member(e, key)) return;
+        const double v = get_number(e, key, ctx, err);
+        if (!err.failed() && !(v >= 0 && v <= hi))
+            err.set(ctx + ": " + key + " must be between 0 and " + std::to_string(hi));
+        out = v;
+    };
+    opt_shape("crossfall", rt.crossfall, 0.2);
+    opt_shape("kerb_upstand_m", rt.kerb_upstand, 0.5);
+    opt_shape("footway_crossfall", rt.footway_crossfall, 0.2);
+    opt_shape("verge_crossfall", rt.verge_crossfall, 0.5);
     rt.roundabout_ring = get_bool(e, "roundabout_ring", false, ctx, err);
     if (rt.roundabout_ring && (rt.two_way || rt.dual))
         err.set(ctx + ": roundabout_ring types must be one-way (neither two_way nor dual)");

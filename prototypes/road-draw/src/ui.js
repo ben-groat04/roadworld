@@ -91,7 +91,7 @@ requestAnimationFrame(frame);
 // Scripting hook for automated screenshots.
 window.__proto = {
   THREE, state, T, scene, camera, controls, roads: () => roads, hAt, terrainH, setView, project, pick, setTune, undo, redo, flushGrade, regradeAll,
-  undoCount: () => undoStack.length, TG, TH, ROAD_TYPES, groundAt, GH, GRID_RES, wallRuns, hBase,
+  undoCount: () => undoStack.length, freeCam(p, t) { state.freeCam = true; camera.position.set(p[0], p[2], -p[1]); controls.target.set(t[0], t[2], -t[1]); camera.lookAt(controls.target); camera.updateMatrixWorld(); dirty(); }, endFreeCam() { state.freeCam = false; }, tunnelDiscard, tunnelVolumes: () => TUN_STATE.vols, tunnelProfile, tunnelRoof: tunRoof, TUN, tunnelRuns, tunTable: () => ({ data: tunData, W: TUN_W, n: TUN_STATE.n }), ringU, tunRender: o => { ringU.uProbe.value = o.probe ? 1 : 0; ringU.uTunOff.value = o.off ? 1 : 0; }, gradeInfo: () => ({ PLANE_OVER }), TG, TH, ROAD_TYPES, groundAt, GH, GRID_RES, wallRuns, hBase,
   drawRoad(type, pts, oneWay = false) {
     state.type = type; state.oneWay = oneWay; state.mode = 'draw';
     state.draw = { pts: pts.map(p => ({ x: p[0], y: p[1], z: p[2] != null ? p[2] : hAt(p[0], p[1]) })), hs: null, attach: pts.map(() => 'free') };

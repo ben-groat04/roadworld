@@ -9,6 +9,8 @@
   "road_types": [
     {
       "id": "residential",
+      "crossfall": 0.025,
+      "kerb_upstand_m": 0.125,
       "name": "Residential street",
       "two_way": true,
       "speed_limit": 30,

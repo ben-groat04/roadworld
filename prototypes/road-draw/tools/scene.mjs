@@ -69,10 +69,10 @@ const CAM = optVal('--cam'), SCENARIO = optVal('--scenario') || 'canonical', CAM
 const camNums = CAM ? CAM.split(',').map(Number) : null;
 if (CAM && (camNums.length !== 6 || camNums.some(isNaN))) { console.error('--cam wants x,y,z,tx,ty,tz (world metres; z up)'); process.exit(2); }
 if (!['canonical', 'interchange'].includes(SCENARIO)) { console.error('unknown --scenario ' + SCENARIO + '; have: canonical interchange'); process.exit(2); }
-const argv = []; { const a = process.argv.slice(2); for (let i = 0; i < a.length; i++) { if (a[i] === '--check') continue; if (['--cam', '--scenario', '--name'].includes(a[i])) { i++; continue; } argv.push(a[i]); } }
+const argv = []; { const a = process.argv.slice(2); for (let i = 0; i < a.length; i++) { if (a[i] === '--check') continue; if (['--cam', '--scenario', '--name', '--eval'].includes(a[i])) { i++; continue; } argv.push(a[i]); } }
 const outDir = resolve(argv[0] || '.');
 const wanted = argv.slice(1);
-const names = CAM ? [] : wanted.length ? wanted : Object.keys(VIEWS);
+const names = CAM || optVal('--eval') ? [] : wanted.length ? wanted : Object.keys(VIEWS);
 for (const n of names) if (!VIEWS[n]) { console.error('unknown view ' + n + '; have: ' + Object.keys(VIEWS).join(' ')); process.exit(2); }
 mkdirSync(outDir, { recursive: true });
 
@@ -262,6 +262,8 @@ for (const name of names.sort((a, b) => (a === 'interchange') - (b === 'intercha
   await page.screenshot({ path: resolve(outDir, name + '.png') });
 }
 
+if (optVal('--eval')) { const src = readFileSync(resolve(optVal('--eval')), 'utf8'); console.log(JSON.stringify(await page.evaluate(`(async () => { const P = window.__proto; ${src}
+})()`))); await browser.close(); process.exit(0); }   // debugging: --eval file.js runs the file body in the page (P = window.__proto; use `return`) after the scene is drawn and prints the JSON result
 if (CAM) {   // custom camera: the target is moved along the view ray onto the ground so the terrain-following camera loop does not shift the view
   if (SCENARIO === 'interchange') { const fx = ['interchange.json', 'sample.json'].map(f => resolve(HERE, '..', 'fixtures', f)).find(existsSync); await page.evaluate(j => window.__inspect.load(j, 'fixture'), readFileSync(fx, 'utf8')); }
   const camInfo = await page.evaluate(({ c }) => {
@@ -509,5 +511,19 @@ function CHECKS_IN_PAGE() {
         const x = (i + di / 2) * GR, y = (j + dj / 2) * GR;
         if (inWall(x, y) || stuct(x, y)) continue; bad++; w = track(w, { x, y, road: 0, what: 'bare ground step', v: st }); } }
     done('no_bare_steps', w, bad, n, `${n} texel steps > 1 m, all inside wall solids or bridge/tunnel zones`); }
+  // no_footway_on_crossing: at-grade crossings: no footway / kerb / marking triangle of one road may lie more than 0.75 m inside another road's carriageway (within 1 m height).
+  // (A footway wedge lying on the crossing road's asphalt was the cross_slope / tee_slope sliver.)
+  { let n = 0, bad = 0, w = null;
+    for (const m of meshes) { const ly = m.userData.layer; if (ly !== 'pave' && ly !== 'kerb' && ly !== 'mark') continue; const r = m.userData.road; if (!r) continue;
+      const pos = m.geometry.attributes.position.array, idx = m.geometry.index.array;
+      for (let t = 0; t < idx.length; t += 3) { const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+        const x = (pos[a] + pos[b] + pos[c]) / 3, y = -(pos[a + 2] + pos[b + 2] + pos[c + 2]) / 3, z = (pos[a + 1] + pos[b + 1] + pos[c + 1]) / 3; n++;
+        for (const r2 of roads) { if (r2 === r) continue; const lim = RT[r2.type].carriageway / 2 - 0.75, S2 = r2.samples; let hit = false;
+          for (let q = 0; q + 1 < S2.length && !hit; q++) { const p0 = S2[q], p1 = S2[q + 1];
+            if (x < Math.min(p0.x, p1.x) - lim || x > Math.max(p0.x, p1.x) + lim || y < Math.min(p0.y, p1.y) - lim || y > Math.max(p0.y, p1.y) + lim) continue;
+            const dx = p1.x - p0.x, dy = p1.y - p0.y, l2 = dx * dx + dy * dy, u = l2 > 1e-12 ? Math.min(1, Math.max(0, ((x - p0.x) * dx + (y - p0.y) * dy) / l2)) : 0, d = Math.hypot(x - p0.x - dx * u, y - p0.y - dy * u), dz = z - (p0.z + (p1.z - p0.z) * u);
+            if (d < lim && Math.abs(dz) < 1.0) hit = true; }
+          if (hit) { bad++; w = track(w, { x, y, road: r.id, what: ly + ' triangle on road#' + r2.id + ' carriageway, depth', v: 0 }); break; } } } }
+    done('no_footway_on_crossing', w, bad, n, `${n} footway/kerb/marking triangles, none lie on another road's carriageway`); }
   return results;
 }

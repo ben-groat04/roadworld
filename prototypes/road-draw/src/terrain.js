@@ -107,7 +107,37 @@ float Hg(vec2 w) {   // bilinear graded height at world (x, y)
   vec2 g = clamp(w, 0.0, G_WORLD) / G_RES; ivec2 i = ivec2(floor(g)); vec2 f = g - vec2(i);
   return mix(mix(Hi(i), Hi(i + ivec2(1, 0)), f.x), mix(Hi(i + ivec2(0, 1)), Hi(i + ivec2(1, 1)), f.x), f.y);
 }`;
-const ringU = { uH: { value: hTex }, uTB: { value: tbTex }, uCentre: { value: new THREE.Vector2() }, uWater: { value: T.water } };
+// ---- Tunnel volumes (earthworks.js packTunnels fills tunData; refreshTunnels() uploads). One row per chunk of <= 16 segments; see packTunnels for the layout. ----
+const TUN_W = 2 + 2 * (TUN.chunk + 1), TUN_MAXC = 64;
+const tunData = new Float32Array(TUN_W * TUN_MAXC * 4), TUN_STATE = { n: 0, vols: [] };
+const tunTex = new THREE.DataTexture(tunData, TUN_W, TUN_MAXC, THREE.RGBAFormat, THREE.FloatType);
+tunTex.minFilter = tunTex.magFilter = THREE.NearestFilter; tunTex.generateMipmaps = false; tunTex.flipY = false; tunTex.needsUpdate = true;
+// GLSL mirror of earthworks.js inBoreData(): the terrain fragment (and the shadow depth pass) is discarded where it lies inside a tunnel's outer bore volume.
+// p = world position in three coordinates (x, up, -y). The loop bound of 16 matches TUN.chunk; the AABB test per chunk keeps it to a handful of texel fetches for almost every fragment.
+const GLSL_TUN = `
+uniform highp sampler2D uTun; uniform int uTunN; uniform float uTunOff, uProbe;
+bool inBore(vec3 p) {
+  if (uTunOff > 0.5) return false;
+  vec2 pp = vec2(p.x, -p.z);
+  for (int c = 0; c < uTunN; c++) {
+    vec4 lo = texelFetch(uTun, ivec2(0, c), 0), hi = texelFetch(uTun, ivec2(1, c), 0);
+    if (pp.x < lo.x || pp.x > hi.x || pp.y < lo.y || pp.y > hi.y || p.y < lo.z || p.y > hi.z) continue;
+    int n = int(lo.w);
+    for (int i = 0; i < ${TUN.chunk}; i++) {
+      if (i >= n) break;
+      vec4 a0 = texelFetch(uTun, ivec2(2 + 2 * i, c), 0), a1 = texelFetch(uTun, ivec2(3 + 2 * i, c), 0);
+      vec4 b0 = texelFetch(uTun, ivec2(4 + 2 * i, c), 0), b1 = texelFetch(uTun, ivec2(5 + 2 * i, c), 0);
+      vec2 d = b0.xy - a0.xy; float L2 = dot(d, d); if (L2 < 1e-9) continue;
+      vec2 q = pp - a0.xy; float t = dot(q, d) / L2;
+      if (t < (a1.z > 0.5 ? 0.0 : -0.1) || t > (b1.z > 0.5 ? 1.0 : 1.1)) continue;
+      float lat = (d.x * q.y - d.y * q.x) / sqrt(L2), tc = clamp(t, 0.0, 1.0);
+      float zr = mix(a0.z, b0.z, tc), Wd = mix(a0.w, b0.w, tc), zc = mix(a1.x, b1.x, tc), R = mix(a1.y, b1.y, tc), rel = p.y - zr, al = abs(lat);
+      if (al <= Wd && rel >= -${TUN.floorDepth.toFixed(3)} && rel <= zc + sqrt(max(R * R - al * al, 0.0))) return true;
+    }
+  }
+  return false;
+}`;
+const ringU = { uH: { value: hTex }, uTB: { value: tbTex }, uCentre: { value: new THREE.Vector2() }, uWater: { value: T.water }, uTun: { value: tunTex }, uTunN: { value: 0 }, uTunOff: { value: 0 }, uProbe: { value: 0 } };
 const ringIdx = (full) => {
   const n = RING_N, h = n / 2, q = n / 4, out = []; const V = (i, j) => (j + h) * (n + 1) + (i + h);
   for (let j = -h; j < h; j++) for (let i = -h; i < h; i++) {
@@ -125,7 +155,7 @@ const ringGeo = (full) => {
 };
 const GEO_FULL = ringGeo(true), GEO_HOLE = ringGeo(false);
 function makeRingMat(sp) {
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0, shadowSide: THREE.DoubleSide });
   m.customProgramCacheKey = () => 'groundring';
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, ringU); sh.uniforms.uSp = { value: sp }; sh.uniforms.uN = { value: RING_N };
@@ -176,16 +206,16 @@ vec3 gcol = mix(vec3(0.27, 0.43, 0.17), vec3(0.5, 0.47, 0.26), clamp((hb - 5.0) 
 gcol = mix(gcol, vec3(0.42, 0.42, 0.20), dry * 0.35);
 gcol *= 1.0 + 0.22 * macro;
 gcol = mix(gcol, vec3(0.36, 0.33, 0.24), clamp((uWater + 1.2 - hb) / 3.0, 0.0, 0.8) * (1.0 - gr));
-gcol = mix(gcol, vec3(0.30, 0.50, 0.16), gr * 0.3);
+gcol = mix(gcol, vec3(0.30, 0.50, 0.16), gr * 0.1);
 // subtle darker toe where a slope meets flatter ground (slope falls off with the 3x3 kernel); cheap proxy: damp-ish darkening on gentle but non-flat ground
-gcol *= 1.0 - 0.18 * smoothstep(0.08, 0.3, slp) * (1.0 - smoothstep(0.3, 0.6, slp));
+gcol *= 1.0 - 0.05 * smoothstep(0.08, 0.3, slp) * (1.0 - smoothstep(0.3, 0.6, slp));
 // exposed soil / rock: steep (> ~35 deg => slp > 0.7) or freshly cut (cut depth > 2 m)
 float steep = smoothstep(0.62, 0.85, slp);
-float cut = smoothstep(1.5, 3.0, -vDelta) * gr;
+float cut = smoothstep(0.3, 0.9, -vDelta);   // crisp: the cut face reads from where it leaves the natural ground (it is only slightly steeper than a hillside, so a depth-ramped mask smeared)
 float ex = max(steep, cut);
-vec3 soil = mix(vec3(0.40, 0.31, 0.22), vec3(0.47, 0.45, 0.42), smoothstep(-0.4, 0.5, nB + nC + macro));
+vec3 soil = mix(vec3(0.37, 0.31, 0.20), mix(vec3(0.43, 0.37, 0.25), vec3(0.47, 0.45, 0.42), steep), smoothstep(-0.4, 0.5, nB + nC + macro));   // earthy brown for an ordinary cut face; grey rock only where it is really steep
 soil *= 1.0 + 0.25 * kd;
-gcol = mix(gcol, soil, ex);
+gcol = mix(gcol, soil, ex * 0.8);
 float kn = 1.0 + 0.1 * kd * (1.0 - ex);
 diffuseColor.rgb = gcol * gcol * kn;`)
       .replace('void main() {', `void main() {
@@ -196,17 +226,44 @@ diffuseColor.rgb = gcol * gcol * kn;`)
     gdy += wgt * (Hg(gw + vec2(o, ge)) - Hg(gw + vec2(o, -ge))); }
   vec3 gNormal = normalize(vec3(-gdx / 4.0, 2.0 * ge, gdy / 4.0));`)
       .replace('#include <normal_fragment_begin>', `vec3 normal = normalize((viewMatrix * vec4(gNormal, 0.0)).xyz); vec3 nonPerturbedNormal = normal;`)
+      .replace('#include <common>', `#include <common>
+${GLSL_TUN}`).replace('void main() {', `void main() {
+  if (inBore(vW)) discard;   // inside a tunnel's bore volume: the mouth is genuinely open`)
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  if (uProbe > 0.5) gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);   // render probe (scene.mjs tunnel_bore_clear): terrain fragments show as magenta`)
       .replace('#include <fog_fragment>', `#include <fog_fragment>
 #ifdef USE_FOG
-{ vec2 ed = min(vW.xz * vec2(1.0, -1.0), G_WORLD - vW.xz * vec2(1.0, -1.0)); float de = min(ed.x, ed.y); gl_FragColor.rgb = mix(fogColor, gl_FragColor.rgb, smoothstep(0.0, 500.0, de)); }
+{ vec2 ed = min(vW.xz * vec2(1.0, -1.0), G_WORLD - vW.xz * vec2(1.0, -1.0)); float de = min(ed.x, ed.y); gl_FragColor.rgb = mix(fogColor, gl_FragColor.rgb, smoothstep(0.0, 40.0, de)); }   // thin edge fade only (was 500 m: washed the ground pale blue across the whole south/west strips)
 #endif`);
   };
   return m;
 }
+// Shadow depth pass for a ring: same vertex displacement, same inBore discard (so a tunnel mouth neither blocks nor leaks sunlight).
+function makeRingDepthMat(sp) {
+  const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  m.customProgramCacheKey = () => 'groundringdepth';
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, ringU); sh.uniforms.uSp = { value: sp }; sh.uniforms.uN = { value: RING_N };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+${GLSL_H}
+uniform vec2 uCentre; uniform float uSp, uN; varying vec3 vW;`).replace('#include <begin_vertex>', `
+vec2 lp = position.xz; vec2 wp = clamp(uCentre + lp * uSp, 0.0, G_WORLD); float gh = Hg(wp);
+{ float hn = uN * 0.5 - 0.5; vec2 s = vec2(0.0);
+  if (abs(lp.x) > hn && mod(abs(lp.y), 2.0) > 0.5) s = vec2(0.0, uSp); else if (abs(lp.y) > hn && mod(abs(lp.x), 2.0) > 0.5) s = vec2(uSp, 0.0);
+  if (s.x + s.y > 0.0) gh = 0.5 * (Hg(wp - s) + Hg(wp + s)); }
+vec3 transformed = vec3(wp.x, gh, -wp.y); vW = transformed;`).replace('#include <project_vertex>', 'vec4 mvPosition = viewMatrix * vec4(transformed, 1.0); gl_Position = projectionMatrix * mvPosition;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+${GLSL_TUN}
+varying vec3 vW;`).replace('void main() {', `void main() {
+  if (inBore(vW)) discard;`);
+  };
+  return m;
+}
+const TERRAIN_CASTS_SHADOW = true;   // the ground shades what lies under it (tunnel interiors, cuttings); false = lit by the sun regardless
 const terrain = new THREE.Group(); terrain.userData.kind = 'terrain';
 const rings = RING_SP.map((sp, k) => {
   const m = new THREE.Mesh(k === 0 ? GEO_FULL : GEO_HOLE, makeRingMat(sp));
-  m.userData.kind = 'terrain'; m.receiveShadow = true; m.castShadow = false; m.renderOrder = 5; m.frustumCulled = false; m.matrixAutoUpdate = false;
+  m.userData.kind = 'terrain'; m.receiveShadow = true; m.castShadow = TERRAIN_CASTS_SHADOW; m.customDepthMaterial = makeRingDepthMat(sp); m.renderOrder = 5; m.frustumCulled = false; m.matrixAutoUpdate = false;
   if (k === 0) m.onBeforeRender = () => { hTexLive = true; };
   terrain.add(m); return m;
 });
@@ -245,7 +302,7 @@ waterMat.onBeforeCompile = shader => {
   if (wDepth < -0.2) discard;`)
     .replace('#include <color_fragment>', `#include <color_fragment>
 { float d = max(wDepth, 0.0);
-  vec3 shallow = vec3(0.30, 0.55, 0.50), deep = vec3(0.05, 0.22, 0.34), bank = vec3(0.10, 0.09, 0.06);
+  vec3 shallow = vec3(0.30, 0.55, 0.50), deep = vec3(0.05, 0.22, 0.34), bank = vec3(0.26, 0.24, 0.17);
   vec3 wc = mix(shallow, deep, smoothstep(0.1, 5.0, d));
   wc = mix(bank, wc, smoothstep(0.0, 0.5, d));   // damp dark bank band at the shoreline
   diffuseColor.rgb = wc * wc;
