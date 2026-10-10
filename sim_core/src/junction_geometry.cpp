@@ -195,15 +195,33 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
             band.push_back(c.q);
         }
         run(aj, s_end_j, trims[j], -aj.kerb_right, band);
-        run(aj, trims[j], s_end_j, -(aj.kerb_right + w), band);
-        if (c.fillet) {
+        // Outer edge, back from arm j to arm k. The pavement lies on the fillet centre's side of
+        // the kerb arc, so its outer arc has radius r - w; when that vanishes the offset lines meet
+        // in a mitre.
+        double sk_out = s_end_k, sj_out = s_end_j;
+        std::vector<Vec3> mid;
+        if (c.fillet && c.radius > w + 1e-6) {
             const int segs = arc_segments(c.sweep);
-            for (int i = segs; i >= 0; --i) band.push_back(arc_point(c, c.radius + w, i, segs));
+            for (int i = segs; i >= 0; --i) mid.push_back(arc_point(c, c.radius - w, i, segs));
+        } else if (c.fillet) {
+            const ArmPoint o1 = arm_point(ak, c.sp, ak.kerb_left + w), o2 = arm_point(aj, c.sq, -(aj.kerb_right + w));
+            const Vec2 hk{std::cos(o1.heading_out), std::sin(o1.heading_out)};
+            const Vec2 hj{std::cos(o2.heading_out), std::sin(o2.heading_out)};
+            const double den = hk.cross(hj);
+            if (std::fabs(den) > 1e-9) {
+                const Vec2 d = o2.pos.xy() - o1.pos.xy();
+                const double t = d.cross(hj) / den, u = d.cross(hk) / den;
+                sk_out = std::min(c.sp + t, trims[k]);
+                sj_out = std::min(c.sq + u, trims[j]);
+                mid.push_back({o1.pos.x + hk.x * t, o1.pos.y + hk.y * t, o1.pos.z});
+            }
         } else {
-            band.push_back(arm_point(aj, 0, -(aj.kerb_right + w)).pos);
-            band.push_back(arm_point(ak, 0, ak.kerb_left + w).pos);
+            mid.push_back(arm_point(aj, 0, -(aj.kerb_right + w)).pos);
+            mid.push_back(arm_point(ak, 0, ak.kerb_left + w).pos);
         }
-        run(ak, s_end_k, trims[k], ak.kerb_left + w, band);
+        run(aj, trims[j], sj_out, -(aj.kerb_right + w), band);
+        band.insert(band.end(), mid.begin(), mid.end());
+        run(ak, sk_out, trims[k], ak.kerb_left + w, band);
         std::vector<Vec2> ring = to_ring(band);
         if (ring.size() >= 3 && std::fabs(signed_area(ring)) > 1e-6) junction.pavements.push_back(std::move(ring));
     }

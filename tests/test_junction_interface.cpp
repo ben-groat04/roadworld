@@ -261,7 +261,7 @@ TEST_CASE("[A golden] T junction of two residential roads: 6 connectors") {
     CHECK(offside == 2);
 }
 
-TEST_CASE("[B golden] X junction: 4 corners of radius 6 m, trims 11 m, carriageway is one polygon" * doctest::skip()) {
+TEST_CASE("[B golden] X junction: 4 corners of radius 6 m, trims 11 m, carriageway is one polygon") {
     Net n;
     for (double d : {0.0, 90.0, 180.0, 270.0}) n.polar(d, 100);
     const Junction& j = build_junctions(n.g, *uk(), {}).junctions.begin()->second;

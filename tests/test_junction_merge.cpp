@@ -45,9 +45,11 @@ struct Net {
         }
     }
     // Merge: main (2 lanes) from 180 deg and slip (1 lane) from 180 -/+ sep, out at 0 deg.
-    // The slip is on the nearside: planar left (y > 0, 180 - sep) when driving left.
+    // Diverge: the same with all directions reversed (main from the east... O inbound at 0 deg).
+    // The slip is on the nearside of the travel direction.
     void build(bool merge, double sep, double len = 100) {
-        const double slip = region->driving_side == DrivingSide::Left ? 180 - sep : 180 + sep;
+        const bool north = (region->driving_side == DrivingSide::Left) == merge;  // nearside of eastbound/westbound
+        const double slip = north ? 180 - sep : 180 + sep;
         road(180, len, "b_road", merge);
         road(slip, len, "residential", merge);
         road(0, len, "b_road", !merge);
@@ -104,8 +106,9 @@ void check_slip(const Junction& j, DrivingSide side, bool merge) {
     REQUIRE(oi >= 0);
     const JunctionArm& O = j.arms[static_cast<std::size_t>(oi)];
     REQUIRE(O.lanes.size() == 2);
-    // Nearside lane of O in its own frame: planar left (largest lateral) when driving left.
-    const int near_lane = side == DrivingSide::Left ? 0 : 1;  // lanes are ordered left to right
+    // Nearside lane of O in its outward frame (lanes ordered left to right). A merge's O leaves the
+    // node along the travel direction; a diverge's O is travelled toward the node (frame reversed).
+    const int near_lane = (side == DrivingSide::Left) == merge ? 0 : 1;
     REQUIRE(j.connectors.size() == 3);
     int slip = 0, straight_main = 0;
     for (const LaneConnector& c : j.connectors) {

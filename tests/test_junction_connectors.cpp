@@ -237,8 +237,6 @@ TEST_CASE("A: mirrored driving side mirrors turn kinds") {
 TEST_CASE("A: overrides: disable, enable u-turn, custom curve, lane switch survive regeneration") {
     Net n = make_t();
     const Junction base = n.build();
-    const Edge& e0 = n.g.edge(base.arms[0].edge);
-    (void)e0;
     auto key = [&](const LaneConnector& c) {
         const auto& fa = base.arms[static_cast<std::size_t>(c.arm_from)];
         const auto& ta = base.arms[static_cast<std::size_t>(c.arm_to)];

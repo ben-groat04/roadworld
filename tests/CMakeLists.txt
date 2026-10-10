@@ -12,6 +12,7 @@ add_executable(sim_core_tests
   test_heightfield.cpp
   test_earthworks.cpp
   test_junction_interface.cpp
+  test_junction_geometry.cpp
   test_junction_connectors.cpp
   test_junction_merge.cpp
 )
