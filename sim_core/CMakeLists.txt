@@ -9,6 +9,8 @@ add_library(sim_core
   src/region_pack.cpp
   src/lanes.cpp
   src/edge_sampling.cpp
+  src/heightfield.cpp
+  src/earthworks.cpp
 )
 target_include_directories(sim_core PUBLIC include)
 # Vendored MIT header; SYSTEM keeps its warnings out of our -Wconversion build.

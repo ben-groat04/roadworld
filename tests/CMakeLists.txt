@@ -9,6 +9,8 @@ add_executable(sim_core_tests
   test_region_pack.cpp
   test_lanes.cpp
   test_edge_sampling.cpp
+  test_heightfield.cpp
+  test_earthworks.cpp
 )
 target_link_libraries(sim_core_tests PRIVATE sim_core)
 target_include_directories(sim_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
