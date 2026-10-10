@@ -30,6 +30,9 @@
     "min_tool_radius_m": 8,
     "max_tool_radius_m": 100,
     "splitter_length_m": 12,
-    "splitter_width_m": 1.8
+    "splitter_width_m": 1.8,
+    "central_island_surface": "grass",
+    "splitter_surface": "paving",
+    "island_kerb_upstand_m": 0.125
   }
 }

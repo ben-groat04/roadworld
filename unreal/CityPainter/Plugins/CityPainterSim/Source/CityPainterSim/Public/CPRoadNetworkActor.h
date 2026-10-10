@@ -26,6 +26,8 @@ public:
 	virtual ~ACPRoadNetworkActor() override;
 
 	virtual void BeginPlay() override;
+	/** Editor worlds only: builds the smoke-test roads so they are visible without pressing Play. */
+	virtual void OnConstruction(const FTransform& Transform) override;
 
 	/** Undo the last command. Returns false if nothing to undo. */
 	UFUNCTION(BlueprintCallable, Category = "CityPainter")

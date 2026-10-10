@@ -40,8 +40,8 @@ function parseObj(text) {
   return g;
 }
 
-const W = 1600, H = 900;
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+let W = 1600, H = 900;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(1);
 renderer.setSize(W, H);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -128,7 +128,8 @@ for (const f of exportInfo.files) {
   ground.receiveShadow = true; scene.add(ground);
 }
 
-// view: { name, pos:[x,y,z], target:[x,y,z] in sim metres (original sim frame), fov, near, shadow (radius, m), exposure }
+// view: { name, pos:[x,y,z], target:[x,y,z] in sim metres (original sim frame), fov (vertical, deg) or hfov (horizontal, deg),
+//         width, height (pixels; default 1600x900), near, shadow (radius, m), exposure }
 window.setView = (v) => {
   const P = a => new THREE.Vector3(...S2T(a[0] - off[0], a[1] - off[1], a[2] - off[2]));
   // rel: z of pos / target is a height above the road surface (highest non-marking mesh) at that xy.
@@ -141,7 +142,9 @@ window.setView = (v) => {
     return [a[0], a[1], (h ? h.point.y : 0) + a[2] + off[2]];
   };
   const pos = P(lift(v.pos)), tgt = P(lift(v.target));
-  camera.fov = v.fov ?? 50; camera.near = v.near ?? 0.2; camera.far = v.far ?? 6000; camera.aspect = W / H;
+  W = v.width ?? 1600; H = v.height ?? 900; renderer.setSize(W, H);
+  camera.fov = v.hfov ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(v.hfov) / 2) * H / W)) : (v.fov ?? 50);
+  camera.near = v.near ?? 0.2; camera.far = v.far ?? 6000; camera.aspect = W / H;
   camera.position.copy(pos); camera.up.set(0, 1, 0); camera.lookAt(tgt); camera.updateProjectionMatrix();
   renderer.toneMappingExposure = v.exposure ?? 0.75;
   // Shadow volume follows the area of interest so texels stay small.
@@ -154,5 +157,20 @@ window.setView = (v) => {
   renderer.render(scene, camera);
   return true;
 };
-window.__info = { report, bounds: [exportInfo.bounds_min, exportInfo.bounds_max], off };
+// Draws [photo | divider | our render] on one canvas (labels top-left of each half) and returns a PNG data URL.
+// Both halves have the photo's height; our render is H pixels high already (setView was called with the photo size).
+window.compose = async (photoUrl) => {
+  const img = new Image(); img.src = photoUrl; await img.decode();
+  const gap = 4, h = img.naturalHeight;
+  const c = document.createElement('canvas'); c.width = img.naturalWidth + gap + renderer.domElement.width; c.height = h;
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.drawImage(img, 0, 0); g.drawImage(renderer.domElement, img.naturalWidth + gap, 0, renderer.domElement.width, h);
+  g.font = 'bold 18px sans-serif'; g.textBaseline = 'top';
+  for (const [t, x] of [['reference', 10], ['ours', img.naturalWidth + gap + 10]]) {
+    const w = g.measureText(t).width; g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - 4, h - 30, w + 8, 24); g.fillStyle = '#fff'; g.fillText(t, x, h - 27);
+  }
+  return c.toDataURL('image/png');
+};
+window.snap = () => renderer.domElement.toDataURL('image/png');
+window.__info = { cameras: exportInfo.cameras ?? [], report, bounds: [exportInfo.bounds_min, exportInfo.bounds_max], off };
 window.__ready = true;

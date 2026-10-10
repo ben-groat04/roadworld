@@ -689,7 +689,13 @@ std::vector<StreetLight> junction_lights(Ctx& c, NodeId node) {
     for (std::size_t k = 0; k < n; ++k) {
         const CornerCurve& corner = j->corners[k];
         if (corner.angle >= kPi - 0.05 || corner.angle < c.P.min_corner_angle) continue;
-        if (!try_arm(k, true)) try_arm((k + 1) % n, false);
+        // Prefer the arm whose kerb at this corner is the nearside of its outbound traffic (the left of the
+        // outward frame for Left driving), so the choice mirrors with the driving side.
+        if (nearside_sign(c.region.driving_side) > 0) {
+            if (!try_arm(k, true)) try_arm((k + 1) % n, false);
+        } else {
+            if (!try_arm((k + 1) % n, false)) try_arm(k, true);
+        }
     }
     return out;
 }
@@ -732,18 +738,29 @@ std::vector<StreetLight> roundabout_lights(Ctx& c, const RoundaboutLayout& lay) 
         legs.push_back(std::move(leg));
     }
     const LightPattern pat = plan_light_pattern(total, r->spacing, c.P.spacing_tolerance);
-    std::size_t li = 0;
     for (int i = 0; i < pat.count; ++i) {
-        const double u = (i + 0.5) * pat.cell;
-        while (li + 1 < legs.size() && u > legs[li].u.back()) ++li;
-        const Leg& leg = legs[li];
-        const auto it = std::lower_bound(leg.u.begin(), leg.u.end(), u);
-        const std::size_t hi = std::clamp<std::size_t>(static_cast<std::size_t>(it - leg.u.begin()), 1, leg.u.size() - 1);
-        const double span = leg.u[hi] - leg.u[hi - 1];
-        const double t = span > 1e-12 ? std::clamp((u - leg.u[hi - 1]) / span, 0.0, 1.0) : 0.0;
-        const double s = leg.s[hi - 1] + (leg.s[hi] - leg.s[hi - 1]) * t;
-        StreetLight l;
-        if (make_light(c, *leg.e, *r, s, g.clockwise, LightOrigin::RoundaboutRing, NodeId{}, l)) out.push_back(l);
+        // A column blocked by an arm mouth, crossing or splitter slides along the ring within its cell
+        // (alternately forward and back, 1 m steps) to the nearest clear spot.
+        for (int step = 0; step <= static_cast<int>(0.45 * pat.cell); ++step) {
+            bool placed = false;
+            for (int dir = 0; dir < (step == 0 ? 1 : 2) && !placed; ++dir) {
+                const double u = (i + 0.5) * pat.cell + (dir == 0 ? step : -step);
+                std::size_t k = 0;
+                while (k + 1 < legs.size() && u > legs[k].u.back()) ++k;
+                const Leg& leg = legs[k];
+                const auto it = std::lower_bound(leg.u.begin(), leg.u.end(), u);
+                const std::size_t hi = std::clamp<std::size_t>(static_cast<std::size_t>(it - leg.u.begin()), 1, leg.u.size() - 1);
+                const double span = leg.u[hi] - leg.u[hi - 1];
+                const double t = span > 1e-12 ? std::clamp((u - leg.u[hi - 1]) / span, 0.0, 1.0) : 0.0;
+                const double s = leg.s[hi - 1] + (leg.s[hi] - leg.s[hi - 1]) * t;
+                StreetLight l;
+                if (make_light(c, *leg.e, *r, s, g.clockwise, LightOrigin::RoundaboutRing, NodeId{}, l)) {
+                    out.push_back(l);
+                    placed = true;
+                }
+            }
+            if (placed) break;
+        }
     }
 
     // Central island column.
@@ -908,11 +925,16 @@ void rebuild_dirty_street_lights(StreetLightResult& cache, const RoadGraph& grap
     };
     for (const auto& [id, v] : cache.edges)
         if (!live_edges.count(id) && has_twin(v)) partner_changed = true;
+    // Median columns whose partner carriageway is gone fall back to verge-side ones.
+    std::set<EdgeId> orphaned;
+    for (const auto& [id, v] : cache.edges)
+        for (const StreetLight& l : v)
+            if (l.partner_edge.valid() && !live_edges.count(l.partner_edge)) orphaned.insert(id);
     erase_if_missing(cache.edges, live_edges);
     erase_if_missing(cache.junctions, live_nodes);
     erase_if_missing(cache.roundabouts, live_groups);
 
-    std::set<EdgeId> edges;
+    std::set<EdgeId> edges(orphaned.begin(), orphaned.end());
     std::set<NodeId> nodes(dirty_nodes.begin(), dirty_nodes.end());
     for (EdgeId id : dirty_edges)
         if (live_edges.count(id)) edges.insert(id);

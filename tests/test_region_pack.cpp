@@ -182,3 +182,26 @@ TEST_CASE("render cross-section fields are optional and validated") {
     CHECK_FALSE(parse_region_pack(*lt, kRegion, rt(R"(,"kerb_upstand_m":2)")));
     CHECK_FALSE(parse_region_pack(*lt, kRegion, rt(R"(,"crossfall":"flat")")));
 }
+
+TEST_CASE("roundabout island surfaces come from the region pack with defaults") {
+    auto uk_pack = load_region_pack_by_id(CP_DATA_DIR, "uk");
+    REQUIRE_MESSAGE(uk_pack, uk_pack.error);
+    CHECK(uk_pack->roundabout.central_island_surface == "grass");
+    CHECK(uk_pack->roundabout.splitter_surface == "paving");
+    CHECK(uk_pack->roundabout.island_kerb_upstand == doctest::Approx(0.125));
+    auto lt = parse_lane_types(kLaneTypes);
+    REQUIRE(lt);
+    auto bare = parse_region_pack(*lt, kRegion, road_types(R"({"lane":"driving","width_m":3.0})"));
+    REQUIRE_MESSAGE(bare, bare.error);
+    CHECK(bare->roundabout.central_island_surface == "grass");
+    CHECK(bare->roundabout.splitter_surface == "paving");
+    CHECK(bare->roundabout.island_kerb_upstand == 0);
+    const std::string region = R"({"id":"t","driving_side":"right","speed_unit":"kph","roundabout":{"central_island_surface":"shrub","splitter_surface":"cobble","island_kerb_upstand_m":0.2}})";
+    auto custom = parse_region_pack(*lt, region, road_types(R"({"lane":"driving","width_m":3.0})"));
+    REQUIRE_MESSAGE(custom, custom.error);
+    CHECK(custom->roundabout.central_island_surface == "shrub");
+    CHECK(custom->roundabout.splitter_surface == "cobble");
+    CHECK(custom->roundabout.island_kerb_upstand == doctest::Approx(0.2));
+    const std::string bad = R"({"id":"t","driving_side":"right","speed_unit":"kph","roundabout":{"island_kerb_upstand_m":-1}})";
+    CHECK_FALSE(parse_region_pack(*lt, bad, road_types(R"({"lane":"driving","width_m":3.0})")));
+}

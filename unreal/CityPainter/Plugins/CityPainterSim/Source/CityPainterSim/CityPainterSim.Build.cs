@@ -34,6 +34,6 @@ public class CityPainterSim : ModuleRules
 		PrivateIncludePaths.Add(ThirdParty);
 		PrivateIncludePaths.Add(Path.Combine(ThirdParty, "clipper2", "include"));
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "ProceduralMeshComponent" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "ProceduralMeshComponent", "Projects" });
 	}
 }

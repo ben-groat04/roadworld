@@ -272,7 +272,7 @@ bool in_bore(const float* data, int width_texels, int rows, double x, double y, 
 
 // ---- RoadGraph adapter ----
 
-// The natural ground function of a heightfield (bilinear).
+// The natural ground function of a heightfield (bilinear). The heightfield must outlive the function.
 GroundFn ground_fn(const Heightfield& hf);
 
 // Samples one edge like the prototype (stations at most sample_step apart, tighter on bends)

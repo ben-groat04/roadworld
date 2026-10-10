@@ -1,7 +1,9 @@
 // Writes the render meshes of a fixture to Wavefront .obj files, one per surface class, plus one per
 // marking colour id and export.json (files, bounds, origin offset, node positions), for inspection.
 // Coordinates are the sim frame (x east, y north, z up) with the common origin offset subtracted
-// (see export.json). Usage: export_mesh [--data <dir>] [--tol <metres>] --out <dir> <fixture>
+// (see export.json). Usage: export_mesh [--data <dir>] [--tol <metres>] --out <dir> (<fixture> | --layout <file>)
+// A layout file (cp/layout_io.h, data/layouts/) is built through the same commands as a player edit; its named
+// cameras go to export.json ("cameras", absolute sim metres, NOT minus origin_offset).
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -10,8 +12,11 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <string>
+#include <vector>
 
+#include "cp/layout_io.h"
 #include "cp/markings.h"
 #include "cp/render_mesh.h"
 #include "scene_fixture.h"
@@ -21,45 +26,71 @@ constexpr double kMarkingLift = 0.005;  // m above the surface (stand-in for a r
 }
 
 int main(int argc, char** argv) {
-    std::string data = CP_DATA_DIR, out_dir, name;
+    std::string data = CP_DATA_DIR, out_dir, name, layout_file;
     cp::RenderMeshParams params;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--data" && i + 1 < argc) data = argv[++i];
         else if (a == "--out" && i + 1 < argc) out_dir = argv[++i];
+        else if (a == "--layout" && i + 1 < argc) layout_file = argv[++i];
         else if (a == "--tol" && i + 1 < argc) params.chord_tolerance = std::atof(argv[++i]);
         else name = a;
     }
-    if (name.empty() || out_dir.empty()) {
-        std::fprintf(stderr, "usage: export_mesh [--data <dir>] [--tol <m>] --out <dir> <fixture>   fixtures:");
+    if ((name.empty() == layout_file.empty()) || out_dir.empty()) {
+        std::fprintf(stderr, "usage: export_mesh [--data <dir>] [--tol <m>] --out <dir> (--layout <file> | <fixture>)   fixtures:");
         for (const auto& n : cp::tools::scene_names()) std::fprintf(stderr, " %s", n.c_str());
         std::fprintf(stderr, "\n");
         return 2;
     }
     std::string err;
-    auto sc = cp::tools::build_scene(name, data, err);
-    if (!sc) {
-        std::fprintf(stderr, "export_mesh: %s\n", err.c_str());
-        return 1;
+    std::unique_ptr<cp::tools::Scene> sc;
+    std::unique_ptr<cp::LoadedLayout> lay;
+    const cp::RoadGraph* graph = nullptr;
+    const cp::RegionPack* region = nullptr;
+    const cp::JunctionOverrides* overrides = nullptr;
+    cp::MarkingParams mark_params;
+    std::vector<cp::LayoutCamera> cameras;
+    if (!layout_file.empty()) {
+        lay = cp::load_layout_file(layout_file, data, err);
+        if (!lay) {
+            std::fprintf(stderr, "export_mesh: %s\n", err.c_str());
+            return 1;
+        }
+        name = lay->doc.name.empty() ? std::filesystem::path(layout_file).stem().string() : lay->doc.name;
+        graph = &lay->graph;
+        region = lay->region.get();
+        overrides = &lay->overrides;
+        mark_params.crossing_arms = lay->crossing_arms;
+        cameras = lay->doc.cameras;
+    } else {
+        sc = cp::tools::build_scene(name, data, err);
+        if (!sc) {
+            std::fprintf(stderr, "export_mesh: %s\n", err.c_str());
+            return 1;
+        }
+        graph = &sc->graph;
+        region = sc->region.get();
+        overrides = &sc->overrides;
     }
-    cp::RoundaboutResult rr;
-    const cp::JunctionSet js = cp::tools::scene_junctions(*sc, &rr);
+    cp::JunctionSet js = cp::build_plain_junctions(*graph, *region, *overrides);
+    const cp::RoundaboutResult rr = cp::apply_roundabouts(js, *graph, *region, *overrides);
+    for (const auto& p : rr.problems) std::fprintf(stderr, "export_mesh: roundabout problem: %s\n", p.what.c_str());
     cp::WorldMeshSet all;
-    for (const auto& [id, e] : sc->graph.edges())
-        cp::append_mesh(all, cp::build_edge_mesh(sc->graph, *sc->region, id, js, params));
+    for (const auto& [id, e] : graph->edges())
+        cp::append_mesh(all, cp::build_edge_mesh(*graph, *region, id, js, params));
     for (const auto& [n, j] : js.junctions)
-        cp::append_mesh(all, cp::build_junction_mesh(sc->graph, *sc->region, j, params));
+        cp::append_mesh(all, cp::build_junction_mesh(*graph, *region, j, params));
     for (const auto& l : rr.layouts)
-        cp::append_mesh(all, cp::build_roundabout_mesh(sc->graph, *sc->region, l, params));
+        cp::append_mesh(all, cp::build_roundabout_mesh(*graph, *region, l, params));
 
     // Markings: one mesh per colour id, lifted kMarkingLift above the surface.
     std::map<std::string, cp::WorldMesh> mark_meshes;
     {
-        auto rules = cp::load_marking_rules_by_id(data, sc->region->id);
+        auto rules = cp::load_marking_rules_by_id(data, region->id);
         if (!rules) {
             std::fprintf(stderr, "export_mesh: markings skipped: %s\n", rules.error.c_str());
         } else {
-            const cp::MarkingSet ms = cp::generate_markings(sc->graph, *sc->region, *rules, js).merged();
+            const cp::MarkingSet ms = cp::generate_markings(*graph, *region, *rules, js, mark_params).merged();
             for (const auto& w : ms.warnings) std::fprintf(stderr, "export_mesh: marking warning: %s\n", w.c_str());
             for (const auto& m : ms.marks) {
                 const auto tri = cp::triangulate_marking(ms, m);
@@ -132,9 +163,17 @@ int main(int argc, char** argv) {
 
     auto num = [](double v) { return cp::tools::json_number(v, 3); };
     std::string nodes_json;
-    for (const auto& [id, n] : sc->graph.nodes()) {
+    for (const auto& [id, n] : graph->nodes()) {
         if (!nodes_json.empty()) nodes_json += ", ";
         nodes_json += "[" + num(n.pos.x - ox) + ", " + num(n.pos.y - oy) + ", " + num(n.pos.z) + "]";
+    }
+    std::string cameras_json;
+    for (const auto& c : cameras) {
+        if (!cameras_json.empty()) cameras_json += ",\n";
+        cameras_json += "    {\"name\": " + cp::tools::json_string(c.name) + ", \"pos\": [" + num(c.pos.x) + ", " + num(c.pos.y) + ", " +
+                        num(c.pos.z) + "], \"target\": [" + num(c.target.x) + ", " + num(c.target.y) + ", " + num(c.target.z) +
+                        "], \"fov_deg\": " + num(c.fov_deg) + ", \"aspect\": " + num(c.aspect) +
+                        ", \"photo\": " + cp::tools::json_string(c.photo) + "}";
     }
     const std::filesystem::path jp = std::filesystem::path(out_dir) / "export.json";
     std::FILE* f = std::fopen(jp.string().c_str(), "wb");
@@ -142,16 +181,16 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "export_mesh: cannot write %s\n", jp.string().c_str());
         return 1;
     }
-    const std::string side = sc->region->driving_side == cp::DrivingSide::Left ? "left" : "right";
+    const std::string side = region->driving_side == cp::DrivingSide::Left ? "left" : "right";
     std::fprintf(f,
                  "{\n  \"fixture\": %s,\n  \"region\": %s,\n  \"driving_side\": %s,\n"
                  "  \"origin_offset\": [%s, %s, 0],\n  \"marking_lift_m\": %s,\n"
                  "  \"bounds_min\": [%s, %s, %s],\n  \"bounds_max\": [%s, %s, %s],\n"
-                 "  \"nodes\": [%s],\n  \"files\": [\n%s\n  ]\n}\n",
-                 cp::tools::json_string(name).c_str(), cp::tools::json_string(sc->region->id).c_str(),
+                 "  \"nodes\": [%s],\n  \"cameras\": [\n%s\n  ],\n  \"files\": [\n%s\n  ]\n}\n",
+                 cp::tools::json_string(name).c_str(), cp::tools::json_string(region->id).c_str(),
                  cp::tools::json_string(side).c_str(), num(ox).c_str(), num(oy).c_str(), num(kMarkingLift).c_str(),
                  num(lo[0] - ox).c_str(), num(lo[1] - oy).c_str(), num(lo[2]).c_str(), num(hi[0] - ox).c_str(),
-                 num(hi[1] - oy).c_str(), num(hi[2]).c_str(), nodes_json.c_str(), files_json.c_str());
+                 num(hi[1] - oy).c_str(), num(hi[2]).c_str(), nodes_json.c_str(), cameras_json.c_str(), files_json.c_str());
     std::fclose(f);
     return 0;
 }

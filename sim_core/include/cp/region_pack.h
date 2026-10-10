@@ -111,6 +111,10 @@ struct RoundaboutRules {
     double max_tool_radius = 100.0;          // m, tool: largest centreline radius
     double splitter_length = 12.0;           // m beyond the trim line, two-way approaches only
     double splitter_width = 1.8;             // m at the ring end
+    // Render surfaces (lane-type surface class names, e.g. "grass", "paving") and kerb height.
+    std::string central_island_surface = "grass";  // planted central island
+    std::string splitter_surface = "paving";       // splitter islands on the approaches
+    double island_kerb_upstand = 0;                // m; 0 = the render default
 };
 
 // Ground grading and earthwork limits (region.json "grading" object, used by grading.h). The values

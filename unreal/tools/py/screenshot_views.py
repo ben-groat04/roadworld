@@ -1,13 +1,17 @@
 """Take high-resolution screenshots from fixed camera transforms into <project>/Saved/Screenshots/look/.
 
-Files: look_01_street.png, look_02_mid45.png, look_03_aerial.png (deterministic names; overwritten each run).
+Files (default, interchange layout of CPRoadMeshActor; deterministic names, overwritten each run):
+  look_01_aerial, look_02_roundabout_oblique, look_03_roundabout_approach, look_04_tee_minor_arm,
+  look_05_slip_merge, look_06_kerb_closeup.
+With script arg "old" the original three views of the CPRoadNetworkActor smoke test are used instead
+(look_01_street, look_02_mid45, look_03_aerial).
 
 Run (needs a rendering editor, NOT nullrhi):
     Run-EditorPython.ps1 -Script py\\screenshot_views.py -Render
     Run-EditorPython.ps1 -Script py\\screenshot_views.py -Render -ScriptArgs pie,2     # PIE mode, resolution multiplier 2
 
-Args (space separated, via CP_SCRIPT_ARGS): "pie" = Play-In-Editor mode (needed to see the CPRoadNetworkActor
-roads, which are only built in BeginPlay); a bare integer = HighResShot resolution multiplier (default 1 =
+Args (space separated, via CP_SCRIPT_ARGS): "pie" = Play-In-Editor mode (not needed for CPRoadMeshActor, which builds in
+the editor viewport; needed for the old CPRoadNetworkActor, which builds in BeginPlay); "old" = old camera list; a bare integer = HighResShot resolution multiplier (default 1 =
 current viewport size; the runner's -ResX/-ResY set the viewport size, default 1920x1080).
 
 How it works: a Slate post-tick state machine. Per view: place the camera, wait WARMUP frames (shader compiles,
@@ -42,12 +46,34 @@ def look_at(eye, target):
     return (0.0, pitch, yaw)
 
 
+def sim(x, y, z):
+    """Sim metres (x east, y north, z up) -> UE cm (X north, Y east, Z up). Same swap as CPCoords.h / CPRoadMeshBuild.h."""
+    return (y * 100.0, x * 100.0, z * 100.0)
+
+
+# Interchange layout (sim_core/include/cp/test_layouts.h; node positions printed by the standalone check):
+#   dual carriageway along y = +-5.5 (x -400..400), minor road along x = 0 (y -250..350) on a bridge over the dual
+#   (deck z = 7 m at y = +-30), slip merge/diverge nodes at (+-260, +-5.5), roundabout ring radius 25 m centred
+#   (0, 80) at z ~ 6.2 m (entry nodes (0, 55) south and (0, 105) north), residential T-junction at (0, 230) with a
+#   side road running east. Left-hand traffic. Heights below the bridge/ring are the layout's nominal levels
+#   (kerb view z is approximate: VERIFY by looking at the shot).
 # name -> (eye location, target). Edit freely.
-VIEWS = [
+INTERCHANGE_VIEWS = [
+    ("look_01_aerial", sim(0, 100, 750), sim(1, 100, 0)),                     # whole layout from 750 m, straight down
+    ("look_02_roundabout_oblique", sim(-70, 10, 40), sim(0, 80, 6.2)),       # ~100 m out, ~20 degrees down
+    ("look_03_roundabout_approach", sim(-1.8, 28, 8.5), sim(0, 54, 7.5)),    # driver height (1.5 m) on the bridge approach, northbound, left lane
+    ("look_04_tee_minor_arm", sim(50, 228.6, 1.8), sim(0, 230, 1.6)),        # on the side road looking west at the T, 1.6 m up
+    ("look_05_slip_merge", sim(215, 60, 25), sim(255, 8, 0.5)),              # oblique over the east on-slip merging into the dual
+    ("look_06_kerb_closeup", sim(-2.4, 148, 4.3), sim(-3.3, 153, 3.7)),      # 0.5 m above the road, 1 m from the west kerb of the minor road
+]
+
+# Original smoke-test views (CPRoadNetworkActor), used with the "old" argument.
+OLD_VIEWS = [
     ("look_01_street", (574.0, -1916.0, 170.0), (3000.0, 6000.0, 150.0)),      # 1.7 m eye height at the start of road 1
     ("look_02_mid45", (-8000.0, 2000.0, 9000.0), CENTER),                       # about 45 degrees down, ~120 m out
     ("look_03_aerial", (10000.0, 12500.0, 60000.0), (10000.0, 12600.0, 0.0)),   # 600 m straight down (slight yaw offset avoids gimbal)
 ]
+VIEWS = INTERCHANGE_VIEWS
 
 WARMUP_FIRST = 600   # frames before the first shot (shader compile / Lumen settling)
 WARMUP_NEXT = 120
@@ -159,6 +185,8 @@ def main():
         raise cp.ScriptError("screenshots need a rendering editor: run Run-EditorPython.ps1 with -Render (nullrhi has no pixels)")
     args = cp.script_args()
     pie = "pie" in args
+    global VIEWS
+    VIEWS = OLD_VIEWS if "old" in args else INTERCHANGE_VIEWS
     mult = 1
     for a in args:
         if a.isdigit():

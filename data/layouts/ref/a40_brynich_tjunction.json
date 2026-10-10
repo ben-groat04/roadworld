@@ -1,0 +1,26 @@
+{
+  "format": "cp-test-layout",
+  "version": 1,
+  "name": "a40_brynich_tjunction",
+  "region": "uk",
+  "driving_side": "left",
+  "_comment": "A40 / minor-road T-junction near Brynich, Wales: PHOTO-ONLY approximation (the junction could not be identified in OpenStreetMap from the catalogue notes; see SOURCES.md). Local metres, origin = junction centre, x east, y north. A40 is a two-way b_road on a gentle bend, the minor road joins from the south with a wide bellmouth. Flat (z = 0).",
+  "roads": [
+    { "type": "b_road", "points": [[-160, 40, 0], [-80, 16, 0], [0, 0, 0], [80, -6, 0], [160, -4, 0]], "notes": "A40, single carriageway" },
+    { "type": "b_road", "points": [[0, -80, 0], [0, -40, 0], [0, 0, 0]], "notes": "minor road from the south" }
+  ],
+  "junctions": {
+    "corner_radii": [
+      { "node": [0, 0], "arm_a": [0, -30], "arm_b": [40, -3], "radius": 15 },
+      { "node": [0, 0], "arm_a": [0, -30], "arm_b": [-40, 8], "radius": 18 }
+    ]
+  },
+  "cameras": [
+    { "name": "Screenshot 2026-10-10 180248", "photo": "Screenshot 2026-10-10 180248.png",
+      "pos": [-1.7, -25, 2.5], "target": [0, 30, 1.8], "fov_deg": 90,
+      "notes": "minor road, left lane, about 25 m back from the A40 edge, looking north" },
+    { "name": "Screenshot 2026-10-10 180306", "photo": "Screenshot 2026-10-10 180306.png",
+      "pos": [-35, 7.7, 2.5], "target": [10, -2, 1.5], "fov_deg": 90,
+      "notes": "A40 eastbound, left lane, about 35 m before the minor road, looking east-south-east" }
+  ]
+}

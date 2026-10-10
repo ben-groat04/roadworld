@@ -12,10 +12,18 @@
 //    the middle sample is included so a bend cannot poke out of its box (culling cannot change
 //    results otherwise).
 //  * In the JS the plane test position is rebuilt as (rx + A.x), not x0 + i * res: kept.
+//  * A tunnel whose portal is the road's first or last station gets no portal plane (the JS looks
+//    at the neighbouring decimated sample, which does not exist): kept.
+//  * The JS classifies with hBase (triangle interpolation of the coarse grid) but grades against
+//    hBaseFine (bicubic). Here one GroundFn serves classification and sample_natural_tile
+//    serves grading; the caller decides whether they are the same surface.
+//  * The JS comment in classify() says the tunnel approach is not walled, but the code walls
+//    portal_wall samples before every portal: the code is what is ported.
 #include "cp/grading.h"
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "cp/lanes.h"
 

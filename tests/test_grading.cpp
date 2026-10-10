@@ -32,7 +32,17 @@ const char* const kCases[] = {"straight_crossfall", "cutting",     "embankment",
                               "wall_steep_side",    "bridge_valley", "tunnel_curved_grade", "dual_pair",
                               "crossing_and_ends"};
 
-bool verbose() { return std::getenv("CP_GRADING_VERBOSE") != nullptr; }
+bool verbose() {
+#if defined(_MSC_VER)
+    char* v = nullptr;
+    std::size_t len = 0;
+    const bool on = _dupenv_s(&v, &len, "CP_GRADING_VERBOSE") == 0 && v != nullptr;
+    std::free(v);
+    return on;
+#else
+    return std::getenv("CP_GRADING_VERBOSE") != nullptr;
+#endif
+}
 
 // ---- analytic natural ground (mirror of terrainFn in grade_golden.mjs) ----
 struct Term {

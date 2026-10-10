@@ -322,6 +322,10 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
         r.max_tool_radius = opt_number(*rb, "max_tool_radius_m", r.max_tool_radius, c, err);
         r.splitter_length = opt_number(*rb, "splitter_length_m", r.splitter_length, c, err);
         r.splitter_width = opt_number(*rb, "splitter_width_m", r.splitter_width, c, err);
+        if (optional_member(*rb, "central_island_surface")) r.central_island_surface = get_string(*rb, "central_island_surface", c, err);
+        if (optional_member(*rb, "splitter_surface")) r.splitter_surface = get_string(*rb, "splitter_surface", c, err);
+        r.island_kerb_upstand = opt_number(*rb, "island_kerb_upstand_m", r.island_kerb_upstand, c, err);
+        if (r.island_kerb_upstand < 0) err.set(c + ": island_kerb_upstand_m must not be negative");
         if (!err.failed() && (!(r.max_arc > 0.1) || !(r.min_tool_radius > 0) || r.max_tool_radius < r.min_tool_radius ||
                               r.max_ring_edges < 4 || r.min_edge_length < 0 || r.min_island_radius < 0 ||
                               r.entry_corner_radius < 0 || r.exit_corner_radius < 0 || r.ring_corner_radius_factor < 0))

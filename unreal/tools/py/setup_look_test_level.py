@@ -5,10 +5,14 @@ exists, e.g. from the Open World template) rather than duplicated. Re-running ch
 
 Contents: Directional Light (movable, atmosphere sun 0), Sky Atmosphere, Sky Light (real-time capture),
 Exponential Height Fog (volumetric), Volumetric Cloud, unbound Post Process Volume with fixed-ish exposure
-limits, a 2 km floor plane at z=-10 cm to catch shadows, a Player Start, and one CPRoadNetworkActor at the origin.
+limits, a 2 km floor plane at z=-10 cm to catch shadows, a Player Start, and one road actor at the origin.
 
-NOTE: CPRoadNetworkActor builds its smoke-test roads in BeginPlay only, so in the editor viewport the actor is
-empty until Play. See KNOWN_RISKS.md ("road not visible in the editor viewport").
+Script argument (Run-EditorPython.ps1 -ScriptArgs ...): default places CPRoadMeshActor (the sim_core interchange with
+real meshes + markings, built in the editor viewport by OnConstruction). `old` places the original
+CPRoadNetworkActor instead (flat ribbon smoke test), `both` places both. After placing, the script assigns
+/Game/Materials/Surfaces/<slot>/MI_<slot> (made by import_textures.py) to the actor's SurfaceMaterials when those
+assets exist, and creates simple marking materials /Game/Materials/Markings/MI_marking_<colour> with a pixel depth
+offset (the actor falls back to the same paths and to engine materials by itself, so this is belt and braces).
 
 Run:  Run-EditorPython.ps1 -Script py\\setup_look_test_level.py        (nullrhi is fine)
 Every API call marked VERIFY is one I could not check against UE 5.8; a fallback or a loud failure follows it.
@@ -31,6 +35,15 @@ PLANE_MESH = "/Engine/BasicShapes/Plane.Plane"
 # Exposure limits in EV100 (with r.DefaultFeature.AutoExposure.ExtendDefaultLuminanceRange=1, set in DefaultEngine.ini).
 EXPOSURE_MIN_EV100 = 8.0   # tunable: bright sunny street ~ 13-15, deep shade ~ 9-10
 EXPOSURE_MAX_EV100 = 15.0
+
+SURFACE_ROOT = "/Game/Materials/Surfaces"
+MARKING_ROOT = "/Game/Materials/Markings"
+# mesh surface class (data/lane_types.json "surface" + the mesh builder's island_surface) -> texture slot
+# (import_textures.py / PolyHaven manifest slots). Keep in step with SlotForSurface() in CPRoadMeshActor.cpp.
+SURFACE_SLOTS = {"asphalt": "asphalt_new", "paving": "pavement", "kerb": "kerb_concrete", "grass": "grass", "island": "grass"}
+# marking colour id -> sRGB (data/regions/uk/marking_rules.json "colours"); read from the file when found.
+DEFAULT_MARKING_COLOURS = {"white": (0.90, 0.90, 0.88), "yellow": (0.93, 0.78, 0.15)}
+MARKING_DEPTH_OFFSET_CM = -3.0  # VERIFY sign: PixelDepthOffset > 0 moves the pixel AWAY from the camera, so negative pulls it forward
 
 
 def subsystem(cls_name):
@@ -196,12 +209,100 @@ def ensure_floor(eas):
     return a
 
 
+def marking_colours():
+    """Colour id -> (r, g, b) sRGB 0..1 from the region pack's marking_rules.json, else the defaults."""
+    import json
+    here = os.path.dirname(os.path.abspath(__file__))
+    cand = os.path.normpath(os.path.join(here, "..", "..", "..", "data", "regions", "uk", "marking_rules.json"))
+    try:
+        with open(cand, "r", encoding="utf-8") as f:
+            cols = json.load(f).get("colours", {})
+        out = {k: tuple(float(c) for c in v["rgb"]) for k, v in cols.items()}
+        if out:
+            return out
+    except Exception as e:  # noqa
+        cp.warn("could not read marking colours from %s (%s); using defaults" % (cand, e))
+    return dict(DEFAULT_MARKING_COLOURS)
+
+
+def srgb_to_linear(c):
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def ensure_marking_materials(colours):
+    """Create M_Marking (vector parameter Color, roughness, pixel depth offset) and MI_marking_<id> per colour.
+    Idempotent. Returns {colour id: MaterialInstanceConstant or None}."""
+    mel = getattr(unreal, "MaterialEditingLibrary", None)
+    tools = unreal.AssetToolsHelpers.get_asset_tools()
+    parent_path = MARKING_ROOT + "/M_Marking"
+    parent = unreal.load_asset(parent_path) if asset_exists(parent_path) else None
+    if parent is None and mel is not None:
+        try:
+            parent = tools.create_asset("M_Marking", MARKING_ROOT, unreal.Material, unreal.MaterialFactoryNew())
+            colour = mel.create_material_expression(parent, unreal.MaterialExpressionVectorParameter, -600, 0)
+            colour.set_editor_property("parameter_name", "Color")
+            colour.set_editor_property("default_value", unreal.LinearColor(0.8, 0.8, 0.8, 1.0))
+            rough = mel.create_material_expression(parent, unreal.MaterialExpressionConstant, -600, 200)
+            rough.set_editor_property("r", 0.55)
+            pdo = mel.create_material_expression(parent, unreal.MaterialExpressionConstant, -600, 400)
+            pdo.set_editor_property("r", MARKING_DEPTH_OFFSET_CM)
+            mel.connect_material_property(colour, "", unreal.MaterialProperty.MP_BASE_COLOR)
+            mel.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
+            mel.connect_material_property(pdo, "", unreal.MaterialProperty.MP_PIXEL_DEPTH_OFFSET)  # VERIFY enum name
+            mel.recompile_material(parent)
+            unreal.EditorAssetLibrary.save_loaded_asset(parent)
+            cp.log("created %s" % parent_path)
+        except Exception as e:  # noqa
+            cp.warn("could not create the marking master material (%s); the actor will tint an engine material instead" % e)
+            parent = None
+    out = {}
+    for cid, rgb in colours.items():
+        path = "%s/MI_marking_%s" % (MARKING_ROOT, cid)
+        mi = unreal.load_asset(path) if asset_exists(path) else None
+        if mi is None and parent is not None and mel is not None:
+            try:
+                mi = tools.create_asset("MI_marking_%s" % cid, MARKING_ROOT, unreal.MaterialInstanceConstant,
+                                        unreal.MaterialInstanceConstantFactoryNew())
+                mel.set_material_instance_parent(mi, parent)  # VERIFY
+                lin = unreal.LinearColor(srgb_to_linear(rgb[0]), srgb_to_linear(rgb[1]), srgb_to_linear(rgb[2]), 1.0)
+                mel.set_material_instance_vector_parameter_value(mi, "Color", lin)  # VERIFY
+                mel.update_material_instance(mi)
+                unreal.EditorAssetLibrary.save_loaded_asset(mi)
+                cp.log("created %s" % path)
+            except Exception as e:  # noqa
+                cp.warn("could not create %s (%s)" % (path, e))
+                mi = None
+        out[cid] = mi
+    return out
+
+
+def assign_materials(actor, marking_mis):
+    """Fill SurfaceMaterials / MarkingMaterials on a CPRoadMeshActor from assets that exist. Missing ones are left
+    unset (the actor logs and falls back by itself)."""
+    surf = {}
+    for cls, slot in SURFACE_SLOTS.items():
+        path = "%s/%s/MI_%s" % (SURFACE_ROOT, slot, slot)
+        if asset_exists(path):
+            surf[unreal.Name(cls)] = unreal.load_asset(path)
+        else:
+            cp.warn("surface material %s not found (run import_textures.py); class '%s' will use the engine default" % (path, cls))
+    if surf:
+        setp(actor, "surface_materials", surf, "road")  # VERIFY: Python dict -> TMap<FName, UMaterialInterface*>
+    marks = {unreal.Name(k): v for k, v in marking_mis.items() if v is not None}
+    if marks:
+        setp(actor, "marking_materials", marks, "road")
+
+
 def main():
     if unreal is None:
         raise cp.ScriptError("not running inside the Unreal editor")
     cp.log("engine %s" % unreal.SystemLibrary.get_engine_version())
 
-    road_cls = cp.require_class("/Script/CityPainterSim.CPRoadNetworkActor")
+    args = cp.script_args()
+    want_old = "old" in args or "both" in args
+    want_new = "old" not in args  # default and "both"
+    mesh_cls = cp.require_class("/Script/CityPainterSim.CPRoadMeshActor") if want_new else None
+    old_cls = cp.require_class("/Script/CityPainterSim.CPRoadNetworkActor") if want_old else None
 
     les, created = open_or_create_level()
     cp.log("level %s; World Partition: %s" % ("CREATED" if created else "opened", world_partition_state()))
@@ -218,8 +319,18 @@ def main():
     configure_post_process(ensure(eas, unreal.PostProcessVolume, "CP_PostProcess"))
     ensure_floor(eas)
     ensure(eas, unreal.PlayerStart, "CP_PlayerStart", (-3000.0, 0.0, 200.0), (0, 0, 0))
-    road = ensure(eas, road_cls, "CP_RoadNetwork", (0.0, 0.0, 0.0))
-    road.set_actor_location(unreal.Vector(0.0, 0.0, 0.0), False, False)
+    if old_cls is not None:
+        road = ensure(eas, old_cls, "CP_RoadNetwork", (0.0, 0.0, 0.0))
+        road.set_actor_location(unreal.Vector(0.0, 0.0, 0.0), False, False)
+    if mesh_cls is not None:
+        road = ensure(eas, mesh_cls, "CP_RoadMesh", (0.0, 0.0, 0.0))
+        road.set_actor_location(unreal.Vector(0.0, 0.0, 0.0), False, False)
+        assign_materials(road, ensure_marking_materials(marking_colours()))
+        # The actor builds in OnConstruction; make sure it has built before saving (RebuildAll is CallInEditor).
+        try:
+            road.rebuild_all()  # VERIFY: Python name of the UFUNCTION RebuildAll
+        except Exception as e:  # noqa
+            cp.warn("rebuild_all() failed or missing (%s); the actor builds itself on construction anyway" % e)
 
     # Save. With World Partition the actors are external files; save_current_level + dirty packages covers both.
     if not les.save_current_level():

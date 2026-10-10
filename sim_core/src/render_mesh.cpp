@@ -1,13 +1,22 @@
 #include "cp/render_mesh.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <iterator>
 #include <limits>
+#include <map>
+#include <optional>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "cp/edge_sampling.h"
 #include "cp/lanes.h"
+#include "cp/triangulate.h"
 
 namespace cp {
 
@@ -19,8 +28,32 @@ constexpr double kSnapTol = 3e-3;  // m, polygon vertices this close to a trim l
 using u32 = std::uint32_t;
 
 Vec3 operator-(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+Vec3 operator+(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+Vec3 operator*(Vec3 a, double s) { return {a.x * s, a.y * s, a.z * s}; }
 Vec3 cross(Vec3 a, Vec3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
-double length(Vec3 a) { return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z); }
+double dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+double length(Vec3 a) { return std::sqrt(dot(a, a)); }
+Vec3 normalized(Vec3 a, Vec3 fallback) {
+    const double l = length(a);
+    return l > 1e-12 ? a * (1 / l) : fallback;
+}
+
+// splitmix64-based stable hash: the same inputs give the same value on every platform.
+std::uint64_t mix(std::uint64_t z) {
+    z += 0x9E3779B97F4A7C15ull;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    return z ^ (z >> 31);
+}
+double hash01(std::uint64_t a, std::int64_t b) {
+    return static_cast<double>(mix(mix(a) ^ static_cast<std::uint64_t>(b)) >> 11) * (1.0 / 9007199254740992.0);
+}
+// Smooth stable value in 0..1 that changes every `period` metres along an edge.
+double lowfreq(EdgeId e, double s, double period) {
+    const double q = s / period, k = std::floor(q), f = q - k, t = f * f * (3 - 2 * f);
+    const auto ki = static_cast<std::int64_t>(k);
+    return hash01(e.value, ki) * (1 - t) + hash01(e.value, ki + 1) * t;
+}
 
 // ---------------------------------------------------------------- cross-section profile
 
@@ -39,40 +72,58 @@ struct ProfileSeg {
     double d1 = 0, z1 = 0, u1 = 0;
     std::string surface;
     bool face = false;
-    bool cw = false;  // carriageway role (junction carriageway polygons match these)
-    int va = 0, vb = 0;  // ring vertex indices of the left and right end
+    bool cw = false;  // carriageway class: carriageway and verge lanes (junction carriageway polygons match these)
+    Role role = Role::Carriageway;
+    bool driving = false;
+    TravelDir travel = TravelDir::None;
+    int lane = -1;
+    double lane_centre = 0, lane_width = 0;
+    bool kerb_uv = false;  // uv = (along, up/across the kerb) instead of (across, along)
+    double v_ref = 0;      // profile u at the foot of the kerb face
+    int vdir = 0;          // direction of increasing kerb v: 0 right, 1 left, 2 up
+    int va = 0, vb = 0;    // ring vertex indices of the left and right end
 };
 
 struct ProfileVert {
     double d = 0, z = 0, u = 0;
-    int seg = 0;  // a segment that owns it (surface)
+    int seg = 0;  // the segment that created it (surface, lane, uv rule)
 };
 
 struct Profile {
     std::vector<ProfileSeg> segs;
     std::vector<ProfileVert> verts;
     double d_left = 0, d_right = 0;
+    double cw_lo = 0, cw_hi = 0;
     std::string cw_surface, raised_surface, kerb_surface;
 
-    // Height and u at lateral d (+ = left) on the tops of carriageway-role (cw) or other strips.
-    // Beyond the strips: carriageway values are clamped, others extrapolate their slope.
-    void eval(double d, bool cw, double& z, double& u) const {
+    // The strip at lateral d among the (non-face) strips of one class; ties at a step go to the class
+    // asked for. `dist` is how far d lies outside it (0 inside).
+    const ProfileSeg* best_seg(double d, bool cw, double* dist = nullptr) const {
         const ProfileSeg* best = nullptr;
         double best_dist = kInf;
         for (const ProfileSeg& s : segs) {
             if (s.face || s.cw != cw) continue;
-            const double dist = d > s.d0 ? d - s.d0 : (d < s.d1 ? s.d1 - d : 0.0);
-            if (dist < best_dist - 1e-12) {
-                best_dist = dist;
+            const double dd = d > s.d0 ? d - s.d0 : (d < s.d1 ? s.d1 - d : 0.0);
+            if (dd < best_dist - 1e-12) {
+                best_dist = dd;
                 best = &s;
             }
         }
+        if (dist) *dist = best_dist;
+        return best;
+    }
+
+    // Height (relative to the centreline) and u at lateral d (+ = left). Beyond the strips of the
+    // class: carriageway values are clamped, others extrapolate their slope.
+    void eval(double d, bool cw, double& z, double& u) const {
+        double dist = 0;
+        const ProfileSeg* best = best_seg(d, cw, &dist);
         if (!best) {
             if (!cw) eval(d, true, z, u);
             return;
         }
         const double w = best->d0 - best->d1;
-        if (best_dist <= 0) {
+        if (dist <= 0) {
             const double t = w > 1e-12 ? (best->d0 - d) / w : 0.0;
             z = best->z0 + (best->z1 - best->z0) * t;
             u = best->u0 + (best->u1 - best->u0) * t;
@@ -91,7 +142,7 @@ struct Profile {
         u = ue + (de - d) * std::sqrt(1 + slope * slope);
     }
 
-    // Lateral positions of the strip ends of one role class (for matching junction boundaries).
+    // Lateral positions of the strip ends of one class (for matching junction boundaries).
     std::vector<double> ring_d(bool cw) const {
         std::vector<double> out;
         for (const ProfileSeg& s : segs)
@@ -118,6 +169,8 @@ Profile build_profile(const Edge& e, const RoadType& rt, const RegionPack& regio
         double hi, lo, centre;
         Role role;
         std::string surface;
+        TravelDir dir;
+        double width;
         double z_hi = 0, z_lo = 0;
     };
     std::vector<L> ls;
@@ -130,6 +183,8 @@ Profile build_profile(const Edge& e, const RoadType& rt, const RegionPack& regio
         x.centre = l.offset;
         x.role = lt ? role_of(lt->profile) : Role::Carriageway;
         x.surface = lt && !lt->surface.empty() ? lt->surface : P.default_surface;
+        x.dir = l.dir;
+        x.width = l.width;
         if (x.role == Role::Carriageway) {
             cw_lo = std::min(cw_lo, x.lo);
             cw_hi = std::max(cw_hi, x.hi);
@@ -137,6 +192,8 @@ Profile build_profile(const Edge& e, const RoadType& rt, const RegionPack& regio
         ls.push_back(std::move(x));
     }
     if (cw_lo > cw_hi) cw_lo = cw_hi = 0;
+    pr.cw_lo = cw_lo;
+    pr.cw_hi = cw_hi;
     const bool camber = rt.two_way && !e.one_way && !rt.dual;
     const double ns = region.driving_side == DrivingSide::Left ? 1.0 : -1.0;
     const auto base = [&](double d) {
@@ -175,7 +232,8 @@ Profile build_profile(const Edge& e, const RoadType& rt, const RegionPack& regio
     pr.d_left = ls.front().hi;
     pr.d_right = ls.back().lo;
     double u = 0;
-    const auto push = [&](double d0, double z0, double d1, double z1, const std::string& surf, bool face, bool cw) {
+    const auto push = [&](double d0, double z0, double d1, double z1, const L* lane, int lane_idx, bool face, bool cw,
+                          const std::string& surf) {
         if (std::abs(d0 - d1) < 1e-9 && std::abs(z0 - z1) < 1e-9) return;
         ProfileSeg s;
         s.d0 = d0; s.z0 = z0; s.u0 = u;
@@ -184,35 +242,76 @@ Profile build_profile(const Edge& e, const RoadType& rt, const RegionPack& regio
         s.surface = surf;
         s.face = face;
         s.cw = cw;
+        if (lane) {
+            s.role = lane->role;
+            s.lane = lane_idx;
+            s.driving = lane->role == Role::Carriageway && lane->dir != TravelDir::None;
+            s.travel = lane->dir;
+            s.lane_centre = lane->centre;
+            s.lane_width = lane->width;
+        } else {
+            s.role = Role::Kerb;
+        }
         pr.segs.push_back(std::move(s));
     };
+    const double dirt = P.edge_dirt_width;
     for (std::size_t k = 0; k < ls.size(); ++k) {
         const L& l = ls[k];
+        const int li = static_cast<int>(k);
         if (k > 0) {
             const L& p = ls[k - 1];
             if (std::abs(p.z_lo - l.z_hi) > 1e-7)
-                push(l.hi, p.z_lo, l.hi, l.z_hi, p.z_lo > l.z_hi ? p.surface : l.surface, true, false);
+                push(l.hi, p.z_lo, l.hi, l.z_hi, nullptr, -1, true, false, p.z_lo > l.z_hi ? p.surface : l.surface);
         }
         const bool cw = l.role == Role::Carriageway || l.role == Role::Verge;  // verges stay inside the junction carriageway polygon
-        if (l.role == Role::Carriageway && camber && l.lo + 1e-9 < 0 && l.hi - 1e-9 > 0) {
-            push(l.hi, l.z_hi, 0, base(0), l.surface, false, true);
-            push(0, base(0), l.lo, l.z_lo, l.surface, false, true);
+        if (l.role == Role::Carriageway) {
+            // Breaks: the camber crown and the edge-dirt ramps at the carriageway edges.
+            std::vector<double> br{l.hi, l.lo};
+            if (camber && l.lo + 1e-9 < 0 && l.hi - 1e-9 > 0) br.push_back(0);
+            if (std::abs(l.hi - cw_hi) < 1e-9 && l.hi - l.lo > dirt + 0.05) br.push_back(l.hi - dirt);
+            if (std::abs(l.lo - cw_lo) < 1e-9 && l.hi - l.lo > dirt + 0.05) br.push_back(l.lo + dirt);
+            std::sort(br.begin(), br.end(), std::greater<double>());
+            for (std::size_t b = 0; b + 1 < br.size(); ++b) push(br[b], base(br[b]), br[b + 1], base(br[b + 1]), &l, li, false, cw, l.surface);
         } else {
-            push(l.hi, l.z_hi, l.lo, l.z_lo, l.surface, false, cw);
+            push(l.hi, l.z_hi, l.lo, l.z_lo, &l, li, false, cw, l.surface);
         }
         if (l.role == Role::Carriageway && pr.cw_surface.empty()) pr.cw_surface = l.surface;
         if (l.role == Role::Raised && pr.raised_surface.empty()) pr.raised_surface = l.surface;
         if (l.role == Role::Kerb && pr.kerb_surface.empty()) pr.kerb_surface = l.surface;
     }
 
-    // Ring vertices: shared between neighbouring strips of one surface unless a kerb face is involved.
+    // Kerb uv: along the kerb, then up the face and across the top.
+    for (std::size_t k = 0; k < pr.segs.size(); ++k) {
+        ProfileSeg& f = pr.segs[k];
+        if (!f.face) continue;
+        const double u_base = f.z0 < f.z1 ? f.u0 : f.u1;
+        f.kerb_uv = true;
+        f.v_ref = u_base;
+        f.vdir = 2;
+        if (k > 0 && pr.segs[k - 1].role == Role::Kerb && !pr.segs[k - 1].face) {
+            ProfileSeg& t = pr.segs[k - 1];
+            t.kerb_uv = true;
+            t.v_ref = u_base;
+            t.vdir = 1;  // left of the face: v grows leftward
+        }
+        if (k + 1 < pr.segs.size() && pr.segs[k + 1].role == Role::Kerb && !pr.segs[k + 1].face) {
+            ProfileSeg& t = pr.segs[k + 1];
+            t.kerb_uv = true;
+            t.v_ref = u_base;
+            t.vdir = 0;
+        }
+    }
+
+    // Ring vertices: shared between neighbouring strips of one surface unless a kerb face is involved or the
+    // strips belong to different driving lanes (their lane-relative uv1 differs).
     for (std::size_t k = 0; k < pr.segs.size(); ++k) {
         ProfileSeg& s = pr.segs[k];
         bool share = false;
         if (k > 0) {
             const ProfileSeg& p = pr.segs[k - 1];
             share = p.surface == s.surface && !p.face && !s.face && std::abs(p.d1 - s.d0) < 1e-9 &&
-                    std::abs(p.z1 - s.z0) < 1e-9;
+                    std::abs(p.z1 - s.z0) < 1e-9 && (p.lane == s.lane || (!p.driving && !s.driving)) &&
+                    p.kerb_uv == s.kerb_uv;
         }
         if (share) {
             s.va = pr.segs[k - 1].vb;
@@ -228,21 +327,30 @@ Profile build_profile(const Edge& e, const RoadType& rt, const RegionPack& regio
 
 // ---------------------------------------------------------------- mesh building helpers
 
-WorldMesh& surface_mesh(WorldMeshSet& set, const std::string& name) { return set[name]; }
+struct Attr {
+    Vec3 p;
+    Vec2 uv, uv1;
+    Float4 col;
+    Vec3 tan, bit;  // direction of increasing u and v
+};
 
-u32 add_vertex(WorldMesh& m, Vec3 p, Vec2 uv, Vec3 tangent) {
-    m.positions.push_back(p);
+u32 add_vertex(WorldMesh& m, const Attr& a) {
+    m.positions.push_back(a.p);
     m.normals.push_back({});
-    m.tangents.push_back(tangent);
-    m.uv.push_back(uv);
+    m.tangents.push_back(a.tan);
+    m.tangent_w.push_back(1);
+    m.bitangents.push_back(a.bit);
+    m.uv.push_back(a.uv);
+    m.uv1.push_back(a.uv1);
+    m.colours.push_back(a.col);
     return static_cast<u32>(m.positions.size() - 1);
 }
 
 // Appends a triangle and accumulates its area-weighted normal; false (nothing added) if degenerate.
-bool add_tri(WorldMesh& m, u32 a, u32 b, u32 c, bool need_up) {
+bool add_tri(WorldMesh& m, u32 a, u32 b, u32 c, bool need_up, double min_area2 = 1e-10) {
     const Vec3 n = cross(m.positions[b] - m.positions[a], m.positions[c] - m.positions[a]);
     const double len = length(n);
-    if (!(len > 1e-10)) return false;
+    if (!(len > min_area2)) return false;
     if (need_up && !(n.z > 1e-10)) return false;
     for (u32 v : {a, b, c}) {
         m.normals[v].x += n.x;
@@ -255,18 +363,77 @@ bool add_tri(WorldMesh& m, u32 a, u32 b, u32 c, bool need_up) {
     return true;
 }
 
+// Unit normals; tangents made orthogonal to them with the handedness from the v direction.
 void finish_normals(WorldMeshSet& set) {
     for (auto& [name, m] : set) {
-        for (Vec3& n : m.normals) {
-            const double len = length(n);
-            n = len > 1e-12 ? Vec3{n.x / len, n.y / len, n.z / len} : Vec3{0, 0, 1};
+        for (std::size_t i = 0; i < m.normals.size(); ++i) {
+            const Vec3 n = normalized(m.normals[i], {0, 0, 1});
+            m.normals[i] = n;
+            Vec3 t = m.tangents[i] - n * dot(n, m.tangents[i]);
+            if (!(length(t) > 1e-9)) t = cross(n, std::abs(n.z) < 0.9 ? Vec3{0, 0, 1} : Vec3{1, 0, 0});
+            t = normalized(t, {1, 0, 0});
+            m.tangents[i] = t;
+            m.tangent_w[i] = i < m.bitangents.size() && dot(cross(n, t), m.bitangents[i]) < 0 ? -1.0 : 1.0;
         }
+        m.bitangents.clear();
     }
 }
 
 void drop_empty(WorldMeshSet& set) {
     for (auto it = set.begin(); it != set.end();) it = it->second.indices.empty() ? set.erase(it) : std::next(it);
 }
+
+void add_section(WorldMeshSet& set, NodeId node) {
+    for (auto& [name, m] : set) {
+        if (m.indices.empty() || !m.sections.empty()) continue;
+        SectionRange r;
+        r.node = node;
+        r.index_count = static_cast<u32>(m.indices.size());
+        m.sections.push_back(r);
+    }
+}
+
+Float4 colour(double r, double g, double b) {
+    return {static_cast<float>(std::clamp(r, 0.0, 1.0)), static_cast<float>(std::clamp(g, 0.0, 1.0)),
+            static_cast<float>(std::clamp(b, 0.0, 1.0)), 0.0f};
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------- public surface queries
+
+struct SurfaceProfile::Impl {
+    Profile prof;
+};
+
+double SurfaceProfile::offset(double lateral, bool carriageway) const {
+    if (!impl_) return 0;
+    double z = 0, u = 0;
+    impl_->prof.eval(lateral, carriageway, z, u);
+    return z;
+}
+double SurfaceProfile::left() const { return impl_ ? impl_->prof.d_left : 0; }
+double SurfaceProfile::right() const { return impl_ ? impl_->prof.d_right : 0; }
+
+SurfaceProfile make_surface_profile(const RegionPack& region, const Edge& edge, const RenderMeshParams& params) {
+    const RoadType* rt = region.road_type(edge.road_type);
+    if (!rt) return {};
+    auto impl = std::make_shared<SurfaceProfile::Impl>();
+    impl->prof = build_profile(edge, *rt, region, params);
+    if (impl->prof.segs.empty()) return {};
+    return SurfaceProfile(std::move(impl));
+}
+
+double edge_surface_z(const RoadGraph& graph, const RegionPack& region, EdgeId id, double s, double lateral,
+                      const RenderMeshParams& params) {
+    const Edge* e = graph.edge(id);
+    if (!e) return 0;
+    const SurfaceProfile sp = make_surface_profile(region, *e, params);
+    if (!sp.valid()) return 0;
+    return edge_point(*e, s).z + sp.offset(lateral);
+}
+
+namespace {
 
 // ---------------------------------------------------------------- edge sampling
 
@@ -291,10 +458,11 @@ Frame centre_frame(const Edge& e, double s) {
 
 std::vector<double> select_stations(const Edge& e, double s0, double s1, const Profile& pr, const RenderMeshParams& P) {
     const double tol = std::max(P.chord_tolerance, 1e-4);
+    const double scale = std::clamp(std::sqrt(tol / 0.02), 1.0, 12.0);
     SamplingParams sp;
     sp.max_chord_error = tol;
-    sp.max_heading_change = std::clamp(0.05 * std::sqrt(tol / 0.02), 0.05, 0.4);
-    sp.max_step = P.max_station_step;
+    sp.max_heading_change = std::clamp(0.05 * std::sqrt(tol / 0.02), 0.05, 0.6);
+    sp.max_step = P.max_station_step * scale;
     std::vector<double> st{s0, s1};
     std::vector<double> offsets{0.0};
     if (pr.d_left != 0) offsets.push_back(pr.d_left);
@@ -336,16 +504,98 @@ std::vector<double> select_stations(const Edge& e, double s0, double s1, const P
     return out;
 }
 
-struct EndRef {
-    const JunctionArm* arm = nullptr;
-    double trim = 0;
+// ---------------------------------------------------------------- arms, joints and their ends
+
+// An arm with its trim line, profile and extrapolation frame (the junction surface is built from these).
+struct ArmCtx {
+    JunctionArm arm;
+    Profile prof;
+    EdgeId edge;
+    double trim = 0, edge_len = 0;
+    Vec3 tc;
+    Vec2 dir, left;
+    double grade = 0;  // dz per metre going outward
+    double hl = 0, hr = 0;
+    bool at_a = true;
+    int index = 0;  // arm index in the junction
 };
 
-EndRef find_end(const JunctionSet& js, const Edge& e, bool at_a) {
-    const Junction* j = js.find(at_a ? e.a : e.b);
-    if (!j || j->trims.size() != j->arms.size()) return {};
-    for (std::size_t i = 0; i < j->arms.size(); ++i)
-        if (j->arms[i].edge == e.id && j->arms[i].at_a == at_a) return {&j->arms[i], j->trims[i]};
+bool make_ctx(ArmCtx& a, const RoadGraph& graph, const RegionPack& region, const JunctionArm& arm, double trim,
+              const RenderMeshParams& P) {
+    a.arm = arm;
+    const Edge* e = graph.edge(arm.edge);
+    const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
+    if (!e || !rt || arm.centreline.empty()) return false;
+    a.prof = build_profile(*e, *rt, region, P);
+    if (a.prof.segs.empty()) return false;
+    a.edge = arm.edge;
+    a.trim = trim;
+    a.edge_len = e->horizontal.length();
+    a.at_a = arm.at_a;
+    const ArmPoint c = arm_point(a.arm, trim, 0);
+    a.tc = c.pos;
+    a.dir = {std::cos(c.heading_out), std::sin(c.heading_out)};
+    a.left = {-a.dir.y, a.dir.x};
+    const double dl = std::min(2.0, arm.edge_length - trim);
+    if (dl > 0.1) a.grade = (arm_point(a.arm, trim + dl, 0).pos.z - c.pos.z) / dl;
+    a.hl = arm.half_width_left;
+    a.hr = arm.half_width_right;
+    return true;
+}
+
+// Arm-frame lateral positions of the strip ends of one class.
+std::vector<double> arm_laterals(const ArmCtx& a, bool cw) {
+    std::vector<double> out;
+    for (double d : a.prof.ring_d(cw)) out.push_back(a.at_a ? d : -d);
+    return out;
+}
+
+struct JointInfo {
+    JunctionArm arm[2];
+    double trim[2] = {0, 0};
+    bool needed = false;
+};
+
+// True when `node` has exactly two arms. Seamless pairs (same road type, headings continuing within
+// a degree) need no filler and no trim.
+bool joint_info(const RoadGraph& graph, const RegionPack& region, NodeId node, const RenderMeshParams& P, JointInfo& out) {
+    int ends = 0;
+    for (EdgeId id : graph.edges_at(node))
+        if (const Edge* e = graph.edge(id)) ends += (e->a == node ? 1 : 0) + (e->b == node ? 1 : 0);
+    if (ends != 2) return false;
+    const std::vector<JunctionArm> arms = collect_arms(graph, node, region);
+    if (arms.size() != 2) return false;
+    out.arm[0] = arms[0];
+    out.arm[1] = arms[1];
+    const Edge *e0 = graph.edge(arms[0].edge), *e1 = graph.edge(arms[1].edge);
+    if (!e0 || !e1) return false;
+    const bool same = e0->road_type == e1->road_type && e0->one_way == e1->one_way &&
+                      std::abs(wrap_angle(arms[0].heading_out - (arms[1].heading_out + kPi))) < 0.0175;
+    out.needed = !same;
+    for (int i = 0; i < 2; ++i)
+        out.trim[i] = out.needed ? std::min(P.joint_length, arms[static_cast<std::size_t>(i)].edge_length / 2) : 0.0;
+    return true;
+}
+
+struct EndRef {
+    std::optional<JunctionArm> arm;
+    double trim = 0;
+    bool stop = false;  // a stop / give-way line sits here (junction with 3+ arms)
+};
+
+EndRef find_end(const RoadGraph& graph, const RegionPack& region, const JunctionSet& js, const Edge& e, bool at_a,
+                const RenderMeshParams& P) {
+    const NodeId node = at_a ? e.a : e.b;
+    const Junction* j = js.find(node);
+    if (j && j->arms.size() >= 3 && j->trims.size() == j->arms.size()) {
+        for (std::size_t i = 0; i < j->arms.size(); ++i)
+            if (j->arms[i].edge == e.id && j->arms[i].at_a == at_a) return {j->arms[i], j->trims[i], true};
+        return {};
+    }
+    JointInfo ji;
+    if (!joint_info(graph, region, node, P, ji) || !ji.needed) return {};
+    for (int i = 0; i < 2; ++i)
+        if (ji.arm[i].edge == e.id && ji.arm[i].at_a == at_a) return {ji.arm[i], ji.trim[i], false};
     return {};
 }
 
@@ -354,14 +604,15 @@ EndRef find_end(const JunctionSet& js, const Edge& e, bool at_a) {
 // ---------------------------------------------------------------- edge meshes
 
 WorldMeshSet build_edge_mesh(const RoadGraph& graph, const RegionPack& region, EdgeId id, const JunctionSet& junctions,
-                             const RenderMeshParams& P) {
+                             const RenderMeshParams& P, EdgeBoundary* boundary) {
     WorldMeshSet out;
+    if (boundary) *boundary = {};
     const Edge* e = graph.edge(id);
     if (!e || e->horizontal.spans.empty()) return out;
     const RoadType* rt = region.road_type(e->road_type);
     if (!rt) return out;
     const double len = e->horizontal.length();
-    const EndRef ea = find_end(junctions, *e, true), eb = find_end(junctions, *e, false);
+    const EndRef ea = find_end(graph, region, junctions, *e, true, P), eb = find_end(graph, region, junctions, *e, false, P);
     const double s0 = ea.trim, s1 = len - eb.trim;
     if (!(s1 - s0 > 0.01)) return out;
     const Profile pr = build_profile(*e, *rt, region, P);
@@ -370,22 +621,23 @@ WorldMeshSet build_edge_mesh(const RoadGraph& graph, const RegionPack& region, E
     const std::size_t n = st.size();
     if (n < 2) return out;
 
-    // Vertices: one ring per station.
     std::vector<std::vector<u32>> vid(n, std::vector<u32>(pr.verts.size()));
+    std::vector<std::vector<Vec3>> world(boundary ? n : 0);
     for (std::size_t i = 0; i < n; ++i) {
         const EndRef* end = i == 0 && ea.arm ? &ea : (i + 1 == n && eb.arm ? &eb : nullptr);
-        Frame f = centre_frame(*e, st[i]);
-        double cz = f.z;
-        double right_x = std::sin(f.h), right_y = -std::cos(f.h);
+        const Frame f = centre_frame(*e, st[i]);
+        double cz = f.z, h = f.h;
         if (end) {
             const ArmPoint c = arm_point(*end->arm, end->trim, 0);
             cz = c.pos.z;
-            const double h = end->arm->at_a ? c.heading_out : c.heading_out + kPi;
-            right_x = std::sin(h);
-            right_y = -std::cos(h);
+            h = end->arm->at_a ? c.heading_out : c.heading_out + kPi;
         }
+        const Vec3 right{std::sin(h), -std::cos(h), 0}, fwd{std::cos(h), std::sin(h), 0};
+        const double low = lowfreq(id, st[i], P.lowfreq_period);
+        if (boundary) world[i].resize(pr.verts.size());
         for (std::size_t v = 0; v < pr.verts.size(); ++v) {
             const ProfileVert& pv = pr.verts[v];
+            const ProfileSeg& sg = pr.segs[static_cast<std::size_t>(pv.seg)];
             Vec3 p;
             if (end) {
                 const ArmPoint a = arm_point(*end->arm, end->trim, end->arm->at_a ? pv.d : -pv.d);
@@ -393,8 +645,43 @@ WorldMeshSet build_edge_mesh(const RoadGraph& graph, const RegionPack& region, E
             } else {
                 p = {f.p.x - pv.d * std::sin(f.h), f.p.y + pv.d * std::cos(f.h), cz + pv.z};
             }
-            WorldMesh& m = surface_mesh(out, pr.segs[static_cast<std::size_t>(pv.seg)].surface);
-            vid[i][v] = add_vertex(m, p, {pv.u, st[i]}, {right_x, right_y, 0});
+            if (boundary) world[i][v] = p;
+            Attr a;
+            a.p = p;
+            if (sg.kerb_uv) {
+                a.uv = {st[i], std::abs(pv.u - sg.v_ref)};
+                a.tan = fwd;
+                a.bit = sg.vdir == 2 ? Vec3{0, 0, 1} : (sg.vdir == 0 ? right : right * -1.0);
+            } else {
+                a.uv = {pv.u, st[i]};
+                const double dd = sg.d0 - sg.d1, dz = sg.z1 - sg.z0;
+                a.tan = normalized(right * dd + Vec3{0, 0, dz}, right);
+                a.bit = fwd;
+            }
+            // Masks (layout in the header).
+            double R = 0, G = 0;
+            if (sg.driving) {
+                double boost = 0;
+                if (ea.stop && sg.travel == TravelDir::Backward)
+                    boost = std::max(boost, 1 - std::clamp((st[i] - s0) / P.wear_approach_length, 0.0, 1.0));
+                if (eb.stop && sg.travel == TravelDir::Forward)
+                    boost = std::max(boost, 1 - std::clamp((s1 - st[i]) / P.wear_approach_length, 0.0, 1.0));
+                R = 0.55 + 0.45 * boost;
+                a.uv1 = {pv.d - sg.lane_centre, sg.lane_width};
+            }
+            if (sg.face) G = 1;
+            else if (sg.role == Role::Kerb) G = 1;
+            else if (sg.role == Role::Raised) G = 0.5;
+            else if (sg.role == Role::Verge) G = 0.3;
+            else G = 1 - std::min(std::abs(pv.d - pr.cw_lo), std::abs(pr.cw_hi - pv.d)) / P.edge_dirt_width;
+            a.col = colour(R, G, low);
+            vid[i][v] = add_vertex(out[sg.surface], a);
+        }
+    }
+    if (boundary) {
+        for (std::size_t i = 0; i < n; ++i) {
+            boundary->left.push_back(world[i][static_cast<std::size_t>(pr.segs.front().va)]);
+            boundary->right.push_back(world[i][static_cast<std::size_t>(pr.segs.back().vb)]);
         }
     }
 
@@ -421,7 +708,7 @@ WorldMeshSet build_edge_mesh(const RoadGraph& graph, const RegionPack& region, E
     std::map<std::string, int> open_sec;
     for (std::size_t i = 0; i + 1 < n; ++i) {
         for (const ProfileSeg& s : pr.segs) {
-            WorldMesh& m = surface_mesh(out, s.surface);
+            WorldMesh& m = out[s.surface];
             const u32 l0 = vid[i][static_cast<std::size_t>(s.va)], r0 = vid[i][static_cast<std::size_t>(s.vb)];
             const u32 l1 = vid[i + 1][static_cast<std::size_t>(s.va)], r1 = vid[i + 1][static_cast<std::size_t>(s.vb)];
             const u32 first = static_cast<u32>(m.indices.size());
@@ -447,204 +734,156 @@ WorldMeshSet build_edge_mesh(const RoadGraph& graph, const RegionPack& region, E
 
 namespace {
 
-// ---------------------------------------------------------------- triangulation (ear clipping with holes)
+// ---------------------------------------------------------------- triangle refinement and ring simplification
 
-struct Tri {
-    u32 a, b, c;
-};
+using Tri = std::array<u32, 3>;
 
-double area2(Vec2 a, Vec2 b, Vec2 c) { return (b - a).cross(c - a); }
-
-double ring_area(const std::vector<Vec2>& pts, const std::vector<u32>& r) {
-    double a = 0;
-    for (std::size_t i = 0; i < r.size(); ++i) a += pts[r[i]].cross(pts[r[(i + 1) % r.size()]]);
-    return a / 2;
-}
-
-bool point_in_ring(Vec2 p, const std::vector<Vec2>& pts, const std::vector<u32>& r) {
-    bool in = false;
-    for (std::size_t i = 0, j = r.size() - 1; i < r.size(); j = i++) {
-        const Vec2 a = pts[r[i]], b = pts[r[j]];
-        if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) in = !in;
-    }
-    return in;
-}
-
-bool same_point(Vec2 a, Vec2 b) { return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9; }
-
-// Joins `hole` (clockwise) into `loop` (counter-clockwise) through a zero-width bridge.
-bool bridge_hole(const std::vector<Vec2>& pts, std::vector<u32>& loop, const std::vector<u32>& hole) {
-    std::size_t mi = 0;
-    for (std::size_t i = 1; i < hole.size(); ++i)
-        if (pts[hole[i]].x > pts[hole[mi]].x) mi = i;
-    const Vec2 M = pts[hole[mi]];
-    double best_x = kInf;
-    std::size_t p = loop.size();
-    for (std::size_t i = 0; i < loop.size(); ++i) {
-        const Vec2 a = pts[loop[i]], b = pts[loop[(i + 1) % loop.size()]];
-        if (a.y == b.y || !((a.y <= M.y && b.y >= M.y) || (b.y <= M.y && a.y >= M.y))) continue;
-        const double x = a.x + (M.y - a.y) * (b.x - a.x) / (b.y - a.y);
-        if (x >= M.x - 1e-9 && x < best_x) {
-            best_x = x;
-            p = a.x > b.x ? i : (i + 1) % loop.size();
-        }
-    }
-    if (p == loop.size()) return false;
-    // A reflex vertex inside the triangle (M, hit, P) blocks the bridge; take the one closest in angle.
-    const Vec2 I{best_x, M.y}, P = pts[loop[p]];
-    double best_ang = kInf;
-    std::size_t q = p;
-    for (std::size_t i = 0; i < loop.size(); ++i) {
-        const Vec2 Q = pts[loop[i]];
-        if (i == p || Q.x < M.x) continue;
-        const double d1 = area2(M, I, Q), d2 = area2(I, P, Q), d3 = area2(P, M, Q);
-        const bool in = (d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0);
-        if (!in) continue;
-        const double ang = std::abs(std::atan2(Q.y - M.y, Q.x - M.x));
-        if (ang < best_ang) {
-            best_ang = ang;
-            q = i;
-        }
-    }
-    p = q;
-    std::vector<u32> merged(loop.begin(), loop.begin() + static_cast<std::ptrdiff_t>(p) + 1);
-    for (std::size_t k = 0; k <= hole.size(); ++k) merged.push_back(hole[(mi + k) % hole.size()]);
-    merged.push_back(loop[p]);
-    merged.insert(merged.end(), loop.begin() + static_cast<std::ptrdiff_t>(p) + 1, loop.end());
-    loop = std::move(merged);
-    return true;
-}
-
-void ear_clip(const std::vector<Vec2>& pts, const std::vector<u32>& loop, std::vector<Tri>& out) {
-    const int n = static_cast<int>(loop.size());
-    if (n < 3) return;
-    std::vector<int> prv(loop.size()), nxt(loop.size());
-    for (int i = 0; i < n; ++i) {
-        prv[static_cast<std::size_t>(i)] = (i + n - 1) % n;
-        nxt[static_cast<std::size_t>(i)] = (i + 1) % n;
-    }
-    const auto P = [&](int i) { return pts[loop[static_cast<std::size_t>(i)]]; };
-    const auto N = [&](int i) { return nxt[static_cast<std::size_t>(i)]; };
-    const auto Pv = [&](int i) { return prv[static_cast<std::size_t>(i)]; };
-    const auto remove = [&](int i) {
-        nxt[static_cast<std::size_t>(Pv(i))] = N(i);
-        prv[static_cast<std::size_t>(N(i))] = Pv(i);
-    };
-    const auto empty_ear = [&](int a, int b, int c) {
-        const Vec2 A = P(a), B = P(b), C = P(c);
-        for (int j = N(c); j != a; j = N(j)) {
-            const Vec2 Q = P(j);
-            if (same_point(Q, A) || same_point(Q, B) || same_point(Q, C)) continue;
-            if (area2(A, B, Q) >= -1e-10 && area2(B, C, Q) >= -1e-10 && area2(C, A, Q) >= -1e-10) return false;
-        }
-        return true;
-    };
-    int remaining = n, cur = 0;
-    while (remaining > 3) {
-        bool clipped = false;
-        int i = cur;
-        do {
-            const int a = Pv(i), c = N(i);
-            if (area2(P(a), P(i), P(c)) > 1e-7 && empty_ear(a, i, c)) {
-                out.push_back({loop[static_cast<std::size_t>(a)], loop[static_cast<std::size_t>(i)], loop[static_cast<std::size_t>(c)]});
-                remove(i);
-                cur = c;
-                --remaining;
-                clipped = true;
-                break;
-            }
-            i = N(i);
-        } while (i != cur);
-        if (clipped) continue;
-        // No clean ear: drop a collinear vertex, else cut the sharpest convex one.
-        int pick = -1;
-        double best = -kInf;
-        bool collinear = false;
-        i = cur;
-        do {
-            const double cr = area2(P(Pv(i)), P(i), P(N(i)));
-            if (std::abs(cr) <= 1e-7) {
-                pick = i;
-                collinear = true;
-                break;
-            }
-            if (cr > best) {
-                best = cr;
-                pick = i;
-            }
-            i = N(i);
-        } while (i != cur);
-        if (pick < 0 || (!collinear && best <= 0)) return;
-        if (!collinear)
-            out.push_back({loop[static_cast<std::size_t>(Pv(pick))], loop[static_cast<std::size_t>(pick)],
-                           loop[static_cast<std::size_t>(N(pick))]});
-        cur = N(pick);
-        remove(pick);
-        --remaining;
-    }
-    const int a = cur, b = N(a), c = N(b);
-    if (area2(P(a), P(b), P(c)) > 1e-7)
-        out.push_back({loop[static_cast<std::size_t>(a)], loop[static_cast<std::size_t>(b)], loop[static_cast<std::size_t>(c)]});
-}
-
-// Triangulates polygons given as rings of indices into pts (counter-clockwise outers, clockwise holes).
-void triangulate(const std::vector<Vec2>& pts, const std::vector<std::vector<u32>>& rings, std::vector<Tri>& out) {
-    std::vector<std::size_t> outers, holes;
-    for (std::size_t i = 0; i < rings.size(); ++i) {
-        if (rings[i].size() < 3) continue;
-        const double a = ring_area(pts, rings[i]);
-        if (std::abs(a) < 1e-9) continue;
-        (a > 0 ? outers : holes).push_back(i);
-    }
-    std::vector<std::vector<std::size_t>> owned(outers.size());
-    for (std::size_t h : holes) {
-        double best = kInf;
-        std::size_t owner = outers.size();
-        for (std::size_t o = 0; o < outers.size(); ++o) {
-            const double a = ring_area(pts, rings[outers[o]]);
-            if (a < best && point_in_ring(pts[rings[h][0]], pts, rings[outers[o]])) {
-                best = a;
-                owner = o;
-            }
-        }
-        if (owner < outers.size()) owned[owner].push_back(h);
-    }
-    for (std::size_t o = 0; o < outers.size(); ++o) {
-        std::vector<u32> loop = rings[outers[o]];
-        auto& hs = owned[o];
-        const auto max_x = [&](std::size_t h) {
-            double m = -kInf;
-            for (u32 v : rings[h]) m = std::max(m, pts[v].x);
-            return m;
+// Splits every edge longer than max_len (consistently for both triangles sharing it) until none is.
+void refine(std::vector<Vec2>& pts, std::vector<Tri>& tris, double max_len) {
+    for (int pass = 0; pass < 12; ++pass) {
+        std::map<std::pair<u32, u32>, u32> mids;
+        bool any = false;
+        const auto is_long = [&](u32 a, u32 b) { return (pts[a] - pts[b]).length() > max_len; };
+        const auto mid = [&](u32 a, u32 b) {
+            const auto key = std::make_pair(std::min(a, b), std::max(a, b));
+            auto it = mids.find(key);
+            if (it != mids.end()) return it->second;
+            pts.push_back((pts[a] + pts[b]) * 0.5);
+            const u32 v = static_cast<u32>(pts.size() - 1);
+            mids.emplace(key, v);
+            return v;
         };
-        std::sort(hs.begin(), hs.end(), [&](std::size_t a, std::size_t b) { return max_x(a) > max_x(b); });
-        for (std::size_t h : hs) bridge_hole(pts, loop, rings[h]);
-        ear_clip(pts, loop, out);
+        std::vector<Tri> next;
+        for (const Tri& t : tris) {
+            const bool s[3] = {is_long(t[0], t[1]), is_long(t[1], t[2]), is_long(t[2], t[0])};
+            const int count = (s[0] ? 1 : 0) + (s[1] ? 1 : 0) + (s[2] ? 1 : 0);
+            if (count == 0) {
+                next.push_back(t);
+                continue;
+            }
+            any = true;
+            if (count == 3) {
+                const u32 a = mid(t[0], t[1]), b = mid(t[1], t[2]), c = mid(t[2], t[0]);
+                next.push_back({t[0], a, c});
+                next.push_back({a, t[1], b});
+                next.push_back({c, b, t[2]});
+                next.push_back({a, b, c});
+                continue;
+            }
+            // Rotate so the split edges come first: (v0 v1) [and (v1 v2)].
+            int k = 0;
+            if (count == 1) {
+                k = s[0] ? 0 : (s[1] ? 1 : 2);
+            } else {
+                k = !s[2] ? 0 : (!s[0] ? 1 : 2);  // the unsplit edge is (v(k+2), v(k))
+            }
+            const u32 v0 = t[static_cast<std::size_t>(k)], v1 = t[static_cast<std::size_t>((k + 1) % 3)],
+                      v2 = t[static_cast<std::size_t>((k + 2) % 3)];
+            if (count == 1) {
+                const u32 m = mid(v0, v1);
+                next.push_back({v0, m, v2});
+                next.push_back({m, v1, v2});
+            } else {
+                const u32 m0 = mid(v0, v1), m1 = mid(v1, v2);
+                next.push_back({m0, v1, m1});
+                next.push_back({v0, m0, m1});
+                next.push_back({v0, m1, v2});
+            }
+        }
+        tris = std::move(next);
+        if (!any) break;
     }
 }
+
+// Douglas-Peucker on an open run; returns keep flags (ends always kept).
+std::vector<char> dp_run(const std::vector<Vec2>& run, double tol) {
+    std::vector<char> keep(run.size(), 0);
+    if (run.empty()) return keep;
+    keep.front() = keep.back() = 1;
+    std::vector<std::pair<std::size_t, std::size_t>> stack{{0, run.size() - 1}};
+    while (!stack.empty()) {
+        const auto [a, b] = stack.back();
+        stack.pop_back();
+        if (b <= a + 1) continue;
+        double worst = -1;
+        std::size_t wi = a;
+        const Vec2 pa = run[a], pb = run[b];
+        const Vec2 ab = pb - pa;
+        const double l2 = ab.dot(ab);
+        for (std::size_t i = a + 1; i < b; ++i) {
+            const double t = l2 > 0 ? std::clamp((run[i] - pa).dot(ab) / l2, 0.0, 1.0) : 0.0;
+            const double d = (run[i] - (pa + ab * t)).length();
+            if (d > worst) {
+                worst = d;
+                wi = i;
+            }
+        }
+        if (worst > tol) {
+            keep[wi] = 1;
+            stack.push_back({a, wi});
+            stack.push_back({wi, b});
+        }
+    }
+    return keep;
+}
+
+// Simplifies a closed ring to within tol of the original, never dropping anchored vertices.
+std::vector<Vec2> simplify_ring(const std::vector<Vec2>& ring, std::vector<char> anchor, double tol) {
+    const std::size_t n = ring.size();
+    if (n < 4 || tol <= 1e-4) return ring;
+    anchor.resize(n, 0);
+    std::vector<std::size_t> an;
+    for (std::size_t i = 0; i < n; ++i)
+        if (anchor[i]) an.push_back(i);
+    if (an.size() < 2) {
+        std::size_t far = 0;
+        double best = -1;
+        const std::size_t first = an.empty() ? 0 : an[0];
+        for (std::size_t i = 0; i < n; ++i) {
+            const double d = (ring[i] - ring[first]).length();
+            if (d > best) {
+                best = d;
+                far = i;
+            }
+        }
+        anchor[first] = 1;
+        anchor[far] = 1;
+        an.clear();
+        for (std::size_t i = 0; i < n; ++i)
+            if (anchor[i]) an.push_back(i);
+    }
+    std::vector<char> keep(n, 0);
+    for (std::size_t k = 0; k < an.size(); ++k) {
+        const std::size_t a = an[k], b = an[(k + 1) % an.size()];
+        std::vector<Vec2> run;
+        std::vector<std::size_t> idx;
+        for (std::size_t i = a;; i = (i + 1) % n) {
+            run.push_back(ring[i]);
+            idx.push_back(i);
+            if (i == b && idx.size() > 1) break;
+            if (idx.size() > n + 1) break;
+        }
+        const std::vector<char> kr = dp_run(run, tol);
+        for (std::size_t i = 0; i < run.size(); ++i)
+            if (kr[i]) keep[idx[i]] = 1;
+    }
+    std::vector<Vec2> out;
+    for (std::size_t i = 0; i < n; ++i)
+        if (keep[i]) out.push_back(ring[i]);
+    return out.size() >= 3 ? out : ring;
+}
+
+double junction_edge_length(const RenderMeshParams& P) { return std::clamp(60 * P.chord_tolerance + 2.5, 2.5, 25.0); }
 
 // ---------------------------------------------------------------- junction meshes
 
-struct ArmCtx {
-    const JunctionArm* arm = nullptr;
-    Profile prof;
-    double trim = 0, edge_len = 0;
-    Vec3 tc;
-    Vec2 dir, left;
-    double grade = 0;  // dz per metre going outward
-    double hl = 0, hr = 0;
-    bool at_a = true;
-};
-
 struct Blended {
-    double z = 0, u = 0, v = 0;
-    Vec3 tangent;
+    double z = 0, b = 0;
 };
 
-Blended blend(const std::vector<ArmCtx>& arms, Vec2 p, bool cw) {
+Blended blend(const std::vector<ArmCtx>& arms, Vec2 p, bool cw, double period) {
     Blended acc;
     double wsum = 0;
-    Vec2 tan{};
     for (const ArmCtx& a : arms) {
         const Vec2 r = p - a.tc.xy();
         const double l = r.dot(a.left), t = r.dot(a.dir);
@@ -653,28 +892,28 @@ Blended blend(const std::vector<ArmCtx>& arms, Vec2 p, bool cw) {
         double pz = 0, pu = 0;
         a.prof.eval(a.at_a ? l : -l, cw, pz, pu);
         const double z = a.tc.z + a.grade * t + pz;
-        const double v = a.at_a ? a.trim + t : a.edge_len - a.trim - t;
-        const Vec2 right = a.at_a ? Vec2{a.dir.y, -a.dir.x} : Vec2{-a.dir.y, a.dir.x};
-        if (dist < 1e-7) return {z, pu, v, {right.x, right.y, 0}};
+        const double s_edge = a.at_a ? a.trim + t : a.edge_len - a.trim - t;
+        const double bv = lowfreq(a.edge, s_edge, period);
+        if (dist < 1e-7) return {z, bv};
         const double w = 1.0 / (dist * dist);
         acc.z += w * z;
-        acc.u += w * pu;
-        acc.v += w * v;
-        tan = tan + right * w;
+        acc.b += w * bv;
         wsum += w;
     }
-    if (wsum <= 0) return {0, 0, 0, {1, 0, 0}};
-    const double tl = tan.length();
+    if (wsum <= 0) return {};
     acc.z /= wsum;
-    acc.u /= wsum;
-    acc.v /= wsum;
-    acc.tangent = tl > 1e-12 ? Vec3{tan.x / tl, tan.y / tl, 0} : Vec3{1, 0, 0};
+    acc.b /= wsum;
     return acc;
 }
 
+struct Conformed {
+    std::vector<Vec2> pts;
+    std::vector<char> anchor;
+};
+
 // Snaps vertices that lie on an arm's trim line exactly onto it (same arm_point() as the edge mesh)
 // and inserts the edge cross-section's ring points along trim-line segments, so seams are welded.
-std::vector<Vec2> conform_ring(const std::vector<Vec2>& ring, const std::vector<ArmCtx>& arms, bool cw) {
+Conformed conform_ring(const std::vector<Vec2>& ring, const std::vector<ArmCtx>& arms, bool cw) {
     struct SV {
         Vec2 p;
         int arm = -1;
@@ -689,33 +928,35 @@ std::vector<Vec2> conform_ring(const std::vector<Vec2>& ring, const std::vector<
             const double t = r.dot(a.dir);
             double l = r.dot(a.left);
             if (std::abs(t) > kSnapTol || l < -a.hr - kSnapTol || l > a.hl + kSnapTol) continue;
-            for (double c : {a.arm->kerb_left, -a.arm->kerb_right, a.hl, -a.hr})
+            for (double c : {a.arm.kerb_left, -a.arm.kerb_right, a.hl, -a.hr})
                 if (std::abs(l - c) < kSnapTol) {
                     l = c;
                     break;
                 }
             v.arm = static_cast<int>(i);
             v.l = l;
-            v.p = arm_point(*a.arm, a.trim, l).pos.xy();
+            v.p = arm_point(a.arm, a.trim, l).pos.xy();
         }
         if (!sv.empty() && (sv.back().p - v.p).length() < 1e-7) continue;
         sv.push_back(v);
     }
     while (sv.size() > 1 && (sv.front().p - sv.back().p).length() < 1e-7) sv.pop_back();
-    std::vector<Vec2> out;
+    Conformed out;
     for (std::size_t i = 0; i < sv.size(); ++i) {
         const SV &a = sv[i], &b = sv[(i + 1) % sv.size()];
-        out.push_back(a.p);
+        out.pts.push_back(a.p);
+        out.anchor.push_back(a.arm >= 0 ? 1 : 0);
         if (a.arm < 0 || a.arm != b.arm) continue;
         const ArmCtx& ac = arms[static_cast<std::size_t>(a.arm)];
         std::vector<double> ls;
-        for (double d : ac.prof.ring_d(cw)) {
-            const double l = ac.at_a ? d : -d;
+        for (double l : arm_laterals(ac, cw))
             if (l > std::min(a.l, b.l) + 1e-6 && l < std::max(a.l, b.l) - 1e-6) ls.push_back(l);
-        }
         std::sort(ls.begin(), ls.end());
         if (a.l > b.l) std::reverse(ls.begin(), ls.end());
-        for (double l : ls) out.push_back(arm_point(*ac.arm, ac.trim, l).pos.xy());
+        for (double l : ls) {
+            out.pts.push_back(arm_point(ac.arm, ac.trim, l).pos.xy());
+            out.anchor.push_back(1);
+        }
     }
     return out;
 }
@@ -733,44 +974,33 @@ double dist_point_segment(Vec2 p, Vec2 a, Vec2 b) {
     return (p - (a + ab * t)).length();
 }
 
-// Triangulates conformed rings into `m`, heights from the arm blend.
-void add_blended_polygon(WorldMesh& m, const std::vector<std::vector<Vec2>>& rings, const std::vector<ArmCtx>& arms,
-                         bool cw) {
-    std::vector<Vec2> pts;
-    std::vector<std::vector<u32>> idx;
-    for (const auto& r : rings) {
-        if (r.size() < 3) continue;
-        std::vector<u32> ring;
-        for (const Vec2& p : r) {
-            ring.push_back(static_cast<u32>(pts.size()));
-            pts.push_back(p);
-        }
-        idx.push_back(std::move(ring));
-    }
-    std::vector<Tri> tris;
-    triangulate(pts, idx, tris);
-    if (tris.empty()) return;
-    std::vector<u32> vmap(pts.size(), 0xFFFFFFFFu);
-    const auto vert = [&](u32 i) {
-        if (vmap[i] == 0xFFFFFFFFu) {
-            const Blended b = blend(arms, pts[i], cw);
-            vmap[i] = add_vertex(m, {pts[i].x, pts[i].y, b.z}, {b.u, b.v}, b.tangent);
-        }
-        return vmap[i];
-    };
-    for (const Tri& t : tris) add_tri(m, vert(t.a), vert(t.b), vert(t.c), true);
+struct Seg2 {
+    Vec2 a, b;
+};
+
+double min_dist(const std::vector<Seg2>& segs, Vec2 p) {
+    double d = kInf;
+    for (const Seg2& s : segs) d = std::min(d, dist_point_segment(p, s.a, s.b));
+    return d;
 }
 
-// Vertical face along A -> B between heights bottom and top; the front side is the left of A -> B
-// when `left_facing`, else the right.
-void add_face(WorldMesh& m, Vec3 a, Vec3 b, double dza, double dzb, Vec2 uva, Vec2 uvb, Vec2 uvta, Vec2 uvtb,
-              bool left_facing) {
-    const Vec3 t{b.x - a.x, b.y - a.y, 0};
-    const double tl = length(t);
-    const Vec3 tan = tl > 1e-12 ? Vec3{t.x / tl, t.y / tl, 0} : Vec3{1, 0, 0};
-    const u32 va = add_vertex(m, a, uva, tan), vb = add_vertex(m, b, uvb, tan);
-    const u32 ta = add_vertex(m, {a.x, a.y, a.z + dza}, uvta, tan);
-    const u32 tb = add_vertex(m, {b.x, b.y, b.z + dzb}, uvtb, tan);
+// Vertical face along A -> B (feet at a, b; tops dza/dzb above). The front is the left of A -> B when
+// `left_facing`. uv = (metres along the kerb, metres up the face).
+void add_face(WorldMesh& m, Vec3 a, Vec3 b, double dza, double dzb, double run_a, double run_b, bool left_facing,
+              Float4 col) {
+    const Vec3 tan = normalized({b.x - a.x, b.y - a.y, 0}, {1, 0, 0});
+    const Vec3 up{0, 0, 1};
+    const auto V = [&](Vec3 p, double u, double v) {
+        Attr at;
+        at.p = p;
+        at.uv = {u, v};
+        at.col = col;
+        at.tan = tan;
+        at.bit = up;
+        return add_vertex(m, at);
+    };
+    const u32 va = V(a, run_a, 0), vb = V(b, run_b, 0);
+    const u32 ta = V({a.x, a.y, a.z + dza}, run_a, dza), tb = V({b.x, b.y, b.z + dzb}, run_b, dzb);
     if (left_facing) {
         add_tri(m, va, ta, tb, false);
         add_tri(m, va, tb, vb, false);
@@ -780,165 +1010,338 @@ void add_face(WorldMesh& m, Vec3 a, Vec3 b, double dza, double dzb, Vec2 uva, Ve
     }
 }
 
-void add_section(WorldMeshSet& set, NodeId node) {
-    for (auto& [name, m] : set) {
-        if (m.indices.empty() || !m.sections.empty()) continue;
-        SectionRange r;
-        r.node = node;
-        r.index_count = static_cast<u32>(m.indices.size());
-        m.sections.push_back(r);
-    }
-}
+struct JunctionFrame {
+    Vec2 o, dir, left;
+    Vec2 uv(Vec2 p) const { return {-(p - o).dot(left), (p - o).dot(dir)}; }
+};
 
 }  // namespace
 
-WorldMeshSet build_junction_mesh(const RoadGraph& graph, const RegionPack& region, const Junction& j,
+struct JunctionSurface::Impl {
+    std::vector<ArmCtx> arms;
+    double period = 30;
+};
+
+JunctionSurface::JunctionSurface(const RoadGraph& graph, const RegionPack& region, const Junction& j,
                                  const RenderMeshParams& P) {
+    if (j.arms.empty() || j.trims.size() != j.arms.size()) return;
+    auto impl = std::make_shared<Impl>();
+    impl->period = P.lowfreq_period;
+    for (std::size_t i = 0; i < j.arms.size(); ++i) {
+        ArmCtx a;
+        if (!make_ctx(a, graph, region, j.arms[i], j.trims[i], P)) continue;
+        a.index = static_cast<int>(i);
+        impl->arms.push_back(std::move(a));
+    }
+    if (!impl->arms.empty()) impl_ = std::move(impl);
+}
+
+double JunctionSurface::z(Vec2 p, bool carriageway) const {
+    return impl_ ? blend(impl_->arms, p, carriageway, impl_->period).z : 0.0;
+}
+
+double junction_surface_z(const RoadGraph& graph, const RegionPack& region, const Junction& junction, Vec2 p,
+                          bool carriageway, const RenderMeshParams& params) {
+    return JunctionSurface(graph, region, junction, params).z(p, carriageway);
+}
+
+WorldMeshSet build_junction_mesh(const RoadGraph& graph, const RegionPack& region, const Junction& j,
+                                 const RenderMeshParams& P, bool* ok_out) {
     WorldMeshSet out;
+    bool ok = true;
+    if (ok_out) *ok_out = true;
     if (j.arms.empty() || j.trims.size() != j.arms.size()) return out;
     if (j.carriageway.empty() && j.pavements.empty()) return out;
 
     std::vector<ArmCtx> arms;
     for (std::size_t i = 0; i < j.arms.size(); ++i) {
         ArmCtx a;
-        a.arm = &j.arms[i];
-        const Edge* e = graph.edge(a.arm->edge);
-        const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
-        if (!e || !rt || a.arm->centreline.empty()) continue;
-        a.prof = build_profile(*e, *rt, region, P);
-        if (a.prof.segs.empty()) continue;
-        a.trim = j.trims[i];
-        a.edge_len = e->horizontal.length();
-        a.at_a = a.arm->at_a;
-        const ArmPoint c = arm_point(*a.arm, a.trim, 0);
-        a.tc = c.pos;
-        a.dir = {std::cos(c.heading_out), std::sin(c.heading_out)};
-        a.left = {-a.dir.y, a.dir.x};
-        const double dl = std::min(2.0, a.arm->edge_length - a.trim);
-        if (dl > 0.1) a.grade = (arm_point(*a.arm, a.trim + dl, 0).pos.z - c.pos.z) / dl;
-        a.hl = a.arm->half_width_left;
-        a.hr = a.arm->half_width_right;
+        if (!make_ctx(a, graph, region, j.arms[i], j.trims[i], P)) continue;
+        a.index = static_cast<int>(i);
         arms.push_back(std::move(a));
     }
     if (arms.empty()) return out;
     std::string cw_surface = P.default_surface, band_surface, kerb_surface = P.island_kerb_surface;
-    for (const ArmCtx& a : arms) {
+    for (const ArmCtx& a : arms)
         if (!a.prof.cw_surface.empty()) { cw_surface = a.prof.cw_surface; break; }
-    }
-    for (const ArmCtx& a : arms) {
+    for (const ArmCtx& a : arms)
         if (!a.prof.raised_surface.empty()) { band_surface = a.prof.raised_surface; break; }
-    }
-    for (const ArmCtx& a : arms) {
+    for (const ArmCtx& a : arms)
         if (!a.prof.kerb_surface.empty()) { kerb_surface = a.prof.kerb_surface; break; }
-    }
     if (band_surface.empty()) band_surface = cw_surface;
 
-    std::vector<std::vector<Vec2>> cw_rings, band_rings;
-    for (const auto& r : j.carriageway) {
-        if (r.size() < 3 || !finite_ring(r)) continue;
-        std::vector<Vec2> c = conform_ring(r, arms, true);
-        if (c.size() >= 3) cw_rings.push_back(std::move(c));
-    }
-    for (const auto& r : j.pavements) {
-        if (r.size() < 3 || !finite_ring(r)) continue;
-        std::vector<Vec2> c = conform_ring(r, arms, false);
-        if (c.size() >= 3) band_rings.push_back(std::move(c));
-    }
-    add_blended_polygon(surface_mesh(out, cw_surface), cw_rings, arms, true);
-    add_blended_polygon(surface_mesh(out, band_surface), band_rings, arms, false);
+    // Planar uv in the frame of the major arm.
+    const ArmCtx* major = &arms.front();
+    if (!j.major_arms.empty())
+        for (const ArmCtx& a : arms)
+            if (a.index == j.major_arms.front()) major = &a;
+    const JunctionFrame frame{major->tc.xy(), major->dir, major->left};
+    const Vec3 u_dir{frame.dir.y, -frame.dir.x, 0}, v_dir{frame.dir.x, frame.dir.y, 0};
 
-    // Kerb faces where the carriageway boundary runs along a pavement edge (not on a trim line).
-    struct Seg {
-        Vec2 a, b;
+    const double tol = P.chord_tolerance;
+    const auto prepare = [&](const PolygonSet& set, bool cw) {
+        std::vector<std::vector<Vec2>> rings;
+        for (const auto& r : set) {
+            if (r.size() < 3 || !finite_ring(r)) continue;
+            Conformed c = conform_ring(r, arms, cw);
+            if (c.pts.size() < 3) continue;
+            std::vector<Vec2> s = simplify_ring(c.pts, c.anchor, tol);
+            if (s.size() >= 3) rings.push_back(std::move(s));
+        }
+        return rings;
     };
-    std::vector<Seg> pav;
-    for (const auto& r : j.pavements)
-        for (std::size_t i = 0; i < r.size(); ++i) pav.push_back({r[i], r[(i + 1) % r.size()]});
+    const auto cw_rings = prepare(j.carriageway, true);
+    const auto band_rings = prepare(j.pavements, false);
+
+    // Connector paths (wear) and carriageway boundary (dirt).
+    std::vector<Seg2> paths;
+    for (const LaneConnector& c : j.connectors) {
+        if (!c.enabled) continue;
+        for (std::size_t i = 0; i + 1 < c.path.size(); ++i) paths.push_back({c.path[i].xy(), c.path[i + 1].xy()});
+    }
     const auto on_trim = [&](Vec2 p) {
         for (const ArmCtx& a : arms)
             if (std::abs((p - a.tc.xy()).dot(a.dir)) < 1e-6) return true;
         return false;
     };
-    WorldMesh& kerb = surface_mesh(out, kerb_surface);
-    for (const auto& r : cw_rings) {
+    std::vector<Seg2> boundary;
+    for (const auto& r : cw_rings)
         for (std::size_t i = 0; i < r.size(); ++i) {
             const Vec2 A = r[i], B = r[(i + 1) % r.size()];
-            if ((B - A).length() < 1e-4 || (on_trim(A) && on_trim(B))) continue;
-            const Vec2 M = (A + B) * 0.5;
-            bool along_pavement = false;
-            for (const Seg& s : pav)
-                if (dist_point_segment(M, s.a, s.b) < 2e-3) { along_pavement = true; break; }
-            if (!along_pavement) continue;
-            const Blended ba = blend(arms, A, true), bb = blend(arms, B, true);
-            const double dza = blend(arms, A, false).z - ba.z, dzb = blend(arms, B, false).z - bb.z;
+            if (!(on_trim(A) && on_trim(B))) boundary.push_back({A, B});
+        }
+
+    const double maxlen = junction_edge_length(P);
+    const auto polygon = [&](const std::vector<std::vector<Vec2>>& rings, bool cw, WorldMesh& m) {
+        std::vector<Vec2> pts;
+        std::vector<std::vector<u32>> idx;
+        for (const auto& r : rings) {
+            std::vector<u32> ring;
+            for (const Vec2& p : r) {
+                ring.push_back(static_cast<u32>(pts.size()));
+                pts.push_back(p);
+            }
+            idx.push_back(std::move(ring));
+        }
+        std::vector<Tri> tris;
+        if (!triangulate_polygons(pts, idx, tris)) ok = false;
+        refine(pts, tris, maxlen);
+        std::vector<u32> vmap(pts.size(), 0xFFFFFFFFu);
+        const auto vert = [&](u32 i) {
+            if (vmap[i] == 0xFFFFFFFFu) {
+                const Blended bl = blend(arms, pts[i], cw, P.lowfreq_period);
+                Attr a;
+                a.p = {pts[i].x, pts[i].y, bl.z};
+                a.uv = frame.uv(pts[i]);
+                a.tan = u_dir;
+                a.bit = v_dir;
+                if (cw) {
+                    const double dp = min_dist(paths, pts[i]);
+                    const double wear = paths.empty() ? 0.3 : 0.3 + 0.7 * std::exp(-(dp / 1.8) * (dp / 1.8));
+                    const double dirt = boundary.empty() ? 0.0 : 1 - min_dist(boundary, pts[i]) / P.edge_dirt_width;
+                    a.col = colour(wear, dirt, bl.b);
+                } else {
+                    a.col = colour(0, 0.5, bl.b);
+                }
+                vmap[i] = add_vertex(m, a);
+            }
+            return vmap[i];
+        };
+        for (const Tri& t : tris) add_tri(m, vert(t[0]), vert(t[1]), vert(t[2]), true);
+    };
+    polygon(cw_rings, true, out[cw_surface]);
+    polygon(band_rings, false, out[band_surface]);
+
+    // Kerb faces where the carriageway boundary runs along a pavement edge (not on a trim line).
+    std::vector<Seg2> pav;
+    for (const auto& r : band_rings)
+        for (std::size_t i = 0; i < r.size(); ++i) pav.push_back({r[i], r[(i + 1) % r.size()]});
+    WorldMesh& kerb = out[kerb_surface];
+    const double along_tol = 2e-3 + 1.5 * tol;
+    for (const auto& r : cw_rings) {
+        double run = 0;
+        for (std::size_t i = 0; i < r.size(); ++i) {
+            const Vec2 A = r[i], B = r[(i + 1) % r.size()];
+            const double l = (B - A).length();
+            const double run_a = run;
+            run += l;
+            if (l < 1e-4 || (on_trim(A) && on_trim(B))) continue;
+            if (min_dist(pav, (A + B) * 0.5) >= along_tol) continue;
+            const Blended ba = blend(arms, A, true, P.lowfreq_period), bb = blend(arms, B, true, P.lowfreq_period);
+            const double dza = blend(arms, A, false, P.lowfreq_period).z - ba.z;
+            const double dzb = blend(arms, B, false, P.lowfreq_period).z - bb.z;
             if (dza < 1e-4 || dzb < 1e-4) continue;
-            add_face(kerb, {A.x, A.y, ba.z}, {B.x, B.y, bb.z}, dza, dzb, {ba.u, ba.v}, {bb.u, bb.v},
-                     {blend(arms, A, false).u, ba.v}, {blend(arms, B, false).u, bb.v}, true);
+            add_face(kerb, {A.x, A.y, ba.z}, {B.x, B.y, bb.z}, dza, dzb, run_a, run, true, colour(0, 1, ba.b));
         }
     }
     finish_normals(out);
     drop_empty(out);
     add_section(out, j.node);
+    if (ok_out) *ok_out = ok;
+    return out;
+}
+
+// ---------------------------------------------------------------- joint filler
+
+WorldMeshSet build_joint_mesh(const RoadGraph& graph, const RegionPack& region, NodeId node, const RenderMeshParams& P) {
+    WorldMeshSet out;
+    JointInfo ji;
+    if (!joint_info(graph, region, node, P, ji) || !ji.needed) return out;
+    ArmCtx c[2];
+    for (int i = 0; i < 2; ++i)
+        if (!make_ctx(c[i], graph, region, ji.arm[i], ji.trim[i], P)) return out;
+
+    // Laterals in arm 0's frame; arm 1's lateral is the negative (its left is our right).
+    const auto mapped = [&](bool cw) {
+        std::vector<double> l = arm_laterals(c[0], cw);
+        for (double v : arm_laterals(c[1], cw)) l.push_back(-v);
+        std::sort(l.begin(), l.end(), std::greater<double>());
+        l.erase(std::unique(l.begin(), l.end(), [](double a, double b) { return std::abs(a - b) < 1e-6; }), l.end());
+        return l;
+    };
+    const auto extent = [&](const ArmCtx& a, bool arm1, double& lo, double& hi) {
+        const double l0 = a.at_a ? a.prof.cw_lo : -a.prof.cw_hi, l1 = a.at_a ? a.prof.cw_hi : -a.prof.cw_lo;
+        lo = arm1 ? -l1 : l0;
+        hi = arm1 ? -l0 : l1;
+    };
+    double lo0, hi0, lo1, hi1;
+    extent(c[0], false, lo0, hi0);
+    extent(c[1], true, lo1, hi1);
+    const double cw_lo = std::min(lo0, lo1), cw_hi = std::max(hi0, hi1);
+
+    const JunctionFrame frame{c[0].tc.xy(), c[0].dir, c[0].left};
+    const Vec3 u_dir{frame.dir.y, -frame.dir.x, 0}, v_dir{frame.dir.x, frame.dir.y, 0};
+    const double low = lowfreq(c[0].edge, c[0].trim, P.lowfreq_period);
+    const auto corner = [&](int arm, double l, bool cw) {
+        const ArmCtx& a = c[arm];
+        const double lat = std::clamp(arm == 0 ? l : -l, -a.hr, a.hl);
+        const ArmPoint ap = arm_point(a.arm, a.trim, lat);
+        double z = 0, u = 0;
+        a.prof.eval(a.at_a ? lat : -lat, cw, z, u);
+        return Vec3{ap.pos.x, ap.pos.y, a.tc.z + z};
+    };
+    const auto strip = [&](const std::vector<double>& ls, bool cw) {
+        for (std::size_t k = 0; k + 1 < ls.size(); ++k) {
+            const double l0 = ls[k], l1 = ls[k + 1], mid = 0.5 * (l0 + l1);
+            if (!cw && mid > cw_lo && mid < cw_hi) continue;
+            std::string surface;
+            for (int arm = 0; arm < 2 && surface.empty(); ++arm) {
+                double dist = 0;
+                const double lat = arm == 0 ? mid : -mid;
+                const ProfileSeg* s = c[arm].prof.best_seg(c[arm].at_a ? lat : -lat, cw, &dist);
+                if (s && dist <= 1e-9) surface = s->surface;
+            }
+            if (surface.empty()) {
+                const ProfileSeg* s = c[0].prof.best_seg(c[0].at_a ? mid : -mid, cw);
+                if (!s) continue;
+                surface = s->surface;
+            }
+            WorldMesh& m = out[surface];
+            const Vec3 q[4] = {corner(0, l0, cw), corner(0, l1, cw), corner(1, l1, cw), corner(1, l0, cw)};
+            u32 v[4];
+            for (int i = 0; i < 4; ++i) {
+                Attr a;
+                a.p = q[i];
+                a.uv = frame.uv(q[i].xy());
+                a.tan = u_dir;
+                a.bit = v_dir;
+                a.col = colour(0, cw ? 0.3 : 0.5, low);
+                v[i] = add_vertex(m, a);
+            }
+            const u32 tri[2][3] = {{v[0], v[1], v[2]}, {v[0], v[2], v[3]}};
+            for (const auto& t : tri) {
+                const Vec3 n = cross(m.positions[t[1]] - m.positions[t[0]], m.positions[t[2]] - m.positions[t[0]]);
+                if (n.z >= 0) add_tri(m, t[0], t[1], t[2], true, 1e-6);
+                else add_tri(m, t[0], t[2], t[1], true, 1e-6);
+            }
+        }
+    };
+    strip(mapped(true), true);
+    strip(mapped(false), false);
+    finish_normals(out);
+    drop_empty(out);
+    add_section(out, node);
     return out;
 }
 
 namespace {
 
-// Height of the road surface at p on `edge`: nearest centreline point plus the carriageway profile.
-double road_height_at(const Edge& e, const Profile& pr, Vec2 p) {
-    const std::vector<EdgeSample> c = sample_centreline(e);
+// ---------------------------------------------------------------- roundabout islands
+
+struct RoadRef {
+    const Edge* e = nullptr;
+    Profile prof;
+    std::vector<EdgeSample> c;
+};
+
+// Road surface height at p from the nearest of the given edges: centreline + carriageway profile.
+double road_height_at(const std::vector<RoadRef>& refs, Vec2 p) {
     double best = kInf, z = 0, lat = 0;
-    for (std::size_t i = 0; i + 1 < c.size(); ++i) {
-        const Vec2 a = c[i].pos.xy(), b = c[i + 1].pos.xy();
-        const Vec2 ab = b - a;
-        const double l2 = ab.dot(ab);
-        const double t = l2 > 0 ? std::clamp((p - a).dot(ab) / l2, 0.0, 1.0) : 0.0;
-        const Vec2 q = a + ab * t;
-        const double d = (p - q).length();
-        if (d < best) {
-            best = d;
-            z = c[i].pos.z + (c[i + 1].pos.z - c[i].pos.z) * t;
-            const double side = ab.cross(p - a);
-            lat = side >= 0 ? d : -d;
+    const RoadRef* nearest = nullptr;
+    for (const RoadRef& r : refs) {
+        for (std::size_t i = 0; i + 1 < r.c.size(); ++i) {
+            const Vec2 a = r.c[i].pos.xy(), b = r.c[i + 1].pos.xy();
+            const Vec2 ab = b - a;
+            const double l2 = ab.dot(ab);
+            const double t = l2 > 0 ? std::clamp((p - a).dot(ab) / l2, 0.0, 1.0) : 0.0;
+            const double d = (p - (a + ab * t)).length();
+            if (d < best) {
+                best = d;
+                nearest = &r;
+                z = r.c[i].pos.z + (r.c[i + 1].pos.z - r.c[i].pos.z) * t;
+                lat = ab.cross(p - a) >= 0 ? d : -d;
+            }
         }
     }
+    if (!nearest) return 0;
     double pz = 0, pu = 0;
-    pr.eval(lat, true, pz, pu);
+    nearest->prof.eval(lat, true, pz, pu);
     return z + pz;
 }
 
-// Raised polygon (top + faces) over a base height function.
-void add_raised_polygon(WorldMeshSet& out, const PolygonSet& poly, const std::function<double(Vec2)>& base_z, double H,
-                        const RenderMeshParams& P) {
+// Raised polygon (top + kerb faces) over a base height function.
+void add_raised_polygon(WorldMeshSet& out, const PolygonSet& poly, const std::string& top_surface,
+                        const std::function<double(Vec2)>& base_z, double H, const RenderMeshParams& P) {
     std::vector<Vec2> pts;
     std::vector<std::vector<u32>> idx;
+    std::vector<std::vector<Vec2>> rings;
     for (const auto& r : poly) {
         if (r.size() < 3 || !finite_ring(r)) continue;
+        std::vector<Vec2> s = simplify_ring(r, {}, P.chord_tolerance);
         std::vector<u32> ring;
-        for (const Vec2& p : r) {
+        for (const Vec2& p : s) {
             ring.push_back(static_cast<u32>(pts.size()));
             pts.push_back(p);
         }
         idx.push_back(std::move(ring));
+        rings.push_back(std::move(s));
     }
     std::vector<Tri> tris;
-    triangulate(pts, idx, tris);
-    WorldMesh& top = surface_mesh(out, P.island_surface);
+    triangulate_polygons(pts, idx, tris);
+    refine(pts, tris, junction_edge_length(P));
+    WorldMesh& top = out[top_surface];
     std::vector<u32> vmap(pts.size(), 0xFFFFFFFFu);
     const auto vert = [&](u32 i) {
-        if (vmap[i] == 0xFFFFFFFFu) vmap[i] = add_vertex(top, {pts[i].x, pts[i].y, base_z(pts[i]) + H}, pts[i], {1, 0, 0});
+        if (vmap[i] == 0xFFFFFFFFu) {
+            Attr a;
+            a.p = {pts[i].x, pts[i].y, base_z(pts[i]) + H};
+            a.uv = pts[i];
+            a.col = colour(0, 0, 0.5);
+            a.tan = {1, 0, 0};
+            a.bit = {0, 1, 0};
+            vmap[i] = add_vertex(top, a);
+        }
         return vmap[i];
     };
-    for (const Tri& t : tris) add_tri(top, vert(t.a), vert(t.b), vert(t.c), true);
-    WorldMesh& kerb = surface_mesh(out, P.island_kerb_surface);
-    for (const auto& r : poly) {
-        if (r.size() < 3 || !finite_ring(r)) continue;
+    for (const Tri& t : tris) add_tri(top, vert(t[0]), vert(t[1]), vert(t[2]), true);
+    WorldMesh& kerb = out[P.island_kerb_surface];
+    for (const auto& r : rings) {
         double run = 0;
         for (std::size_t i = 0; i < r.size(); ++i) {
             const Vec2 A = r[i], B = r[(i + 1) % r.size()];
             const double l = (B - A).length();
             if (l < 1e-4) continue;
-            add_face(kerb, {A.x, A.y, base_z(A)}, {B.x, B.y, base_z(B)}, H, H, {0, run}, {0, run + l}, {H, run}, {H, run + l}, false);
+            add_face(kerb, {A.x, A.y, base_z(A)}, {B.x, B.y, base_z(B)}, H, H, run, run + l, false, colour(0, 1, 0.5));
             run += l;
         }
     }
@@ -950,28 +1353,37 @@ WorldMeshSet build_roundabout_mesh(const RoadGraph& graph, const RegionPack& reg
                                    const RenderMeshParams& P) {
     WorldMeshSet out;
     if (!layout.ok) return out;
-    double ring_z = 0, H = P.default_kerb_upstand;
-    int count = 0;
-    for (NodeId n : layout.group.nodes)
-        if (const Node* nd = graph.node(n)) {
-            ring_z += nd->pos.z;
-            ++count;
+    const RoundaboutRules& rules = region.roundabout;
+    double H = rules.island_kerb_upstand > 0 ? rules.island_kerb_upstand : P.default_kerb_upstand;
+    const auto make_ref = [&](EdgeId id) {
+        RoadRef r;
+        r.e = graph.edge(id);
+        if (!r.e) return r;
+        const RoadType* rt = region.road_type(r.e->road_type);
+        if (!rt) {
+            r.e = nullptr;
+            return r;
         }
-    if (count > 0) ring_z /= count;
-    for (EdgeId id : layout.group.ring_edges)
-        if (const Edge* e = graph.edge(id))
-            if (const RoadType* rt = region.road_type(e->road_type); rt && rt->kerb_upstand) {
-                H = *rt->kerb_upstand;
-                break;
-            }
-    if (!layout.island.empty()) add_raised_polygon(out, layout.island, [&](Vec2) { return ring_z; }, H, P);
+        if (rules.island_kerb_upstand <= 0 && rt->kerb_upstand) H = *rt->kerb_upstand;
+        r.prof = build_profile(*r.e, *rt, region, P);
+        r.c = sample_centreline(*r.e);
+        return r;
+    };
+    std::vector<RoadRef> ring;
+    for (EdgeId id : layout.group.ring_edges) {
+        RoadRef r = make_ref(id);
+        if (r.e && !r.prof.segs.empty()) ring.push_back(std::move(r));
+    }
+    if (!layout.island.empty() && !ring.empty())
+        add_raised_polygon(out, layout.island, rules.central_island_surface,
+                           [&](Vec2 p) { return road_height_at(ring, p); }, H, P);
     for (const SplitterIsland& sp : layout.splitters) {
         if (sp.arm < 0 || static_cast<std::size_t>(sp.arm) >= layout.group.arms.size() || sp.polygon.size() < 3) continue;
-        const Edge* e = graph.edge(layout.group.arms[static_cast<std::size_t>(sp.arm)].edge);
-        const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
-        if (!rt) continue;
-        const Profile pr = build_profile(*e, *rt, region, P);
-        add_raised_polygon(out, PolygonSet{sp.polygon}, [&](Vec2 p) { return road_height_at(*e, pr, p); }, H, P);
+        RoadRef r = make_ref(layout.group.arms[static_cast<std::size_t>(sp.arm)].edge);
+        if (!r.e || r.prof.segs.empty()) continue;
+        const std::vector<RoadRef> one{std::move(r)};
+        add_raised_polygon(out, PolygonSet{sp.polygon}, rules.splitter_surface,
+                           [&](Vec2 p) { return road_height_at(one, p); }, H, P);
     }
     finish_normals(out);
     drop_empty(out);
@@ -987,7 +1399,10 @@ void append_mesh(WorldMeshSet& dst, const WorldMeshSet& src) {
         d.positions.insert(d.positions.end(), m.positions.begin(), m.positions.end());
         d.normals.insert(d.normals.end(), m.normals.begin(), m.normals.end());
         d.tangents.insert(d.tangents.end(), m.tangents.begin(), m.tangents.end());
+        d.tangent_w.insert(d.tangent_w.end(), m.tangent_w.begin(), m.tangent_w.end());
         d.uv.insert(d.uv.end(), m.uv.begin(), m.uv.end());
+        d.uv1.insert(d.uv1.end(), m.uv1.begin(), m.uv1.end());
+        d.colours.insert(d.colours.end(), m.colours.begin(), m.colours.end());
         for (u32 i : m.indices) d.indices.push_back(i + base);
         for (SectionRange s : m.sections) {
             s.first_index += ibase;
@@ -1000,13 +1415,18 @@ void append_mesh(WorldMeshSet& dst, const WorldMeshSet& src) {
 
 namespace {
 
+std::uint8_t to_byte(float v) { return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f)); }
+
 void push_vertex(MeshBuffers& b, const WorldMesh& m, std::size_t i, Vec3 origin) {
     const Vec3 p = m.positions[i], n = m.normals[i], t = m.tangents[i];
     b.positions.push_back({static_cast<float>(p.x - origin.x), static_cast<float>(p.y - origin.y), static_cast<float>(p.z - origin.z)});
     b.normals.push_back({static_cast<float>(n.x), static_cast<float>(n.y), static_cast<float>(n.z)});
-    b.tangents.push_back({static_cast<float>(t.x), static_cast<float>(t.y), static_cast<float>(t.z), 1.0f});
+    b.tangents.push_back({static_cast<float>(t.x), static_cast<float>(t.y), static_cast<float>(t.z),
+                          m.tangent_w[i] < 0 ? -1.0f : 1.0f});
     b.uv0.push_back({static_cast<float>(m.uv[i].x), static_cast<float>(m.uv[i].y)});
-    b.colours.push_back({0, 0, 0, 255});
+    b.uv1.push_back({static_cast<float>(m.uv1[i].x), static_cast<float>(m.uv1[i].y)});
+    const Float4 c = m.colours[i];
+    b.colours.push_back({to_byte(c.x), to_byte(c.y), to_byte(c.z), to_byte(c.w)});
 }
 
 }  // namespace
@@ -1062,9 +1482,9 @@ void distribute(std::map<TileKey, MeshChunk>& chunks, const WorldMeshSet& set, c
             std::set<TileKey> opened;
             for (u32 k = sec.first_index; k + 2 < sec.first_index + sec.index_count + 1 && k + 2 < m.indices.size(); k += 3) {
                 const u32 i0 = m.indices[k], i1 = m.indices[k + 1], i2 = m.indices[k + 2];
-                const Vec3 c{(m.positions[i0].x + m.positions[i1].x + m.positions[i2].x) / 3,
-                             (m.positions[i0].y + m.positions[i1].y + m.positions[i2].y) / 3, 0};
-                const TileKey tk = tile_of(c.xy(), cp.tile_size);
+                const Vec2 c{(m.positions[i0].x + m.positions[i1].x + m.positions[i2].x) / 3,
+                             (m.positions[i0].y + m.positions[i1].y + m.positions[i2].y) / 3};
+                const TileKey tk = tile_of(c, cp.tile_size);
                 if (only && !only->count(tk)) continue;
                 MeshChunk& ch = chunks[tk];
                 ch.tile = tk;
@@ -1118,6 +1538,15 @@ std::map<TileKey, MeshChunk> build_mesh_chunks(const RoadGraph& graph, const Reg
             if (!touches(b, only, chunk.tile_size)) continue;
         }
         distribute(chunks, build_junction_mesh(graph, region, j, params), chunk, only);
+    }
+    for (const auto& [nid, nd] : graph.nodes()) {
+        if (only) {
+            Box b;
+            b.add(nd.pos.xy());
+            b.grow(params.joint_length + 15);
+            if (!touches(b, only, chunk.tile_size)) continue;
+        }
+        distribute(chunks, build_joint_mesh(graph, region, nid, params), chunk, only);
     }
     if (roundabouts) {
         for (const RoundaboutLayout& l : *roundabouts) {

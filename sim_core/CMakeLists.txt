@@ -17,7 +17,9 @@ add_library(sim_core
   src/junction_geometry.cpp
   src/junction_merge.cpp
   src/junction_roundabout.cpp
+  src/layout_io.cpp
   src/markings.cpp
+  src/triangulate.cpp
   src/render_mesh.cpp
   src/street_lights.cpp
   src/test_layouts.cpp

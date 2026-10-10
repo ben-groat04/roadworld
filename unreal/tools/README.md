@@ -19,8 +19,8 @@ Windows PowerShell 5.1. Run from the repo root as `powershell -NoProfile -Execut
 | `First-Run.ps1` | Orchestrates all steps below with a resumable state file; see the top of this file. |
 | `Run-EditorPython.ps1` | Runs `py\<script>.py` in an unattended editor and summarises the log (`LogPython` lines, tracebacks, module-load failures, crash markers, the script's `CP_PY_RESULT` marker). `-Render` for screenshot runs, default is `-nullrhi`. `-ScriptArgs a,b` reaches the script via `cp.script_args()`. |
 | `BuildLogParser.ps1` | Parser used by Build-Editor (dot-source it). |
-| `py\setup_look_test_level.py` | Creates/updates `/Game/Maps/RoadTest` (Open World template if available) with sky, sun, fog, clouds, post-process, floor, player start and one `CPRoadNetworkActor`. Idempotent. |
-| `py\screenshot_views.py` | Street / 45 degree / aerial screenshots into `Saved\Screenshots\look\`. Needs `-Render`. |
+| `py\setup_look_test_level.py` | Creates/updates `/Game/Maps/RoadTest` (Open World template if available) with sky, sun, fog, clouds, post-process, floor, player start and one `CPRoadMeshActor` (`-ScriptArgs old` = the old `CPRoadNetworkActor`, `both` = both); assigns `MI_<slot>` surface materials and creates `/Game/Materials/Markings/MI_marking_<colour>`. Idempotent. |
+| `py\screenshot_views.py` | Six interchange views (aerial, roundabout oblique + approach, T-junction, slip merge, kerb close-up; `-ScriptArgs old` = the three old smoke-test views) into `Saved\Screenshots\look\`. Needs `-Render`. |
 | `py\report_environment.py` | Logs engine version, RHI/GPU (from the log), Lumen/VSM/Nanite cvars, plugin probes, and whether `CPRoadNetworkActor` loaded. |
 | `KNOWN_RISKS.md` | Predicted first-build errors mapped to exact edits. Read it when a build fails. |
 
@@ -35,3 +35,7 @@ real UE output and should be checked against the first real failing build.
 ## Writing Python scripts
 Copy the pattern in `py\cp_common.py`: `cp.run(main)` prints `CP_PY_RESULT: OK` or `FAIL <reason>` and quits the editor.
 Mark any API call not confirmed on 5.8 with `# VERIFY`. Raise `cp.ScriptError("clear message")` to fail loudly.
+
+## Standalone check of CPRoadMeshBuild (no engine)
+`Plugins/CityPainterSim/Source/CityPainterSim/Private/CPRoadMeshBuild.{h,cpp}` use only the standard library and sim_core, so they compile without Unreal. To re-check after changes: in a throwaway directory OUTSIDE the repo (and not under %TEMP%, MSBuild rejects it) copy the repo's top-level `CMakeLists.txt`, `sim_core`, `tests`, `data`, `third_party`, append
+`add_executable(check main.cpp <abs path>/CPRoadMeshBuild.cpp)`, `target_include_directories(check PRIVATE <abs path to Private>)`, `target_link_libraries(check PRIVATE sim_core)` and `/GR- /EHs-c- /W4` options, with a `main.cpp` that does `CreateWorld(); LoadData(); BuildLayout(); BuildRender();` and checks (a) every asphalt triangle has +Z geometric normal `(b-a)x(c-a)` in the output (clockwise front face), (b) `tile origin (double) + relative float` reproduces an independent double-precision build to < 0.01 cm. Last result (interchange): see the hand-off report of the commit that added it.

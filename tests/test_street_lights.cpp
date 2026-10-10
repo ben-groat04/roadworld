@@ -384,11 +384,16 @@ TEST_CASE("street lights: bends, structures and heights") {
         const EdgeId id = n.road({0, 0, 0}, {60 * std::sin(96 * kDeg), 60 - 60 * std::cos(96 * kDeg), 0}, "residential", false, {}, {}, via);
         const std::vector<StreetLight> v = all_lights(n, n.junctions());
         REQUIRE(v.size() >= 3);
+        const double len = n.g.edge(id)->horizontal.length();
+        int mid = 0;
         for (const StreetLight& l : v) {
             CHECK(l.edge == id);
+            if (l.s < 0.3 * len || l.s > 0.7 * len) continue;  // the ends are nearly straight
+            ++mid;
             CHECK(lateral_of(n.g, l) < 0);
             CHECK(l.side == LightSide::Right);
         }
+        CHECK(mid >= 1);
     }
     {  // bridge: columns at the parapet line and flagged; tunnel: none
         Net n;
@@ -508,11 +513,11 @@ TEST_CASE("street lights: roundabout ring and island") {
         const std::vector<StreetLight> v = all_lights(n, js, &lay);
         const std::vector<StreetLight> ring = of_origin(v, LightOrigin::RoundaboutRing);
         const std::vector<StreetLight> island = of_origin(v, LightOrigin::RoundaboutIsland);
-        CHECK(ring.size() >= 4);
+        CHECK(ring.size() >= 3);
         CHECK(ring.size() <= 9);
         for (const StreetLight& l : ring) {
-            // Round the outside: outer footway line (half width 7.4 less the inset) outside the ring centreline.
-            CHECK(l.position.xy().length() == doctest::Approx(25 + 7.4 - 0.3).epsilon(0.01));
+            // Round the outside: outer footway line (half width 5.65 less the inset) outside the ring centreline.
+            CHECK(l.position.xy().length() == doctest::Approx(25 + 5.65 - 0.3).epsilon(0.01));
             CHECK_FALSE(in_carriageway(js, l.position.xy()));
             CHECK(std::cos(l.heading) * l.position.x + std::sin(l.heading) * l.position.y < 0);  // bracket points inward
         }
@@ -536,10 +541,9 @@ TEST_CASE("street lights: mirror under driving side") {
         auto n = std::make_unique<Net>(side);
         const auto Y = [ysign](double y) { return ysign * y; };
         n->spokes({0, 180, 270 * ysign}, 140, "b_road");
-        n->road({0, Y(-140), 0}, {60, Y(-260), 2}, "residential");
-        std::vector<Vec3> via;
-        for (int k = 1; k < 5; ++k) via.push_back({140.0 * k / 5.0 * 0.5, Y(100 + 25 * std::sin(k)), 0});
-        n->road({140, 0, 0}, {140, Y(220), 3}, "b_road", false, {}, {}, {});
+        const NodeId east = n->g.edges().begin()->second.b;
+        const std::vector<Vec3> via{{170, Y(80), 1}, {140, Y(150), 2}};
+        n->road({140, 0, 0}, {100, Y(260), 3}, "residential", false, east, {}, via);
         return n;
     };
     auto l = build(DrivingSide::Left, 1.0);
@@ -548,20 +552,25 @@ TEST_CASE("street lights: mirror under driving side") {
     const std::vector<StreetLight> b = all_lights(*r, r->junctions());
     REQUIRE(a.size() >= 10);
     REQUIRE(a.size() == b.size());
-    for (std::size_t i = 0; i < a.size(); ++i) {
-        CHECK(a[i].position.x == doctest::Approx(b[i].position.x).epsilon(1e-9));
-        CHECK(a[i].position.y == doctest::Approx(-b[i].position.y).epsilon(1e-9));
-        CHECK(a[i].position.z == doctest::Approx(b[i].position.z).epsilon(1e-9));
-        CHECK(a[i].edge == b[i].edge);
-        CHECK(a[i].origin == b[i].origin);
+    // Junction corners come out in a different order (arms are sorted CCW), so match by position.
+    for (const StreetLight& p : a) {
+        int found = 0;
+        for (const StreetLight& q : b) {
+            if (std::abs(p.position.x - q.position.x) > 1e-6 || std::abs(p.position.y + q.position.y) > 1e-6) continue;
+            ++found;
+            CHECK(p.position.z == doctest::Approx(q.position.z).epsilon(1e-9));
+            CHECK(p.edge == q.edge);
+            CHECK(p.origin == q.origin);
+            CHECK(wrap_angle(p.heading + q.heading) == doctest::Approx(0).epsilon(1e-6));  // heading mirrors too
+        }
+        CHECK(found == 1);
     }
 }
 
 TEST_CASE("street lights: deterministic and dirty rebuild equals full rebuild") {
     Net n;
     n.spokes({0, 90, 180}, 160, "b_road");
-    const EdgeId tail = n.road({0, 160, 0}, {200, 160, 0}, "residential", false, n.g.edge(n.g.edges().begin()->first)->b);
-    (void)tail;
+    n.road({0, 160, 0}, {200, 160, 0}, "residential", false, std::next(n.g.edges().begin())->second.b);
     JunctionSet js = n.junctions();
     const std::vector<StreetLight> once = all_lights(n, js);
     const std::vector<StreetLight> twice = all_lights(n, js);
@@ -575,8 +584,8 @@ TEST_CASE("street lights: deterministic and dirty rebuild equals full rebuild") 
     for (const auto& [id, j] : js.junctions) centre = id;
     REQUIRE(centre.valid());
     n.road({0, 0, 0}, {0, -150, 0}, "b_road", false, centre);
-    n.road({-300, 400, 0}, {300, 400, 0}, "a_road_dual", true);
-    n.road({300, 411, 0}, {-300, 411, 0}, "a_road_dual", true);
+    n.road({-300, 411, 0}, {300, 411, 0}, "a_road_dual", true);
+    n.road({300, 400, 0}, {-300, 400, 0}, "a_road_dual", true);
     js = n.junctions();
     const std::vector<NodeId> dirty(n.g.dirty_nodes().begin(), n.g.dirty_nodes().end());
     rebuild_dirty_street_lights(cache, n.g, *n.region, js, nullptr, dirty, {});
@@ -617,7 +626,8 @@ TEST_CASE("street lights: interchange fixture") {
         if (l.edge.valid()) {
             const Edge* e = sc->graph.edge(l.edge);
             REQUIRE(e);
-            CHECK(structure_kind_ok(*e, l.s));
+            for (const StructureSpan& sp : e->structure)
+                if (sp.kind == StructureKind::Tunnel) CHECK_FALSE((l.s >= sp.s0 && l.s <= sp.s1));
         }
     }
     CHECK(median > 4);

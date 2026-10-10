@@ -40,6 +40,21 @@ ACPRoadNetworkActor::ACPRoadNetworkActor(FVTableHelper& Helper)
 
 ACPRoadNetworkActor::~ACPRoadNetworkActor() = default;
 
+void ACPRoadNetworkActor::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	UWorld* World = GetWorld();
+	if (IsTemplate() || !World || !World->IsEditorWorld() || World->IsGameWorld())
+	{
+		return;  // game worlds (incl. PIE) build in BeginPlay
+	}
+	if (bRunSmokeTest && Sim && Sim->Graph.edges().empty())
+	{
+		RunSmokeTest();
+	}
+	RebuildVisuals();
+}
+
 void ACPRoadNetworkActor::BeginPlay()
 {
 	Super::BeginPlay();
