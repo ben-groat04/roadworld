@@ -4,9 +4,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <functional>
 #include <fstream>
 #include <limits>
+#include <map>
+#include <set>
 #include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "cp/edge_sampling.h"
 #include "cp/lanes.h"
@@ -156,11 +163,14 @@ std::vector<DashSpan> layout_dashes(double length, double mark, double gap, doub
         return out;
     }
     const double module = mark + gap;
+    constexpr double kMaxMarks = 200000;  // guard against absurd lengths (a 1e7 m line at 6 m would be 1.6 M marks)
+    if ((length + gap) / module > kMaxMarks) return out;
     const int n = static_cast<int>(std::floor((length + gap) / module + kEps));
     if (n < 1) {  // shorter than one mark: a single short mark if it is long enough
         if (length >= min_mark - kEps) out.push_back({0, length});
         return out;
     }
+    if (mark < min_mark - kEps) return out;  // whole marks below the minimum are not painted
     const double base = n * mark + (n - 1) * gap;
     const double r = std::max(length - base, 0.0);
     const double p = r / 2 - gap;  // partial mark that fits at each end after its gap
@@ -177,6 +187,33 @@ std::vector<DashSpan> layout_dashes(double length, double mark, double gap, doub
     if (partial) out.push_back({length - p, length});
     return out;
 }
+
+namespace {
+
+// Dashes that start and end flush with the line (transverse lines, crossing stripes): the gap is stretched
+// or shrunk (never below half of `gap`) so the first mark begins at 0 and the last ends at `length`.
+std::vector<DashSpan> layout_flush(double length, double mark, double gap, double min_mark) {
+    std::vector<DashSpan> out;
+    if (!std::isfinite(length) || !(length > 0) || !(mark > 0)) return out;
+    if (gap <= 0 || length <= mark * 1.5) {
+        if (length >= std::max(min_mark, kEps)) out.push_back({0, length});
+        return out;
+    }
+    const double module = mark + gap;
+    if ((length + gap) / module > 200000) return out;
+    int n = static_cast<int>(std::floor((length + gap) / module + 0.5));
+    while (n > 1 && (length - n * mark) / (n - 1) < 0.5 * gap) --n;
+    if (n <= 1) {
+        out.push_back({0, length});
+        return out;
+    }
+    const double g = (length - n * mark) / (n - 1);
+    for (int i = 0; i < n; ++i) out.push_back({i * (mark + g), i * (mark + g) + mark});
+    out.back().s1 = length;
+    return out;
+}
+
+}  // namespace
 
 // ================================================================ conditions and selectors
 
@@ -261,6 +298,16 @@ double num(const json& j, const char* key, double def, const std::string& ctx, E
     return v->get<double>();
 }
 
+// Integer member with a range check (casting an out-of-range double to int is undefined behaviour).
+int int_num(const json& j, const char* key, int def, int lo, int hi, const std::string& ctx, Err& err) {
+    const double v = num(j, key, def, ctx, err);
+    if (!(v >= lo && v <= hi) || v != std::floor(v)) {
+        err.set(ctx + ": \"" + key + "\" must be a whole number in [" + std::to_string(lo) + ", " + std::to_string(hi) + "]");
+        return def;
+    }
+    return static_cast<int>(v);
+}
+
 std::string str(const json& j, const char* key, const std::string& def, const std::string& ctx, Err& err) {
     const json* v = mem(j, key);
     if (!v) return def;
@@ -299,8 +346,8 @@ MarkCond parse_cond(const json* j, double unit, const std::string& ctx, Err& err
     if (mem(*j, "speed_min")) c.speed_min = num(*j, "speed_min", 0, ctx, err) * unit;
     if (mem(*j, "width_min")) c.width_min = num(*j, "width_min", 0, ctx, err);
     if (mem(*j, "width_max")) c.width_max = num(*j, "width_max", 0, ctx, err);
-    if (mem(*j, "lanes_min")) c.lanes_min = static_cast<int>(num(*j, "lanes_min", 0, ctx, err));
-    if (mem(*j, "lanes_max")) c.lanes_max = static_cast<int>(num(*j, "lanes_max", 0, ctx, err));
+    if (mem(*j, "lanes_min")) c.lanes_min = int_num(*j, "lanes_min", 0, 0, 64, ctx, err);
+    if (mem(*j, "lanes_max")) c.lanes_max = int_num(*j, "lanes_max", 0, 0, 64, ctx, err);
     if (mem(*j, "shoulder")) c.shoulder = flag(*j, "shoulder", false, ctx, err);
     if (mem(*j, "one_way")) c.one_way = flag(*j, "one_way", false, ctx, err);
     return c;
@@ -456,7 +503,7 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
     for (auto it = ss->begin(); it != ss->end(); ++it) {
         if (!it.key().empty() && it.key()[0] == '_') continue;
         const std::string sctx = "set \"" + it.key() + "\"";
-        check_keys(it.value(), {"boundaries", "bays"}, sctx, err);
+        check_keys(it.value(), {"boundaries", "bays", "give_way_triangle"}, sctx, err);
         if (err.failed()) return;
         RuleSet rs;
         rs.id = it.key();
@@ -528,6 +575,13 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
                     rs.bays.push_back(std::move(br));
                 }
         }
+        if (const json* gt = mem(it.value(), "give_way_triangle")) {
+            if (!gt->is_string()) err.set(sctx + ": give_way_triangle must be a string");
+            else if (gt->get<std::string>() == "always") rs.give_way_triangle = TriangleMode::Always;
+            else if (gt->get<std::string>() == "never") rs.give_way_triangle = TriangleMode::Never;
+            else if (gt->get<std::string>() == "conditional") rs.give_way_triangle = TriangleMode::Conditional;
+            else err.set(sctx + ": give_way_triangle must be always, never or conditional");
+        }
         if (err.failed()) return;
         r.sets.emplace(rs.id, std::move(rs));
     }
@@ -536,23 +590,40 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
 void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
     const json* jn = mem(root, "junction");
     if (!jn) return;
-    check_keys(*jn, {"give_way", "stop_line", "zebra", "roundabout_entry", "gore", "arrows"}, "junction", err);
+    check_keys(*jn, {"give_way", "stop_line", "zebra", "roundabout_entry", "gore", "arrows", "mouth_edge", "splitter"}, "junction", err);
     if (err.failed()) return;
     if (const json* g = mem(*jn, "give_way")) {
-        check_keys(*g, {"style", "setback_m", "line_gap_m", "triangle", "source"}, "give_way", err);
+        check_keys(*g, {"style", "setback_m", "line_gap_m", "triangle", "equal_class", "equal_class_max_deviation_deg", "source"}, "give_way", err);
+        {
+            const std::string eq = str(*g, "equal_class", "straightest_pair_has_priority", "give_way", err);
+            if (eq == "straightest_pair_has_priority") r.give_way.equal_class_straight_pair = true;
+            else if (eq == "none") r.give_way.equal_class_straight_pair = false;
+            else err.set("give_way: equal_class must be straightest_pair_has_priority or none");
+            r.give_way.equal_class_max_deviation_deg = num(*g, "equal_class_max_deviation_deg", 30, "give_way", err);
+        }
         r.give_way.enabled = true;
         r.give_way.style = parse_style_sel(mem(*g, "style"), unit, "give_way", err);
         r.give_way.setback_m = num(*g, "setback_m", 0.5, "give_way", err);
         r.give_way.line_gap_m = num(*g, "line_gap_m", 0.3, "give_way", err);
         r.give_way.source = str(*g, "source", "", "give_way", err);
         if (const json* t = mem(*g, "triangle")) {
-            check_keys(*t, {"style", "gap_from_line_m", "base_m", "height_m", "stroke_m"}, "give_way triangle", err);
+            check_keys(*t, {"style", "mode", "major_speed_at_least", "major_class_at_least", "gap_from_line_m", "base_m", "height_m", "stroke_m"}, "give_way triangle", err);
             r.give_way.triangle = true;
             r.give_way.triangle_style = str(*t, "style", "", "give_way triangle", err);
             r.give_way.triangle_gap_m = num(*t, "gap_from_line_m", 1.0, "give_way triangle", err);
             r.give_way.triangle_base_m = num(*t, "base_m", 1.8, "give_way triangle", err);
             r.give_way.triangle_height_m = num(*t, "height_m", 3.0, "give_way triangle", err);
             r.give_way.triangle_stroke_m = num(*t, "stroke_m", 0.2, "give_way triangle", err);
+            const std::string mode = str(*t, "mode", "always", "give_way triangle", err);
+            if (mode == "always") r.give_way.triangle_mode = TriangleMode::Always;
+            else if (mode == "never") r.give_way.triangle_mode = TriangleMode::Never;
+            else if (mode == "conditional") r.give_way.triangle_mode = TriangleMode::Conditional;
+            else err.set("give_way triangle: mode must be always, never or conditional");
+            if (mem(*t, "major_speed_at_least")) r.give_way.triangle_major_speed_min = num(*t, "major_speed_at_least", 0, "give_way triangle", err) * unit;
+            if (mem(*t, "major_class_at_least")) r.give_way.triangle_major_class_min = int_num(*t, "major_class_at_least", 0, 0, 100000, "give_way triangle", err);
+            if (r.give_way.triangle_mode == TriangleMode::Conditional && !r.give_way.triangle_major_speed_min &&
+                !r.give_way.triangle_major_class_min)
+                err.set("give_way triangle: conditional needs major_speed_at_least or major_class_at_least");
         }
     }
     if (const json* g = mem(*jn, "stop_line")) {
@@ -564,11 +635,10 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         r.stop_line.source = str(*g, "source", "", "stop_line", err);
     }
     if (const json* g = mem(*jn, "zebra")) {
-        check_keys(*g, {"if", "style", "stripe_width_m", "gap_m", "band_width_m", "clear_m", "give_way_style",
+        check_keys(*g, {"style", "stripe_width_m", "gap_m", "band_width_m", "clear_m", "give_way_style",
                         "give_way_gap_m", "min_start_gap_m", "source"}, "zebra", err);
         ZebraRule& z = r.zebra;
         z.enabled = true;
-        z.when = parse_cond(mem(*g, "if"), unit, "zebra", err);
         z.style = str(*g, "style", "", "zebra", err);
         z.stripe_width_m = num(*g, "stripe_width_m", 0.5, "zebra", err);
         z.gap_m = num(*g, "gap_m", 0.6, "zebra", err);
@@ -622,11 +692,34 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         z.source = str(*g, "source", "", "gore", err);
         if (!(z.stripe_width_m > 0) || !(z.pitch_m > z.stripe_width_m)) err.set("gore: need 0 < stripe_width_m < pitch_m");
     }
+    if (const json* g = mem(*jn, "mouth_edge")) {
+        check_keys(*g, {"style", "max_deviation_deg", "source"}, "mouth_edge", err);
+        r.mouth_edge.enabled = true;
+        r.mouth_edge.style = parse_style_sel(mem(*g, "style"), unit, "mouth_edge", err);
+        r.mouth_edge.max_deviation_deg = num(*g, "max_deviation_deg", 30, "mouth_edge", err);
+        r.mouth_edge.source = str(*g, "source", "", "mouth_edge", err);
+    }
+    if (const json* g = mem(*jn, "splitter")) {
+        check_keys(*g, {"outline_style", "outline_gap_m", "hatch_style", "hatch_length_m", "hatch_width_m", "stripe_width_m", "pitch_m",
+                        "angle_deg", "source"}, "splitter", err);
+        SplitterRule& s = r.splitter;
+        s.enabled = true;
+        s.outline_style = parse_style_sel(mem(*g, "outline_style"), unit, "splitter", err);
+        s.outline_gap_m = num(*g, "outline_gap_m", 0.15, "splitter", err);
+        s.hatch_style = str(*g, "hatch_style", "", "splitter", err);
+        s.hatch_length_m = num(*g, "hatch_length_m", 12, "splitter", err);
+        s.hatch_width_m = num(*g, "hatch_width_m", 1.4, "splitter", err);
+        s.stripe_width_m = num(*g, "stripe_width_m", 0.3, "splitter", err);
+        s.pitch_m = num(*g, "pitch_m", 1.0, "splitter", err);
+        s.angle_deg = num(*g, "angle_deg", 60, "splitter", err);
+        s.source = str(*g, "source", "", "splitter", err);
+        if (!(s.pitch_m > s.stripe_width_m) || !(s.stripe_width_m > 0)) err.set("splitter: need 0 < stripe_width_m < pitch_m");
+    }
     if (const json* g = mem(*jn, "arrows")) {
         check_keys(*g, {"min_inbound_lanes", "distances_m", "length_m", "width_m", "style", "glyphs", "source"}, "arrows", err);
         ArrowRule& a = r.arrows;
         a.enabled = true;
-        a.min_inbound_lanes = static_cast<int>(num(*g, "min_inbound_lanes", 2, "arrows", err));
+        a.min_inbound_lanes = int_num(*g, "min_inbound_lanes", 2, 0, 64, "arrows", err);
         a.length_m = parse_value_sel(mem(*g, "length_m"), unit, "arrows", err);
         a.width_m = num(*g, "width_m", 1.0, "arrows", err);
         a.style = str(*g, "style", "", "arrows", err);
@@ -715,6 +808,9 @@ void validate(const MarkingRules& r, Err& err) {
     need_sel(r.gore.border_style, "gore border_style");
     need_sel(r.gore.edge_style, "gore edge_style");
     need(r.arrows.style, "arrows");
+    need_sel(r.mouth_edge.style, "mouth_edge");
+    need_sel(r.splitter.outline_style, "splitter outline");
+    need(r.splitter.hatch_style, "splitter hatch");
     if (r.give_way.enabled && r.give_way.triangle && r.give_way.triangle_style.empty()) err.set("give_way triangle: missing style");
     if (r.stop_line.enabled && r.stop_line.style.empty()) err.set("stop_line: missing style");
     if (r.zebra.enabled && r.zebra.style.empty()) err.set("zebra: missing style");
@@ -733,9 +829,10 @@ Loaded<MarkingRules> parse_marking_rules(const std::string& text) {
         return out;
     }
     MarkingRules r;
-    check_keys(root, {"version", "speed_unit", "min_mark_m", "colours", "styles", "sets", "junction"}, "marking rules", err);
-    r.version = static_cast<int>(num(root, "version", 0, "marking rules", err));
-    r.speed_unit = str(root, "speed_unit", "mph", "marking rules", err);
+    check_keys(root, {"version", "speed_unit", "min_mark_m", "shoulder_lane_types", "colours", "styles", "sets", "junction", "wear"}, "marking rules", err);
+    r.version = int_num(root, "version", 0, 0, 1000000, "marking rules", err);
+    r.speed_unit = str(root, "speed_unit", "", "marking rules", err);
+    if (r.speed_unit.empty()) err.set("marking rules: missing \"speed_unit\" (mph, kph or ms)");
     const double unit = unit_to_ms(r.speed_unit, err);
     r.min_mark_m = num(root, "min_mark_m", 0.3, "marking rules", err);
     if (const json* cs = mem(root, "colours")) {
@@ -755,6 +852,26 @@ Loaded<MarkingRules> parse_marking_rules(const std::string& text) {
             }
     } else {
         err.set("marking rules: missing \"colours\"");
+    }
+    if (const json* w = mem(root, "wear")) {
+        check_keys(*w, {"strength", "patch_period_m", "patch_weight", "wheel_boost", "wheel_offset_m", "wheel_half_width_m", "source"}, "wear", err);
+        WearRule& wr = r.wear;
+        wr.strength = num(*w, "strength", 0.3, "wear", err);
+        wr.patch_period_m = num(*w, "patch_period_m", 60, "wear", err);
+        wr.patch_weight = num(*w, "patch_weight", 0.5, "wear", err);
+        wr.wheel_boost = num(*w, "wheel_boost", 0.35, "wear", err);
+        wr.wheel_offset_m = num(*w, "wheel_offset_m", 0.8, "wear", err);
+        wr.wheel_half_width_m = num(*w, "wheel_half_width_m", 0.25, "wear", err);
+        wr.source = str(*w, "source", "", "wear", err);
+        if (!(wr.patch_period_m > 0) || wr.strength < 0 || wr.strength > 1) err.set("wear: need patch_period_m > 0 and 0 <= strength <= 1");
+    }
+    if (const json* sh = mem(root, "shoulder_lane_types")) {
+        if (!sh->is_array()) err.set("marking rules: shoulder_lane_types must be a list");
+        else
+            for (const json& v : *sh) {
+                if (!v.is_string()) err.set("marking rules: shoulder_lane_types entries must be strings");
+                else r.shoulder_lane_types.push_back(v.get<std::string>());
+            }
     }
     if (!err.failed()) parse_styles(root, r, err);
     if (!err.failed()) parse_sets(root, unit, r, err);
@@ -840,7 +957,8 @@ std::vector<Vec3> offset_points(const std::vector<Vec3>& in, double shift) {
 }
 
 // Stroke strip ring around a centreline: right side forward, then left side backward (CCW).
-bool stroke_ring(const std::vector<Vec3>& in, double width, std::vector<Vec3>& ring) {
+bool stroke_ring(const std::vector<Vec3>& in, double width, std::vector<Vec3>& ring,
+                 const std::function<double(std::size_t, double)>* zf = nullptr) {
     const std::vector<Vec3> c = dedupe(in);
     ring.clear();
     if (c.size() < 2) return false;
@@ -848,19 +966,46 @@ bool stroke_ring(const std::vector<Vec3>& in, double width, std::vector<Vec3>& r
     std::vector<double> m;
     polyline_normals(c, n, m);
     const double hw = width / 2;
-    for (std::size_t i = 0; i < c.size(); ++i) ring.push_back({c[i].x - n[i].x * hw * m[i], c[i].y - n[i].y * hw * m[i], c[i].z});
-    for (std::size_t i = c.size(); i-- > 0;) ring.push_back({c[i].x + n[i].x * hw * m[i], c[i].y + n[i].y * hw * m[i], c[i].z});
+    for (std::size_t i = 0; i < c.size(); ++i)
+        ring.push_back({c[i].x - n[i].x * hw * m[i], c[i].y - n[i].y * hw * m[i], zf ? (*zf)(i, -1.0) : c[i].z});
+    for (std::size_t i = c.size(); i-- > 0;)
+        ring.push_back({c[i].x + n[i].x * hw * m[i], c[i].y + n[i].y * hw * m[i], zf ? (*zf)(i, 1.0) : c[i].z});
     return true;
+}
+
+// Deterministic hashing for the wear value (no std distributions: identical on every library).
+std::uint64_t mix64(std::uint64_t z) {
+    z += 0x9E3779B97F4A7C15ull;
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    return z ^ (z >> 31);
+}
+double hash01(std::uint64_t z) { return static_cast<double>(mix64(z) >> 11) * (1.0 / 9007199254740992.0); }
+
+// Smooth 2D value noise in [0, 1] with unit lattice spacing.
+double value_noise(double x, double y, std::uint64_t seed) {
+    const double fx = std::floor(x), fy = std::floor(y);
+    const double tx = x - fx, ty = y - fy;
+    const double sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    auto corner = [&](double cx, double cy) {
+        return hash01(seed ^ mix64(static_cast<std::uint64_t>(static_cast<std::int64_t>(cx)) * 0x9E3779B1ull) ^
+                      mix64(static_cast<std::uint64_t>(static_cast<std::int64_t>(cy)) + 0x7F4A7C15ull));
+    };
+    const double a = corner(fx, fy), b = corner(fx + 1, fy), c = corner(fx, fy + 1), d = corner(fx + 1, fy + 1);
+    return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
 }
 
 // Collects marks into a MarkingSet, interning ids and dropping degenerate polygons.
 struct Builder {
     MarkingSet& out;
     const MarkingRules& rules;
+    const MarkingParams& params;
     EdgeId edge;
     NodeId node;
 
-    void add(MarkingCategory cat, const std::string& style, std::vector<Vec3>& ring, bool strip, int lane = -1) {
+    // wheel: 0..1, how much of the mark lies in the wheel tracks (transverse lines, arrows).
+    void add(MarkingCategory cat, const std::string& style, std::vector<Vec3>& ring, bool strip, int lane = -1,
+             double wheel = 0) {
         if (ring.size() < 3) return;
         for (const Vec3& p : ring)
             if (!finite3(p)) return;
@@ -879,6 +1024,20 @@ struct Builder {
         m.edge = edge;
         m.node = node;
         m.lane = lane;
+        // Wear: per-mark noise + low-frequency patchiness, both from the position and the ids only.
+        const WearRule& w = rules.wear;
+        double cx = 0, cy = 0;
+        for (const Vec3& p : ring) cx += p.x, cy += p.y;
+        cx /= static_cast<double>(ring.size());
+        cy /= static_cast<double>(ring.size());
+        const std::uint64_t seed = mix64(edge.value * 0x9E3779B97F4A7C15ull + node.value * 0xC2B2AE3D27D4EB4Full + 17);
+        const std::uint64_t qx = static_cast<std::uint64_t>(static_cast<std::int64_t>(std::llround(cx * 100)));
+        const std::uint64_t qy = static_cast<std::uint64_t>(static_cast<std::int64_t>(std::llround(cy * 100)));
+        const double per_mark = hash01(seed ^ mix64(qx) ^ mix64(qy * 31 + 7));
+        const double patch = value_noise(cx / w.patch_period_m, cy / w.patch_period_m, 0x51ED270Bull);
+        double wear = w.strength * 2 * ((1 - w.patch_weight) * per_mark + w.patch_weight * patch);
+        wear += w.wheel_boost * std::clamp(wheel, 0.0, 1.0);
+        m.wear = static_cast<float>(std::clamp(wear, 0.0, 1.0));
         out.vertices.insert(out.vertices.end(), ring.begin(), ring.end());
         out.marks.push_back(m);
     }
@@ -890,6 +1049,7 @@ struct LinePoly {
     std::vector<double> s, cum;
     std::vector<Vec2> xy;
     std::vector<FoldRange> folds;
+    double lateral = 0;  // offset of this line from the edge centreline (+ left of a -> b)
     bool valid() const { return xy.size() >= 2; }
     double total() const { return cum.empty() ? 0 : cum.back(); }
 
@@ -926,6 +1086,7 @@ LinePoly make_line_poly(const Edge& e, double lateral, const SamplingParams& sp)
     LinePoly lp;
     const OffsetPolyline op = sample_offset(e, lateral, sp);
     lp.folds = op.folds;
+    lp.lateral = lateral;
     double acc = 0;
     for (const EdgeSample& smp : op.samples) {
         const Vec2 p = smp.pos.xy();
@@ -943,12 +1104,20 @@ LinePoly make_line_poly(const Edge& e, double lateral, const SamplingParams& sp)
 
 // Points of the offset line between plan lengths [l0, l1], z from the vertical profile at the true
 // centreline arc length; extra points keep the vertical chord error under `tol`.
-std::vector<Vec3> slice_points(const Edge& e, const LinePoly& lp, double l0, double l1, double tol) {
+// Road surface z of an edge at (s, lateral): the callback when supplied, else the centreline profile.
+double edge_surface_z(const MarkingParams& p, const Edge& e, double s, double lateral) {
+    const double z = e.vertical.z(s);
+    return p.surface_height ? p.surface_height(e.id, s, lateral, z) : z;
+}
+
+std::vector<Vec3> slice_points(const Edge& e, const LinePoly& lp, double l0, double l1, const MarkingParams& params,
+                               std::vector<double>* s_out = nullptr) {
+    const double tol = params.chord_tolerance;
     std::vector<double> ls{l0};
     for (double c : lp.cum)
         if (c > l0 + 1e-6 && c < l1 - 1e-6) ls.push_back(c);
     ls.push_back(l1);
-    auto z_at = [&](double l) { return e.vertical.z(lp.s_of_len(l)); };
+    auto z_at = [&](double l) { return edge_surface_z(params, e, lp.s_of_len(l), lp.lateral); };
     int budget = 4096;
     for (std::size_t i = 0; i + 1 < ls.size();) {
         const double a = ls[i], b = ls[i + 1];
@@ -967,6 +1136,7 @@ std::vector<Vec3> slice_points(const Edge& e, const LinePoly& lp, double l0, dou
     for (double l : ls) {
         const Vec2 p = lp.xy_at_len(l);
         pts.push_back({p.x, p.y, z_at(l)});
+        if (s_out) s_out->push_back(lp.s_of_len(l));
     }
     return pts;
 }
@@ -975,22 +1145,6 @@ struct Interval {
     double a = 0, b = 0;
 };
 
-std::vector<Interval> subtract(const std::vector<Interval>& in, const std::vector<FoldRange>& holes) {
-    std::vector<Interval> cur = in;
-    for (const FoldRange& h : holes) {
-        std::vector<Interval> next;
-        for (const Interval& iv : cur) {
-            if (h.s1 <= iv.a || h.s0 >= iv.b) {
-                next.push_back(iv);
-                continue;
-            }
-            if (h.s0 > iv.a) next.push_back({iv.a, h.s0});
-            if (h.s1 < iv.b) next.push_back({h.s1, iv.b});
-        }
-        cur = std::move(next);
-    }
-    return cur;
-}
 
 double strand_depth(const LineStyle& st, double& env_min) {
     double lo = 1e9, hi = -1e9;
@@ -1005,15 +1159,16 @@ double strand_depth(const LineStyle& st, double& env_min) {
 
 // ---- contexts
 
-MarkCtx make_ctx(const Edge& e, const RoadType& rt, const std::vector<Lane>& lanes, const RegionPack& region) {
+MarkCtx make_ctx(const Edge& e, const RoadType& rt, const std::vector<Lane>& lanes, const MarkingRules& rules) {
     MarkCtx c;
     c.speed = rt.speed_limit;
     for (const Lane& l : lanes) {
         if (l.dir != TravelDir::None) {
             c.width += l.width;
             ++c.lanes;
-        } else if (const LaneType* lt = region.lane_type(l.lane_type)) {
-            if (lt->users.empty() && !lt->may_park && lt->surface == "asphalt") c.shoulder = true;
+        } else if (std::find(rules.shoulder_lane_types.begin(), rules.shoulder_lane_types.end(), l.lane_type) !=
+                   rules.shoulder_lane_types.end()) {
+            c.shoulder = true;
         }
     }
     c.one_way = e.one_way || rt.dual || !rt.two_way;
@@ -1035,6 +1190,33 @@ double trim_of(const Junction& j, int arm) {
     return j.trims.size() == j.arms.size() ? j.trims[static_cast<std::size_t>(arm)] : 0.0;
 }
 
+// Arms that have priority at a junction: the highest road class (width breaks ties) from collect_arms'
+// major_arms; when every arm ties, the straightest pair is the through route (rules.give_way), unless
+// it is too bent to count (a symmetric Y stays unmarked) -- then all arms keep priority.
+std::vector<int> priority_arms(const Junction& j, const MarkingRules& rules) {
+    std::vector<int> prio = j.major_arms;
+    const std::size_t n = j.arms.size();
+    if (prio.size() < n || n < 3 || !rules.give_way.equal_class_straight_pair) return prio;
+    double best = 1e9;
+    int bi = -1, bk = -1;
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t k = i + 1; k < n; ++k) {
+            const double sep = std::fabs(wrap_angle(j.arms[i].heading_out - j.arms[k].heading_out));
+            const double dev = (kPi - sep) * 180 / kPi;
+            // Ties (a perfect cross) go to the pair with the smallest edge id: deterministic.
+            const bool tie = std::fabs(dev - best) < 1.0;
+            const std::uint64_t id_new = std::min(j.arms[i].edge.value, j.arms[k].edge.value);
+            const std::uint64_t id_old = bi < 0 ? 0 : std::min(j.arms[static_cast<std::size_t>(bi)].edge.value, j.arms[static_cast<std::size_t>(bk)].edge.value);
+            if (dev < best - 1.0 || (tie && id_new < id_old)) {
+                best = std::min(best, dev);
+                bi = static_cast<int>(i);
+                bk = static_cast<int>(k);
+            }
+        }
+    if (bi < 0 || best > rules.give_way.equal_class_max_deviation_deg) return prio;
+    return {bi, bk};
+}
+
 // ---- per-arm transverse marking layout, shared by the edge and the junction generators
 
 struct ArmLayout {
@@ -1045,6 +1227,7 @@ struct ArmLayout {
     double zs0 = 0, zs1 = 0;            // stripe band, distance from the node
     double zline_far = 0, zline_near = -1;  // zebra give way lines: near edge distance (<0: none)
     double clear = 0;                    // longitudinal lines stop this far from the node
+    bool triangle = false;               // paint a give-way triangle in each inbound lane
     MarkCtx ctx;
 };
 
@@ -1052,6 +1235,14 @@ std::vector<ArmLayout> compute_arm_layout(const RoadGraph& g, const RegionPack& 
                                           const Junction& j, const MarkingParams& params) {
     std::vector<ArmLayout> out(j.arms.size());
     const bool priority_class = j.cls == NodeClass::Junction && j.arms.size() >= 3;
+    const std::vector<int> prio = priority_arms(j, rules);
+    double major_speed = 0;
+    int major_class = 0;
+    for (int pi : prio) {
+        const Edge* me = g.edge(j.arms[static_cast<std::size_t>(pi)].edge);
+        const RoadType* mt = me ? region.road_type(me->road_type) : nullptr;
+        if (mt) major_speed = std::max(major_speed, mt->speed_limit), major_class = std::max(major_class, mt->road_class);
+    }
     std::set<int> gw_entries;
     if (params.use_roundabout_give_way)
         for (const GiveWay& gw : params.roundabout_give_way)
@@ -1064,7 +1255,7 @@ std::vector<ArmLayout> compute_arm_layout(const RoadGraph& g, const RegionPack& 
         const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
         L.clear = trim_of(j, static_cast<int>(i));
         if (!rt || !priority_class) continue;
-        L.ctx = make_ctx(*e, *rt, instantiate_lanes(*e, *rt, region.driving_side), region);
+        L.ctx = make_ctx(*e, *rt, instantiate_lanes(*e, *rt, region.driving_side), rules);
         const bool ring = rt->roundabout_ring;
         const double trim = L.clear;
         if (arm.inbound_count() > 0 && !ring) {
@@ -1080,11 +1271,18 @@ std::vector<ArmLayout> compute_arm_layout(const RoadGraph& g, const RegionPack& 
                 L.stop = true;
                 L.style = &rules.stop_line.style;
                 L.line_s0 = trim + rules.stop_line.setback_m;
-            } else if (rules.give_way.enabled && j.major_arms.size() < j.arms.size() &&
-                       std::find(j.major_arms.begin(), j.major_arms.end(), static_cast<int>(i)) == j.major_arms.end()) {
+            } else if (rules.give_way.enabled && prio.size() < j.arms.size() &&
+                       std::find(prio.begin(), prio.end(), static_cast<int>(i)) == prio.end()) {
                 L.style = select_style(rules.give_way.style, L.ctx);
                 if (L.style) {
                     L.give_way = true;
+                    TriangleMode mode = rules.give_way.triangle_mode;
+                    if (const RuleSet* rs = rules.set(rt->markings); rs && rs->give_way_triangle) mode = *rs->give_way_triangle;
+                    const GiveWayRule& gw = rules.give_way;
+                    L.triangle = gw.triangle && (mode == TriangleMode::Always ||
+                                 (mode == TriangleMode::Conditional &&
+                                  ((gw.triangle_major_speed_min && major_speed >= *gw.triangle_major_speed_min - 1e-6) ||
+                                   (gw.triangle_major_class_min && major_class >= *gw.triangle_major_class_min))));
                     L.line_s0 = trim + rules.give_way.setback_m;
                 }
             }
@@ -1133,16 +1331,41 @@ std::vector<ArmLayout> compute_arm_layout(const RoadGraph& g, const RegionPack& 
 
 using SL = std::pair<double, double>;  // (s, lateral)
 
-std::vector<Vec3> arm_ring(const JunctionArm& arm, const std::vector<SL>& pts) {
+// Road surface z at an arm point: the callback (edge-frame s and lateral) when supplied, else the centreline z.
+double arm_surface_z(const MarkingParams& p, const JunctionArm& arm, double s, double lat, double centre_z) {
+    if (!p.surface_height) return centre_z;
+    const double es = arm.at_a ? s : arm.edge_length - s;
+    const double el = arm.at_a ? lat : -lat;
+    return p.surface_height(arm.edge, es, el, centre_z);
+}
+
+std::vector<Vec3> arm_ring(const Builder& b, const JunctionArm& arm, const std::vector<SL>& pts) {
     std::vector<Vec3> r;
-    for (const SL& p : pts) r.push_back(arm_point(arm, p.first, p.second).pos);
+    for (const SL& p : pts) {
+        Vec3 q = arm_point(arm, p.first, p.second).pos;
+        q.z = arm_surface_z(b.params, arm, p.first, p.second, q.z);
+        r.push_back(q);
+    }
     return r;
+}
+
+// How much of lateral range [l0, l1] lies in the wheel tracks of the arm's inbound lanes (0 or 1).
+double wheel_overlap(const MarkingRules& rules, const JunctionArm& arm, double l0, double l1) {
+    const WearRule& w = rules.wear;
+    for (const LaneRef& l : arm.lanes) {
+        if (!l.inbound) continue;
+        for (double sgn : {-1.0, 1.0}) {
+            const double c = l.lateral + sgn * w.wheel_offset_m;
+            if (l1 >= c - w.wheel_half_width_m && l0 <= c + w.wheel_half_width_m) return 1.0;
+        }
+    }
+    return 0.0;
 }
 
 void emit_arm_quad(Builder& b, MarkingCategory cat, const std::string& style, const JunctionArm& arm, double s0, double s1,
                    double l0, double l1) {
-    std::vector<Vec3> r = arm_ring(arm, {{s0, l0}, {s1, l0}, {s1, l1}, {s0, l1}});
-    b.add(cat, style, r, false);
+    std::vector<Vec3> r = arm_ring(b, arm, {{s0, l0}, {s1, l0}, {s1, l1}, {s0, l1}});
+    b.add(cat, style, r, false, -1, wheel_overlap(b.rules, arm, l0, l1));
 }
 
 // A transverse line across lateral [lo, hi] whose near edge (closest to the node) is at s_near.
@@ -1155,7 +1378,7 @@ void emit_transverse(Builder& b, const MarkingRules& rules, MarkingCategory cat,
     const double min_mark = st->min_mark > 0 ? st->min_mark : rules.min_mark_m;
     for (const Strand& sd : st->strands) {
         const double c = s_near - envmin + sd.offset;
-        for (const DashSpan& d : layout_dashes(hi - lo, sd.mark, sd.gap, min_mark))
+        for (const DashSpan& d : layout_flush(hi - lo, sd.mark, sd.gap, min_mark))
             emit_arm_quad(b, cat, style_id, arm, c - sd.width / 2, c + sd.width / 2, lo + d.s0, lo + d.s1);
     }
 }
@@ -1211,9 +1434,200 @@ bool type_matches(const std::string& spec, const std::string& type) {
 }
 
 struct StyleSeg {
-    double a, b;
+    double a, b;  // chain coordinate S (centreline length along the chain's usable range)
     const std::string* style;
 };
+
+struct BoundaryLine {
+    int k = 0;  // boundary index (0 = left of the leftmost lane)
+    const BoundaryRule* rule = nullptr;
+    double lateral = 0;  // line centre in the edge frame (inset applied)
+};
+
+const BoundaryRule* match_boundary(const RuleSet& rs, const Lane* l, const Lane* r) {
+    const std::string lt = l ? l->lane_type : "", rtn = r ? r->lane_type : "";
+    BoundaryRule::Relation rel = BoundaryRule::Relation::Any;
+    bool related = false;
+    if (l && r && l->dir != TravelDir::None && r->dir != TravelDir::None) {
+        related = true;
+        rel = l->dir == r->dir ? BoundaryRule::Relation::Same : BoundaryRule::Relation::Opposing;
+    }
+    for (const BoundaryRule& br : rs.boundaries) {
+        if (br.relation != BoundaryRule::Relation::Any && (!related || br.relation != rel)) continue;
+        const bool fwd = type_matches(br.lane_left, lt) && type_matches(br.lane_right, rtn);
+        const bool rev = type_matches(br.lane_left, rtn) && type_matches(br.lane_right, lt);
+        if (fwd || rev) return &br;
+    }
+    return nullptr;
+}
+
+// Every lane boundary that has a marking rule, with the line's lateral position.
+std::vector<BoundaryLine> edge_boundaries(const std::vector<Lane>& lanes, const RuleSet& rs) {
+    std::vector<BoundaryLine> out;
+    const int n = static_cast<int>(lanes.size());
+    for (int k = 0; k <= n; ++k) {
+        const Lane* left = k > 0 ? &lanes[static_cast<std::size_t>(k - 1)] : nullptr;
+        const Lane* right = k < n ? &lanes[static_cast<std::size_t>(k)] : nullptr;
+        const BoundaryRule* br = match_boundary(rs, left, right);
+        if (!br) continue;
+        double lat = right ? right->offset + right->width / 2 : left->offset - left->width / 2;
+        const bool left_drives = left && left->dir != TravelDir::None, right_drives = right && right->dir != TravelDir::None;
+        if (left_drives && !right_drives) lat += br->inset_m;
+        else if (right_drives && !left_drives) lat -= br->inset_m;
+        out.push_back({k, br, lat});
+    }
+    return out;
+}
+
+// What one end of an edge asks of its longitudinal lines.
+struct EndInfo {
+    double clear = 0;        // lines stop this far from the node
+    bool junction = false;   // a real junction (3+ arms): bay keep-out applies
+    bool approach = false;   // warning-line zone applies
+};
+
+EndInfo end_info(const RoadGraph& graph, const RegionPack& region, const MarkingRules& rules, const JunctionSet& js,
+                 const Edge& e, bool at_a, const RoadType& rt, const MarkingParams& params) {
+    EndInfo info;
+    const EndRef ref = find_end(js, e, at_a);
+    if (!ref.j) return info;
+    const std::vector<ArmLayout> lay = compute_arm_layout(graph, region, rules, *ref.j, params);
+    info.clear = lay.empty() ? 0 : lay[static_cast<std::size_t>(ref.arm)].clear;
+    info.clear = std::max(info.clear, trim_of(*ref.j, ref.arm));
+    info.junction = ref.j->arms.size() >= 3;
+    info.approach = ref.j->cls == NodeClass::Junction && info.junction && !rt.roundabout_ring;
+    return info;
+}
+
+// ---- chains: edges joined by plain 2-edge nodes that continue the same boundary lines, so dash phase
+// carries across the joint (and closes evenly round a ring)
+
+struct ChainEl {
+    const Edge* e = nullptr;
+    bool flip = false;  // chain direction runs b -> a
+    double lo = 0, hi = 0;  // usable s range in the edge's own coordinates
+    double S = 0;           // chain coordinate of the element's start
+    double len() const { return hi - lo; }
+};
+
+struct Chain {
+    std::vector<ChainEl> els;
+    std::size_t self = 0;
+    bool closed = false;
+    bool approach_start = false, approach_end = false;
+    double total = 0;
+};
+
+bool directional(const Edge& e, const RoadType& rt) { return e.one_way || rt.dual || !rt.two_way; }
+
+const Edge* chain_neighbour(const RoadGraph& g, const Edge& cur, NodeId node) {
+    if (cur.a == cur.b) return nullptr;
+    const std::vector<EdgeId> es = g.edges_at(node);
+    if (es.size() != 2) return nullptr;
+    const EdgeId other = es[0] == cur.id ? es[1] : es[0];
+    const Edge* o = g.edge(other);
+    if (!o || o->a == o->b || o->id == cur.id) return nullptr;
+    if (o->road_type != cur.road_type || o->one_way != cur.one_way) return nullptr;
+    return o;
+}
+
+Chain build_chain(const RoadGraph& graph, const RegionPack& region, const MarkingRules& rules, const JunctionSet& js,
+                  const Edge& self, const RoadType& rt, const MarkingParams& params) {
+    Chain c;
+    const bool dir = directional(self, rt);
+    c.els.push_back({&self, false, 0, 0, 0});
+    // Forward from self.b.
+    NodeId node = self.b;
+    const Edge* cur = &self;
+    bool curflip = false;
+    for (int guard = 0; guard < 100000; ++guard) {
+        const Edge* o = chain_neighbour(graph, *cur, node);
+        if (!o) break;
+        if (o->id == self.id) {
+            c.closed = true;
+            break;
+        }
+        const bool f = o->a != node;
+        if (dir && f != curflip) break;
+        c.els.push_back({o, f, 0, 0, 0});
+        node = f ? o->a : o->b;
+        cur = o;
+        curflip = f;
+    }
+    if (!c.closed) {
+        node = self.a;
+        cur = &self;
+        curflip = false;
+        for (int guard = 0; guard < 100000; ++guard) {
+            const Edge* o = chain_neighbour(graph, *cur, node);
+            if (!o || o->id == self.id) break;
+            const bool f = o->b != node;
+            if (dir && f != curflip) break;
+            c.els.insert(c.els.begin(), ChainEl{o, f, 0, 0, 0});
+            node = f ? o->b : o->a;
+            cur = o;
+            curflip = f;
+        }
+    }
+    c.self = 0;
+    for (std::size_t i = 0; i < c.els.size(); ++i)
+        if (c.els[i].e->id == self.id) c.self = i;
+    if (c.closed) {  // canonical start: the smallest edge id, in its own a -> b direction
+        auto rotate_min_first = [&]() {
+            std::size_t m = 0;
+            for (std::size_t i = 1; i < c.els.size(); ++i)
+                if (c.els[i].e->id < c.els[m].e->id) m = i;
+            std::rotate(c.els.begin(), c.els.begin() + static_cast<std::ptrdiff_t>(m), c.els.end());
+        };
+        rotate_min_first();
+        if (c.els[0].flip) {
+            std::reverse(c.els.begin(), c.els.end());
+            for (ChainEl& el : c.els) el.flip = !el.flip;
+            rotate_min_first();
+        }
+        for (std::size_t i = 0; i < c.els.size(); ++i)
+            if (c.els[i].e->id == self.id) c.self = i;
+    }
+    // Usable ranges: only the two open ends of the chain are cleared.
+    double S = 0;
+    for (std::size_t i = 0; i < c.els.size(); ++i) {
+        ChainEl& el = c.els[i];
+        const double L = el.e->horizontal.length();
+        double clear_start = 0, clear_end = 0;
+        if (!c.closed && i == 0) {
+            const EndInfo ei = end_info(graph, region, rules, js, *el.e, !el.flip, *region.road_type(el.e->road_type), params);
+            clear_start = ei.clear;
+            c.approach_start = ei.approach;
+        }
+        if (!c.closed && i + 1 == c.els.size()) {
+            const EndInfo ei = end_info(graph, region, rules, js, *el.e, el.flip, *region.road_type(el.e->road_type), params);
+            clear_end = ei.clear;
+            c.approach_end = ei.approach;
+        }
+        el.lo = el.flip ? clear_end : clear_start;
+        el.hi = L - (el.flip ? clear_start : clear_end);
+        if (el.hi < el.lo) el.hi = el.lo;
+        el.S = S;
+        S += el.len();
+    }
+    c.total = S;
+    return c;
+}
+
+// Whole-ring layout: n evenly spaced marks, none straddling the closure point.
+std::vector<DashSpan> layout_cyclic(double length, double mark, double gap) {
+    std::vector<DashSpan> out;
+    if (!(length > 0) || !(mark > 0) || gap <= 0) {
+        if (length > 0) out.push_back({0, length});
+        return out;
+    }
+    const double module = mark + gap;
+    if (length / module > 200000) return out;
+    const int n = std::max(1, static_cast<int>(std::floor(length / module + 0.5)));
+    const double m = length / n;
+    for (int i = 0; i < n; ++i) out.push_back({(i + 0.5) * m - mark / 2, (i + 0.5) * m + mark / 2});
+    return out;
+}
 
 struct EdgeGen {
     const RoadGraph& graph;
@@ -1227,70 +1641,61 @@ struct EdgeGen {
     MarkingSet& out;
     Builder b;
     SamplingParams sp;
-    std::map<long long, LinePoly> cache;
-    std::vector<EdgeSample> centre;
-    bool have_centre = false;
-    double lo = 0, hi = 0;
-    bool approach_a = false, approach_b = false, junction_a = false, junction_b = false;
+    std::map<std::pair<std::uint64_t, long long>, LinePoly> cache;
+    std::map<std::uint64_t, std::vector<EdgeSample>> centres;
+    Chain chain;
+    bool junction_a = false, junction_b = false;
 
-    const LinePoly& poly(double lateral) {
-        const long long key = std::llround(lateral * 1e6);
+    const LinePoly& poly(const Edge& ed, double lateral) {
+        const auto key = std::make_pair(ed.id.value, static_cast<long long>(std::llround(lateral * 1e6)));
         auto it = cache.find(key);
-        if (it == cache.end()) it = cache.emplace(key, make_line_poly(e, lateral, sp)).first;
+        if (it == cache.end()) it = cache.emplace(key, make_line_poly(ed, lateral, sp)).first;
         return it->second;
     }
-    const std::vector<EdgeSample>& centreline() {
-        if (!have_centre) {
-            centre = sample_centreline(e, sp);
-            have_centre = true;
-        }
-        return centre;
-    }
-
-    const BoundaryRule* match(const RuleSet& rs, const Lane* l, const Lane* r) const {
-        const std::string lt = l ? l->lane_type : "", rtn = r ? r->lane_type : "";
-        BoundaryRule::Relation rel = BoundaryRule::Relation::Any;
-        bool related = false;
-        if (l && r && l->dir != TravelDir::None && r->dir != TravelDir::None) {
-            related = true;
-            rel = l->dir == r->dir ? BoundaryRule::Relation::Same : BoundaryRule::Relation::Opposing;
-        }
-        for (const BoundaryRule& br : rs.boundaries) {
-            if (br.relation != BoundaryRule::Relation::Any && (!related || br.relation != rel)) continue;
-            const bool fwd = type_matches(br.lane_left, lt) && type_matches(br.lane_right, rtn);
-            const bool rev = type_matches(br.lane_left, rtn) && type_matches(br.lane_right, lt);
-            if (fwd || rev) return &br;
-        }
-        return nullptr;
+    const std::vector<EdgeSample>& centreline(const Edge& ed) {
+        auto it = centres.find(ed.id.value);
+        if (it == centres.end()) it = centres.emplace(ed.id.value, sample_centreline(ed, sp)).first;
+        return it->second;
     }
 
     std::vector<Interval> zone_intervals(const ZoneRule& z, const LineStyle* zone_style) {
         std::vector<Interval> iv;
+        const double T = chain.total;
         if (z.kind == ZoneRule::Kind::Approach) {
             double d = 0, marks = 0;
             select_value(z.distance_m, ctx, d);
             select_value(z.min_marks, ctx, marks);
             d = std::max(d, marks * (zone_style ? zone_style->module() : 0.0));
             if (d <= 0) return iv;
-            if (approach_a) iv.push_back({lo, std::min(lo + d, hi)});
-            if (approach_b) iv.push_back({std::max(hi - d, lo), hi});
+            if (chain.approach_start) iv.push_back({0, std::min(d, T)});
+            if (chain.approach_end) iv.push_back({std::max(T - d, 0.0), T});
         } else {
-            const std::vector<EdgeSample>& cl = centreline();
             std::vector<Interval> raw;
-            for (std::size_t i = 0; i + 1 < cl.size(); ++i)
-                if (std::fabs(cl[i].curvature) > z.min_curvature || std::fabs(cl[i + 1].curvature) > z.min_curvature) {
-                    if (!raw.empty() && cl[i].s - raw.back().b < 1e-6) raw.back().b = cl[i + 1].s;
-                    else raw.push_back({cl[i].s, cl[i + 1].s});
+            for (const ChainEl& el : chain.els) {
+                const std::vector<EdgeSample>& cl = centreline(*el.e);
+                for (std::size_t i = 0; i + 1 < cl.size(); ++i) {
+                    if (!(std::fabs(cl[i].curvature) > z.min_curvature || std::fabs(cl[i + 1].curvature) > z.min_curvature)) continue;
+                    const double a = std::clamp(cl[i].s, el.lo, el.hi), c = std::clamp(cl[i + 1].s, el.lo, el.hi);
+                    if (c - a <= 0) continue;
+                    // Edge s -> chain S.
+                    const double sa = el.flip ? el.S + (el.hi - c) : el.S + (a - el.lo);
+                    const double sb = el.flip ? el.S + (el.hi - a) : el.S + (c - el.lo);
+                    raw.push_back({sa, sb});
                 }
-            for (const Interval& r : raw) {
-                const Interval c{std::max(r.a, lo), std::min(r.b, hi)};
-                if (c.b - c.a >= std::max(z.min_length_m, 1e-3)) iv.push_back(c);
             }
+            std::sort(raw.begin(), raw.end(), [](const Interval& p, const Interval& q) { return p.a < q.a; });
+            std::vector<Interval> merged;
+            for (const Interval& r : raw) {
+                if (!merged.empty() && r.a - merged.back().b < 1e-6) merged.back().b = std::max(merged.back().b, r.b);
+                else merged.push_back(r);
+            }
+            for (const Interval& r : merged)
+                if (r.b - r.a >= std::max(z.min_length_m, 1e-3)) iv.push_back(r);
         }
         return iv;
     }
 
-    // Style segments of one boundary rule along [lo, hi].
+    // Style segments of one boundary rule along the chain [0, total].
     std::vector<StyleSeg> segments(const BoundaryRule& br) {
         const std::string* base = select_style(br.style, ctx);
         struct Z {
@@ -1298,7 +1703,7 @@ struct EdgeGen {
             const std::string* style;
         };
         std::vector<Z> zones;
-        std::vector<double> bp{lo, hi};
+        std::vector<double> bp{0.0, chain.total};
         for (const ZoneRule& z : br.zones) {
             const std::string* zs = select_style(z.style, ctx);
             if (!zs) continue;
@@ -1334,30 +1739,95 @@ struct EdgeGen {
         return segs;
     }
 
-    void emit_line(const BoundaryRule& br, int boundary, double lateral) {
-        for (const StyleSeg& sg : segments(br)) {
+    // Plan length (along the strand polyline) of the chain position S, counted from the chain start.
+    // lps[j] is element j's polyline; cum[j] the plan length before element j.
+    static double length_at(const Chain& ch, const std::vector<const LinePoly*>& lps, const std::vector<double>& cum, double S) {
+        for (std::size_t j = 0; j < ch.els.size(); ++j) {
+            const ChainEl& el = ch.els[j];
+            if (S <= el.S + el.len() + 1e-9 || j + 1 == ch.els.size()) {
+                const double local = std::clamp(S - el.S, 0.0, el.len());
+                const double se = el.flip ? el.hi - local : el.lo + local;
+                const double l = el.flip ? lps[j]->len_of_s(el.hi) - lps[j]->len_of_s(se) : lps[j]->len_of_s(se) - lps[j]->len_of_s(el.lo);
+                return cum[j] + l;
+            }
+        }
+        return 0;
+    }
+
+    void emit_line(const BoundaryLine& bl) {
+        const BoundaryRule& br = *bl.rule;
+        const std::vector<StyleSeg> segs = segments(br);
+        const ChainEl& me = chain.els[chain.self];
+        for (std::size_t si = 0; si < segs.size(); ++si) {
+            const StyleSeg& sg = segs[si];
             if (!sg.style) continue;
             const LineStyle* st = style_of(rules, *sg.style);
             if (!st) continue;
             const double min_mark = st->min_mark > 0 ? st->min_mark : rules.min_mark_m;
             for (const Strand& sd : st->strands) {
-                const LinePoly& lp = poly(lateral + sd.offset);
-                if (!lp.valid()) continue;
-                std::vector<Interval> parts = subtract({{sg.a, sg.b}}, lp.folds);
-                if (!lp.folds.empty()) out.warnings.push_back("edge " + std::to_string(e.id.value) + ": marking line folds on a tight curve");
-                for (const Interval& iv : parts) {
-                    const double l0 = lp.len_of_s(iv.a), l1 = lp.len_of_s(iv.b);
-                    for (const DashSpan& d : layout_dashes(l1 - l0, sd.mark, sd.gap, min_mark)) {
-                        std::vector<Vec3> c = slice_points(e, lp, l0 + d.s0, l0 + d.s1, params.chord_tolerance);
-                        std::vector<Vec3> ring;
-                        if (stroke_ring(c, sd.width, ring)) b.add(br.category, *sg.style, ring, true, boundary);
+                std::vector<const LinePoly*> lps;
+                std::vector<double> cum;
+                double acc = 0;
+                bool ok = true;
+                for (const ChainEl& el : chain.els) {
+                    const LinePoly& lp = poly(*el.e, (el.flip ? -1.0 : 1.0) * (bl.lateral + sd.offset));
+                    if (!lp.valid()) ok = false;
+                    lps.push_back(&lp);
+                    cum.push_back(acc);
+                    acc += lp.len_of_s(el.hi) - lp.len_of_s(el.lo);
+                }
+                if (!ok) continue;
+                const std::size_t j = chain.self;
+                const double La = length_at(chain, lps, cum, sg.a), Lb = length_at(chain, lps, cum, sg.b);
+                std::vector<DashSpan> dashes;
+                if (chain.closed && segs.size() == 1 && sg.a <= 1e-9 && sg.b >= chain.total - 1e-9)
+                    dashes = layout_cyclic(Lb - La, sd.mark, sd.gap);
+                else
+                    dashes = layout_dashes(Lb - La, sd.mark, sd.gap, min_mark);
+                const LinePoly& lp = *lps[j];
+                const double cj = cum[j], lj = lp.len_of_s(me.hi) - lp.len_of_s(me.lo);
+                for (const DashSpan& d : dashes) {
+                    const double u0 = std::max(La + d.s0, cj), u1 = std::min(La + d.s1, cj + lj);
+                    if (u1 - u0 < 1e-4) continue;
+                    double l0, l1;
+                    if (me.flip) {
+                        l1 = lp.len_of_s(me.hi) - (u0 - cj);
+                        l0 = lp.len_of_s(me.hi) - (u1 - cj);
+                    } else {
+                        l0 = lp.len_of_s(me.lo) + (u0 - cj);
+                        l1 = lp.len_of_s(me.lo) + (u1 - cj);
                     }
+                    // Skip dashes over folded stretches of a tight curve.
+                    bool folded = false;
+                    const double s0 = lp.s_of_len(l0), s1 = lp.s_of_len(l1);
+                    for (const FoldRange& f : lp.folds)
+                        if (f.s1 > std::min(s0, s1) && f.s0 < std::max(s0, s1)) folded = true;
+                    if (folded) {
+                        const std::string w = "edge " + std::to_string(e.id.value) + ": marking line folds on a tight curve";
+                        if (std::find(out.warnings.begin(), out.warnings.end(), w) == out.warnings.end()) out.warnings.push_back(w);
+                        continue;
+                    }
+                    std::vector<double> sv;
+                    const std::vector<Vec3> raw = slice_points(e, lp, l0, l1, params, &sv);
+                    std::vector<Vec3> c;
+                    std::vector<double> cs;
+                    for (std::size_t q = 0; q < raw.size(); ++q)
+                        if (c.empty() || (raw[q].xy() - c.back().xy()).length() > 1e-6) c.push_back(raw[q]), cs.push_back(sv[q]);
+                    // Side vertices follow the surface height at their own lateral offset (camber, kerb falls).
+                    const double hw = sd.width / 2, lat0 = lp.lateral;
+                    const std::function<double(std::size_t, double)> zf = [&](std::size_t qi, double side) {
+                        return edge_surface_z(params, e, cs[qi], lat0 + side * hw);
+                    };
+                    std::vector<Vec3> ring;
+                    if (stroke_ring(c, sd.width, ring, &zf)) b.add(br.category, *sg.style, ring, true, bl.k);
                 }
             }
         }
     }
 
     void emit_bays(const RuleSet& rs) {
+        const ChainEl& me = chain.els[chain.self];
+        const double lo = me.lo, hi = me.hi;
         for (const BayRule& bay : rs.bays) {
             double len = 0;
             if (!select_value(bay.length_m, ctx, len) || len <= 0) continue;
@@ -1375,15 +1845,14 @@ struct EdgeGen {
                 // Stop short of the bay line on the side that faces a traffic lane.
                 if (k > 0 && lanes[k - 1].dir != TravelDir::None) top -= bay.edge_clear_m;
                 if (k + 1 < lanes.size() && lanes[k + 1].dir != TravelDir::None) bottom += bay.edge_clear_m;
-                const LinePoly& pt = poly(top);
-                const LinePoly& pb = poly(bottom);
+                const LinePoly& pt = poly(e, top);
+                const LinePoly& pb = poly(e, bottom);
                 if (!pt.valid() || !pb.valid()) continue;
                 for (int i = 0; i <= n; ++i) {
-                    const double s = start + i * len;
+                    const double s = std::clamp(start + i * len, lo + hw, hi - hw);  // dividers never overhang the edge ends
                     auto pos = [&](const LinePoly& lp, double sv) {
-                        const double l = lp.len_of_s(sv);
-                        const Vec2 p = lp.xy_at_len(l);
-                        return Vec3{p.x, p.y, e.vertical.z(sv)};
+                        const Vec2 p = lp.xy_at_len(lp.len_of_s(sv));
+                        return Vec3{p.x, p.y, edge_surface_z(params, e, sv, lp.lateral)};
                     };
                     std::vector<Vec3> ring{pos(pb, s - hw), pos(pb, s + hw), pos(pt, s + hw), pos(pt, s - hw)};
                     b.add(MarkingCategory::ParkingBay, bay.style, ring, false, static_cast<int>(k));
@@ -1415,42 +1884,15 @@ MarkingSet generate_edge_markings(const RoadGraph& graph, const RegionPack& regi
     if (!(length > 0)) return out;
 
     EdgeGen g{graph, region, rules, params, *e, *rt, instantiate_lanes(*e, *rt, region.driving_side), {}, out,
-              Builder{out, rules, edge, NodeId{}}, {}, {}, {}, false, 0, 0, false, false, false, false};
-    g.ctx = make_ctx(*e, *rt, g.lanes, region);
+              Builder{out, rules, params, edge, NodeId{}}, {}, {}, {}, {}, false, false};
+    g.ctx = make_ctx(*e, *rt, g.lanes, rules);
     g.sp.max_chord_error = std::max(params.chord_tolerance, 1e-4);
+    g.chain = build_chain(graph, region, rules, junctions, *e, *rt, params);
+    g.junction_a = end_info(graph, region, rules, junctions, *e, true, *rt, params).junction;
+    g.junction_b = end_info(graph, region, rules, junctions, *e, false, *rt, params).junction;
+    if (g.chain.total < rules.min_mark_m) return out;
 
-    // Usable range between the arm markings at both ends.
-    double clear_a = 0, clear_b = 0;
-    for (int end = 0; end < 2; ++end) {
-        const bool at_a = end == 0;
-        const EndRef ref = find_end(junctions, *e, at_a);
-        if (!ref.j) continue;
-        const std::vector<ArmLayout> lay = compute_arm_layout(graph, region, rules, *ref.j, params);
-        double clear = lay.empty() ? 0 : lay[static_cast<std::size_t>(ref.arm)].clear;
-        clear = std::max(clear, trim_of(*ref.j, ref.arm));
-        const bool junction = ref.j->arms.size() >= 3;
-        const bool approach = ref.j->cls == NodeClass::Junction && junction && !rt->roundabout_ring;
-        (at_a ? clear_a : clear_b) = clear;
-        (at_a ? g.junction_a : g.junction_b) = junction;
-        (at_a ? g.approach_a : g.approach_b) = approach;
-    }
-    g.lo = clear_a;
-    g.hi = length - clear_b;
-    if (g.hi - g.lo < rules.min_mark_m) return out;
-
-    // Longitudinal lines at every lane boundary.
-    const int n = static_cast<int>(g.lanes.size());
-    for (int k = 0; k <= n; ++k) {
-        const Lane* left = k > 0 ? &g.lanes[static_cast<std::size_t>(k - 1)] : nullptr;
-        const Lane* right = k < n ? &g.lanes[static_cast<std::size_t>(k)] : nullptr;
-        const BoundaryRule* br = g.match(*rs, left, right);
-        if (!br) continue;
-        double lat = right ? right->offset + right->width / 2 : left->offset - left->width / 2;
-        const bool left_drives = left && left->dir != TravelDir::None, right_drives = right && right->dir != TravelDir::None;
-        if (left_drives && !right_drives) lat += br->inset_m;
-        else if (right_drives && !left_drives) lat -= br->inset_m;
-        g.emit_line(*br, k, lat);
-    }
+    for (const BoundaryLine& bl : edge_boundaries(g.lanes, *rs)) g.emit_line(bl);
     g.emit_bays(*rs);
     return out;
 }
@@ -1494,7 +1936,9 @@ struct JGen {
             b.edge = arm.edge;
             const MarkingCategory cat = L.stop ? MarkingCategory::StopLine : L.entry ? MarkingCategory::RoundaboutEntry : MarkingCategory::GiveWayLine;
             emit_transverse(b, rules, cat, *L.style, arm, L.line_s0, lo, hi);
-            if (L.give_way && rules.give_way.triangle) triangle(arm, L, lo, hi);
+            if (L.give_way && L.triangle)
+                for (const LaneRef& lane : arm.lanes)
+                    if (lane.inbound) triangle(arm, L, lane.lateral - lane.width / 2, lane.lateral + lane.width / 2);
         }
     }
 
@@ -1503,7 +1947,7 @@ struct JGen {
         // Behind the zebra when the arm has one (the crossing sits between the line and the triangle).
         const double base = std::max(L.line_s1 + g.triangle_gap_m, L.zebra ? L.clear : 0.0), c = (lo + hi) / 2;
         if (arm.edge_length < base + g.triangle_height_m + 1.0) return;
-        const double H = g.triangle_height_m, B = g.triangle_base_m;
+        const double H = g.triangle_height_m, B = std::min(g.triangle_base_m, 0.7 * (hi - lo));
         const SL o[3] = {{base, c - B / 2}, {base, c + B / 2}, {base + H, c}};
         const double cs = (o[0].first + o[1].first + o[2].first) / 3, cl = (o[0].second + o[1].second + o[2].second) / 3;
         auto dist = [](SL p, SL q) { return std::hypot(p.first - q.first, p.second - q.second); };
@@ -1517,8 +1961,8 @@ struct JGen {
         for (int t = 0; t < 3; ++t) in[t] = {cs + (o[t].first - cs) * k, cl + (o[t].second - cl) * k};
         for (int t = 0; t < 3; ++t) {
             const int u = (t + 1) % 3;
-            std::vector<Vec3> ring = arm_ring(arm, {o[t], o[u], in[u], in[t]});
-            b.add(MarkingCategory::GiveWayTriangle, g.triangle_style, ring, false);
+            std::vector<Vec3> ring = arm_ring(b, arm, {o[t], o[u], in[u], in[t]});
+            b.add(MarkingCategory::GiveWayTriangle, g.triangle_style, ring, false, -1, 0.5);
         }
     }
 
@@ -1538,7 +1982,7 @@ struct JGen {
                 const Vec2 nrm = left_normal({std::cos(p0.heading_out), std::sin(p0.heading_out)});
                 const double lat_c = (cs.centre.xy() - p0.pos.xy()).dot(nrm);
                 const double lo = lat_c - cs.length / 2;
-                for (const DashSpan& d : layout_dashes(cs.length, z.stripe_width_m, z.gap_m, min_mark))
+                for (const DashSpan& d : layout_flush(cs.length, z.stripe_width_m, z.gap_m, min_mark))
                     emit_arm_quad(b, MarkingCategory::Zebra, z.style, arm, L.zs0, L.zs1, lo + d.s0, lo + d.s1);
             }
             if (!z.give_way_style.empty()) {
@@ -1559,7 +2003,7 @@ struct JGen {
             const Edge* e = graph.edge(arm.edge);
             const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
             if (!rt) continue;
-            const MarkCtx ctx = make_ctx(*e, *rt, instantiate_lanes(*e, *rt, region.driving_side), region);
+            const MarkCtx ctx = make_ctx(*e, *rt, instantiate_lanes(*e, *rt, region.driving_side), rules);
             double len = 0;
             if (!select_value(ar.length_m, ctx, len) || len <= 0) continue;
             const double trim = trim_of(j, static_cast<int>(i));
@@ -1589,8 +2033,8 @@ struct JGen {
                             const double x = p.x, y = mirror ? -p.y : p.y;
                             pts.push_back({s_tail - x * len, lane.lateral - y * wscale});
                         }
-                        std::vector<Vec3> ring = arm_ring(arm, pts);
-                        b.add(MarkingCategory::Arrow, ar.style, ring, false);
+                        std::vector<Vec3> ring = arm_ring(b, arm, pts);
+                        b.add(MarkingCategory::Arrow, ar.style, ring, false, -1, 1.0);
                     }
                 }
             }
@@ -1710,28 +2154,58 @@ struct JGen {
         }
     }
 
-    // V-shaped stripes whose apexes lie on the gore axis and point the way the traffic travels.
+    // Strictly inside a convex CCW polygon by at least `margin`.
+    static bool inside_convex(const std::vector<Vec2>& ring, Vec2 p, double margin) {
+        for (std::size_t i = 0; i < ring.size(); ++i) {
+            const Vec2 a = ring[i], bq = ring[(i + 1) % ring.size()];
+            const Vec2 n = left_normal(normalized(bq - a));
+            if (n.dot(p - a) < margin) return false;
+        }
+        return true;
+    }
+
+    static bool convex_ccw(const std::vector<Vec2>& ring) {
+        for (std::size_t i = 0; i < ring.size(); ++i) {
+            const Vec2 a = ring[i], bq = ring[(i + 1) % ring.size()], c = ring[(i + 2) % ring.size()];
+            if ((bq - a).cross(c - bq) < -1e-9) return false;
+        }
+        return true;
+    }
+
+    // V-shaped chevrons, each ONE polygon: its apex lies on the gore axis and points the way the traffic
+    // travels. A chevron is emitted only if both its apexes fit inside the gore and both wings reach out
+    // to the border; narrower places get nothing.
     void chevrons(const std::vector<Vec2>& ring, Vec2 c, Vec2 flow, const GorePattern& cp) {
+        if (!convex_ccw(ring)) return;
         const Vec2 side = left_normal(flow);
         const double al = cp.angle_deg * kPi / 180, sa = std::sin(al), ca = std::cos(al);
-        const Vec2 nl = flow * sa + side * ca, nr = flow * sa - side * ca;  // band normals, both advance with the flow
         double umin = 1e18, umax = -1e18, ymax = 0;
         for (const Vec2& p : ring) {
             umin = std::min(umin, flow.dot(p - c));
             umax = std::max(umax, flow.dot(p - c));
             ymax = std::max(ymax, std::fabs(side.dot(p - c)));
         }
+        const double back = cp.stripe_width_m / sa;  // inner apex sits this far behind the outer one
+        const double Lw = (ymax + 2.0) / sa;
+        const Vec2 dl = flow * -ca + side * sa, dr = flow * -ca - side * sa;
         const double step = cp.pitch_m / sa;
-        const std::vector<Vec2> left_half = clip_halfplane(ring, side, c, 0.0);
-        const std::vector<Vec2> right_half = clip_halfplane(ring, side * -1.0, c, 0.0);
-        for (double u = umin - cp.stripe_width_m / sa + step / 2; u < umax + ca / sa * ymax; u += step) {
-            const Vec2 apex = c + flow * u;
-            for (int h = 0; h < 2; ++h) {
-                const Vec2 n = h == 0 ? nl : nr;
-                std::vector<Vec2> poly = clip_halfplane(h == 0 ? left_half : right_half, n, apex, 0.0);
-                poly = clip_halfplane(poly, n * -1.0, apex, -cp.stripe_width_m);
-                emit_gore_poly(MarkingCategory::Chevron, cp.style, poly, rules.gore.min_area_m2 * 0.2);
+        for (double u = umin + back; u < umax; u += step) {
+            const Vec2 A = c + flow * u, B = A - flow * back;
+            if (!inside_convex(ring, A, 0.02) || !inside_convex(ring, B, 0.02)) continue;
+            std::vector<Vec2> v{A, A + dl * Lw, B + dl * Lw, B, B + dr * Lw, A + dr * Lw};
+            for (std::size_t i = 0; i < ring.size(); ++i) {
+                const Vec2 a = ring[i], bq = ring[(i + 1) % ring.size()];
+                v = clip_halfplane(v, left_normal(normalized(bq - a)), a, 0.0);
             }
+            if (v.size() < 4) continue;
+            double lmax = -1e18, lmin = 1e18;
+            for (const Vec2& p : v) {
+                const double l = side.dot(p - A);
+                lmax = std::max(lmax, l);
+                lmin = std::min(lmin, l);
+            }
+            if (lmax < 0.4 || lmin > -0.4) continue;  // a wing is cut short: not a complete V
+            emit_gore_poly(MarkingCategory::Chevron, cp.style, v, rules.gore.min_area_m2 * 0.2);
         }
     }
 
@@ -1749,6 +2223,67 @@ struct JGen {
             }
         }
         return out;
+    }
+
+    // Edge-line laterals of an arm's edge in the arm's outward frame (EdgeLine boundaries only).
+    std::vector<double> arm_edge_laterals(const JunctionArm& arm) const {
+        std::vector<double> out;
+        const Edge* e = graph.edge(arm.edge);
+        const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
+        const RuleSet* rs = rt ? rules.set(rt->markings) : nullptr;
+        if (!rs) return out;
+        for (const BoundaryLine& bl : edge_boundaries(instantiate_lanes(*e, *rt, region.driving_side), *rs))
+            if (bl.rule->category == MarkingCategory::EdgeLine) out.push_back(arm.at_a ? bl.lateral : -bl.lateral);
+        return out;
+    }
+
+    // The through route's edge line on the side facing a side road is carried across the mouth as a
+    // broken straight line between the two arms' edge lines (not round the kerb radii).
+    void mouth_edges() {
+        const MouthEdgeRule& mr = rules.mouth_edge;
+        if (!mr.enabled || j.cls != NodeClass::Junction || j.kind == JunctionKind::Roundabout || j.arms.size() < 3) return;
+        const std::vector<int> prio = priority_arms(j, rules);
+        for (std::size_t pi = 0; pi < prio.size(); ++pi)
+            for (std::size_t pk = pi + 1; pk < prio.size(); ++pk) {
+                const int i = prio[pi], k = prio[pk];
+                const JunctionArm &ai = j.arms[static_cast<std::size_t>(i)], &ak = j.arms[static_cast<std::size_t>(k)];
+                const double dev = (kPi - std::fabs(wrap_angle(ai.heading_out - ak.heading_out))) * 180 / kPi;
+                if (dev > mr.max_deviation_deg) continue;
+                const std::vector<double> li = arm_edge_laterals(ai), lk = arm_edge_laterals(ak);
+                for (int sgn : {1, -1}) {
+                    bool side_road = false;  // another arm lies on this side of arm i
+                    for (std::size_t m = 0; m < j.arms.size(); ++m)
+                        if (static_cast<int>(m) != i && static_cast<int>(m) != k &&
+                            (wrap_angle(j.arms[m].heading_out - ai.heading_out) > 0) == (sgn > 0))
+                            side_road = true;
+                    if (!side_road) continue;
+                    auto pick = [](const std::vector<double>& v, int s, double& out_lat) {
+                        bool found = false;
+                        for (double l : v)
+                            if (l * s > 0 && (!found || l * s > out_lat * s)) out_lat = l, found = true;
+                        return found;
+                    };
+                    double lat_i = 0, lat_k = 0;
+                    if (!pick(li, sgn, lat_i) || !pick(lk, -sgn, lat_k)) continue;
+                    const std::string* sid = select_style(mr.style, arm_ctx(static_cast<std::size_t>(i)));
+                    const LineStyle* st = sid ? style_of(rules, *sid) : nullptr;
+                    if (!st || st->strands.empty()) continue;
+                    Vec3 p0 = arm_point(ai, trim_of(j, i), lat_i).pos, p1 = arm_point(ak, trim_of(j, k), lat_k).pos;
+                    p0.z = arm_surface_z(params, ai, trim_of(j, i), lat_i, p0.z);
+                    p1.z = arm_surface_z(params, ak, trim_of(j, k), lat_k, p1.z);
+                    const double len = (p1.xy() - p0.xy()).length();
+                    const Strand& sd = st->strands[0];
+                    const double min_mark = st->min_mark > 0 ? st->min_mark : rules.min_mark_m;
+                    b.edge = ai.edge;
+                    for (const DashSpan& d : layout_flush(len, sd.mark, sd.gap, min_mark)) {
+                        const double t0 = d.s0 / len, t1 = d.s1 / len;
+                        const std::vector<Vec3> c{{p0.x + (p1.x - p0.x) * t0, p0.y + (p1.y - p0.y) * t0, p0.z + (p1.z - p0.z) * t0},
+                                                  {p0.x + (p1.x - p0.x) * t1, p0.y + (p1.y - p0.y) * t1, p0.z + (p1.z - p0.z) * t1}};
+                        std::vector<Vec3> ring;
+                        if (stroke_ring(c, sd.width, ring)) b.add(MarkingCategory::EdgeLine, *sid, ring, true);
+                    }
+                }
+            }
     }
 
     // Edge lines continuing through a merge / diverge along the outer lane edges of the connectors.
@@ -1822,7 +2357,7 @@ struct JGen {
         const Edge* e = graph.edge(j.arms[i].edge);
         const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
         if (!rt) return {};
-        return make_ctx(*e, *rt, instantiate_lanes(*e, *rt, region.driving_side), region);
+        return make_ctx(*e, *rt, instantiate_lanes(*e, *rt, region.driving_side), rules);
     }
 };
 
@@ -1836,13 +2371,127 @@ MarkingSet generate_junction_markings(const RoadGraph& graph, const RegionPack& 
         out.warnings.push_back("junction " + std::to_string(junction.node.value) + ": trims do not match arms");
         return out;
     }
-    JGen g{graph, region, rules, junction, params, Builder{out, rules, EdgeId{}, junction.node}, {}};
+    JGen g{graph, region, rules, junction, params, Builder{out, rules, params, EdgeId{}, junction.node}, {}};
     g.layout = compute_arm_layout(graph, region, rules, junction, params);
     g.give_way_and_stop();
     g.zebras();
     g.arrows();
     g.gore();
     g.slip_edges();
+    g.mouth_edges();
+    return out;
+}
+
+MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& region, const MarkingRules& rules,
+                                      const JunctionSet& junctions, const RoundaboutLayout& layout, const MarkingParams& params) {
+    MarkingSet out;
+    const SplitterRule& sr = rules.splitter;
+    if (!sr.enabled || !layout.ok || layout.group.nodes.empty()) return out;
+    Builder b{out, rules, params, EdgeId{}, layout.group.nodes.front()};
+    for (const SplitterIsland& sp : layout.splitters) {
+        if (sp.polygon.size() < 3 || sp.arm < 0 || static_cast<std::size_t>(sp.arm) >= layout.group.arms.size()) continue;
+        const RoundaboutArm& ra = layout.group.arms[static_cast<std::size_t>(sp.arm)];
+        if (ra.ring_index < 0 || static_cast<std::size_t>(ra.ring_index) >= layout.group.nodes.size()) continue;
+        const NodeId node = layout.group.nodes[static_cast<std::size_t>(ra.ring_index)];
+        const Junction* jn = junctions.find(node);
+        if (!jn) {
+            auto it = layout.ring_junctions.find(node);
+            if (it != layout.ring_junctions.end()) jn = &it->second;
+        }
+        if (!jn) continue;
+        const JunctionArm* arm = nullptr;
+        for (const JunctionArm& a : jn->arms)
+            if (a.edge == ra.edge) arm = &a;
+        if (!arm) continue;
+        b.edge = arm->edge;
+        std::vector<Vec2> poly = sp.polygon;
+        double a2 = 0;
+        for (std::size_t k = 0; k < poly.size(); ++k) a2 += poly[k].cross(poly[(k + 1) % poly.size()]);
+        if (a2 < 0) std::reverse(poly.begin(), poly.end());
+        const Edge* e = graph.edge(arm->edge);
+        const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
+        if (!rt) continue;
+        const MarkCtx ctx = make_ctx(*e, *rt, instantiate_lanes(*e, *rt, region.driving_side), rules);
+        // Arm-frame (s, lateral) of a plan point, and the surface z there.
+        auto frame = [&](Vec2 p) {
+            double best = 1e18, bs = 0;
+            for (double s = 0; s <= std::min(arm->edge_length, 80.0); s += 0.25) {
+                const double d = (arm_point(*arm, s, 0).pos.xy() - p).length();
+                if (d < best) best = d, bs = s;
+            }
+            const ArmPoint ap = arm_point(*arm, bs, 0);
+            const Vec2 nrm = left_normal({std::cos(ap.heading_out), std::sin(ap.heading_out)});
+            return SL{bs, (p - ap.pos.xy()).dot(nrm)};
+        };
+        auto z_of = [&](Vec2 p) {
+            const SL sl = frame(p);
+            return arm_surface_z(params, *arm, sl.first, sl.second, arm_point(*arm, sl.first, sl.second).pos.z);
+        };
+
+        // Outline: a mitred strip just outside the island, one trapezoid per side.
+        const std::string* osid = select_style(sr.outline_style, ctx);
+        const LineStyle* ost = osid ? style_of(rules, *osid) : nullptr;
+        if (ost && !ost->strands.empty()) {
+            const double w = ost->strands[0].width, g = sr.outline_gap_m;
+            const std::size_t n = poly.size();
+            std::vector<Vec2> in(n), outer(n);
+            for (std::size_t k = 0; k < n; ++k) {
+                const Vec2 d0 = normalized(poly[k] - poly[(k + n - 1) % n]), d1 = normalized(poly[(k + 1) % n] - poly[k]);
+                const Vec2 n0 = left_normal(d0) * -1.0, n1 = left_normal(d1) * -1.0;  // outward for a CCW ring
+                Vec2 m = normalized(n0 + n1);
+                if (m.length() < 0.5) m = n1;
+                const double miter = std::min(1.0 / std::max(m.dot(n1), 0.5), 2.0);
+                in[k] = poly[k] + m * (g * miter);
+                outer[k] = poly[k] + m * ((g + w) * miter);
+            }
+            for (std::size_t k = 0; k < n; ++k) {
+                const std::size_t u = (k + 1) % n;
+                std::vector<Vec3> r;
+                for (const Vec2& p : {in[k], in[u], outer[u], outer[k]}) r.push_back({p.x, p.y, z_of(p)});
+                b.add(MarkingCategory::EdgeLine, *osid, r, false);
+            }
+        }
+
+        // Approach hatching: a tapering triangle ahead of the nose, bars at an angle.
+        if (!sr.hatch_style.empty() && sr.hatch_length_m > 1.0) {
+            double s_nose = 0, lat_sum = 0;
+            int cnt = 0;
+            for (const Vec2& p : poly) s_nose = std::max(s_nose, frame(p).first);
+            for (const Vec2& p : poly) {
+                const SL sl = frame(p);
+                if (sl.first > s_nose - 1.0) lat_sum += sl.second, ++cnt;
+            }
+            const double c = cnt ? lat_sum / cnt : 0.0;
+            const double s0 = s_nose + 0.5, s1 = s0 + sr.hatch_length_m;
+            if (arm->edge_length > s1 + 1.0) {
+                std::vector<Vec2> tri;
+                for (const SL& q : {SL{s0, c - sr.hatch_width_m / 2}, SL{s1, c}, SL{s0, c + sr.hatch_width_m / 2}})
+                    tri.push_back(arm_point(*arm, q.first, q.second).pos.xy());
+                double ta = 0;
+                for (std::size_t k = 0; k < 3; ++k) ta += tri[k].cross(tri[(k + 1) % 3]);
+                if (ta < 0) std::reverse(tri.begin(), tri.end());
+                Vec2 cen{0, 0};
+                for (const Vec2& p : tri) cen = cen + p;
+                cen = cen * (1.0 / 3.0);
+                const Vec2 ax = normalized(tri[0] - tri[1] + tri[2] - tri[1]);
+                const double ang = std::atan2(ax.y, ax.x) + sr.angle_deg * kPi / 180;
+                const Vec2 nrm = left_normal({std::cos(ang), std::sin(ang)});
+                double tmin = 1e18, tmax = -1e18;
+                for (const Vec2& p : tri) tmin = std::min(tmin, nrm.dot(p - cen)), tmax = std::max(tmax, nrm.dot(p - cen));
+                for (double t = tmin + sr.pitch_m / 2; t < tmax; t += sr.pitch_m) {
+                    std::vector<Vec2> pp = JGen::clip_halfplane(tri, nrm, cen, t);
+                    pp = JGen::clip_halfplane(pp, nrm * -1.0, cen, -(t + sr.stripe_width_m));
+                    if (pp.size() < 3) continue;
+                    double pa = 0;
+                    for (std::size_t k = 0; k < pp.size(); ++k) pa += pp[k].cross(pp[(k + 1) % pp.size()]);
+                    if (std::fabs(pa) / 2 < 0.02) continue;
+                    std::vector<Vec3> r;
+                    for (const Vec2& p : pp) r.push_back({p.x, p.y, z_of(p)});
+                    b.add(MarkingCategory::Hatching, sr.hatch_style, r, false);
+                }
+            }
+        }
+    }
     return out;
 }
 
@@ -1852,6 +2501,7 @@ MarkingSet MarkingResult::merged() const {
     MarkingSet out;
     for (const auto& [id, s] : edges) out.append(s);
     for (const auto& [id, s] : junctions) out.append(s);
+    for (const auto& [id, s] : splitters) out.append(s);
     return out;
 }
 
@@ -1871,6 +2521,7 @@ MarkingResult generate_markings(const RoadGraph& graph, const RegionPack& region
         for (NodeId id : only_nodes)
             if (const Junction* j = junctions.find(id)) r.junctions[id] = generate_junction_markings(graph, region, rules, *j, params);
     }
+if (params.roundabouts)        for (const RoundaboutLayout& l : params.roundabouts->layouts) {            if (l.group.nodes.empty()) continue;            bool wanted = only_nodes.empty();            for (NodeId id : only_nodes)                if (std::find(l.group.nodes.begin(), l.group.nodes.end(), id) != l.group.nodes.end()) wanted = true;            if (wanted) r.splitters[l.group.nodes.front()] = generate_splitter_markings(graph, region, rules, junctions, l, params);        }
     return r;
 }
 
@@ -1894,6 +2545,7 @@ void rebuild_dirty_markings(MarkingResult& cache, const RoadGraph& graph, const 
         if (const Junction* j = junctions.find(id)) cache.junctions[id] = generate_junction_markings(graph, region, rules, *j, params);
         else cache.junctions.erase(id);
     }
+if (params.roundabouts)        for (const RoundaboutLayout& l : params.roundabouts->layouts) {            if (l.group.nodes.empty()) continue;            bool touched = false;            for (NodeId id : l.group.nodes)                if (nodes.count(id)) touched = true;            if (touched) cache.splitters[l.group.nodes.front()] = generate_splitter_markings(graph, region, rules, junctions, l, params);        }
 }
 
 }  // namespace cp

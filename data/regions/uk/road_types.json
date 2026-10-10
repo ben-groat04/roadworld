@@ -4,6 +4,7 @@
     "vertical_k": "DMRB CD 109 Table 3.1 (desirable min crest K / sag K by design speed). Recalled values, not yet checked against the current CD 109; starting points only, tuned by eye.",
     "min_radius": "DMRB CD 109 desirable minimum horizontal radius by design speed; residential uses a Manual for Streets-style tighter value. Advisory only.",
     "widths": "Typical UK practice; tuned by eye.",
+    "rural_types": "estimate: a_road_rural (2 x 3.65 m, 1 m hard strips, 2.5 m verges, 60 mph), b_road_rural (2 x 3.2 m, no hard strip, 1.5 m verges), country_lane (3.5 m total, see note) and main_street (3.25 m lanes, 2 m parking bays, 2.5 m footways) are plausible UK practice, not checked against DMRB / Manual for Streets; the rural types are kerbless. The lane model has no single shared two-way lane, so country_lane is the narrowest valid two-lane type: two 1.75 m half lanes, one per direction, which together read as one 3.5 m surface; it has no marking set (markings empty).",
     "street_lights": "estimate: spacing, setbacks, column heights, outreach and arrangement are plausible UK practice (BS 5489 style values recalled, not checked); the motorway is unlit by default (rural motorways are usually unlit); tuned by eye."
   },
   "version": 1,
@@ -65,6 +66,117 @@
       "advisory_max_grade_pct": 8,
       "markings": "rural_single",
       "street_lights": { "lit": true, "spacing_m": 35, "arrangement": "staggered", "setback_m": 1.0, "footway_inset_m": 0.3, "mounting_height_m": 10, "outreach_m": 1.5, "style": "column_10m" }
+    },
+    {
+      "id": "main_street",
+      "name": "Urban main street (A/B road through a town)",
+      "crossfall": 0.025,
+      "kerb_upstand_m": 0.125,
+      "two_way": true,
+      "speed_limit": 30,
+      "design_speed_kph": 60,
+      "road_class": 75,
+      "corner_radius_m": 10,
+      "half": [
+        { "lane": "driving",  "width_m": 3.25 },
+        { "lane": "parking",  "width_m": 2.0 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "pavement", "width_m": 2.5 }
+      ],
+      "one_way_variant": [
+        { "lane": "pavement", "width_m": 2.5 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "parking",  "width_m": 2.0 },
+        { "lane": "driving",  "width_m": 3.25, "dir": "forward" },
+        { "lane": "driving",  "width_m": 3.25, "dir": "forward" },
+        { "lane": "parking",  "width_m": 2.0 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "pavement", "width_m": 2.5 }
+      ],
+      "vertical_k": { "crest": 17, "sag": 13 },
+      "min_radius_m": 60,
+      "advisory_max_grade_pct": 8,
+      "markings": "urban_single",
+      "street_lights": { "lit": true, "spacing_m": 32, "arrangement": "staggered", "setback_m": 0.8, "footway_inset_m": 0.3, "mounting_height_m": 8, "outreach_m": 1.2, "style": "column_8m" }
+    },
+    {
+      "id": "a_road_rural",
+      "name": "A road / rural single carriageway",
+      "crossfall": 0.025,
+      "verge_crossfall": 0.05,
+      "two_way": true,
+      "speed_limit": 60,
+      "design_speed_kph": 100,
+      "road_class": 90,
+      "corner_radius_m": 15,
+      "half": [
+        { "lane": "driving",    "width_m": 3.65 },
+        { "lane": "hard_strip", "width_m": 1.0 },
+        { "lane": "verge",      "width_m": 2.5 }
+      ],
+      "one_way_variant": [
+        { "lane": "verge",      "width_m": 2.5 },
+        { "lane": "hard_strip", "width_m": 1.0 },
+        { "lane": "driving",    "width_m": 3.65, "dir": "forward" },
+        { "lane": "driving",    "width_m": 3.65, "dir": "forward" },
+        { "lane": "hard_strip", "width_m": 1.0 },
+        { "lane": "verge",      "width_m": 2.5 }
+      ],
+      "vertical_k": { "crest": 55, "sag": 26 },
+      "min_radius_m": 720,
+      "advisory_max_grade_pct": 7,
+      "markings": "rural_single",
+      "street_lights": { "lit": false }
+    },
+    {
+      "id": "b_road_rural",
+      "name": "B road / rural minor road",
+      "crossfall": 0.025,
+      "verge_crossfall": 0.05,
+      "two_way": true,
+      "speed_limit": 60,
+      "design_speed_kph": 85,
+      "road_class": 60,
+      "corner_radius_m": 10,
+      "half": [
+        { "lane": "driving", "width_m": 3.2 },
+        { "lane": "verge",   "width_m": 1.5 }
+      ],
+      "one_way_variant": [
+        { "lane": "verge",   "width_m": 1.5 },
+        { "lane": "driving", "width_m": 3.3, "dir": "forward" },
+        { "lane": "verge",   "width_m": 1.5 }
+      ],
+      "vertical_k": { "crest": 30, "sag": 20 },
+      "min_radius_m": 255,
+      "advisory_max_grade_pct": 8,
+      "markings": "rural_single",
+      "street_lights": { "lit": false }
+    },
+    {
+      "id": "country_lane",
+      "name": "Single-track country lane",
+      "crossfall": 0.03,
+      "verge_crossfall": 0.08,
+      "two_way": true,
+      "speed_limit": 40,
+      "design_speed_kph": 40,
+      "road_class": 30,
+      "corner_radius_m": 4,
+      "half": [
+        { "lane": "driving", "width_m": 1.75 },
+        { "lane": "verge",   "width_m": 1.0 }
+      ],
+      "one_way_variant": [
+        { "lane": "verge",   "width_m": 1.0 },
+        { "lane": "driving", "width_m": 3.5, "dir": "forward" },
+        { "lane": "verge",   "width_m": 1.0 }
+      ],
+      "vertical_k": { "crest": 6, "sag": 6 },
+      "min_radius_m": 30,
+      "advisory_max_grade_pct": 12,
+      "markings": "",
+      "street_lights": { "lit": false }
     },
     {
       "id": "roundabout_ring",

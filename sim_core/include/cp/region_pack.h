@@ -97,6 +97,23 @@ struct RoadType {
     StreetLightRules street_lights;  // optional "street_lights" object; unset = unlit
 };
 
+// One ring-size class of the roundabout rules (region.json roundabout.size_classes). The class for a
+// ring is the first whose max_radius is not below the ring centreline radius.
+struct RoundaboutSizeClass {
+    double max_radius = 1e18;            // m, ring centreline radius up to which this class applies
+    double entry_corner_radius = 8.0;    // m, kerb fillet between an approach and the ring-out edge (tight: slows entries)
+    double exit_corner_radius = 12.0;    // m, between the ring-in edge and an approach (generous: easy exits)
+    double splitter_length = 12.0;       // m, base splitter island length before the approach-speed factor
+    double splitter_width = 1.8;         // m, island width at the ring end (each side's kerb spreads out by half of it)
+    double apron_width = 0.0;            // m, over-run apron collar round the central island (0 = none)
+};
+
+// Splitter length factor by approach speed (region.json roundabout.splitter_speed_factors).
+struct SpeedFactor {
+    double max_speed = 1e18;  // m/s, applies up to and including this approach speed limit
+    double factor = 1.0;
+};
+
 // Roundabout tool and layout tunables (region.json "roundabout" object). The values here are the
 // fallbacks used when a pack omits a field; they are not tied to any region.
 struct RoundaboutRules {
@@ -115,6 +132,56 @@ struct RoundaboutRules {
     std::string central_island_surface = "grass";  // planted central island
     std::string splitter_surface = "paving";       // splitter islands on the approaches
     double island_kerb_upstand = 0;                // m; 0 = the render default
+    // Size classes (entry/exit radii, splitter and apron by ring radius). Empty = one class made from the
+    // scalar fields above (entry_corner_radius, exit_corner_radius, splitter_length, splitter_width).
+    std::vector<RoundaboutSizeClass> size_classes;
+    std::vector<SpeedFactor> splitter_speed_factors;  // empty = factor 1
+    double apron_island_radius_max = 0;               // m; the apron is added when the island radius is below this
+    std::string apron_surface = "paving";             // render surface of the over-run apron
+
+    // The size class of a ring with this centreline radius.
+    RoundaboutSizeClass size_class(double ring_radius) const;
+    // Splitter length factor for an approach with this speed limit (m/s).
+    double splitter_speed_factor(double speed_limit) const;
+};
+
+// One default kerb-radius rule of the junction rules: matches when the road class of the less
+// important arm lies in [minor_min, minor_max] and that of the more important arm in [major_min, major_max].
+struct CornerRadiusRule {
+    int minor_min = 0, minor_max = 1 << 30;
+    int major_min = 0, major_max = 1 << 30;
+    double radius = 0;  // m
+};
+
+// Turn pockets (ghost-island offside-turn lanes) on priority junctions: region.json junction.turn_pockets.
+struct TurnPocketRules {
+    bool enabled = false;
+    int major_class_min = 85;          // the through road's class must be at least this for a default pocket
+    int minor_class_max = 1 << 30;     // the minor road's class must be at most this
+    double lane_width = 3.25;          // m, width of the pocket lane
+    double max_bend = 0.12;            // rad, the through road may turn by at most this at the junction
+    double min_minor_angle = 1.0;      // rad, the minor arm must leave the major road at least this far from straight on
+    double max_minor_angle = 2.14;     // ... and at most this (about 60 to 120 degrees)
+    double min_taper_ratio = 8.0;      // 1:N, shortest taper the pocket may be squeezed to when space is short
+    double min_storage = 10.0;         // m, shortest pocket lane (storage plus deceleration) accepted
+    std::vector<SpeedFactor> taper_ratio;   // N of the 1:N taper by the through road speed limit (factor = N)
+    std::vector<SpeedFactor> storage;       // m of pocket lane by the through road speed limit (factor = metres)
+    double lookup(const std::vector<SpeedFactor>& table, double speed_limit, double fallback) const;
+};
+
+// Junction shaping rules (region.json "junction" object).
+struct JunctionRules {
+    // Default corner radius by the pair of road classes meeting; first match wins, none = the larger of the two
+    // road types' own corner_radius. A player override always wins.
+    std::vector<CornerRadiusRule> corner_radius;
+    // Skewed corners: the radius is scaled by (corner angle / 90 degrees) clamped to [skew_min, skew_max]
+    // (larger on the obtuse corner, smaller on the acute one). 1 and 1 = off.
+    double skew_min = 1.0, skew_max = 1.0;
+    TurnPocketRules turn_pockets;
+
+    // Radius for arms of these road classes (0: no rule matched) and the skew factor for a corner angle.
+    double corner_radius_for(int class_a, int class_b) const;
+    double skew_factor(double angle) const;
 };
 
 // Ground grading and earthwork limits (region.json "grading" object, used by grading.h). The values
@@ -137,6 +204,7 @@ struct RegionPack {
     double headroom_m = 0;
     double plan_crossing_junction_dz_m = 0;
     RoundaboutRules roundabout;
+    JunctionRules junction;
     GradingRules grading;
     std::map<std::string, LaneType> lane_types;
     std::map<std::string, RoadType> road_types;

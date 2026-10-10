@@ -2,6 +2,7 @@
 // Errors travel as a message in Err; the first error wins and parsing stops.
 #include "cp/region_pack.h"
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -291,6 +292,125 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     return rt;
 }
 
+// A table of {max_speed_kph (optional: open end), <value_key>} rows, in speed order.
+std::vector<SpeedFactor> parse_speed_table(const json* arr, const char* value_key, const std::string& ctx, Err& err) {
+    std::vector<SpeedFactor> out;
+    if (!arr) return out;
+    if (!arr->is_array()) {
+        err.set(ctx + ": expected an array");
+        return out;
+    }
+    int index = 0;
+    for (const json& row : *arr) {
+        const std::string rctx = ctx + "[" + std::to_string(index++) + "]";
+        SpeedFactor f;
+        if (optional_member(row, "max_speed_kph")) f.max_speed = get_number(row, "max_speed_kph", rctx, err) / 3.6;
+        f.factor = get_number(row, value_key, rctx, err);
+        if (err.failed()) return out;
+        if (!(f.factor > 0)) {
+            err.set(rctx + ": " + value_key + " must be positive");
+            return out;
+        }
+        if (!out.empty() && !(f.max_speed > out.back().max_speed)) {
+            err.set(rctx + ": rows must be in increasing max_speed_kph order");
+            return out;
+        }
+        out.push_back(f);
+    }
+    return out;
+}
+
+void parse_roundabout_extras(const json& rb, RoundaboutRules& r, Err& err) {
+    const std::string c = "region.roundabout";
+    r.apron_island_radius_max = opt_number(rb, "apron_island_radius_max_m", r.apron_island_radius_max, c, err);
+    if (optional_member(rb, "apron_surface")) r.apron_surface = get_string(rb, "apron_surface", c, err);
+    r.splitter_speed_factors = parse_speed_table(optional_member(rb, "splitter_speed_factors"), "factor",
+                                                 c + ".splitter_speed_factors", err);
+    if (const json* sc = optional_member(rb, "size_classes")) {
+        if (!sc->is_array()) {
+            err.set(c + ".size_classes: expected an array");
+            return;
+        }
+        int index = 0;
+        for (const json& row : *sc) {
+            const std::string rctx = c + ".size_classes[" + std::to_string(index++) + "]";
+            RoundaboutSizeClass k;
+            k.entry_corner_radius = r.entry_corner_radius;
+            k.exit_corner_radius = r.exit_corner_radius;
+            k.splitter_length = r.splitter_length;
+            k.splitter_width = r.splitter_width;
+            if (optional_member(row, "max_radius_m")) k.max_radius = get_number(row, "max_radius_m", rctx, err);
+            k.entry_corner_radius = opt_number(row, "entry_corner_radius_m", k.entry_corner_radius, rctx, err);
+            k.exit_corner_radius = opt_number(row, "exit_corner_radius_m", k.exit_corner_radius, rctx, err);
+            k.splitter_length = opt_number(row, "splitter_length_m", k.splitter_length, rctx, err);
+            k.splitter_width = opt_number(row, "splitter_width_m", k.splitter_width, rctx, err);
+            k.apron_width = opt_number(row, "apron_width_m", k.apron_width, rctx, err);
+            if (err.failed()) return;
+            if (!(k.max_radius > 0) || k.entry_corner_radius < 0 || k.exit_corner_radius < 0 || k.splitter_length < 0 ||
+                k.splitter_width < 0 || k.apron_width < 0) {
+                err.set(rctx + ": a value is out of range");
+                return;
+            }
+            if (!r.size_classes.empty() && !(k.max_radius > r.size_classes.back().max_radius)) {
+                err.set(rctx + ": classes must be in increasing max_radius_m order");
+                return;
+            }
+            r.size_classes.push_back(k);
+        }
+    }
+    if (r.apron_island_radius_max < 0) err.set(c + ": apron_island_radius_max_m must not be negative");
+}
+
+void parse_junction_rules(const json& jr, JunctionRules& r, Err& err) {
+    const std::string c = "region.junction";
+    if (const json* tab = optional_member(jr, "corner_radius_by_class")) {
+        if (!tab->is_array()) {
+            err.set(c + ".corner_radius_by_class: expected an array");
+            return;
+        }
+        int index = 0;
+        for (const json& row : *tab) {
+            const std::string rctx = c + ".corner_radius_by_class[" + std::to_string(index++) + "]";
+            CornerRadiusRule k;
+            k.minor_min = static_cast<int>(opt_number(row, "minor_min", k.minor_min, rctx, err));
+            k.minor_max = static_cast<int>(opt_number(row, "minor_max", k.minor_max, rctx, err));
+            k.major_min = static_cast<int>(opt_number(row, "major_min", k.major_min, rctx, err));
+            k.major_max = static_cast<int>(opt_number(row, "major_max", k.major_max, rctx, err));
+            k.radius = get_number(row, "radius_m", rctx, err);
+            if (err.failed()) return;
+            if (k.radius < 0) {
+                err.set(rctx + ": radius_m must not be negative");
+                return;
+            }
+            r.corner_radius.push_back(k);
+        }
+    }
+    if (const json* sk = optional_member(jr, "skew_factor")) {
+        r.skew_min = opt_number(*sk, "min", r.skew_min, c + ".skew_factor", err);
+        r.skew_max = opt_number(*sk, "max", r.skew_max, c + ".skew_factor", err);
+        if (!err.failed() && (!(r.skew_min > 0.1) || r.skew_max < r.skew_min || r.skew_max > 4))
+            err.set(c + ".skew_factor: need 0.1 < min <= max <= 4");
+    }
+    if (const json* tp = optional_member(jr, "turn_pockets")) {
+        TurnPocketRules& t = r.turn_pockets;
+        const std::string tc = c + ".turn_pockets";
+        t.enabled = get_bool(*tp, "enabled", t.enabled, tc, err);
+        t.major_class_min = static_cast<int>(opt_number(*tp, "major_class_min", t.major_class_min, tc, err));
+        t.minor_class_max = static_cast<int>(opt_number(*tp, "minor_class_max", t.minor_class_max, tc, err));
+        t.lane_width = opt_number(*tp, "lane_width_m", t.lane_width, tc, err);
+        t.max_bend = opt_number(*tp, "max_bend_rad", t.max_bend, tc, err);
+        t.min_minor_angle = opt_number(*tp, "min_minor_angle_rad", t.min_minor_angle, tc, err);
+        t.max_minor_angle = opt_number(*tp, "max_minor_angle_rad", t.max_minor_angle, tc, err);
+        t.min_taper_ratio = opt_number(*tp, "min_taper_ratio", t.min_taper_ratio, tc, err);
+        t.min_storage = opt_number(*tp, "min_storage_m", t.min_storage, tc, err);
+        t.taper_ratio = parse_speed_table(optional_member(*tp, "taper_ratio"), "ratio", tc + ".taper_ratio", err);
+        t.storage = parse_speed_table(optional_member(*tp, "storage"), "length_m", tc + ".storage", err);
+        if (!err.failed() && (!(t.lane_width > 1.5 && t.lane_width < 6) || t.max_bend < 0 || t.min_minor_angle < 0 ||
+                              t.max_minor_angle < t.min_minor_angle || !(t.min_taper_ratio >= 1) || t.min_storage < 0))
+            err.set(tc + ": a value is out of range");
+    }
+}
+
 RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& region_text,
                            const std::string& road_types_text, Err& err) {
     RegionPack pack;
@@ -330,7 +450,9 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
                               r.max_ring_edges < 4 || r.min_edge_length < 0 || r.min_island_radius < 0 ||
                               r.entry_corner_radius < 0 || r.exit_corner_radius < 0 || r.ring_corner_radius_factor < 0))
             err.set(c + ": a value is out of range");
+        if (!err.failed()) parse_roundabout_extras(*rb, r, err);
     }
+    if (const json* jr = optional_member(rj, "junction")) parse_junction_rules(*jr, pack.junction, err);
     if (const json* gr = optional_member(rj, "grading")) {
         GradingRules& g = pack.grading;
         const std::string c = "region.grading";
@@ -382,6 +504,41 @@ const LaneType* RegionPack::lane_type(const std::string& key) const {
 const RoadType* RegionPack::road_type(const std::string& key) const {
     auto it = road_types.find(key);
     return it == road_types.end() ? nullptr : &it->second;
+}
+
+RoundaboutSizeClass RoundaboutRules::size_class(double ring_radius) const {
+    for (const RoundaboutSizeClass& k : size_classes)
+        if (ring_radius <= k.max_radius) return k;
+    if (!size_classes.empty()) return size_classes.back();
+    RoundaboutSizeClass k;
+    k.entry_corner_radius = entry_corner_radius;
+    k.exit_corner_radius = exit_corner_radius;
+    k.splitter_length = splitter_length;
+    k.splitter_width = splitter_width;
+    return k;
+}
+
+double RoundaboutRules::splitter_speed_factor(double speed_limit) const {
+    for (const SpeedFactor& f : splitter_speed_factors)
+        if (speed_limit <= f.max_speed + 1e-9) return f.factor;
+    return splitter_speed_factors.empty() ? 1.0 : splitter_speed_factors.back().factor;
+}
+
+double TurnPocketRules::lookup(const std::vector<SpeedFactor>& table, double speed_limit, double fallback) const {
+    for (const SpeedFactor& f : table)
+        if (speed_limit <= f.max_speed + 1e-9) return f.factor;
+    return table.empty() ? fallback : table.back().factor;
+}
+
+double JunctionRules::corner_radius_for(int class_a, int class_b) const {
+    const int minor = std::min(class_a, class_b), major = std::max(class_a, class_b);
+    for (const CornerRadiusRule& r : corner_radius)
+        if (minor >= r.minor_min && minor <= r.minor_max && major >= r.major_min && major <= r.major_max) return r.radius;
+    return 0;
+}
+
+double JunctionRules::skew_factor(double angle) const {
+    return std::clamp(angle / (3.14159265358979323846 / 2), skew_min, skew_max);
 }
 
 Loaded<LaneTypeTable> parse_lane_types(const std::string& json_text) {

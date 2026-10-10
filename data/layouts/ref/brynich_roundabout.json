@@ -7,9 +7,9 @@
   "_comment": "A40 / A470 / B4601 Brynich roundabout, Brecon, Wales. Local metres, origin = ring centre, x east, y north. Centrelines from OpenStreetMap (see SOURCES.md), arms simplified to straight approaches aimed into the ring; flat (z = 0). The real arms are offset (tangential) and the A40 is a pair of one-way ways: here the A40 SW arm is one dual-carriageway road.",
   "roads": [
     { "type": "a_road_dual", "points": [[-177.5, -157.9, 0], [-104.9, -98.7, 0], [-60.6, -69.1, 0], [-10.7, -35.5, 0]], "notes": "A40 SW arm (OSM ways 87349824, 4792665, 617086556, 617086559)" },
-    { "type": "b_road", "points": [[192.3, -87.5, 0], [102.3, -68.5, 0], [62.3, -55.5, 0], [32.3, -36.5, 0], [17.3, -26.5, 0]], "notes": "A40 SE arm (OSM ways 617086562, 617086565, 4792671)" },
-    { "type": "b_road", "points": [[178.1, 71.1, 0], [108.3, 36.7, 0], [69.9, 28.2, 0], [47.3, 18.5, 0], [36.3, 8.5, 0]], "notes": "A470 NE arm (OSM ways 1313269102, 87940697, 4888801)" },
-    { "type": "b_road", "points": [[-105.4, 23.3, 0], [-89.7, 21.5, 0], [-68.6, 16.3, 0], [-52.7, 6.5, 0], [-35.7, 0.5, 0]], "notes": "B4601 NW arm (OSM ways 987368139, 27255493, 42765380)" }
+    { "type": "a_road_rural", "points": [[192.3, -87.5, 0], [102.3, -68.5, 0], [62.3, -55.5, 0], [32.3, -36.5, 0], [17.3, -26.5, 0]], "notes": "A40 SE arm (OSM ways 617086562, 617086565, 4792671)" },
+    { "type": "a_road_rural", "points": [[178.1, 71.1, 0], [108.3, 36.7, 0], [69.9, 28.2, 0], [47.3, 18.5, 0], [36.3, 8.5, 0]], "notes": "A470 NE arm (OSM ways 1313269102, 87940697, 4888801)" },
+    { "type": "b_road_rural", "points": [[-105.4, 23.3, 0], [-89.7, 21.5, 0], [-68.6, 16.3, 0], [-52.7, 6.5, 0], [-35.7, 0.5, 0]], "notes": "B4601 NW arm (OSM ways 987368139, 27255493, 42765380)" }
   ],
   "roundabouts": [
     { "centre": [0, 0, 0], "radius": 44, "type": "roundabout_ring" }

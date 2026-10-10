@@ -24,6 +24,7 @@ namespace {
 
 constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr double kSnapTol = 3e-3;  // m, polygon vertices this close to a trim line are snapped onto it
+constexpr double kSnapLat = 0.02;   // m, lateral tolerance for snapping to kerb lines and cross-section edges
 
 using u32 = std::uint32_t;
 
@@ -347,11 +348,11 @@ u32 add_vertex(WorldMesh& m, const Attr& a) {
 }
 
 // Appends a triangle and accumulates its area-weighted normal; false (nothing added) if degenerate.
-bool add_tri(WorldMesh& m, u32 a, u32 b, u32 c, bool need_up, double min_area2 = 1e-10) {
+bool add_tri(WorldMesh& m, u32 a, u32 b, u32 c, bool need_up, double min_area2 = 2e-8) {
     const Vec3 n = cross(m.positions[b] - m.positions[a], m.positions[c] - m.positions[a]);
     const double len = length(n);
     if (!(len > min_area2)) return false;
-    if (need_up && !(n.z > 1e-10)) return false;
+    if (need_up && !(n.z > 0.05 * len)) return false;
     for (u32 v : {a, b, c}) {
         m.normals[v].x += n.x;
         m.normals[v].y += n.y;
@@ -480,9 +481,9 @@ std::vector<double> select_stations(const Edge& e, double s0, double s1, const P
     std::sort(st.begin(), st.end());
     std::vector<double> out;
     for (double s : st)
-        if (out.empty() || s - out.back() > 1e-4) out.push_back(s);
+        if (out.empty() || s - out.back() > 0.02) out.push_back(s);
     out.back() = s1;
-    if (out.size() >= 2 && out[out.size() - 1] - out[out.size() - 2] < 1e-4) out.erase(out.end() - 2);
+    if (out.size() >= 3 && out[out.size() - 1] - out[out.size() - 2] < 0.02) out.erase(out.end() - 2);
 
     // Refine where the vertical profile bends away from the chord.
     for (int pass = 0; pass < 12; ++pass) {
@@ -970,12 +971,15 @@ Conformed conform_ring(const std::vector<Vec2>& ring, const std::vector<ArmCtx>&
             const Vec2 r = p - a.tc.xy();
             const double t = r.dot(a.dir);
             double l = r.dot(a.left);
-            if (std::abs(t) > kSnapTol || l < -a.hr - kSnapTol || l > a.hl + kSnapTol) continue;
+            if (std::abs(t) > kSnapTol || l < -a.hr - kSnapLat || l > a.hl + kSnapLat) continue;
             for (double c : {a.arm.kerb_left, -a.arm.kerb_right, a.hl, -a.hr})
-                if (std::abs(l - c) < kSnapTol) {
+                if (std::abs(l - c) < kSnapLat) {
                     l = c;
                     break;
                 }
+            // A pavement vertex inside the arm's carriageway width is a boolean-op artefact: move it to the kerb.
+            if (!cw && l < a.arm.kerb_left - kSnapLat && l > -a.arm.kerb_right + kSnapLat)
+                l = l >= 0 ? a.arm.kerb_left : -a.arm.kerb_right;
             v.arm = static_cast<int>(i);
             v.l = l;
             v.p = arm_point(a.arm, a.trim, l).pos.xy();

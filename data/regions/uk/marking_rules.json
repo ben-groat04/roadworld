@@ -2,7 +2,11 @@
   "_comment": "UK road marking rules. Every number is tuned by eye later; each rule carries a `source` note. Source keys: 'DfT TSM Ch5' = docs/road-marking-rules.md (Traffic Signs Manual chapter 5 sections 1-5); 'estimate' = not in that reference, a sensible placeholder. Speeds are in speed_unit (mph). Conditions (`if`): speed_max (<=), speed_min (>), width_min/width_max (driving-lane carriageway width, m), lanes_min/lanes_max (driving lanes, both directions), shoulder, one_way. A selector is a plain value or a list of {if, style|value}; the first match wins; style \"\" means no marking. Lane-type strings may list alternatives with '|'; boundary rules match either order of the two lanes; 'outside' is the area beyond the cross-section.",
   "version": 1,
   "speed_unit": "mph",
+  "shoulder_lane_types": [ "hard_shoulder", "hard_strip" ],
+  "_shoulder_source": "lane types counted as a hard shoulder or strip for the `shoulder` condition",
   "min_mark_m": 0.3,
+  "wear": { "strength": 0.3, "patch_period_m": 60, "patch_weight": 0.5, "wheel_boost": 0.35, "wheel_offset_m": 0.8, "wheel_half_width_m": 0.25,
+            "source": "estimate: modest default wear for the renderer to fade paint; wheel tracks 0.8 m either side of a lane centre" },
   "_min_mark_source": "estimate: nothing shorter than 0.3 m is ever painted",
 
   "colours": {
@@ -38,6 +42,10 @@
     "give_way_high": { "colour": "white", "strands": [ { "width_m": 0.30, "mark_m": 1.0, "gap_m": 0.5 } ], "source": "estimate: give way line on faster roads, 300 mm broken, 1000/500" },
     "stop_line":     { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "estimate: stop line (diagram 1002), 200 mm continuous" },
     "zebra_give_way": { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 0.6, "gap_m": 0.3 } ], "source": "estimate: zebra approach give way line" },
+
+    "edge_mouth_100": { "colour": "white", "strands": [ { "width_m": 0.10, "mark_m": 1.0, "gap_m": 1.0 } ], "source": "estimate: broken edge line across a junction mouth (diagram 1010), 100 mm at 40 mph or less" },
+    "edge_mouth_150": { "colour": "white", "strands": [ { "width_m": 0.15, "mark_m": 2.0, "gap_m": 2.0 } ], "source": "estimate: broken edge line across a junction mouth (diagram 1010), 150 mm at 50-60 mph" },
+    "edge_mouth_200": { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 2.0, "gap_m": 2.0 } ], "source": "estimate: broken edge line across a junction mouth (diagram 1010), 200 mm at 70 mph" },
 
     "fill_white": { "colour": "white", "fill": true, "source": "filled polygons (triangle, stripes, arrows) use the colour only" }
   },
@@ -147,18 +155,30 @@
       "style": [ { "if": { "speed_max": 30 }, "style": "give_way_low" }, { "style": "give_way_high" } ],
       "setback_m": 0.5,
       "line_gap_m": 0.3,
-      "triangle": { "style": "fill_white", "gap_from_line_m": 1.0, "base_m": 1.8, "height_m": 3.0, "stroke_m": 0.2 },
-      "source": "estimate: dimensions from memory of diagrams 1003 / 1023 (Chapter 3 not extracted); setback keeps the line outside the junction trim"
+      "triangle": { "mode": "conditional", "major_class_at_least": 60, "style": "fill_white", "gap_from_line_m": 1.0, "base_m": 1.8, "height_m": 3.0, "stroke_m": 0.2 },
+      "equal_class": "straightest_pair_has_priority",
+      "equal_class_max_deviation_deg": 30,
+      "source": "estimate: dimensions from memory of diagrams 1003 / 1023 (Chapter 3 not extracted); setback keeps the line outside the junction trim. Triangle only where the major road is road class 60 or more (a B road or above): side streets joining side streets get the line alone, as the owner's photos show. Equal-class junctions: the straightest pair of arms has priority; a Y bent more than 30 degrees from straight stays unmarked"
     },
     "stop_line": {
       "style": "stop_line", "setback_m": 0.5, "line_gap_m": 0.3,
       "source": "estimate: only made for arms the caller names (no signal or sight-line data in v0)"
     },
     "zebra": {
-      "if": { "speed_max": 40 },
       "style": "fill_white", "stripe_width_m": 0.5, "gap_m": 0.6, "band_width_m": 3.0, "clear_m": 1.0,
       "give_way_style": "zebra_give_way", "give_way_gap_m": 1.0, "min_start_gap_m": 1.0,
       "source": "estimate: 500 mm stripes, 600 mm gaps (500-700 mm in the regulations), band 3 m (2.4 m minimum); no studs or zig-zags (Chapter 6 not extracted)"
+    },
+    "mouth_edge": {
+      "style": [ { "if": { "speed_max": 40 }, "style": "edge_mouth_100" }, { "if": { "speed_max": 60 }, "style": "edge_mouth_150" }, { "style": "edge_mouth_200" } ],
+      "max_deviation_deg": 30,
+      "source": "DfT TSM Ch5: broken edge line (diagram 1010) at junction mouths, 100/150/200 mm by speed; mark and gap are estimates. The line runs straight across the mouth, not round the kerb radii"
+    },
+    "splitter": {
+      "outline_style": [ { "if": { "speed_min": 40 }, "style": "edge_150" }, { "style": "edge_100" } ],
+      "outline_gap_m": 0.15,
+      "hatch_style": "fill_white", "hatch_length_m": 12, "hatch_width_m": 1.4, "stripe_width_m": 0.3, "pitch_m": 1.0, "angle_deg": 60,
+      "source": "estimate (photos): solid outline round the kerbed splitter and diagonal bars on the approach taper ahead of its nose"
     },
     "roundabout_entry": {
       "style": [ { "if": { "speed_max": 30 }, "style": "give_way_low" }, { "style": "give_way_high" } ],

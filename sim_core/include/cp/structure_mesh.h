@@ -135,7 +135,7 @@ struct StructureParams {
     double block_bury = 1.0;          // m, block foot below the lowest ground under it
 
     // ---- piers ----
-    double max_pier_spacing = 32.0;      // m, longest clear distance between supports (region)
+    double max_pier_spacing = 40.0;      // m, longest clear distance between supports (region; the prototype used about 32)
     double pier_search = 0.4;            // fraction of the spacing a pier may move to avoid roads
     double pier_shaft_along = 1.4;       // m, thickness along the road
     double pier_shaft_width = 0.5;       // fraction of the road half-width, each side of the centre

@@ -26,7 +26,7 @@ TEST_CASE("UK region pack loads from the repo data dir") {
     CHECK(pack->driving_side == DrivingSide::Left);
     CHECK(pack->headroom_m == doctest::Approx(5.3));
     CHECK(pack->lane_types.size() == 7);
-    CHECK(pack->road_types.size() == 5);
+    CHECK(pack->road_types.size() == 9);
 
     const RoadType* res = pack->road_type("residential");
     REQUIRE(res);
@@ -204,4 +204,73 @@ TEST_CASE("roundabout island surfaces come from the region pack with defaults") 
     CHECK(custom->roundabout.island_kerb_upstand == doctest::Approx(0.2));
     const std::string bad = R"({"id":"t","driving_side":"right","speed_unit":"kph","roundabout":{"island_kerb_upstand_m":-1}})";
     CHECK_FALSE(parse_region_pack(*lt, bad, road_types(R"({"lane":"driving","width_m":3.0})")));
+}
+
+TEST_CASE("UK rural and urban main road types") {
+    auto pack = load_region_pack_by_id(CP_DATA_DIR, "uk");
+    REQUIRE_MESSAGE(pack, pack.error);
+    const auto count = [](const std::vector<CrossSectionSlot>& v, const char* lane) {
+        int n = 0;
+        for (const auto& s : v) n += s.lane_type == lane ? 1 : 0;
+        return n;
+    };
+    const auto width = [](const std::vector<CrossSectionSlot>& v, const char* lane) {
+        double w = 0;
+        for (const auto& s : v)
+            if (s.lane_type == lane) w += s.width;
+        return w;
+    };
+
+    // Dual carriageway and motorway: no kerb lane anywhere (kerbs on them would be a data bug).
+    for (const char* id : {"a_road_dual", "motorway"}) {
+        const RoadType* t = pack->road_type(id);
+        REQUIRE(t);
+        CHECK(count(t->carriageway, "kerb") == 0);
+        CHECK(count(t->carriageway, "pavement") == 0);
+    }
+
+    // Kerbless rural types: no kerb or footway, a grass verge on the outside.
+    for (const char* id : {"a_road_rural", "b_road_rural", "country_lane"}) {
+        const RoadType* t = pack->road_type(id);
+        REQUIRE_MESSAGE(t, id);
+        CHECK(t->two_way);
+        for (const auto* v : {&t->half, &t->one_way_variant}) {
+            CHECK(count(*v, "kerb") == 0);
+            CHECK(count(*v, "pavement") == 0);
+            CHECK(count(*v, "verge") >= 1);
+        }
+        CHECK(!t->street_lights.lit);
+        CHECK(t->crossfall.has_value());
+        CHECK(t->verge_crossfall.has_value());
+        CHECK(!t->roundabout_ring);
+    }
+    const RoadType* a = pack->road_type("a_road_rural");
+    CHECK(width(a->half, "driving") == doctest::Approx(3.65));
+    CHECK(width(a->half, "hard_strip") == doctest::Approx(1.0));
+    CHECK(a->speed_limit == doctest::Approx(60 * 0.44704));
+    CHECK(a->markings == "rural_single");
+    const RoadType* b = pack->road_type("b_road_rural");
+    CHECK(width(b->half, "driving") == doctest::Approx(3.2));
+    CHECK(count(b->half, "hard_strip") == 0);
+    const RoadType* lane = pack->road_type("country_lane");
+    CHECK(2 * width(lane->half, "driving") == doctest::Approx(3.5));  // one surface, two half lanes
+    CHECK(lane->markings.empty());
+    CHECK(a->road_class > b->road_class);
+    CHECK(b->road_class > lane->road_class);
+
+    // Urban main street: kerbs, footways, parking bays.
+    const RoadType* m = pack->road_type("main_street");
+    REQUIRE(m);
+    CHECK(count(m->half, "kerb") == 1);
+    CHECK(count(m->half, "pavement") == 1);
+    CHECK(count(m->half, "parking") == 1);
+    CHECK(m->street_lights.lit);
+    CHECK(m->markings == "urban_single");
+
+    // Every non-empty marking set named by a road type is one of the sets in marking_rules.json.
+    for (const auto& [id, t] : pack->road_types)
+        if (!t.markings.empty())
+            CHECK_MESSAGE((t.markings == "urban_single" || t.markings == "rural_single" || t.markings == "dual" ||
+                           t.markings == "motorway"),
+                          id);
 }

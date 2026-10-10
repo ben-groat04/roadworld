@@ -53,6 +53,9 @@ struct GradingParams {
     double wall_start = 12.0;      // m, slope height above which a wall replaces the slope
     double wall_cap = 12.0;        // m, wall height above which bridge / tunnel is required
     double wall_slack = 0.75;      // m, a slope may be this much higher than wall_start before a wall is needed
+    double wing_max = 10.0;        // m, longest wing wall beside a portal / abutment
+    double round_daylight = 2.0;   // m (horizontal), roll-over of slope tops / toes into natural ground
+    double round_hinge = 1.0;      // m (horizontal), parabolic verge -> slope hinge
     // ---- sampling ----
     double sample_step = 2.0;      // m, adapter centreline sampling step
     // ---- structures and walls (sample counts) ----
@@ -60,13 +63,14 @@ struct GradingParams {
     int structure_min_run = 8;     // auto bridge / tunnel: runs shorter than this are dropped
     int wall_gap = 8;              // gaps between wall runs shorter than this are bridged
     int wall_min_run = 8;          // a wall run is at least this long (grown, never dropped)
-    int portal_wall = 12;          // walled stretch before a portal / after an abutment
+    double wing_ratio = 1.0;       // m of wing wall per m of retained height at the structure
+    double wing_min_h = 0.3;       // m, no wing wall where the ground beside the structure is this close to formation
     int wall_pad = 5;              // wall runs are padded by this much beyond the stations that need them
-    double wall_ramp = 10.0;       // m, wall weight blends 0 -> 1 over this run from a free end
+    double wall_ramp = 11.0;       // m, wall weight blends 0 -> 1 over this run from a free end
     // ---- portals and reach ----
     double plane_over = 0.75;      // m, grading stops this far past a portal plane
-    int plane_span = 10;           // decimated segments before / after a portal carrying its plane test
-    double reach_margin = 2.0;     // m, added to the wall-start reach (reach cap)
+    double plane_margin = 4.0;     // m, a portal's plane test covers segments within (road reach + this) of path length
+    double reach_margin = 2.0;     // m, added to the wall-start reach (reach cap, which also covers wall_slack and the roll-overs)
     double box_margin = 1.0;       // m, road bounding box margin beyond the reach cap
     double reach_pad = 2.5;        // m, added to the measured daylight reach of unwalled roads
     TunnelParams tunnel;
@@ -115,9 +119,19 @@ struct StructureRange {
 std::vector<StructureRange> required_structures(const SampledRoad& road, const GroundFn& ground,
                                                 const GradingParams& p);
 
-// Fills br / tu / portal / wL / wR / wL0 / wR0 and road.portals. Walls only where a batter
-// slope cannot daylight within wall_start; runs are bridged, padded, grown to a minimum, and
-// walled before portals and abutments.
+// Fills br / tu / portal and road.portals (structure flags only).
+void classify_structures(SampledRoad& road, const GroundFn& ground, const GradingParams& p, StructureMode mode);
+
+// Fills wL / wR / wL0 / wR0 from the structure flags. Walls only where a batter slope cannot
+// daylight within wall_start (nor meet a neighbouring road's earthworks: `near`, other roads
+// whose boxes overlap, may be empty); runs are bridged, padded and grown to a minimum. The
+// approach to a portal / abutment is an ordinary slope: only a wing wall of
+// min(wing_max, wing_ratio * H) metres blends into a full wall right at the structure.
+void classify_walls(SampledRoad& road, const GroundFn& ground, const GradingParams& p,
+                    const std::vector<const SampledRoad*>& near);
+
+// classify_structures + classify_walls without neighbours (prepare_grading_roads redoes the
+// walls with the neighbours in place).
 void classify_road(SampledRoad& road, const GroundFn& ground, const GradingParams& p, StructureMode mode);
 
 // Dual carriageways: the inner side facing the opposite-direction parallel partner of the same
@@ -159,8 +173,9 @@ struct GradingRoad {
     std::vector<PortalPlane> planes;
 };
 
-// Runs mark_medians and compute_wall_weights (mutating `roads`), then packs every road with at
-// least two samples. Roads closer than their reach to a tile contribute to it.
+// Recomputes the walls of every road with its neighbours in place, runs mark_medians and
+// compute_wall_weights (mutating `roads`), then packs every road with at least two samples.
+// Roads closer than their reach to a tile contribute to it.
 std::vector<GradingRoad> prepare_grading_roads(std::vector<SampledRoad>& roads, const GroundFn& ground,
                                                const GradingParams& p);
 

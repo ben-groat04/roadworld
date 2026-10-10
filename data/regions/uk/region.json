@@ -33,6 +33,59 @@
     "splitter_width_m": 1.8,
     "central_island_surface": "grass",
     "splitter_surface": "paving",
-    "island_kerb_upstand_m": 0.125
+    "island_kerb_upstand_m": 0.125,
+    "_size_classes": "estimate (UK roundabout practice, DMRB CD 116 style values recalled, not checked): by ring centreline radius. Entry fillets are tight (slow entries), exit fillets generous (easy exits); the splitter island widens toward the ring, its length scaled by the approach speed; small rings get an over-run apron.",
+    "size_classes": [
+      { "max_radius_m": 12,  "entry_corner_radius_m": 6,  "exit_corner_radius_m": 8,  "splitter_length_m": 12, "splitter_width_m": 1.8, "apron_width_m": 1.5 },
+      { "max_radius_m": 22,  "entry_corner_radius_m": 12, "exit_corner_radius_m": 20, "splitter_length_m": 33, "splitter_width_m": 3.0 },
+      { "max_radius_m": 50,  "entry_corner_radius_m": 20, "exit_corner_radius_m": 35, "splitter_length_m": 45, "splitter_width_m": 3.6 },
+      {                      "entry_corner_radius_m": 25, "exit_corner_radius_m": 40, "splitter_length_m": 55, "splitter_width_m": 4.5 }
+    ],
+    "splitter_speed_factors": [
+      { "max_speed_kph": 50, "factor": 0.85 },
+      { "max_speed_kph": 70, "factor": 1.0 },
+      { "max_speed_kph": 90, "factor": 1.2 },
+      { "factor": 1.4 }
+    ],
+    "apron_island_radius_max_m": 9
+  },
+  "junction": {
+    "_comment": "Junction shaping defaults. All numbers are estimates (UK practice recalled, not checked), tuned by eye; a player override always wins.",
+    "_corner_radius_by_class": "Default kerb radius by the pair of road classes meeting (minor = the less important arm): lane 30, residential 50, ring 60 / rural B 60, B 70, main street 75, rural A 90, dual 100. First match wins; no match = the larger road-type corner_radius_m.",
+    "corner_radius_by_class": [
+      { "minor_max": 40, "major_max": 55, "radius_m": 4 },
+      { "minor_max": 40, "major_max": 80, "radius_m": 6 },
+      { "minor_max": 40, "radius_m": 10 },
+      { "minor_max": 55, "major_max": 55, "radius_m": 6 },
+      { "minor_max": 55, "major_max": 80, "radius_m": 9 },
+      { "minor_max": 55, "radius_m": 12 },
+      { "minor_max": 80, "major_max": 80, "radius_m": 10 },
+      { "minor_max": 80, "radius_m": 14 },
+      { "radius_m": 15 }
+    ],
+    "skew_factor": { "min": 0.6, "max": 1.5 },
+    "turn_pockets": {
+      "_comment": "Ghost-island offside-turn lanes. Default on where the through road is rural A class or above and the minor road is a lesser road leaving it at roughly a right angle; none on residential or town streets. Taper 1:N and pocket lane length by the through road speed limit: estimate (TD 42 style, recalled, not checked).",
+      "enabled": true,
+      "major_class_min": 85,
+      "lane_width_m": 3.25,
+      "max_bend_rad": 0.12,
+      "min_minor_angle_rad": 1.0,
+      "max_minor_angle_rad": 2.14,
+      "min_taper_ratio": 8,
+      "min_storage_m": 10,
+      "taper_ratio": [
+        { "max_speed_kph": 50, "ratio": 10 },
+        { "max_speed_kph": 70, "ratio": 15 },
+        { "max_speed_kph": 90, "ratio": 20 },
+        { "ratio": 25 }
+      ],
+      "storage": [
+        { "max_speed_kph": 50, "length_m": 12 },
+        { "max_speed_kph": 70, "length_m": 20 },
+        { "max_speed_kph": 90, "length_m": 30 },
+        { "length_m": 40 }
+      ]
+    }
   }
 }

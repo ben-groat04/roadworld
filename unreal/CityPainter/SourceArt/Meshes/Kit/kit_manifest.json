@@ -1,0 +1,3301 @@
+{
+ "kit_version": 1,
+ "generator": "tools/blender_kit/build_all.py (Blender 5.2.2 LTS)",
+ "units": "FBX in cm: 1 m in Blender == 100 uu; scale 1.0 on import",
+ "axes": {
+  "along": "+X",
+  "toward_carriageway": "+Y",
+  "up": "+Z",
+  "fbx_export": "axis_forward=-Z axis_up=Y (Blender defaults; verified round trip via verify_fbx.py)"
+ },
+ "uv": "UV 1.0 == 1 m (real-world scale); tile materials as UV / size_m",
+ "uv_note": "box projection per face in metres; round parts cylindrical (u = arc length in m, v = axial metres)",
+ "street_light": {
+  "pivot": "ground level on the column axis (parapet-mount: underside of base plate)",
+  "bracket_axis": "+Y in mesh space; rotate by StreetLight.heading (rad CCW from +x, direction the bracket points) so +Y maps to heading",
+  "heading_to_yaw": "mesh +Y == bracket direction; yaw_about_Z = heading - pi/2 (mathematical CCW; mirror for Unreal's left-handed Y as needed)",
+  "mounting_height_m": "luminaire centre height above the base == StreetLight.mounting_height",
+  "outreach_m": "horizontal axis-to-bracket-tip distance == StreetLight.outreach",
+  "twin_arm": "second identical arm along -Y (heading + pi)",
+  "on_structure": "use mesh_on_structure (_PM: flat bolted plate, no door/root) when StreetLight.on_structure",
+  "styles": {
+   "residential_column_6m": {
+    "mesh": "SM_LC_H06_O06_S",
+    "mesh_on_structure": "SM_LC_H06_O06_S_PM",
+    "mounting_height_m": 6,
+    "outreach_m": 0.6,
+    "twin_arm": false
+   },
+   "column_8m": {
+    "mesh": "SM_LC_H08_O10_S",
+    "mesh_on_structure": "SM_LC_H08_O10_S_PM",
+    "mounting_height_m": 8,
+    "outreach_m": 1.0,
+    "twin_arm": false
+   },
+   "column_10m": {
+    "mesh": "SM_LC_H10_O15_S",
+    "mesh_on_structure": "SM_LC_H10_O15_S_PM",
+    "mounting_height_m": 10,
+    "outreach_m": 1.5,
+    "twin_arm": false
+   },
+   "column_12m_twin": {
+    "mesh": "SM_LC_H12_O18_T",
+    "mesh_on_structure": "SM_LC_H12_O18_T_PM",
+    "mounting_height_m": 12,
+    "outreach_m": 1.8,
+    "twin_arm": true
+   }
+  },
+  "generic_mesh_name": "SM_LC_H{height:02d}_O{outreach_dm:02d}_{S|T}[_PM]; heights 6,8,10,12; outreach dm 06,10,15,18"
+ },
+ "meshes": [
+  {
+   "name": "SM_Barrier_Step_3m",
+   "category": "Barriers",
+   "fbx": "Barriers/SM_Barrier_Step_3m.fbx",
+   "dimensions_m": [
+    2.995,
+    0.57,
+    0.8
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.285,
+    0.0
+   ],
+   "bbox_max_m": [
+    2.995,
+    0.285,
+    0.8
+   ],
+   "pivot": "ground, centre of base (y=0), start face; symmetric (double-sided)",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "structural_concrete"
+   ],
+   "triangles": 204,
+   "open_edges": 0,
+   "proxy": "SM_Barrier_Step_3m_proxy",
+   "proxy_fbx": "Barriers/SM_Barrier_Step_3m_proxy.fbx",
+   "proxy_triangles": 24,
+   "collision": "box",
+   "notes": "precast concrete step barrier 0.8 m for central reservations, 3 m unit",
+   "parameters": {
+    "ped_len": 2.0,
+    "ped_h": 1.1,
+    "ped_post_d": 0.076,
+    "ped_rail_d": 0.048,
+    "wbeam_len": 4.0,
+    "wbeam_post_spacing": 2.0,
+    "wbeam_top": 0.75,
+    "wbeam_t": 0.004,
+    "step_len": 3.0,
+    "step_h": 0.8,
+    "parapet_bay": 2.0,
+    "parapet_h": 1.0,
+    "cope_len": 1.0,
+    "cope_w": 0.4,
+    "cope_t": 0.12
+   }
+  },
+  {
+   "name": "SM_Barrier_WBeam_4m",
+   "category": "Barriers",
+   "fbx": "Barriers/SM_Barrier_WBeam_4m.fbx",
+   "dimensions_m": [
+    4.045,
+    0.317,
+    1.1
+   ],
+   "bbox_min_m": [
+    -0.05,
+    -0.03,
+    -0.35
+   ],
+   "bbox_max_m": [
+    3.995,
+    0.287,
+    0.75
+   ],
+   "pivot": "ground at post 1 axis (x=0); beam face toward +Y; posts at x=0 and x=2.0",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel"
+   ],
+   "triangles": 364,
+   "open_edges": 0,
+   "proxy": "SM_Barrier_WBeam_4m_proxy",
+   "proxy_fbx": "Barriers/SM_Barrier_WBeam_4m_proxy.fbx",
+   "proxy_triangles": 40,
+   "collision": "box",
+   "notes": "W-beam steel safety barrier, 4 m module, top 0.75 m, posts every 2 m with spacer blocks",
+   "parameters": {
+    "ped_len": 2.0,
+    "ped_h": 1.1,
+    "ped_post_d": 0.076,
+    "ped_rail_d": 0.048,
+    "wbeam_len": 4.0,
+    "wbeam_post_spacing": 2.0,
+    "wbeam_top": 0.75,
+    "wbeam_t": 0.004,
+    "step_len": 3.0,
+    "step_h": 0.8,
+    "parapet_bay": 2.0,
+    "parapet_h": 1.0,
+    "cope_len": 1.0,
+    "cope_w": 0.4,
+    "cope_t": 0.12
+   }
+  },
+  {
+   "name": "SM_Bollard_IslandKeepLeft",
+   "category": "Bollards",
+   "fbx": "Bollards/SM_Bollard_IslandKeepLeft.fbx",
+   "dimensions_m": [
+    0.32,
+    0.18,
+    0.75
+   ],
+   "bbox_min_m": [
+    -0.16,
+    -0.09,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.16,
+    0.09,
+    0.75
+   ],
+   "pivot": "ground level at the centre of the footprint; +Y toward the carriageway",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "plastic_black",
+    "plastic_white"
+   ],
+   "triangles": 420,
+   "open_edges": 0,
+   "proxy": "SM_Bollard_IslandKeepLeft_proxy",
+   "proxy_fbx": "Bollards/SM_Bollard_IslandKeepLeft_proxy.fbx",
+   "proxy_triangles": 24,
+   "collision": "box",
+   "notes": "blank island bollard body 320 x 180 x 750 (no sign face); wide face toward +Y",
+   "parameters": {
+    "steel_d": 0.114,
+    "steel_h": 1.0,
+    "keepleft": [
+     0.32,
+     0.18,
+     0.75
+    ],
+    "timber": [
+     0.15,
+     0.15,
+     1.0
+    ]
+   }
+  },
+  {
+   "name": "SM_Bollard_Steel",
+   "category": "Bollards",
+   "fbx": "Bollards/SM_Bollard_Steel.fbx",
+   "dimensions_m": [
+    0.138,
+    0.138,
+    1.008
+   ],
+   "bbox_min_m": [
+    -0.069,
+    -0.069,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.069,
+    0.069,
+    1.008
+   ],
+   "pivot": "ground level at the centre of the footprint; +Y toward the carriageway",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "painted_steel",
+    "plastic_white"
+   ],
+   "triangles": 560,
+   "open_edges": 0,
+   "proxy": "SM_Bollard_Steel_proxy",
+   "proxy_fbx": "Bollards/SM_Bollard_Steel_proxy.fbx",
+   "proxy_triangles": 24,
+   "collision": "box",
+   "notes": "114 mm steel verge bollard, 1.0 m, white reflective band, domed cap",
+   "parameters": {
+    "steel_d": 0.114,
+    "steel_h": 1.0,
+    "keepleft": [
+     0.32,
+     0.18,
+     0.75
+    ],
+    "timber": [
+     0.15,
+     0.15,
+     1.0
+    ]
+   }
+  },
+  {
+   "name": "SM_Bollard_Timber",
+   "category": "Bollards",
+   "fbx": "Bollards/SM_Bollard_Timber.fbx",
+   "dimensions_m": [
+    0.15,
+    0.15,
+    1.2
+   ],
+   "bbox_min_m": [
+    -0.075,
+    -0.075,
+    -0.2
+   ],
+   "bbox_max_m": [
+    0.075,
+    0.075,
+    1.0
+   ],
+   "pivot": "ground level at the centre of the footprint; +Y toward the carriageway",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "timber"
+   ],
+   "triangles": 132,
+   "open_edges": 0,
+   "proxy": "SM_Bollard_Timber_proxy",
+   "proxy_fbx": "Bollards/SM_Bollard_Timber_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "box",
+   "notes": "150 x 150 x 1000 timber post, chamfered top, 200 mm embedded below ground",
+   "parameters": {
+    "steel_d": 0.114,
+    "steel_h": 1.0,
+    "keepleft": [
+     0.32,
+     0.18,
+     0.75
+    ],
+    "timber": [
+     0.15,
+     0.15,
+     1.0
+    ]
+   }
+  },
+  {
+   "name": "SM_Coping_Headwall",
+   "category": "Masonry",
+   "fbx": "Masonry/SM_Coping_Headwall.fbx",
+   "dimensions_m": [
+    0.995,
+    0.45,
+    0.2
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.45,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.995,
+    0.0,
+    0.2
+   ],
+   "pivot": "bottom of the front face at the start; +X along wall, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "structural_concrete"
+   ],
+   "triangles": 304,
+   "open_edges": 0,
+   "proxy": "SM_Coping_Headwall_proxy",
+   "proxy_fbx": "Masonry/SM_Coping_Headwall_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "precast headwall coping 1000 x 450 x 200 with rounded front arris",
+   "parameters": {
+    "retain_cope": [
+     0.5,
+     0.4,
+     0.15
+    ],
+    "head_cope": [
+     1.0,
+     0.45,
+     0.2
+    ],
+    "tactile": 0.4
+   }
+  },
+  {
+   "name": "SM_Coping_Retaining",
+   "category": "Masonry",
+   "fbx": "Masonry/SM_Coping_Retaining.fbx",
+   "dimensions_m": [
+    0.495,
+    0.4,
+    0.165
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.4,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.495,
+    0.0,
+    0.165
+   ],
+   "pivot": "bottom of the front face at the start; +X along wall, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "structural_concrete"
+   ],
+   "triangles": 260,
+   "open_edges": 0,
+   "proxy": "SM_Coping_Retaining_proxy",
+   "proxy_fbx": "Masonry/SM_Coping_Retaining_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "retaining-wall coping stone 500 x 400 x 150, weathered top, drip groove",
+   "parameters": {
+    "retain_cope": [
+     0.5,
+     0.4,
+     0.15
+    ],
+    "head_cope": [
+     1.0,
+     0.45,
+     0.2
+    ],
+    "tactile": 0.4
+   }
+  },
+  {
+   "name": "SM_Guardrail_Ped_Infill",
+   "category": "Barriers",
+   "fbx": "Barriers/SM_Guardrail_Ped_Infill.fbx",
+   "dimensions_m": [
+    2.033,
+    0.076,
+    1.11
+   ],
+   "bbox_min_m": [
+    -0.038,
+    -0.038,
+    0.0
+   ],
+   "bbox_max_m": [
+    1.995,
+    0.038,
+    1.11
+   ],
+   "pivot": "ground level at the first post axis; +X along run, +Y toward traffic",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel"
+   ],
+   "triangles": 652,
+   "open_edges": 0,
+   "proxy": "SM_Guardrail_Ped_Infill_proxy",
+   "proxy_fbx": "Barriers/SM_Guardrail_Ped_Infill_proxy.fbx",
+   "proxy_triangles": 42,
+   "collision": "box",
+   "notes": "as Rail with vertical infill bars",
+   "parameters": {
+    "ped_len": 2.0,
+    "ped_h": 1.1,
+    "ped_post_d": 0.076,
+    "ped_rail_d": 0.048,
+    "wbeam_len": 4.0,
+    "wbeam_post_spacing": 2.0,
+    "wbeam_top": 0.75,
+    "wbeam_t": 0.004,
+    "step_len": 3.0,
+    "step_h": 0.8,
+    "parapet_bay": 2.0,
+    "parapet_h": 1.0,
+    "cope_len": 1.0,
+    "cope_w": 0.4,
+    "cope_t": 0.12
+   }
+  },
+  {
+   "name": "SM_Guardrail_Ped_Rail",
+   "category": "Barriers",
+   "fbx": "Barriers/SM_Guardrail_Ped_Rail.fbx",
+   "dimensions_m": [
+    2.033,
+    0.076,
+    1.11
+   ],
+   "bbox_min_m": [
+    -0.038,
+    -0.038,
+    0.0
+   ],
+   "bbox_max_m": [
+    1.995,
+    0.038,
+    1.11
+   ],
+   "pivot": "ground level at the first post axis; +X along run, +Y toward traffic",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel"
+   ],
+   "triangles": 176,
+   "open_edges": 0,
+   "proxy": "SM_Guardrail_Ped_Rail_proxy",
+   "proxy_fbx": "Barriers/SM_Guardrail_Ped_Rail_proxy.fbx",
+   "proxy_triangles": 24,
+   "collision": "box",
+   "notes": "2 m pedestrian guardrail bay, 1.1 m, two rails; post at x=0 only (next bay supplies the far post)",
+   "parameters": {
+    "ped_len": 2.0,
+    "ped_h": 1.1,
+    "ped_post_d": 0.076,
+    "ped_rail_d": 0.048,
+    "wbeam_len": 4.0,
+    "wbeam_post_spacing": 2.0,
+    "wbeam_top": 0.75,
+    "wbeam_t": 0.004,
+    "step_len": 3.0,
+    "step_h": 0.8,
+    "parapet_bay": 2.0,
+    "parapet_h": 1.0,
+    "cope_len": 1.0,
+    "cope_w": 0.4,
+    "cope_t": 0.12
+   }
+  },
+  {
+   "name": "SM_Guardrail_Ped_Rail_End",
+   "category": "Barriers",
+   "fbx": "Barriers/SM_Guardrail_Ped_Rail_End.fbx",
+   "dimensions_m": [
+    2.076,
+    0.076,
+    1.11
+   ],
+   "bbox_min_m": [
+    -0.038,
+    -0.038,
+    0.0
+   ],
+   "bbox_max_m": [
+    2.038,
+    0.038,
+    1.11
+   ],
+   "pivot": "ground level at the first post axis; +X along run, +Y toward traffic",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel"
+   ],
+   "triangles": 264,
+   "open_edges": 0,
+   "proxy": "SM_Guardrail_Ped_Rail_End_proxy",
+   "proxy_fbx": "Barriers/SM_Guardrail_Ped_Rail_End_proxy.fbx",
+   "proxy_triangles": 24,
+   "collision": "box",
+   "notes": "2 m bay including the terminal post at x=2.0",
+   "parameters": {
+    "ped_len": 2.0,
+    "ped_h": 1.1,
+    "ped_post_d": 0.076,
+    "ped_rail_d": 0.048,
+    "wbeam_len": 4.0,
+    "wbeam_post_spacing": 2.0,
+    "wbeam_top": 0.75,
+    "wbeam_t": 0.004,
+    "step_len": 3.0,
+    "step_h": 0.8,
+    "parapet_bay": 2.0,
+    "parapet_h": 1.0,
+    "cope_len": 1.0,
+    "cope_w": 0.4,
+    "cope_t": 0.12
+   }
+  },
+  {
+   "name": "SM_Gully_Grating",
+   "category": "Drainage",
+   "fbx": "Drainage/SM_Gully_Grating.fbx",
+   "dimensions_m": [
+    0.45,
+    0.45,
+    0.1
+   ],
+   "bbox_min_m": [
+    -0.225,
+    -0.225,
+    -0.094
+   ],
+   "bbox_max_m": [
+    0.225,
+    0.225,
+    0.006
+   ],
+   "pivot": "centre of frame in plan; frame top at z=+3 mm, body below; +X along road, +Y toward road",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "cast_iron",
+    "plastic_black"
+   ],
+   "triangles": 1116,
+   "open_edges": 0,
+   "proxy": "SM_Gully_Grating_proxy",
+   "proxy_fbx": "Drainage/SM_Gully_Grating_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "450 x 450 hinged cast-iron road gully grating; slots run along X, flow arrives from +Y",
+   "parameters": {
+    "gully_outer": 0.45,
+    "gully_inner": 0.36,
+    "gully_depth": 0.1,
+    "gully_bar": 0.016,
+    "gully_gap": 0.016,
+    "mh_frame_d": 0.75,
+    "mh_cover_d": 0.6,
+    "mh_depth": 0.1,
+    "rib_h": 0.005,
+    "rib_w": 0.014,
+    "rib_pitch": 0.035,
+    "rect_frame": [
+     0.75,
+     0.6
+    ],
+    "rect_cover": [
+     0.6,
+     0.45
+    ],
+    "inlet_len": 0.915,
+    "inlet_h": 0.31,
+    "inlet_w": 0.15,
+    "inlet_open_w": 0.45,
+    "inlet_open_z": [
+     0.12,
+     0.23
+    ]
+   }
+  },
+  {
+   "name": "SM_Gully_KerbInlet",
+   "category": "Drainage",
+   "fbx": "Drainage/SM_Gully_KerbInlet.fbx",
+   "dimensions_m": [
+    0.91,
+    0.15,
+    0.31
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.15,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.91,
+    0.0,
+    0.31
+   ],
+   "pivot": "road-side bottom edge of the start face (same as kerbs); body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete",
+    "plastic_black"
+   ],
+   "triangles": 444,
+   "open_edges": 0,
+   "proxy": "SM_Gully_KerbInlet_proxy",
+   "proxy_fbx": "Drainage/SM_Gully_KerbInlet_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "precast kerb-inlet unit, 450 mm opening; lay beside a channel",
+   "parameters": {
+    "gully_outer": 0.45,
+    "gully_inner": 0.36,
+    "gully_depth": 0.1,
+    "gully_bar": 0.016,
+    "gully_gap": 0.016,
+    "mh_frame_d": 0.75,
+    "mh_cover_d": 0.6,
+    "mh_depth": 0.1,
+    "rib_h": 0.005,
+    "rib_w": 0.014,
+    "rib_pitch": 0.035,
+    "rect_frame": [
+     0.75,
+     0.6
+    ],
+    "rect_cover": [
+     0.6,
+     0.45
+    ],
+    "inlet_len": 0.915,
+    "inlet_h": 0.31,
+    "inlet_w": 0.15,
+    "inlet_open_w": 0.45,
+    "inlet_open_z": [
+     0.12,
+     0.23
+    ]
+   }
+  },
+  {
+   "name": "SM_Inspection_Rect",
+   "category": "Drainage",
+   "fbx": "Drainage/SM_Inspection_Rect.fbx",
+   "dimensions_m": [
+    0.75,
+    0.6,
+    0.101
+   ],
+   "bbox_min_m": [
+    -0.375,
+    -0.3,
+    -0.097
+   ],
+   "bbox_max_m": [
+    0.375,
+    0.3,
+    0.004
+   ],
+   "pivot": "centre of frame in plan; frame top at z=+3 mm, body below; +X along road, +Y toward road",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "cast_iron"
+   ],
+   "triangles": 992,
+   "open_edges": 0,
+   "proxy": "SM_Inspection_Rect_proxy",
+   "proxy_fbx": "Drainage/SM_Inspection_Rect_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "rectangular 600 x 450 inspection cover; ribs along X",
+   "parameters": {
+    "gully_outer": 0.45,
+    "gully_inner": 0.36,
+    "gully_depth": 0.1,
+    "gully_bar": 0.016,
+    "gully_gap": 0.016,
+    "mh_frame_d": 0.75,
+    "mh_cover_d": 0.6,
+    "mh_depth": 0.1,
+    "rib_h": 0.005,
+    "rib_w": 0.014,
+    "rib_pitch": 0.035,
+    "rect_frame": [
+     0.75,
+     0.6
+    ],
+    "rect_cover": [
+     0.6,
+     0.45
+    ],
+    "inlet_len": 0.915,
+    "inlet_h": 0.31,
+    "inlet_w": 0.15,
+    "inlet_open_w": 0.45,
+    "inlet_open_z": [
+     0.12,
+     0.23
+    ]
+   }
+  },
+  {
+   "name": "SM_Kerb_Bullnose",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_Bullnose.fbx",
+   "dimensions_m": [
+    0.91,
+    0.15,
+    0.255
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.15,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.91,
+    0.0,
+    0.255
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 164,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_Bullnose_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_Bullnose_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "150 x 255 bullnosed",
+   "parameters": {
+    "w": 0.15,
+    "h": 0.255,
+    "r": 0.075
+   }
+  },
+  {
+   "name": "SM_Kerb_Curve_R10_In",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_Curve_R10_In.fbx",
+   "dimensions_m": [
+    0.9197,
+    0.166,
+    0.255
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.1249,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.9197,
+    0.0411,
+    0.255
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 172,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_Curve_R10_In_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_Curve_R10_In_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "HB2 section swept on road-face radius 10 m; In: centre of curvature on the road (+Y; concave face, e.g. footway corner) side",
+   "parameters": {
+    "radius": 10.0,
+    "arc_len": 0.91,
+    "centre_side": "+Y"
+   }
+  },
+  {
+   "name": "SM_Kerb_Curve_R10_Out",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_Curve_R10_Out.fbx",
+   "dimensions_m": [
+    0.9084,
+    0.1655,
+    0.255
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.1656,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.9084,
+    -0.0001,
+    0.255
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 172,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_Curve_R10_Out_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_Curve_R10_Out_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "HB2 section swept on road-face radius 10 m; Out: centre of curvature on the footway (-Y; convex face, island) side",
+   "parameters": {
+    "radius": 10.0,
+    "arc_len": 0.91,
+    "centre_side": "-Y"
+   }
+  },
+  {
+   "name": "SM_Kerb_Curve_R3_In",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_Curve_R3_In.fbx",
+   "dimensions_m": [
+    0.9323,
+    0.2608,
+    0.255
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.1248,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.9323,
+    0.136,
+    0.255
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 172,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_Curve_R3_In_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_Curve_R3_In_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "HB2 section swept on road-face radius 3 m; In: centre of curvature on the road (+Y; concave face, e.g. footway corner) side",
+   "parameters": {
+    "radius": 3.0,
+    "arc_len": 0.91,
+    "centre_side": "+Y"
+   }
+  },
+  {
+   "name": "SM_Kerb_Curve_R3_Out",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_Curve_R3_Out.fbx",
+   "dimensions_m": [
+    0.8949,
+    0.2551,
+    0.255
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.2553,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.8949,
+    -0.0002,
+    0.255
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 172,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_Curve_R3_Out_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_Curve_R3_Out_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "HB2 section swept on road-face radius 3 m; Out: centre of curvature on the footway (-Y; convex face, island) side",
+   "parameters": {
+    "radius": 3.0,
+    "arc_len": 0.91,
+    "centre_side": "-Y"
+   }
+  },
+  {
+   "name": "SM_Kerb_Edging",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_Edging.fbx",
+   "dimensions_m": [
+    0.91,
+    0.05,
+    0.15
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.05,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.91,
+    0.0,
+    0.15
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 136,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_Edging_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_Edging_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "50 x 150 edging kerb (footway back / bed edge)",
+   "parameters": {
+    "w": 0.05,
+    "h": 0.15
+   }
+  },
+  {
+   "name": "SM_Kerb_FlushDropper",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_FlushDropper.fbx",
+   "dimensions_m": [
+    0.91,
+    0.125,
+    0.14
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.125,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.91,
+    0.0,
+    0.14
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 120,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_FlushDropper_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_FlushDropper_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "dropped kerb for crossings, ~10 mm upstand",
+   "parameters": {
+    "h": 0.14
+   }
+  },
+  {
+   "name": "SM_Kerb_HB2",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_HB2.fbx",
+   "dimensions_m": [
+    0.91,
+    0.125,
+    0.255
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.125,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.91,
+    0.0,
+    0.255
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 250,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_HB2_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_HB2_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "125 x 255 half-battered, 125 mm upstand when laid",
+   "parameters": {
+    "w": 0.125,
+    "h": 0.255,
+    "len": 0.91
+   }
+  },
+  {
+   "name": "SM_Kerb_HB2_v1",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_HB2_v1.fbx",
+   "dimensions_m": [
+    0.9107,
+    0.1259,
+    0.2557
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.1259,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.9107,
+    0.0,
+    0.2557
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 250,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_HB2_v1_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_HB2_v1_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "125 x 255 half-battered, 125 mm upstand when laid; chip/jitter variant 1",
+   "parameters": {
+    "w": 0.125,
+    "h": 0.255,
+    "len": 0.91
+   }
+  },
+  {
+   "name": "SM_Kerb_HB2_v2",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_HB2_v2.fbx",
+   "dimensions_m": [
+    0.9109,
+    0.1258,
+    0.2557
+   ],
+   "bbox_min_m": [
+    -0.0002,
+    -0.1258,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.9107,
+    0.0,
+    0.2557
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 250,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_HB2_v2_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_HB2_v2_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "125 x 255 half-battered, 125 mm upstand when laid; chip/jitter variant 2",
+   "parameters": {
+    "w": 0.125,
+    "h": 0.255,
+    "len": 0.91
+   }
+  },
+  {
+   "name": "SM_Kerb_HB2_v3",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_HB2_v3.fbx",
+   "dimensions_m": [
+    0.9108,
+    0.1265,
+    0.2556
+   ],
+   "bbox_min_m": [
+    -0.0006,
+    -0.1265,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.9102,
+    0.0,
+    0.2556
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 250,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_HB2_v3_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_HB2_v3_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "125 x 255 half-battered, 125 mm upstand when laid; chip/jitter variant 3",
+   "parameters": {
+    "w": 0.125,
+    "h": 0.255,
+    "len": 0.91
+   }
+  },
+  {
+   "name": "SM_Kerb_IslandNose",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_IslandNose.fbx",
+   "dimensions_m": [
+    0.3,
+    0.599,
+    0.255
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.5995,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.3,
+    -0.0005,
+    0.255
+   ],
+   "pivot": "centre of the nose arc at the road-face start; arc sweeps 180 degrees about -Y centre",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 406,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_IslandNose_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_IslandNose_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "traffic-island nosing: HB2 swept round a 0.30 m radius semicircle; pair with two straight units",
+   "parameters": {
+    "radius": 0.3,
+    "sweep_deg": 180
+   }
+  },
+  {
+   "name": "SM_Kerb_TransitionL",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_TransitionL.fbx",
+   "dimensions_m": [
+    0.91,
+    0.125,
+    0.2546
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.125,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.91,
+    0.0,
+    0.2546
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 120,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_TransitionL_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_TransitionL_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "full height at start -> dropped at end (+X)",
+   "parameters": {
+    "low_h": 0.155
+   }
+  },
+  {
+   "name": "SM_Kerb_TransitionR",
+   "category": "Kerbs",
+   "fbx": "Kerbs/SM_Kerb_TransitionR.fbx",
+   "dimensions_m": [
+    0.91,
+    0.125,
+    0.2546
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.125,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.91,
+    0.0,
+    0.2546
+   ],
+   "pivot": "road-side bottom edge of the start face; +X along run, +Y toward road, body at -Y",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "kerb_concrete"
+   ],
+   "triangles": 120,
+   "open_edges": 0,
+   "proxy": "SM_Kerb_TransitionR_proxy",
+   "proxy_fbx": "Kerbs/SM_Kerb_TransitionR_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "dropped at start -> full height at end (+X)",
+   "parameters": {
+    "low_h": 0.155
+   }
+  },
+  {
+   "name": "SM_LC_H06_O06_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O06_S.fbx",
+   "dimensions_m": [
+    0.3,
+    1.25,
+    5.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    5.9957
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O06_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O06_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 0.6m, single arm",
+   "parameters": {
+    "height": 6,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 5.976,
+    "arm_z_at_column": 5.856,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 5.976,
+    "arm_z_at_column": 5.856,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H06_O06_S_PM",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O06_S_PM.fbx",
+   "dimensions_m": [
+    0.3,
+    1.27,
+    5.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.15,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    5.9957
+   ],
+   "pivot": "underside of the base plate on the column axis; bracket +Y; no door",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 952,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O06_S_PM_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O06_S_PM_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 0.6m, single arm, parapet/structure mount",
+   "parameters": {
+    "height": 6,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": true,
+    "shaft_top": 5.976,
+    "arm_z_at_column": 5.856,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": true,
+    "shaft_top": 5.976,
+    "arm_z_at_column": 5.856,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H06_O06_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O06_T.fbx",
+   "dimensions_m": [
+    0.3,
+    2.24,
+    5.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -1.12,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    5.9957
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O06_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O06_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 0.6m, twin-arm",
+   "parameters": {
+    "height": 6,
+    "outreach": 0.6,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 5.976,
+    "arm_z_at_column": 5.856,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 0.6,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 5.976,
+    "arm_z_at_column": 5.856,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H06_O10_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O10_S.fbx",
+   "dimensions_m": [
+    0.3,
+    1.65,
+    5.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    5.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O10_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O10_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 1m, single arm",
+   "parameters": {
+    "height": 6,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 5.919,
+    "arm_z_at_column": 5.799,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 5.919,
+    "arm_z_at_column": 5.799,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H06_O10_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O10_T.fbx",
+   "dimensions_m": [
+    0.3,
+    3.04,
+    5.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -1.52,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    5.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O10_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O10_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 1m, twin-arm",
+   "parameters": {
+    "height": 6,
+    "outreach": 1.0,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 5.919,
+    "arm_z_at_column": 5.799,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 1.0,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 5.919,
+    "arm_z_at_column": 5.799,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H06_O15_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O15_S.fbx",
+   "dimensions_m": [
+    0.3,
+    2.15,
+    5.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    5.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O15_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O15_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 1.5m, single arm",
+   "parameters": {
+    "height": 6,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 5.849,
+    "arm_z_at_column": 5.729,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 5.849,
+    "arm_z_at_column": 5.729,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H06_O15_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O15_T.fbx",
+   "dimensions_m": [
+    0.3,
+    4.04,
+    5.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.02,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    5.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O15_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O15_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 1.5m, twin-arm",
+   "parameters": {
+    "height": 6,
+    "outreach": 1.5,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 5.849,
+    "arm_z_at_column": 5.729,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 1.5,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 5.849,
+    "arm_z_at_column": 5.729,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H06_O18_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O18_S.fbx",
+   "dimensions_m": [
+    0.3,
+    2.45,
+    5.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    5.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O18_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O18_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 1.8m, single arm",
+   "parameters": {
+    "height": 6,
+    "outreach": 1.8,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 5.807,
+    "arm_z_at_column": 5.687,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 1.8,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 5.807,
+    "arm_z_at_column": 5.687,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H06_O18_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H06_O18_T.fbx",
+   "dimensions_m": [
+    0.3,
+    4.64,
+    5.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.32,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    5.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H06_O18_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H06_O18_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=6m, outreach 1.8m, twin-arm",
+   "parameters": {
+    "height": 6,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 5.807,
+    "arm_z_at_column": 5.687,
+    "arm_z_at_tip": 5.94
+   },
+   "light": {
+    "height": 6,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 5.807,
+    "arm_z_at_column": 5.687,
+    "arm_z_at_tip": 5.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O06_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O06_S.fbx",
+   "dimensions_m": [
+    0.3,
+    1.25,
+    7.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    7.9957
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O06_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O06_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 0.6m, single arm",
+   "parameters": {
+    "height": 8,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 7.976,
+    "arm_z_at_column": 7.856,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 7.976,
+    "arm_z_at_column": 7.856,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O06_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O06_T.fbx",
+   "dimensions_m": [
+    0.3,
+    2.24,
+    7.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -1.12,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    7.9957
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O06_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O06_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 0.6m, twin-arm",
+   "parameters": {
+    "height": 8,
+    "outreach": 0.6,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 7.976,
+    "arm_z_at_column": 7.856,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 0.6,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 7.976,
+    "arm_z_at_column": 7.856,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O10_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O10_S.fbx",
+   "dimensions_m": [
+    0.3,
+    1.65,
+    7.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    7.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O10_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O10_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 1m, single arm",
+   "parameters": {
+    "height": 8,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 7.919,
+    "arm_z_at_column": 7.799,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 7.919,
+    "arm_z_at_column": 7.799,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O10_S_PM",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O10_S_PM.fbx",
+   "dimensions_m": [
+    0.3,
+    1.67,
+    7.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.15,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    7.985
+   ],
+   "pivot": "underside of the base plate on the column axis; bracket +Y; no door",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 952,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O10_S_PM_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O10_S_PM_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 1m, single arm, parapet/structure mount",
+   "parameters": {
+    "height": 8,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": true,
+    "shaft_top": 7.919,
+    "arm_z_at_column": 7.799,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": true,
+    "shaft_top": 7.919,
+    "arm_z_at_column": 7.799,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O10_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O10_T.fbx",
+   "dimensions_m": [
+    0.3,
+    3.04,
+    7.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -1.52,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    7.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O10_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O10_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 1m, twin-arm",
+   "parameters": {
+    "height": 8,
+    "outreach": 1.0,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 7.919,
+    "arm_z_at_column": 7.799,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 1.0,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 7.919,
+    "arm_z_at_column": 7.799,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O15_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O15_S.fbx",
+   "dimensions_m": [
+    0.3,
+    2.15,
+    7.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    7.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O15_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O15_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 1.5m, single arm",
+   "parameters": {
+    "height": 8,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 7.849,
+    "arm_z_at_column": 7.729,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 7.849,
+    "arm_z_at_column": 7.729,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O15_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O15_T.fbx",
+   "dimensions_m": [
+    0.3,
+    4.04,
+    7.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.02,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    7.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O15_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O15_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 1.5m, twin-arm",
+   "parameters": {
+    "height": 8,
+    "outreach": 1.5,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 7.849,
+    "arm_z_at_column": 7.729,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 1.5,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 7.849,
+    "arm_z_at_column": 7.729,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O18_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O18_S.fbx",
+   "dimensions_m": [
+    0.3,
+    2.45,
+    7.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    7.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O18_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O18_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 1.8m, single arm",
+   "parameters": {
+    "height": 8,
+    "outreach": 1.8,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 7.807,
+    "arm_z_at_column": 7.687,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 1.8,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 7.807,
+    "arm_z_at_column": 7.687,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H08_O18_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H08_O18_T.fbx",
+   "dimensions_m": [
+    0.3,
+    4.64,
+    7.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.32,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    7.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H08_O18_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H08_O18_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=8m, outreach 1.8m, twin-arm",
+   "parameters": {
+    "height": 8,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 7.807,
+    "arm_z_at_column": 7.687,
+    "arm_z_at_tip": 7.94
+   },
+   "light": {
+    "height": 8,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 7.807,
+    "arm_z_at_column": 7.687,
+    "arm_z_at_tip": 7.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O06_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O06_S.fbx",
+   "dimensions_m": [
+    0.3,
+    1.25,
+    9.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    9.9957
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O06_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O06_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 0.6m, single arm",
+   "parameters": {
+    "height": 10,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 9.976,
+    "arm_z_at_column": 9.856,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 9.976,
+    "arm_z_at_column": 9.856,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O06_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O06_T.fbx",
+   "dimensions_m": [
+    0.3,
+    2.24,
+    9.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -1.12,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    9.9957
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O06_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O06_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 0.6m, twin-arm",
+   "parameters": {
+    "height": 10,
+    "outreach": 0.6,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 9.976,
+    "arm_z_at_column": 9.856,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 0.6,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 9.976,
+    "arm_z_at_column": 9.856,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O10_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O10_S.fbx",
+   "dimensions_m": [
+    0.3,
+    1.65,
+    9.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    9.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O10_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O10_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 1m, single arm",
+   "parameters": {
+    "height": 10,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 9.919,
+    "arm_z_at_column": 9.799,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 9.919,
+    "arm_z_at_column": 9.799,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O10_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O10_T.fbx",
+   "dimensions_m": [
+    0.3,
+    3.04,
+    9.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -1.52,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    9.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O10_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O10_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 1m, twin-arm",
+   "parameters": {
+    "height": 10,
+    "outreach": 1.0,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 9.919,
+    "arm_z_at_column": 9.799,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 1.0,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 9.919,
+    "arm_z_at_column": 9.799,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O15_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O15_S.fbx",
+   "dimensions_m": [
+    0.3,
+    2.15,
+    9.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    9.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O15_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O15_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 1.5m, single arm",
+   "parameters": {
+    "height": 10,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 9.849,
+    "arm_z_at_column": 9.729,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 9.849,
+    "arm_z_at_column": 9.729,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O15_S_PM",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O15_S_PM.fbx",
+   "dimensions_m": [
+    0.3,
+    2.17,
+    9.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.15,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    9.985
+   ],
+   "pivot": "underside of the base plate on the column axis; bracket +Y; no door",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 952,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O15_S_PM_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O15_S_PM_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 1.5m, single arm, parapet/structure mount",
+   "parameters": {
+    "height": 10,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": true,
+    "shaft_top": 9.849,
+    "arm_z_at_column": 9.729,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": true,
+    "shaft_top": 9.849,
+    "arm_z_at_column": 9.729,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O15_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O15_T.fbx",
+   "dimensions_m": [
+    0.3,
+    4.04,
+    9.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.02,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    9.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O15_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O15_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 1.5m, twin-arm",
+   "parameters": {
+    "height": 10,
+    "outreach": 1.5,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 9.849,
+    "arm_z_at_column": 9.729,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 1.5,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 9.849,
+    "arm_z_at_column": 9.729,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O18_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O18_S.fbx",
+   "dimensions_m": [
+    0.3,
+    2.45,
+    9.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    9.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1148,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O18_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O18_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 1.8m, single arm",
+   "parameters": {
+    "height": 10,
+    "outreach": 1.8,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 9.807,
+    "arm_z_at_column": 9.687,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 1.8,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 9.807,
+    "arm_z_at_column": 9.687,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H10_O18_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H10_O18_T.fbx",
+   "dimensions_m": [
+    0.3,
+    4.64,
+    9.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.32,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    9.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1688,
+   "open_edges": 0,
+   "proxy": "SM_LC_H10_O18_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H10_O18_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=10m, outreach 1.8m, twin-arm",
+   "parameters": {
+    "height": 10,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 9.807,
+    "arm_z_at_column": 9.687,
+    "arm_z_at_tip": 9.94
+   },
+   "light": {
+    "height": 10,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 9.807,
+    "arm_z_at_column": 9.687,
+    "arm_z_at_tip": 9.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O06_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O06_S.fbx",
+   "dimensions_m": [
+    0.3,
+    1.25,
+    11.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    11.9957
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1084,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O06_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O06_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 0.6m, single arm",
+   "parameters": {
+    "height": 12,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 11.976,
+    "arm_z_at_column": 11.856,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 0.6,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 11.976,
+    "arm_z_at_column": 11.856,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O06_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O06_T.fbx",
+   "dimensions_m": [
+    0.3,
+    2.24,
+    11.9957
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -1.12,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.12,
+    11.9957
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1624,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O06_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O06_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 0.6m, twin-arm",
+   "parameters": {
+    "height": 12,
+    "outreach": 0.6,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 11.976,
+    "arm_z_at_column": 11.856,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 0.6,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 11.976,
+    "arm_z_at_column": 11.856,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O10_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O10_S.fbx",
+   "dimensions_m": [
+    0.3,
+    1.65,
+    11.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    11.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1084,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O10_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O10_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 1m, single arm",
+   "parameters": {
+    "height": 12,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 11.919,
+    "arm_z_at_column": 11.799,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 1.0,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 11.919,
+    "arm_z_at_column": 11.799,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O10_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O10_T.fbx",
+   "dimensions_m": [
+    0.3,
+    3.04,
+    11.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -1.52,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    1.52,
+    11.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1624,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O10_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O10_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 1m, twin-arm",
+   "parameters": {
+    "height": 12,
+    "outreach": 1.0,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 11.919,
+    "arm_z_at_column": 11.799,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 1.0,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 11.919,
+    "arm_z_at_column": 11.799,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O15_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O15_S.fbx",
+   "dimensions_m": [
+    0.3,
+    2.15,
+    11.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    11.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1084,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O15_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O15_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 1.5m, single arm",
+   "parameters": {
+    "height": 12,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 11.849,
+    "arm_z_at_column": 11.729,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 1.5,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 11.849,
+    "arm_z_at_column": 11.729,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O15_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O15_T.fbx",
+   "dimensions_m": [
+    0.3,
+    4.04,
+    11.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.02,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.02,
+    11.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1624,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O15_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O15_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 1.5m, twin-arm",
+   "parameters": {
+    "height": 12,
+    "outreach": 1.5,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 11.849,
+    "arm_z_at_column": 11.729,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 1.5,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 11.849,
+    "arm_z_at_column": 11.729,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O18_S",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O18_S.fbx",
+   "dimensions_m": [
+    0.3,
+    2.45,
+    11.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -0.13,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    11.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1084,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O18_S_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O18_S_proxy.fbx",
+   "proxy_triangles": 44,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 1.8m, single arm",
+   "parameters": {
+    "height": 12,
+    "outreach": 1.8,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 11.807,
+    "arm_z_at_column": 11.687,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 1.8,
+    "twin": false,
+    "parapet_mount": false,
+    "shaft_top": 11.807,
+    "arm_z_at_column": 11.687,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O18_T",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O18_T.fbx",
+   "dimensions_m": [
+    0.3,
+    4.64,
+    11.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.32,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    11.985
+   ],
+   "pivot": "ground level on the column axis; bracket points +Y (toward carriageway), compartment door faces +X",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1624,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O18_T_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O18_T_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 1.8m, twin-arm",
+   "parameters": {
+    "height": 12,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 11.807,
+    "arm_z_at_column": 11.687,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": false,
+    "shaft_top": 11.807,
+    "arm_z_at_column": 11.687,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_LC_H12_O18_T_PM",
+   "category": "Lighting",
+   "fbx": "Lighting/SM_LC_H12_O18_T_PM.fbx",
+   "dimensions_m": [
+    0.3,
+    4.64,
+    11.985
+   ],
+   "bbox_min_m": [
+    -0.15,
+    -2.32,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.15,
+    2.32,
+    11.985
+   ],
+   "pivot": "underside of the base plate on the column axis; bracket +Y; no door",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "galvanised_steel",
+    "painted_steel",
+    "lantern_glass"
+   ],
+   "triangles": 1492,
+   "open_edges": 0,
+   "proxy": "SM_LC_H12_O18_T_PM_proxy",
+   "proxy_fbx": "Lighting/SM_LC_H12_O18_T_PM_proxy.fbx",
+   "proxy_triangles": 68,
+   "collision": "box_column",
+   "notes": "tubular steel column H=12m, outreach 1.8m, twin-arm, parapet/structure mount",
+   "parameters": {
+    "height": 12,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": true,
+    "shaft_top": 11.807,
+    "arm_z_at_column": 11.687,
+    "arm_z_at_tip": 11.94
+   },
+   "light": {
+    "height": 12,
+    "outreach": 1.8,
+    "twin": true,
+    "parapet_mount": true,
+    "shaft_top": 11.807,
+    "arm_z_at_column": 11.687,
+    "arm_z_at_tip": 11.94
+   }
+  },
+  {
+   "name": "SM_Manhole_Round600",
+   "category": "Drainage",
+   "fbx": "Drainage/SM_Manhole_Round600.fbx",
+   "dimensions_m": [
+    0.75,
+    0.75,
+    0.101
+   ],
+   "bbox_min_m": [
+    -0.375,
+    -0.375,
+    -0.097
+   ],
+   "bbox_max_m": [
+    0.375,
+    0.375,
+    0.004
+   ],
+   "pivot": "centre of frame in plan; frame top at z=+3 mm, body below; +X along road, +Y toward road",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "cast_iron"
+   ],
+   "triangles": 3080,
+   "open_edges": 0,
+   "proxy": "SM_Manhole_Round600_proxy",
+   "proxy_fbx": "Drainage/SM_Manhole_Round600_proxy.fbx",
+   "proxy_triangles": 108,
+   "collision": "none",
+   "notes": "600 mm clear-opening round cast-iron cover and frame with cross-hatch tread",
+   "parameters": {
+    "gully_outer": 0.45,
+    "gully_inner": 0.36,
+    "gully_depth": 0.1,
+    "gully_bar": 0.016,
+    "gully_gap": 0.016,
+    "mh_frame_d": 0.75,
+    "mh_cover_d": 0.6,
+    "mh_depth": 0.1,
+    "rib_h": 0.005,
+    "rib_w": 0.014,
+    "rib_pitch": 0.035,
+    "rect_frame": [
+     0.75,
+     0.6
+    ],
+    "rect_cover": [
+     0.6,
+     0.45
+    ],
+    "inlet_len": 0.915,
+    "inlet_h": 0.31,
+    "inlet_w": 0.15,
+    "inlet_open_w": 0.45,
+    "inlet_open_z": [
+     0.12,
+     0.23
+    ]
+   }
+  },
+  {
+   "name": "SM_Parapet_Coping_1m",
+   "category": "Barriers",
+   "fbx": "Barriers/SM_Parapet_Coping_1m.fbx",
+   "dimensions_m": [
+    0.995,
+    0.4,
+    0.12
+   ],
+   "bbox_min_m": [
+    0.0,
+    -0.35,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.995,
+    0.05,
+    0.12
+   ],
+   "pivot": "bottom of the wall traffic face (y=0) at the start; coping overhangs to y=+0.05 and y=-0.35 (0.30 m wall)",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "structural_concrete"
+   ],
+   "triangles": 344,
+   "open_edges": 0,
+   "proxy": "SM_Parapet_Coping_1m_proxy",
+   "proxy_fbx": "Barriers/SM_Parapet_Coping_1m_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "precast concrete parapet coping, 1 m, throated",
+   "parameters": {
+    "ped_len": 2.0,
+    "ped_h": 1.1,
+    "ped_post_d": 0.076,
+    "ped_rail_d": 0.048,
+    "wbeam_len": 4.0,
+    "wbeam_post_spacing": 2.0,
+    "wbeam_top": 0.75,
+    "wbeam_t": 0.004,
+    "step_len": 3.0,
+    "step_h": 0.8,
+    "parapet_bay": 2.0,
+    "parapet_h": 1.0,
+    "cope_len": 1.0,
+    "cope_w": 0.4,
+    "cope_t": 0.12
+   }
+  },
+  {
+   "name": "SM_Parapet_Steel_2m",
+   "category": "Barriers",
+   "fbx": "Barriers/SM_Parapet_Steel_2m.fbx",
+   "dimensions_m": [
+    2.095,
+    0.27,
+    1.0
+   ],
+   "bbox_min_m": [
+    -0.1,
+    -0.1,
+    0.0
+   ],
+   "bbox_max_m": [
+    1.995,
+    0.17,
+    1.0
+   ],
+   "pivot": "deck level at post axis (x=0); traffic side +Y; rails to x=2.0",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "painted_steel"
+   ],
+   "triangles": 556,
+   "open_edges": 0,
+   "proxy": "SM_Parapet_Steel_2m_proxy",
+   "proxy_fbx": "Barriers/SM_Parapet_Steel_2m_proxy.fbx",
+   "proxy_triangles": 24,
+   "collision": "box",
+   "notes": "bridge parapet post-and-rail bay, 2 m, 1.0 m high, base plate with bolts",
+   "parameters": {
+    "ped_len": 2.0,
+    "ped_h": 1.1,
+    "ped_post_d": 0.076,
+    "ped_rail_d": 0.048,
+    "wbeam_len": 4.0,
+    "wbeam_post_spacing": 2.0,
+    "wbeam_top": 0.75,
+    "wbeam_t": 0.004,
+    "step_len": 3.0,
+    "step_h": 0.8,
+    "parapet_bay": 2.0,
+    "parapet_h": 1.0,
+    "cope_len": 1.0,
+    "cope_w": 0.4,
+    "cope_t": 0.12
+   }
+  },
+  {
+   "name": "SM_Tactile_Blister_400",
+   "category": "Masonry",
+   "fbx": "Masonry/SM_Tactile_Blister_400.fbx",
+   "dimensions_m": [
+    0.4,
+    0.4,
+    0.071
+   ],
+   "bbox_min_m": [
+    -0.2,
+    -0.2,
+    0.0
+   ],
+   "bbox_max_m": [
+    0.2,
+    0.2,
+    0.071
+   ],
+   "pivot": "slab centre on the bed; top at z=0.065; 6 x 6 blisters at 66.5 mm",
+   "forward_axis": "+X along the run/road; +Y toward carriageway/traffic; +Z up",
+   "material_slots": [
+    "pavement"
+   ],
+   "triangles": 1628,
+   "open_edges": 0,
+   "proxy": "SM_Tactile_Blister_400_proxy",
+   "proxy_fbx": "Masonry/SM_Tactile_Blister_400_proxy.fbx",
+   "proxy_triangles": 12,
+   "collision": "none",
+   "notes": "400 x 400 blister tactile paving slab",
+   "parameters": {
+    "retain_cope": [
+     0.5,
+     0.4,
+     0.15
+    ],
+    "head_cope": [
+     1.0,
+     0.45,
+     0.2
+    ],
+    "tactile": 0.4
+   }
+  }
+ ]
+}

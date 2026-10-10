@@ -19,7 +19,7 @@ std::vector<double> compute_trims(const std::vector<JunctionArm>& arms, const st
         double theta = arms[j].heading_out - arms[k].heading_out;
         if (theta <= 0) theta += 2 * kPi;
         if (theta >= kPi - 0.01) continue;  // straight or reflex: no corner
-        const double a = arms[k].kerb_left, b = arms[j].kerb_right;
+        const double a = arms[k].kerb_left + arms[k].flare.spread_left, b = arms[j].kerb_right + arms[j].flare.spread_right;
         const double sn = std::sin(theta), cot = std::cos(theta) / sn;
         const double fillet = radii[k] / std::tan(theta / 2);
         trims[k] = std::max(trims[k], a * cot + b / sn + fillet);
@@ -43,16 +43,21 @@ Vec2 left_normal(double h) { return {-std::sin(h), std::cos(h)}; }
 // Points of the arm at lateral offset `lat` from s0 to s1 (either direction), following the
 // stored centreline so curved arms are traced, not chorded.
 void run(const JunctionArm& arm, double s0, double s1, double lat, std::vector<Vec3>& out) {
-    out.push_back(arm_point(arm, s0, lat).pos);
-    const bool up = s1 >= s0;
-    if (up) {
-        for (const EdgeSample& c : arm.centreline)
-            if (c.s > s0 + 1e-6 && c.s < s1 - 1e-6) out.push_back(arm_point(arm, c.s, lat).pos);
-    } else {
-        for (auto it = arm.centreline.rbegin(); it != arm.centreline.rend(); ++it)
-            if (it->s < s0 - 1e-6 && it->s > s1 + 1e-6) out.push_back(arm_point(arm, it->s, lat).pos);
-    }
-    out.push_back(arm_point(arm, s1, lat).pos);
+    // `lat` is the unflared lateral of a kerb line (+ left); a flared arm moves it out by the spread at each
+    // station, so extra stations are added along the taper to keep it smooth.
+    const auto at = [&](double s) { return arm_point(arm, s, flared_lateral(arm, s, lat)).pos; };
+    out.push_back(at(s0));
+    const double lo = std::min(s0, s1), hi = std::max(s0, s1);
+    std::vector<double> mid;
+    for (const EdgeSample& c : arm.centreline)
+        if (c.s > lo + 1e-6 && c.s < hi - 1e-6) mid.push_back(c.s);
+    if (arm.flare.active())
+        for (double s = std::ceil(arm.flare.full); s < arm.flare.length; s += 1.0)
+            if (s > lo + 1e-6 && s < hi - 1e-6) mid.push_back(s);
+    std::sort(mid.begin(), mid.end());
+    if (s1 < s0) std::reverse(mid.begin(), mid.end());
+    for (double s : mid) out.push_back(at(s));
+    out.push_back(at(s1));
 }
 
 struct Corner {
@@ -258,7 +263,7 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
         double theta = aj.heading_out - ak.heading_out;
         if (theta <= 0) theta += 2 * kPi;
         c.angle = theta;
-        const double a = ak.kerb_left, b = aj.kerb_right;
+        const double a = ak.kerb_left + ak.flare.spread_left, b = aj.kerb_right + aj.flare.spread_right;
         c.fillet = theta < kNoCornerAngle;
         const double requested = std::max(0.0, junction.corner_radii[k]);
         if (c.fillet) {
@@ -401,7 +406,7 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
             const int segs = arc_segments(c.sweep);
             for (int i = segs; i >= 0; --i) mid.push_back(arc_point(c, c.radius - w, i, segs));
         } else if (c.fillet) {
-            const ArmPoint o1 = arm_point(ak, c.sp, ak.kerb_left + w), o2 = arm_point(aj, c.sq, -(aj.kerb_right + w));
+            const ArmPoint o1 = arm_point(ak, c.sp, flared_lateral(ak, c.sp, ak.kerb_left + w)), o2 = arm_point(aj, c.sq, flared_lateral(aj, c.sq, -(aj.kerb_right + w)));
             const Vec2 hk{std::cos(o1.heading_out), std::sin(o1.heading_out)};
             const Vec2 hj{std::cos(o2.heading_out), std::sin(o2.heading_out)};
             const double den = hk.cross(hj);
@@ -413,8 +418,8 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
                 mid.push_back({o1.pos.x + hk.x * t, o1.pos.y + hk.y * t, o1.pos.z});
             }
         } else {
-            mid.push_back(arm_point(aj, 0, -(aj.kerb_right + w)).pos);
-            mid.push_back(arm_point(ak, 0, ak.kerb_left + w).pos);
+            mid.push_back(arm_point(aj, 0, flared_lateral(aj, 0, -(aj.kerb_right + w))).pos);
+            mid.push_back(arm_point(ak, 0, flared_lateral(ak, 0, ak.kerb_left + w)).pos);
         }
         run(aj, trims[j], sj_out, -(aj.kerb_right + w), band);
         band.insert(band.end(), mid.begin(), mid.end());

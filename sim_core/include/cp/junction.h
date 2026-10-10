@@ -62,6 +62,19 @@ struct LaneRef {
     std::string lane_type;
 };
 
+// Approach shaping inside the junction (roundabout splitter flares, turn-pocket widening). Derived, never
+// authored: the kerb line on each side lies `spread` metres further out than kerb_left / kerb_right and the
+// lanes on that side lie the same distance further out, so no lane gets narrower beside an island or a pocket.
+// The spread is constant up to s = full (so the corner fillets, which lie inside it, see ordinary parallel
+// kerbs) and falls smoothly (smoothstep) to 0 at s = length, which is the arm's trim line: connectors
+// start there on the unshifted lanes. All zero = an ordinary arm.
+struct ArmFlare {
+    double spread_left = 0, spread_right = 0;  // m, outward shift of the left (+lateral) / right kerb and lanes
+    double full = 0;                           // m from the node: the spread holds up to here
+    double length = 0;                         // m from the node: the spread is 0 here and beyond (== the trim)
+    bool active() const { return length > 0 && (spread_left > 0 || spread_right > 0); }
+};
+
 struct JunctionArm {
     EdgeId edge;
     bool at_a = true;           // true: this arm is edge.a's end at the node, else edge.b's
@@ -82,6 +95,7 @@ struct JunctionArm {
     // heading_out(s)), 0..edge_length. Trim lines, connector ends and merge tapers are read
     // from it via arm_point().
     std::vector<EdgeSample> centreline;
+    ArmFlare flare;             // see ArmFlare; set by the shape requests in JunctionOverrides
 
     int inbound_count() const;   // number of inbound lanes
     int outbound_count() const;
@@ -97,6 +111,12 @@ struct ArmPoint {
     double heading_out = 0;
 };
 ArmPoint arm_point(const JunctionArm& arm, double s, double lateral);
+
+// Outward spread (m) of the arm's left (+lateral) or right kerb at s: the ArmFlare profile (0 for an ordinary arm).
+double flare_spread(const JunctionArm& arm, double s, bool left);
+// `lateral` (a kerb line or lane centre, + = left of heading_out) once the flare at s is applied: moved away
+// from the centreline by the spread of its side. Identity for an ordinary arm.
+double flared_lateral(const JunctionArm& arm, double s, double lateral);
 
 // ---------------------------------------------------------------- connectors [A]
 
@@ -125,6 +145,7 @@ struct LaneConnector {
     std::vector<int> conflicts;
     bool enabled = true;      // false: disabled by override; kept so the UI can offer re-enabling
     bool overridden = false;  // an override entry affects this connector (enabled flag or custom path)
+    bool via_pocket = false;  // offside turn that leaves the through lane for the turn pocket (Junction::pockets)
 };
 
 // ---------------------------------------------------------------- geometry [B]
@@ -160,6 +181,24 @@ using PolygonSet = std::vector<std::vector<Vec2>>;
 
 enum class JunctionKind { Plain, Roundabout };  // Roundabout reserved; see docs/junctions.md
 
+// A ghost-island turn pocket on a major arm of a priority junction (docs/junctions.md section 9): derived,
+// never authored. The arm's offside kerb and outbound lane are shifted out by `lane_width` (ArmFlare) so the
+// inbound through lane keeps its width; the pocket lane takes the freed strip next to the centre line. Along
+// the arm (s from the node): pocket lane for s in [0, storage_length], hatched ghost island (paint only, no
+// kerb) on the approach taper for s in [storage_length, storage_length + taper_length], nose at the far end.
+// The offside-turn connector into `to_arm` (LaneConnector::via_pocket) is the only user of the pocket lane.
+struct TurnPocket {
+    int arm = -1;                // index into Junction::arms: the major arm whose inbound traffic turns offside
+    int to_arm = -1;             // index of the minor arm it leads to
+    bool forced = false;         // on because of a per-junction override rather than the default rule
+    double lane_width = 0;       // m
+    double storage_length = 0;   // m, pocket lane length from the node (includes the corner region)
+    double taper_length = 0;     // m, length of the hatched approach taper beyond it
+    std::vector<Vec3> centreline;  // pocket lane centre line from the nose end to the node, on the shifted lane
+    PolygonSet lane;             // the pocket lane surface
+    PolygonSet ghost;            // the hatched ghost island on the taper (no kerb)
+};
+
 struct Junction {
     NodeId node;
     Vec3 pos;
@@ -180,6 +219,7 @@ struct Junction {
     PolygonSet pavements;              // pavement/kerb polygons around the corners and between arms
     PolygonSet gore;                   // [C] Merge/Diverge only: nose/gore area between the two nearly parallel arms (hatching)
     std::vector<CrossingSpot> crossings;
+    std::vector<TurnPocket> pockets;   // ghost-island turn pockets (priority junctions); see TurnPocket
     // [B] true when the geometry could not be built cleanly: the fillet solver did not converge,
     // a kerb intersection lies beyond a trim line even at radius 0 (the corner becomes a chord
     // between the trim-line kerb points), the carriageway union came back empty, duplicate
@@ -240,10 +280,43 @@ struct LaneKey {
     friend auto operator<=>(const LaneKey&, const LaneKey&) = default;
 };
 
+// Identifies one arm of a node (at_a only matters for a loop edge, which has two arms with one edge id).
+struct ArmKey {
+    NodeId node;
+    EdgeId edge;
+    bool at_a = true;
+    friend auto operator<=>(const ArmKey&, const ArmKey&) = default;
+};
+
+// Wanted approach shaping for one arm. DERIVED data: roundabout splitter flares and turn pockets fill it in
+// before building the junction; the player does not author it. The generator turns it into JunctionArm::flare:
+// the spread holds for max(hold, corner trim + a margin) metres, then falls to 0 over `taper` metres; both
+// are cut back so the whole shape fits inside half the edge (the arm's trim becomes its end). When even
+// `min_taper` does not fit the shape is dropped and the junction is flagged degraded.
+struct ArmShape {
+    double spread_left = 0, spread_right = 0;  // m
+    double hold = 0;                           // m, least length over which the full spread holds
+    double taper = 0;                          // m, wanted length over which it falls to 0 (after the hold)
+    double length = 0;                         // m, or: wanted distance from the node to where it reaches 0 (overrides taper)
+    double min_taper = 0;                      // m, shortest taper accepted when space is short
+    std::string what = "approach shape";       // names the shape in the degraded reason
+};
+
+struct PocketKey {
+    NodeId node;
+    EdgeId edge;  // the major arm's edge (a node has at most one pocket per major arm)
+    friend auto operator<=>(const PocketKey&, const PocketKey&) = default;
+};
+
 struct JunctionOverrides {
     std::map<ConnectorKey, ConnectorOverride> connectors;
     std::map<CornerKey, double> corner_radius;  // m; 0 = sharp
     std::map<LaneKey, bool> lane_connects;      // false: lane takes no part in connectors at this node
+    // Turn pockets: true forces a pocket on that major arm (when the geometry allows one), false suppresses
+    // the default one. Absent = the region rule decides. Edited through make_set_turn_pocket_override().
+    std::map<PocketKey, bool> turn_pockets;
+    // Derived, not authored (see ArmShape): filled by apply_roundabouts() for the ring nodes.
+    std::map<ArmKey, ArmShape> arm_shapes;
 };
 
 // ---------------------------------------------------------------- functions
@@ -262,9 +335,12 @@ NodeClass classify_node(const RoadGraph& graph, NodeId node, const RegionPack& r
 // (half_width_left + half_width_right). Several arms can tie.
 std::vector<int> major_arm_indices(const std::vector<JunctionArm>& arms);
 
-// Real (junction.cpp). Radius per corner k: override if present, else kDefaultCornerRadius.
+// Real (junction.cpp). Radius per corner k: override if present, else (with a region) the pack's default for
+// the pair of road classes meeting, scaled by the skew factor of the corner angle (larger on the obtuse
+// corner, smaller on the acute one), else the larger of the arms' road-type radii, else kDefaultCornerRadius.
+// Without a region: the arms' road-type radii only, no class table and no skew.
 std::vector<double> resolve_corner_radii(NodeId node, const std::vector<JunctionArm>& arms,
-                                         const JunctionOverrides& overrides);
+                                         const JunctionOverrides& overrides, const RegionPack* region = nullptr);
 
 // [B] Real (junction_geometry.cpp), pure. Trim distance per arm (m from the node along the
 // centreline) so that a kerb fillet of radius radii[k] fits tangent to both kerb lines of

@@ -64,10 +64,10 @@ function buildCase(c) {
   if (!ok) throw new Error('rebuild failed in ' + c.name);
   const rd = run('roadsData()');   // markMedians, wallWeights, slopeReach, decimation, portal planes
   const rsJs = run('roads');
-  const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER') };
+  const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER'), roundK: run('ROUND_DAYLIGHT / (2 * T.batter)'), roundHinge: run('ROUND_HINGE') };
   const out = {
     name: c.name, version: 1, quant: 1e-4, terrain,
-    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
+    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundReach: run('ROUND_REACH'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
     roads: [], tiles: [],
   };
   rsJs.forEach((r, ri) => {
@@ -92,7 +92,7 @@ function buildCase(c) {
       const ch = i === 0 || i === S.length - 1 || a.br !== b.br || a.tu !== b.tu || a.wL !== b.wL || a.wR !== b.wR;
       if (ch && picks.length < 5 && farFromPicked(a.x, a.y)) picks.push([a.x, a.y]); } });
   rsJs.forEach(r => { const m = r.samples[r.samples.length >> 1]; if (picks.length < 5 && farFromPicked(m.x, m.y)) picks.push([m.x, m.y]); });
-  const gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER })');
+  const gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE })');
   for (const [cx, cy] of picks) {
     const x0 = Math.round(cx / 0.5) * 0.5 - 16, y0 = Math.round(cy / 0.5) * 0.5 - 16, nx = 64, ny = 64, res = 0.5, o = new Float32Array(nx * ny);
     ctx.__gp = gp; ctx.__rd = rd; ctx.__o = o;

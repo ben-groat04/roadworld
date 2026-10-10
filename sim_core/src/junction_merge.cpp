@@ -77,15 +77,6 @@ Ring arm_strip(const JunctionArm& arm, double s0, double s1) {
     return r;
 }
 
-// Rectangle just beyond an arm's trim line (cuts the pavement offset at the trim line).
-Ring end_cap(const JunctionArm& arm, double trim, double depth) {
-    const double w = std::max(arm.half_width_left, arm.half_width_right) + depth + 1;
-    Ring r{arm_point(arm, trim, w).pos.xy(), arm_point(arm, trim + depth + 1, w).pos.xy(),
-           arm_point(arm, trim + depth + 1, -w).pos.xy(), arm_point(arm, trim, -w).pos.xy()};
-    if (area(r) < 0) std::reverse(r.begin(), r.end());
-    return r;
-}
-
 // Lane indices of `arm` travelling toward (inbound) or away from the node, offside first.
 std::vector<int> ordered_lanes(const Junction& j, const JunctionArm& arm, bool inbound, const JunctionOverrides& ov) {
     std::vector<std::pair<double, int>> v;
@@ -363,24 +354,30 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
         inner = Union(inner, FillRule::NonZero, 3);
         // Each arm's own strip is offset by that arm's own pavement width (half width minus kerb
         // offset): an arm without pavement (dual carriageway, motorway) gets none, and an arm with
-        // pavement gets its full cross-section at the trim line. Each arm's cap only cuts its own band.
-        PathsD bands;
+        // pavement gets its full cross-section at the trim line. Beyond its trim line an arm blocks only
+        // its own cross-section, so a neighbour's pavement can pass.
+        PathsD bands, caps;
         for (int i = 0; i < 3; ++i) {
             const JunctionArm& a = A(i);
+            const double t = tr[static_cast<std::size_t>(i)];
             const double di = std::max(a.half_width_left - a.kerb_left, a.half_width_right - a.kerb_right);
-            if (di <= 1e-3) continue;
-            PathsD grown = InflatePaths(PathsD{to_path(arm_strip(a, 0, tr[static_cast<std::size_t>(i)]))}, di,
-                                        JoinType::Miter, EndType::Polygon, 2.0, 3);
-            const PathsD own_cap{to_path(end_cap(a, tr[static_cast<std::size_t>(i)], di))};
-            grown = Difference(grown, own_cap, FillRule::NonZero, 3);
-            bands.insert(bands.end(), grown.begin(), grown.end());
+            if (di > 1e-3) {
+                const PathsD grown = InflatePaths(PathsD{to_path(arm_strip(a, 0, t))}, di, JoinType::Miter,
+                                                  EndType::Polygon, 2.0, 3);
+                bands.insert(bands.end(), grown.begin(), grown.end());
+            }
+            const double w = std::max(a.half_width_left, a.half_width_right) + 0.02;
+            Ring r{arm_point(a, t - 0.002, w).pos.xy(), arm_point(a, t + delta + 1, w).pos.xy(),
+                   arm_point(a, t + delta + 1, -w).pos.xy(), arm_point(a, t - 0.002, -w).pos.xy()};
+            if (area(r) < 0) std::reverse(r.begin(), r.end());
+            caps.push_back(to_path(r));
         }
+        const PathsD cut = Union(inner, caps, FillRule::NonZero, 3);
         if (!bands.empty()) {
-            PathsD result = Difference(Union(bands, FillRule::NonZero, 3), inner, FillRule::NonZero, 3);
+            junction.pavements = from_paths(Difference(Union(bands, FillRule::NonZero, 3), cut, FillRule::NonZero, 3));
             // Drop the millimetre slivers the boolean ops leave along the trim lines.
-            junction.pavements = from_paths(result);
             junction.pavements.erase(std::remove_if(junction.pavements.begin(), junction.pavements.end(),
-                                                    [](const Ring& r) { return std::fabs(area(r)) < 0.02; }),
+                                                    [](const Ring& r) { return std::fabs(area(r)) < 0.03; }),
                                      junction.pavements.end());
         }
     }

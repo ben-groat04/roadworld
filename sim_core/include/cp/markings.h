@@ -12,6 +12,7 @@
 // sides mirror exactly.
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -58,6 +59,7 @@ struct Marking {
     EdgeId edge;               // set for marks generated from an edge
     NodeId node;               // set for marks generated from a junction
     int lane = -1;             // line marks: boundary index (0 = left of the leftmost lane); else -1
+    float wear = 0;            // 0..1 deterministic paint wear (wheel paths, low-frequency patchiness) for the renderer; no geometry change
 };
 
 struct MarkingSet {
@@ -182,24 +184,38 @@ struct BayRule {
     std::string source;
 };
 
+// When a give-way triangle is painted behind the line. Conditional: the major road's speed limit or road
+// class reaches the threshold (either one, when both are set).
+enum class TriangleMode { Never, Always, Conditional };
+
 struct RuleSet {
     std::string id;
     std::vector<BoundaryRule> boundaries;
     std::vector<BayRule> bays;
+    std::optional<TriangleMode> give_way_triangle;  // overrides GiveWayRule::triangle_mode for minor arms of this set
 };
+
 
 struct GiveWayRule {
     bool enabled = false;
     StyleSel style;
     double setback_m = 0.5;  // junction trim -> near edge of the line
     double line_gap_m = 0.3; // longitudinal lines stop this far short of the line
-    // triangle (outline of 3 trapezoids), apex towards approaching traffic
+    // triangle (outline of 3 trapezoids) in each inbound lane, apex towards approaching traffic
     bool triangle = false;
+    TriangleMode triangle_mode = TriangleMode::Always;
+    std::optional<double> triangle_major_speed_min;  // m/s, Conditional: major road speed limit at least this
+    std::optional<int> triangle_major_class_min;     // Conditional: major road RoadType::road_class at least this
     std::string triangle_style;
     double triangle_gap_m = 1.0;     // line far edge -> triangle base
     double triangle_base_m = 1.8;
     double triangle_height_m = 3.0;
     double triangle_stroke_m = 0.2;
+    // Junctions whose arms all share one road class: the straightest pair of arms is the through route
+    // and the rest give way ("straightest_pair_has_priority"), or nobody is marked ("none"). The pair must
+    // be within equal_class_max_deviation_deg of straight, so a symmetric Y stays unmarked.
+    bool equal_class_straight_pair = true;
+    double equal_class_max_deviation_deg = 30;
     std::string source;
 };
 
@@ -213,7 +229,6 @@ struct StopLineRule {
 
 struct ZebraRule {
     bool enabled = false;
-    MarkCond when;           // e.g. speed_max (zebras are not used on fast roads)
     std::string style;
     double stripe_width_m = 0.5;
     double gap_m = 0.6;
@@ -277,9 +292,45 @@ struct RoundaboutEntryRule {
     std::string source;
 };
 
+// Broken edge line carried across a side-road mouth on the through route (the line does not follow the
+// kerb radii: it runs straight between the two arms' edge lines).
+struct MouthEdgeRule {
+    bool enabled = false;
+    StyleSel style;
+    double max_deviation_deg = 30;  // the two arms must be this close to straight to count as a through route
+    std::string source;
+};
+
+// Roundabout splitter islands: outline round the island and diagonal hatching on the approach ahead of
+// its nose. Needs MarkingParams::roundabouts; skipped cleanly without it.
+struct SplitterRule {
+    bool enabled = false;
+    StyleSel outline_style;       // continuous line just outside the island
+    double outline_gap_m = 0.15;  // island edge -> outline near edge
+    std::string hatch_style;      // fill style of the bars; "" = no hatching
+    double hatch_length_m = 12;   // approach hatching length ahead of the nose
+    double hatch_width_m = 1.4;   // hatched width at the nose (tapers to a point)
+    double stripe_width_m = 0.3;
+    double pitch_m = 1.0;
+    double angle_deg = 60;
+    std::string source;
+};
+
+// Paint wear for the renderer (Marking::wear): value noise plus a boost where a mark crosses the wheel
+// tracks. strength 0 turns it off.
+struct WearRule {
+    double strength = 0.3;          // typical 0..1 wear of an untrodden mark
+    double patch_period_m = 60;     // wavelength of the low-frequency (old / new section) term
+    double patch_weight = 0.5;      // share of `strength` that is the low-frequency term (rest is per-mark noise)
+    double wheel_boost = 0.35;      // added where transverse marks and arrows cross the wheel tracks
+    double wheel_offset_m = 0.8;    // wheel track centre from the lane centre
+    double wheel_half_width_m = 0.25;
+    std::string source;
+};
+
 struct MarkingRules {
     int version = 0;
-    std::string speed_unit = "mph";
+    std::string speed_unit;  // "mph", "kph" or "ms" (required in the file)
     double min_mark_m = 0.3;  // no mark shorter than this (unless a style overrides)
     std::map<std::string, MarkingColour> colours;
     std::map<std::string, LineStyle> styles;
@@ -290,6 +341,11 @@ struct MarkingRules {
     ArrowRule arrows;
     GoreRule gore;
     RoundaboutEntryRule roundabout_entry;
+    MouthEdgeRule mouth_edge;
+    SplitterRule splitter;
+    WearRule wear;
+    // Lane types counted as a hard shoulder / strip (condition "shoulder").
+    std::vector<std::string> shoulder_lane_types;
 
     const RuleSet* set(const std::string& id) const;
 };
@@ -303,8 +359,13 @@ Loaded<MarkingRules> load_marking_rules_by_id(const std::filesystem::path& data_
 
 // ---------------------------------------------------------------- generation
 
+// Surface height callback: the z of the road surface at `lateral` (+ left of a -> b) and arc length `s`
+// of `edge`, given the centreline z at that s. Marks follow it when set (the render mesh's crossfall and
+// kerb heights), else the centreline z. Junction-arm marks pass the edge-frame s / lateral of the arm point.
+using SurfaceHeightFn = std::function<double(EdgeId edge, double s, double lateral, double centre_z)>;
+
 struct MarkingParams {
-    double chord_tolerance = 0.01;  // m, LOD: plan chord error and vertical (z) chord error of every mark
+    double chord_tolerance = 0.01;  // m, LOD: plan chord error and vertical (z) chord error of every mark; use the render mesh's value (for_mesh_tolerance)
     // (junction node, arm edge) pairs that get a stop line instead of a give-way line (data says
     // where stop lines exist only when the player or a signal rule asks for them; v0 has no signals).
     std::set<std::pair<NodeId, EdgeId>> stop_arms;
@@ -316,6 +377,20 @@ struct MarkingParams {
     // false every non-ring approach arm with inbound lanes of a Roundabout junction gets an entry line.
     bool use_roundabout_give_way = false;
     std::vector<GiveWay> roundabout_give_way;
+    // Roundabout group results (find_roundabouts / apply_roundabouts) for splitter outlines and approach
+    // hatching. Null = no splitter markings. Not owned; must outlive the call.
+    const RoundaboutResult* roundabouts = nullptr;
+    // Optional road surface height (see SurfaceHeightFn). Empty = centreline z.
+    SurfaceHeightFn surface_height;
+
+    // Params whose chord tolerance matches a render mesh built with `mesh_chord_tolerance`: marks must be
+    // tessellated with the same tolerance as the mesh lanes they sit on (or tighter, with z from
+    // surface_height), otherwise they drift off the lane in plan at coarse mesh LODs.
+    static MarkingParams for_mesh_tolerance(double mesh_chord_tolerance) {
+        MarkingParams p;
+        p.chord_tolerance = mesh_chord_tolerance;
+        return p;
+    }
 };
 
 // Lines and bay dividers of one edge (everything between the junction boundaries / arm markings at its
@@ -328,9 +403,15 @@ MarkingSet generate_edge_markings(const RoadGraph& graph, const RegionPack& regi
 MarkingSet generate_junction_markings(const RoadGraph& graph, const RegionPack& region, const MarkingRules& rules,
                                       const Junction& junction, const MarkingParams& params = {});
 
+// Splitter island outline and approach hatching of one roundabout (needs build_roundabout() results; skipped
+// cleanly, giving an empty set, when the layout is not ok or the rule is absent).
+MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& region, const MarkingRules& rules,
+                                      const JunctionSet& junctions, const RoundaboutLayout& layout, const MarkingParams& params = {});
+
 struct MarkingResult {
     std::map<EdgeId, MarkingSet> edges;
     std::map<NodeId, MarkingSet> junctions;
+    std::map<NodeId, MarkingSet> splitters;  // by the first ring node of the roundabout (needs MarkingParams::roundabouts)
     // All marks, edges then junctions, in key order (deterministic).
     MarkingSet merged() const;
 };

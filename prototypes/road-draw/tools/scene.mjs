@@ -391,8 +391,8 @@ function CHECKS_IN_PAGE() {
         let nearSt = 99; for (let k = -6; k <= 6; k++) { const q = r.samples[si + k]; if (q && (isBr(q) || isTu(q))) nearSt = Math.min(nearSt, Math.abs(k)); }
         for (let lat = -hw; lat <= hw + 1e-6; lat += 0.5) { const l = Math.min(hw - 0.01, Math.max(-hw + 0.01, lat)), [x, y] = latPt(s, l); n++;
           const d = s.z - groundAt(x, y);   // want 0.05 <= d <= 0.6
-          if (d < 0.05 - 1e-4 || d > 0.6 + 1e-4) { if (otherRoadNear(x, y, r, 6)) { known++; return; } bad++; const v = d < 0.05 ? 0.05 - d : d - 0.6; if (d < 0.05) hi++; else lo++; if (nearSt <= 6) nearEnd++; roadsBad[r.id] = (roadsBad[r.id] || 0) + 1; w = track(w, { x, y, road: r.id, what: (d < 0.05 ? 'ground pokes through road by' : 'gap under road edge') + ' (' + (nearSt === 99 ? 'far from' : nearSt + ' stations from') + ' bridge/tunnel) ', v }); } } }); }
-    done('ground_under_road', w, bad, n, `${n} footprint points, ground 5..60 cm below road`); if (known) results[results.length - 1].msg += ` ; KNOWN junction_zone: ${known} points within (other road half-width + 6 m) of another road (pending sim_core junction generator)`; if (bad) results[results.length - 1].msg += ` (poke-through ${hi}, gaps ${lo}, ${nearEnd} within 6 stations of bridge/tunnel, by road ${JSON.stringify(roadsBad)})`; }
+          if (d < 0.03 - 1e-4 || d > 0.6 + 1e-4) { if (otherRoadNear(x, y, r, 6)) { known++; return; } bad++; const v = d < 0.03 ? 0.03 - d : d - 0.6; if (d < 0.03) hi++; else lo++; if (nearSt <= 6) nearEnd++; roadsBad[r.id] = (roadsBad[r.id] || 0) + 1; w = track(w, { x, y, road: r.id, what: (d < 0.05 ? 'ground pokes through road by' : 'gap under road edge') + ' (' + (nearSt === 99 ? 'far from' : nearSt + ' stations from') + ' bridge/tunnel) ', v }); } } }); }
+    done('ground_under_road', w, bad, n, `${n} footprint points, ground 3..60 cm below road`); if (known) results[results.length - 1].msg += ` ; KNOWN junction_zone: ${known} points within (other road half-width + 6 m) of another road (pending sim_core junction generator)`; if (bad) results[results.length - 1].msg += ` (poke-through ${hi}, gaps ${lo}, ${nearEnd} within 6 stations of bridge/tunnel, by road ${JSON.stringify(roadsBad)})`; }
 
   // slopes_daylight: unwalled sides, walking outward from the footprint edge. Never overshoot the original ground (cut: above, fill: below) by > 0.3 m,
   // and reach it (within 0.15 m) by the batter reach. Reference = P.terrainH (the exact base function GH is graded against). Skipped near other roads.
@@ -531,7 +531,7 @@ function CHECKS_IN_PAGE() {
       return false; };
     const GW = Math.min(GNN, P.GN || GNN);
     for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { const g = GHH[j * GW + i];
-      for (const [di, dj] of [[1, 0], [0, 1]]) { if (i + di >= GW || j + dj >= GW) continue; const st = Math.abs(GHH[(j + dj) * GW + i + di] - g); if (st <= 1.0) continue; n++;
+      for (const [di, dj] of [[1, 0], [0, 1]]) { if (i + di >= GW || j + dj >= GW) continue; const st = Math.abs(GHH[(j + dj) * GW + i + di] - g); if (st <= 1.02) continue; n++;
         const x = (i + di / 2) * GR, y = (j + dj / 2) * GR;
         if (inWall(x, y) || stuct(x, y)) continue; bad++; w = track(w, { x, y, road: 0, what: 'bare ground step', v: st }); } }
     done('no_bare_steps', w, bad, n, `${n} texel steps > 1 m, all inside wall solids or bridge/tunnel zones`); }

@@ -633,7 +633,21 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
     const auto ring_in = [&](std::size_t i) { return group.ring_edges[(i + n - 1) % n]; };
     const auto ring_out = [&](std::size_t i) { return group.ring_edges[i]; };
 
-    // ---- forced fillet radii at the ring nodes (the player's own corner overrides win)
+    // ---- ring size class, ring extents and forced fillet radii at the ring nodes (the player's own corner overrides win)
+    const RoundaboutSizeClass cls = prm.size_class(group.radius);
+    double in_ext = 0, out_ext = 0;
+    bool bad_type = false;
+    for (EdgeId id : group.ring_edges) {
+        const Edge* e = graph.edge(id);
+        const RoadType* t = e ? region.road_type(e->road_type) : nullptr;
+        if (!t) {
+            bad_type = true;
+            break;
+        }
+        const KerbExtent k = kerb_extent(region, *t);
+        in_ext = std::max(in_ext, group.clockwise ? k.right : k.left);
+        out_ext = std::max(out_ext, group.clockwise ? k.left : k.right);
+    }
     JunctionOverrides ov = overrides;
     for (std::size_t i = 0; i < n; ++i) {
         const std::vector<JunctionArm> arms = collect_arms(graph, group.nodes[i], region);
@@ -647,13 +661,29 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
             double radius = -1;
             if (r_ring != l_ring) {
                 const EdgeId rng = r_ring ? r.edge : l.edge;
-                radius = rng == ring_out(i) ? prm.entry_corner_radius : prm.exit_corner_radius;
+                radius = rng == ring_out(i) ? cls.entry_corner_radius : cls.exit_corner_radius;
             } else if (r_ring && l_ring && r.edge != l.edge) {
                 radius = prm.ring_corner_radius_factor * group.radius;
             }
             if (radius >= 0) ov.corner_radius[key] = radius;
         }
     }
+    // Two-way approaches get a splitter island: both kerbs spread out by half its width (the flare) so no lane
+    // gets narrower, falling to nothing at the nose (docs/junctions.md section 7).
+    if (!bad_type && cls.splitter_width > 0 && cls.splitter_length > 0)
+        for (const RoundaboutArm& arm : group.arms) {
+            if (!(arm.entry && arm.exit)) continue;
+            const Edge* e = graph.edge(arm.edge);
+            const RoadType* t = e ? region.road_type(e->road_type) : nullptr;
+            if (!t || t->dual) continue;
+            const NodeId nd = group.nodes[static_cast<std::size_t>(arm.ring_index)];
+            ArmShape sh;
+            sh.spread_left = sh.spread_right = cls.splitter_width / 2;
+            sh.length = out_ext + cls.splitter_length * prm.splitter_speed_factor(t->speed_limit);
+            sh.min_taper = std::max(8.0, 0.3 * (sh.length - out_ext));
+            sh.what = "splitter island";
+            ov.arm_shapes[{nd, arm.edge, e->a == nd}] = sh;
+        }
     JunctionSet built = build_plain_junctions(graph, region, ov, group.nodes);
     lay.ring_junctions = std::move(built.junctions);
 
@@ -687,14 +717,11 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
     }
 
     // ---- island: the ring centreline offset to the inner kerb face
-    double in_ext = 0;
-    for (EdgeId id : group.ring_edges) {
-        const Edge* e = graph.edge(id);
-        const RoadType* t = e ? region.road_type(e->road_type) : nullptr;
-        if (!t) return fail(lay, "ring edge has an unknown road type");
-        const KerbExtent k = kerb_extent(region, *t);
-        in_ext = std::max(in_ext, group.clockwise ? k.right : k.left);
-    }
+    if (bad_type) return fail(lay, "ring edge has an unknown road type");
+    lay.island_surface = prm.central_island_surface;
+    lay.splitter_surface = prm.splitter_surface;
+    lay.apron_surface = prm.apron_surface;
+    lay.island_kerb_upstand = prm.island_kerb_upstand;
     if (group.radius - in_ext < prm.min_island_radius)
         return fail(lay, "ring too tight for an island: mean ring radius " + std::to_string(group.radius) +
                              " m leaves an island under the minimum of " + std::to_string(prm.min_island_radius) + " m");

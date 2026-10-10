@@ -17,8 +17,12 @@
 //  * The JS classifies with hBase (triangle interpolation of the coarse grid) but grades against
 //    hBaseFine (bicubic). Here one GroundFn serves classification and sample_natural_tile
 //    serves grading; the caller decides whether they are the same surface.
-//  * The JS comment in classify() says the tunnel approach is not walled, but the code walls
-//    portal_wall samples before every portal: the code is what is ported.
+//  * The old JS walled 24 m before every portal / abutment although its comment said it did
+//    not. Both are gone: the approach is an ordinary slope plus a short wing wall (wing_max).
+//  * The JS portal plane test covered a fixed 10 decimated segments, shorter than the road's
+//    reach once reach grew; it now covers (reach + plane_margin) of path length.
+//  * Imported (interchange) roads in the JS never got wall weights, so their wall ends were
+//    abrupt; every road gets them now.
 #include "cp/grading.h"
 
 #include <algorithm>
@@ -118,14 +122,19 @@ void grow_short(Flags& a, int min_run, const Flags& lock) {
 
 double slope_v(double e, double verge) { return e > verge ? e - verge : 0.0; }
 
+// Extra grading reach for the rolled-over daylight and the hinge shift.
+double round_reach(const GradingParams& p) { return p.round_daylight + p.round_hinge / 2; }
+
 // Reach cap: farthest lateral distance a wall-start slope can need.
 double reach_cap(double hw, const GradingParams& p) {
-    return hw + p.verge + p.wall_start * p.batter + p.reach_margin;
+    return hw + p.verge + (p.wall_start + p.wall_slack) * p.batter + p.reach_margin + round_reach(p);
 }
 
 // Does the slope on side sg (+1 left, -1 right) of sample s need more than wall_start height
-// before it daylights? 1 cut wall, 2 fill wall, 0 slope.
-int needs_wall(const RoadSample& s, double hw, int sg, const GroundFn& ground, const GradingParams& p) {
+// before it daylights? 1 cut wall, 2 fill wall, 0 slope. `ground` is the terrain, or the terrain
+// with the neighbouring roads' earthworks in place.
+template <class Ground>
+int needs_wall0(const RoadSample& s, double hw, int sg, const Ground& ground, const GradingParams& p) {
     const double nx = -std::sin(s.h) * sg, ny = std::cos(s.h) * sg, bt = p.batter, z0 = s.z - p.formation_drop;
     auto base = [&](double d) { return ground(s.x + nx * d, s.y + ny * d); };
     const double g0 = base(hw) - z0;
@@ -139,6 +148,56 @@ int needs_wall(const RoadSample& s, double hw, int sg, const GroundFn& ground, c
         if (dd >= d_max) break;
     }
     return cut ? 1 : 2;
+}
+
+// Ground as seen by a road with its neighbours' plain slopes in place: terrain, overridden by a
+// neighbour's formation (inside its footprint) or by its batter slope (cut: lower, fill:
+// higher). Two slopes therefore meet in a valley / ridge between roads, or one lands on the
+// other's verge.
+struct NeighbourGround {
+    struct Q {
+        const SampledRoad* r;
+        Box2 box;
+    };
+    std::vector<Q> near;
+    const GroundFn* terrain = nullptr;
+    const GradingParams* p = nullptr;
+    double operator()(double x, double y) const {
+        const double t = (*terrain)(x, y);
+        double g = t;
+        for (const Q& q : near) {
+            if (x < q.box.x0 || x > q.box.x1 || y < q.box.y0 || y > q.box.y1) continue;
+            const std::vector<RoadSample>& S = q.r->samples;
+            double bd = 1e18, bz = 0;
+            for (std::size_t i = 0; i + 1 < S.size(); ++i) {
+                const RoadSample &A = S[i], &B = S[i + 1];
+                if (A.br || A.tu || B.br || B.tu) continue;
+                const double dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy, px = x - A.x, py = y - A.y;
+                double u = L2 > 1e-12 ? (px * dx + py * dy) / L2 : 0.0;
+                u = u < 0 ? 0 : u > 1 ? 1 : u;
+                const double ex = px - u * dx, ey = py - u * dy, d2 = ex * ex + ey * ey;
+                if (d2 < bd) { bd = d2; bz = A.z + u * (B.z - A.z) - p->formation_drop; }
+            }
+            if (bd > 1e17) continue;
+            const double e = std::sqrt(bd) - q.r->half_width;
+            if (e <= 0) { g = bz; continue; }
+            if (t > bz) {
+                const double v = bz + slope_v(e, p->verge) / p->batter;
+                if (v < g) g = v;
+            } else {
+                const double v = bz - slope_v(e, p->verge) / p->batter;
+                if (v > g) g = v;
+            }
+        }
+        return g;
+    }
+};
+
+int needs_wall(const RoadSample& s, double hw, int sg, const GroundFn& ground, const GradingParams& p,
+               const NeighbourGround* near) {
+    const int r0 = needs_wall0(s, hw, sg, ground, p);
+    // a wall is only kept if the slope cannot meet the neighbours' earthworks either
+    return r0 && near && !near->near.empty() ? needs_wall0(s, hw, sg, *near, p) : r0;
 }
 
 // Auto structure rule: br / tu per sample from cut / fill depth at the centre and both wall lines.
@@ -198,12 +257,11 @@ std::vector<StructureRange> required_structures(const SampledRoad& road, const G
     return out;
 }
 
-void classify_road(SampledRoad& road, const GroundFn& ground, const GradingParams& p, StructureMode mode) {
+void classify_structures(SampledRoad& road, const GroundFn& ground, const GradingParams& p, StructureMode mode) {
     std::vector<RoadSample>& S = road.samples;
     const std::size_t n = S.size();
     road.portals.clear();
     if (n == 0) return;
-    const double hw = road.half_width;
     Flags br, tu;
     if (mode == StructureMode::Auto) {
         auto_structures(road, ground, p, br, tu);
@@ -215,11 +273,30 @@ void classify_road(SampledRoad& road, const GroundFn& ground, const GradingParam
             tu[i] = S[i].tu && !S[i].br;
         }
     }
+    for (std::size_t i = 0; i < n; ++i) {
+        RoadSample& s = S[i];
+        s.br = br[i];
+        s.tu = tu[i];
+        s.portal = tu[i] && (i == 0 || !tu[i - 1] || i == n - 1 || !tu[i + 1]);
+        if (s.portal) road.portals.push_back(static_cast<int>(i));
+    }
+}
+
+void classify_walls(SampledRoad& road, const GroundFn& ground, const GradingParams& p,
+                    const std::vector<const SampledRoad*>& near_roads) {
+    std::vector<RoadSample>& S = road.samples;
+    const std::size_t n = S.size();
+    if (n == 0) return;
+    const double hw = road.half_width;
+    NeighbourGround ng;
+    ng.terrain = &ground;
+    ng.p = &p;
+    for (const SampledRoad* o : near_roads) ng.near.push_back({o, road_box(*o, p)});
     // Walls only where the batter slope (after the verge) cannot daylight within wall_start of
     // height. Per side: wall type per sample (1 cut, 2 fill), gaps bridged, runs grown, never
     // into bridge / tunnel samples, so no short stubs.
     Flags lock(n, 0);
-    for (std::size_t i = 0; i < n; ++i) lock[i] = br[i] || tu[i];
+    for (std::size_t i = 0; i < n; ++i) lock[i] = S[i].br || S[i].tu;
     std::vector<int> typ[2] = {std::vector<int>(n, 0), std::vector<int>(n, 0)};
     const int ni = static_cast<int>(n);
     for (int k = 0; k < 2; ++k) {
@@ -228,27 +305,41 @@ void classify_road(SampledRoad& road, const GroundFn& ground, const GradingParam
         Flags w(n, 0);
         for (std::size_t i = 0; i < n; ++i)
             if (!lock[i]) {
-                t[i] = needs_wall(S[i], hw, sg, ground, p);
+                t[i] = needs_wall(S[i], hw, sg, ground, p, &ng);
                 w[i] = t[i] > 0;
             }
-        // portal / abutment approach (the embankment ends against a bridge over falling ground: a
-        // slope cannot fit there): walls both sides for portal_wall samples before the entry / after the exit
-        for (int i = 0; i < ni; ++i) {
-            const std::size_t ui = static_cast<std::size_t>(i);
-            if (!(tu[ui] || br[ui])) continue;
-            const Flags& same = tu[ui] ? tu : br;
-            if (i == 0 || !same[ui - 1])
-                for (int q = i - 1; q >= std::max(0, i - p.portal_wall) && !lock[static_cast<std::size_t>(q)]; --q)
-                    w[static_cast<std::size_t>(q)] = 1;
-            if (i == ni - 1 || !same[ui + 1])
-                for (int q = i + 1; q <= std::min(ni - 1, i + p.portal_wall) && !lock[static_cast<std::size_t>(q)]; ++q)
-                    w[static_cast<std::size_t>(q)] = 1;
-        }
         close_gaps(w, p.wall_gap);
         for (std::size_t i = 0; i < n; ++i)
             if (lock[i]) w[i] = 0;
         dilate(w, p.wall_pad, lock);
         grow_short(w, p.wall_min_run, lock);
+        // wing walls beside every portal / abutment: the first two samples always, then up to the
+        // wing length (the approach itself stays an ordinary slope)
+        for (int i = 0; i < ni; ++i) {
+            if (!lock[static_cast<std::size_t>(i)]) continue;
+            for (const int dir : {-1, 1}) {
+                const int q0 = i + dir;
+                if (q0 < 0 || q0 >= ni || lock[static_cast<std::size_t>(q0)]) continue;
+                const RoadSample& s0 = S[static_cast<std::size_t>(q0)];
+                const double nx = -std::sin(s0.h) * sg, ny = std::cos(s0.h) * sg;
+                const double H = std::abs(ground(s0.x + nx * (hw + p.wall_thickness), s0.y + ny * (hw + p.wall_thickness)) -
+                                          (s0.z - p.formation_drop));
+                const double len = H < p.wing_min_h ? 0.0 : std::min(p.wing_max, p.wing_ratio * H);
+                if (len <= 0) continue;
+                double d = 0;
+                w[static_cast<std::size_t>(q0)] = 1;
+                int cnt = 1;
+                for (int q = q0 + dir; q >= 0 && q < ni && !lock[static_cast<std::size_t>(q)]; q += dir, ++cnt) {
+                    const RoadSample &a = S[static_cast<std::size_t>(q)], &b = S[static_cast<std::size_t>(q - dir)];
+                    d += std::hypot(a.x - b.x, a.y - b.y);
+                    if (d > len && cnt >= 2) break;
+                    w[static_cast<std::size_t>(q)] = 1;
+                }
+            }
+        }
+        close_gaps(w, p.wall_gap);
+        for (std::size_t i = 0; i < n; ++i)
+            if (lock[i]) w[i] = 0;
         for (std::size_t i = 0; i < n; ++i) {
             if (!w[i]) { t[i] = 0; continue; }
             if (t[i] == 0) {  // bridged / grown sample: type from the ground at the wall's outer face
@@ -262,14 +353,14 @@ void classify_road(SampledRoad& road, const GroundFn& ground, const GradingParam
         }
     }
     for (std::size_t i = 0; i < n; ++i) {
-        RoadSample& s = S[i];
-        s.br = br[i];
-        s.tu = tu[i];
-        s.portal = tu[i] && (i == 0 || !tu[i - 1] || i == n - 1 || !tu[i + 1]);
-        if (s.portal) road.portals.push_back(static_cast<int>(i));
-        s.wL = s.wL0 = typ[0][i];
-        s.wR = s.wR0 = typ[1][i];
+        S[i].wL = S[i].wL0 = typ[0][i];
+        S[i].wR = S[i].wR0 = typ[1][i];
     }
+}
+
+void classify_road(SampledRoad& road, const GroundFn& ground, const GradingParams& p, StructureMode mode) {
+    classify_structures(road, ground, p, mode);
+    classify_walls(road, ground, p, {});
 }
 
 Box2 road_box(const SampledRoad& road, const GradingParams& p) {
@@ -360,10 +451,11 @@ void compute_wall_weights(SampledRoad& road, const GradingParams& p) {
             // only free run ends (incl. the road's own ends) taper: structures (abutment, portal) hide the wall end
             const bool free0 = i == 0 || (!S[static_cast<std::size_t>(i - 1)].br && !S[static_cast<std::size_t>(i - 1)].tu);
             const bool free1 = j == n || (!S[static_cast<std::size_t>(j)].br && !S[static_cast<std::size_t>(j)].tu);
+            const double ramp = (free0 && free1) || tot < 1e-6 ? p.wall_ramp : std::min(p.wall_ramp, tot);
             for (int k = i; k < j; ++k) {
                 const double c = cum[static_cast<std::size_t>(k - i)];
                 const double d = std::min(free0 ? c : 1e9, free1 ? tot - c : 1e9) + 1e-9;
-                const double u = std::min(1.0, d / p.wall_ramp);
+                const double u = std::min(1.0, d / ramp);
                 set_ww(k, u * u * (3 - 2 * u));  // run end -> 0 (smoothstep)
             }
             i = j;
@@ -403,7 +495,7 @@ double slope_reach(const SampledRoad& road, const GroundFn& ground, const Gradin
     bool any = false;
     for (const RoadSample& s : S) any = any || s.br || s.tu;
     // embankment ends at bridges fall away along the road too: full reach
-    return any ? cap : std::min(cap, hw + mx + p.reach_pad);
+    return any ? cap : std::min(cap, hw + mx + p.reach_pad + round_reach(p));
 }
 
 std::vector<GradingRoad> prepare_grading_roads(std::vector<SampledRoad>& roads, const GroundFn& ground,

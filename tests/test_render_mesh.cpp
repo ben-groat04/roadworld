@@ -8,6 +8,7 @@
 #include "portable_rng.h"
 #include "cp/render_mesh.h"
 #include "cp/road_commands.h"
+#include "cp/triangulate.h"
 #include "scene_fixture.h"
 
 using namespace cp;
@@ -70,6 +71,10 @@ void check_valid(const WorldMeshSet& set) {
             REQUIRE(std::isfinite(m.uv[i].x));
             REQUIRE(std::abs(std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z) - 1) < 1e-6);
             if (name != "kerb") REQUIRE(n.z > 0);
+            const Vec3 t = m.tangents[i];
+            REQUIRE(std::abs(std::sqrt(t.x * t.x + t.y * t.y + t.z * t.z) - 1) < 1e-6);
+            REQUIRE(std::abs(t.x * n.x + t.y * n.y + t.z * n.z) < 1e-3);  // a proper tangent frame
+            REQUIRE(std::abs(std::abs(m.tangent_w[i]) - 1) < 1e-9);
         }
         for (std::size_t i = 0; i < m.indices.size(); i += 3) {
             const Vec3 a = m.positions[m.indices[i]], b = m.positions[m.indices[i + 1]], c = m.positions[m.indices[i + 2]];
@@ -78,6 +83,16 @@ void check_valid(const WorldMeshSet& set) {
             const double nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
             REQUIRE(std::sqrt(nx * nx + ny * ny + nz * nz) > 1e-10);  // not degenerate
             if (name != "kerb") REQUIRE(nz > 0);                       // not flipped
+            REQUIRE(std::sqrt(nx * nx + ny * ny + nz * nz) > 2e-8);  // area above 1e-8 m2
+            {
+                // The winding agrees with the stored (averaged) vertex normals.
+                Vec3 avg{0, 0, 0};
+                for (std::uint32_t k = 0; k < 3; ++k) {
+                    const Vec3 vn = m.normals[m.indices[i + k]];
+                    avg = {avg.x + vn.x, avg.y + vn.y, avg.z + vn.z};
+                }
+                REQUIRE(nx * avg.x + ny * avg.y + nz * avg.z > 0);
+            }
         }
         std::uint32_t covered = 0;
         for (const SectionRange& s : m.sections) {
@@ -587,7 +602,7 @@ TEST_CASE("render mesh: fuzz over random junctions") {
     CHECK(seams > 500);
 }
 
-TEST_CASE("render mesh: highways have no kerbs") {
+TEST_CASE("render mesh: highway edges have no kerb surface") {
     for (const char* type : {"a_road_dual", "motorway"}) {
         World w;
         const EdgeId id = w.road({0, 0, 0}, {200, 20, 3}, type, true, {{100, 0, 1}});
@@ -621,4 +636,512 @@ TEST_CASE("zz debug merge pavements") {
             MESSAGE("  arm " << i << " trim " << j.trims[i] << " kl " << arm.kerb_left << " kr " << arm.kerb_right << " hl " << arm.half_width_left << " hr " << arm.half_width_right << " pav lateral range on trim [" << lo << ", " << hi << "]");
         }
     }
+}
+
+// ---------------------------------------------------------------- round 2
+
+namespace {
+
+// Road surface height at p from the nearest of the edges (centreline + SurfaceProfile).
+double nearest_road_z(const RoadGraph& g, const RegionPack& r, const std::vector<EdgeId>& edges, Vec2 p) {
+    double best = 1e9, z = 0;
+    for (EdgeId id : edges) {
+        const Edge& e = *g.edge(id);
+        const SurfaceProfile sp = make_surface_profile(r, e);
+        const auto c = sample_centreline(e, {0.005, 0.01, 0.2});
+        for (std::size_t i = 0; i + 1 < c.size(); ++i) {
+            const Vec2 a = c[i].pos.xy(), b = c[i + 1].pos.xy(), ab = b - a;
+            const double l2 = ab.dot(ab), t = l2 > 0 ? std::clamp((p - a).dot(ab) / l2, 0.0, 1.0) : 0.0;
+            const double d = (p - (a + ab * t)).length();
+            if (d < best) {
+                best = d;
+                z = c[i].pos.z + (c[i + 1].pos.z - c[i].pos.z) * t + sp.offset(ab.cross(p - a) >= 0 ? d : -d);
+            }
+        }
+    }
+    return z;
+}
+
+bool in_any_triangle(const WorldMeshSet& set, Vec2 p) {
+    for (const auto& [name, m] : set)
+        for (std::size_t i = 0; i < m.indices.size(); i += 3) {
+            const Vec2 a = m.positions[m.indices[i]].xy(), b = m.positions[m.indices[i + 1]].xy(), c = m.positions[m.indices[i + 2]].xy();
+            const double d1 = (b - a).cross(p - a), d2 = (c - b).cross(p - b), d3 = (a - c).cross(p - c);
+            if ((d1 >= -1e-9 && d2 >= -1e-9 && d3 >= -1e-9) || (d1 <= 1e-9 && d2 <= 1e-9 && d3 <= 1e-9)) return true;
+        }
+    return false;
+}
+
+}  // namespace
+
+TEST_CASE("render mesh: highways have no kerbs, also through merge and diverge junctions") {
+    std::string err;
+    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE_MESSAGE(sc, err);
+    const JunctionSet js = tools::scene_junctions(*sc);
+    int merges = 0;
+    for (const auto& [n, j] : js.junctions) {
+        if (j.cls != NodeClass::Merge && j.cls != NodeClass::Diverge) continue;
+        ++merges;
+        for (std::size_t i = 0; i < j.arms.size(); ++i) {
+            const JunctionArm& arm = j.arms[i];
+            const ArmPoint c = arm_point(arm, j.trims[i], 0);
+            const Vec2 dir{std::cos(c.heading_out), std::sin(c.heading_out)}, left{-dir.y, dir.x};
+            double lo = 1e9, hi = -1e9;
+            for (const auto& r : j.pavements)
+                for (const Vec2& p : r) {
+                    const Vec2 d = p - c.pos.xy();
+                    if (std::abs(d.dot(dir)) < 3e-3) {
+                        lo = std::min(lo, d.dot(left));
+                        hi = std::max(hi, d.dot(left));
+                    }
+                }
+            INFO("node " << n.value << " arm " << i);
+            const bool has_pavement = arm.half_width_left - arm.kerb_left > 1e-3;
+            if (!has_pavement) {
+                CHECK(lo > hi);  // dual carriageway arm: no pavement vertex on its trim line
+            } else {
+                // Pavement polygons reach the arm's full cross-section at the trim line.
+                CHECK(hi == doctest::Approx(arm.half_width_left).epsilon(1e-3));
+                CHECK(lo == doctest::Approx(-arm.half_width_right).epsilon(1e-3));
+            }
+        }
+        // No pavement polygon vertex lies within a dual arm's width anywhere near its trim line.
+        const WorldMeshSet jm = build_junction_mesh(sc->graph, *sc->region, j);
+        check_valid(jm);
+    }
+    CHECK(merges >= 4);
+    // Whole-fixture: kerb surface triangles never sit on a highway edge.
+    for (const auto& [id, e] : sc->graph.edges()) {
+        if (e.road_type != "a_road_dual" && e.road_type != "motorway") continue;
+        CHECK(build_edge_mesh(sc->graph, *sc->region, id, js).count("kerb") == 0);
+    }
+}
+
+TEST_CASE("render mesh: roundabout islands take their surfaces from the region pack") {
+    std::string err;
+    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE_MESSAGE(sc, err);
+    RoundaboutResult rr;
+    const JunctionSet js = tools::scene_junctions(*sc, &rr);
+    REQUIRE(!rr.layouts.empty());
+    int checked = 0;
+    for (const RoundaboutLayout& l : rr.layouts) {
+        if (!l.ok) continue;
+        const WorldMeshSet m = build_roundabout_mesh(sc->graph, *sc->region, l);
+        check_valid(m);
+        CHECK_FALSE(m.count("island"));
+        REQUIRE(m.count("grass"));  // planted central island
+        CHECK(plan_area(m.at("grass")) == doctest::Approx(polygon_set_area(l.island)).epsilon(0.02));
+        if (!l.splitters.empty()) {
+            REQUIRE(m.count("paving"));  // splitters are paved
+            double a = 0;
+            for (const auto& s : l.splitters) a += polygon_set_area(PolygonSet{s.polygon});
+            CHECK(plan_area(m.at("paving")) == doctest::Approx(a).epsilon(0.05));
+        }
+        REQUIRE(m.count("kerb"));
+        ++checked;
+
+        // Kerb feet follow the adjacent carriageway: every kerb vertex is at the road height or one
+        // upstand above it (central island: the ring edges; splitters: their approach).
+        std::vector<EdgeId> ring_edges = l.group.ring_edges;
+        std::vector<EdgeId> all = ring_edges;
+        for (const auto& arm : l.group.arms) all.push_back(arm.edge);
+        std::size_t good = 0, total = 0;
+        for (const Vec3& p : m.at("kerb").positions) {
+            // Island vertices lie on the ring side; use whichever edge set is nearer.
+            const double z_ring = nearest_road_z(sc->graph, *sc->region, ring_edges, p.xy());
+            const double z_all = nearest_road_z(sc->graph, *sc->region, all, p.xy());
+            ++total;
+            const double h = sc->region->roundabout.island_kerb_upstand;
+            for (double zr : {z_ring, z_all})
+                if (std::abs(p.z - zr) < 0.01 || std::abs(p.z - (zr + h)) < 0.01) {
+                    ++good;
+                    break;
+                }
+        }
+        CHECK(good == total);
+    }
+    CHECK(checked >= 1);
+}
+
+TEST_CASE("render mesh: vertex masks and lane-relative uv") {
+    World w;
+    const EdgeId id = w.road({0, 0, 0}, {100, 0, 0}, "residential");
+    const JunctionSet none;
+    const WorldMeshSet a = build_edge_mesh(w.g, *w.region, id, none), b = build_edge_mesh(w.g, *w.region, id, none);
+    check_valid(a);
+    const WorldMesh& m = a.at("asphalt");
+    REQUIRE(m.colours.size() == m.positions.size());
+    REQUIRE(m.uv1.size() == m.positions.size());
+    double bmin = 1, bmax = 0;
+    bool saw_edge = false, saw_inner = false, saw_driving = false;
+    for (std::size_t i = 0; i < m.positions.size(); ++i) {
+        const Float4 c = m.colours[i];
+        CHECK(c.w == 0);  // reserved
+        CHECK((c.x >= 0 && c.x <= 1 && c.y >= 0 && c.y <= 1 && c.z >= 0 && c.z <= 1));
+        bmin = std::min<double>(bmin, c.z);
+        bmax = std::max<double>(bmax, c.z);
+        const double y = std::abs(m.positions[i].y);
+        if (y > 5 - 1e-9) {  // carriageway edge at the kerb foot (parking lane outer edge)
+            CHECK(c.y == doctest::Approx(1.0));
+            saw_edge = true;
+        }
+        if (y > 4.5 + 1e-9 && y < 5 - 1e-9) CHECK(c.y > 0);
+        if (y < 4.5 - 1e-9) {
+            CHECK(c.y == doctest::Approx(0.0));
+            saw_inner = true;
+        }
+        if (m.uv1[i].y > 0) {  // driving lane
+            saw_driving = true;
+            CHECK(m.uv1[i].y == doctest::Approx(3.0));
+            CHECK(std::abs(m.uv1[i].x) <= 1.5 + 1e-9);
+            CHECK(c.x == doctest::Approx(0.55));
+            CHECK(y <= 3.0 + 1e-9);
+        } else {
+            CHECK(c.x == 0);  // parking lane: no wear
+        }
+    }
+    CHECK(saw_edge);
+    CHECK(saw_inner);
+    CHECK(saw_driving);
+    CHECK(bmax - bmin > 0.05);  // low-frequency variation changes along the edge
+    // Lane boundaries are split vertices: both lane-relative extremes exist in each lane.
+    bool lo = false, hi = false;
+    for (const Float2 u : [&] { std::vector<Float2> v; for (const Vec2& q : m.uv1) v.push_back({static_cast<float>(q.x), static_cast<float>(q.y)}); return v; }()) {
+        if (u.y > 0 && u.x < -1.499f) lo = true;
+        if (u.y > 0 && u.x > 1.499f) hi = true;
+    }
+    CHECK(lo);
+    CHECK(hi);
+    // Deterministic.
+    REQUIRE(b.at("asphalt").colours.size() == m.colours.size());
+    for (std::size_t i = 0; i < m.colours.size(); ++i) CHECK(b.at("asphalt").colours[i].z == m.colours[i].z);
+    // Float buffers carry the same channels as bytes.
+    const MeshBuffers fb = pack_buffers(m, {0, 0, 0});
+    REQUIRE(fb.colours.size() == m.colours.size());
+    REQUIRE(fb.uv1.size() == m.colours.size());
+    CHECK(fb.colours[0][3] == 0);
+}
+
+TEST_CASE("render mesh: wear rises on the approach to a junction") {
+    World w;
+    w.road({0, 0, 0}, {100, 0, 0}, "residential");
+    const NodeId c = w.g.edges().begin()->second.a;
+    const auto spoke = [&](Vec3 to) {
+        DrawRoadSpec s;
+        s.road_type = "residential";
+        s.start.existing_node = c;
+        s.end.pos = to;
+        REQUIRE(w.st.execute(make_draw_road(s)));
+    };
+    spoke({-100, 0, 0});
+    spoke({0, 100, 0});
+    const JunctionSet js = build_junctions(w.g, *w.region, {});
+    REQUIRE(js.find(c));
+    const Junction& j = *js.find(c);
+    const EdgeId id = w.g.edges().begin()->first;
+    const WorldMeshSet set = build_edge_mesh(w.g, *w.region, id, js);
+    const WorldMesh& m = set.at("asphalt");
+    const double trim = j.trims[static_cast<std::size_t>(std::find_if(j.arms.begin(), j.arms.end(), [&](const JunctionArm& a) { return a.edge == id; }) - j.arms.begin())];
+    bool boosted = false, plain_near = false;
+    for (std::size_t i = 0; i < m.positions.size(); ++i) {
+        if (m.uv1[i].y <= 0) continue;
+        const double s = m.uv[i].y;
+        if (s > trim + 20 + 1e-6) CHECK(m.colours[i].x == doctest::Approx(0.55));
+        if (s < trim + 1e-6) {
+            if (m.colours[i].x > 0.99f) boosted = true;
+            if (m.colours[i].x < 0.56f) plain_near = true;  // the lane leaving the junction
+        }
+        CHECK(m.colours[i].x <= 1.0f);
+    }
+    CHECK(boosted);
+    CHECK(plain_near);
+    // The junction carriageway carries a final wear mask from the connector paths.
+    const WorldMeshSet jm = build_junction_mesh(w.g, *w.region, j);
+    const WorldMesh& ja = jm.at("asphalt");
+    float hi = 0, lo = 1;
+    for (const Float4& c4 : ja.colours) {
+        hi = std::max(hi, c4.x);
+        lo = std::min(lo, c4.x);
+    }
+    CHECK(hi > 0.9f);
+    CHECK(lo < 0.5f);
+    for (const Vec2& q : ja.uv1) CHECK(q.y == 0);
+}
+
+TEST_CASE("render mesh: junction uv is planar at 1 uv unit per metre; kerb uv runs along the kerb") {
+    std::string err;
+    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE_MESSAGE(sc, err);
+    const JunctionSet js = tools::scene_junctions(*sc);
+    std::size_t checked = 0;
+    for (const auto& [n, j] : js.junctions) {
+        if (j.carriageway.empty()) continue;
+        const WorldMeshSet jm = build_junction_mesh(sc->graph, *sc->region, j);
+        for (const auto& [name, m] : jm) {
+            if (name == "kerb") continue;
+            for (std::size_t i = 0; i < m.indices.size(); i += 3)
+                for (int k = 0; k < 3; ++k) {
+                    const std::uint32_t p = m.indices[i + static_cast<std::size_t>(k)], q = m.indices[i + static_cast<std::size_t>((k + 1) % 3)];
+                    const double dxy = (m.positions[p].xy() - m.positions[q].xy()).length();
+                    const double duv = std::hypot(m.uv[p].x - m.uv[q].x, m.uv[p].y - m.uv[q].y);
+                    if (dxy < 1e-6) continue;
+                    ++checked;
+                    REQUIRE(duv / dxy == doctest::Approx(1.0).epsilon(1e-3));  // never stretched
+                }
+        }
+        if (jm.count("kerb"))
+            for (const Vec2& q : jm.at("kerb").uv) CHECK(q.y >= -1e-9);  // v is up the face
+    }
+    CHECK(checked > 1000);
+
+    // Straight road: kerb u = distance along the road, v = up the face (then across the top).
+    World w;
+    const EdgeId id = w.road({0, 0, 0}, {100, 0, 0}, "b_road");
+    const JunctionSet none;
+    const WorldMeshSet set = build_edge_mesh(w.g, *w.region, id, none);
+    const WorldMesh& k = set.at("kerb");
+    double vmax = 0;
+    for (std::size_t i = 0; i < k.positions.size(); ++i) {
+        CHECK(k.uv[i].x == doctest::Approx(k.positions[i].x));
+        vmax = std::max(vmax, k.uv[i].y);
+        CHECK(k.uv[i].y >= 0);
+    }
+    CHECK(vmax == doctest::Approx(0.125 + 0.15).epsilon(1e-6));
+}
+
+TEST_CASE("render mesh: coarse tolerance collapses straights to long quads") {
+    World w;
+    const EdgeId id = w.road({0, 0, 0}, {300, 0, 0}, "b_road");
+    const JunctionSet none;
+    RenderMeshParams fine, coarse;
+    coarse.chord_tolerance = 2.0;
+    const std::size_t nf = tri_count(build_edge_mesh(w.g, *w.region, id, none, fine));
+    const std::size_t nc = tri_count(build_edge_mesh(w.g, *w.region, id, none, coarse));
+    CHECK(nc * 5 <= nf);
+    // A single long interval: one quad per strip.
+    const WorldMeshSet coarse_set = build_edge_mesh(w.g, *w.region, id, none, coarse);
+    const WorldMesh& m = coarse_set.at("asphalt");
+    double vmax = 0;
+    for (const Vec2& q : m.uv) vmax = std::max(vmax, q.y);
+    CHECK(vmax == doctest::Approx(300));
+    CHECK(m.positions.size() <= 40);
+}
+
+TEST_CASE("triangulate: holes, orientation and failure reporting") {
+    const auto total_area = [](const std::vector<Vec2>& pts, const std::vector<std::array<std::uint32_t, 3>>& t) {
+        double a = 0;
+        for (const auto& tr : t) {
+            const double s = (pts[tr[1]] - pts[tr[0]]).cross(pts[tr[2]] - pts[tr[0]]) / 2;
+            REQUIRE(s > 0);  // counter-clockwise
+            a += s;
+        }
+        return a;
+    };
+    std::vector<Vec2> pts{{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+    std::vector<std::array<std::uint32_t, 3>> tris;
+    // Hole touching the outer ring at a vertex.
+    {
+        pts = {{0, 0}, {10, 0}, {10, 10}, {0, 10}, {0, 0}, {4, 1}, {3, 4}};
+        tris.clear();
+        CHECK(triangulate_polygons(pts, {{0, 1, 2, 3}, {4, 5, 6}}, tris));
+        CHECK(total_area(pts, tris) == doctest::Approx(100 - 6.5));
+    }
+    // Three holes side by side (given counter-clockwise: orientation is irrelevant).
+    {
+        pts = {{0, 0}, {10, 0}, {10, 10}, {0, 10}};
+        std::vector<std::vector<std::uint32_t>> rings{{0, 1, 2, 3}};
+        for (double x : {1.0, 4.0, 7.0}) {
+            const auto b = static_cast<std::uint32_t>(pts.size());
+            pts.push_back({x, 4});
+            pts.push_back({x + 2, 4});
+            pts.push_back({x + 2, 6});
+            pts.push_back({x, 6});
+            rings.push_back({b, b + 1, b + 2, b + 3});
+        }
+        tris.clear();
+        CHECK(triangulate_polygons(pts, rings, tris));
+        CHECK(total_area(pts, tris) == doctest::Approx(100 - 12));
+    }
+    // Clockwise outer ring is not dropped.
+    {
+        pts = {{0, 0}, {0, 10}, {10, 10}, {10, 0}};
+        tris.clear();
+        CHECK(triangulate_polygons(pts, {{0, 1, 2, 3}}, tris));
+        CHECK(total_area(pts, tris) == doctest::Approx(100));
+    }
+    // Island inside a hole inside an outer ring (nesting depth 2 is filled again).
+    {
+        pts = {{0, 0}, {20, 0}, {20, 20}, {0, 20}, {4, 4}, {16, 4}, {16, 16}, {4, 16}, {8, 8}, {12, 8}, {12, 12}, {8, 12}};
+        tris.clear();
+        CHECK(triangulate_polygons(pts, {{0, 1, 2, 3}, {4, 5, 6, 7}, {8, 9, 10, 11}}, tris));
+        CHECK(total_area(pts, tris) == doctest::Approx(400 - 144 + 16));
+    }
+    // Concave outline with collinear points.
+    {
+        pts = {{0, 0}, {5, 0}, {10, 0}, {10, 10}, {5, 5}, {0, 10}};
+        tris.clear();
+        CHECK(triangulate_polygons(pts, {{0, 1, 2, 3, 4, 5}}, tris));
+        CHECK(total_area(pts, tris) == doctest::Approx(75));
+    }
+    // Failure is reported, not hidden: a bad index, and a non-finite point.
+    {
+        tris.clear();
+        CHECK_FALSE(triangulate_polygons(pts, {{0, 1, 99}}, tris));
+        pts = {{0, 0}, {1, 0}, {std::nan(""), 1}};
+        CHECK_FALSE(triangulate_polygons(pts, {{0, 1, 2}}, tris));
+    }
+}
+
+TEST_CASE("render mesh: surface height queries match the mesh") {
+    World w;
+    const EdgeId id = w.road({0, 0, 0}, {120, 0, 6}, "residential", false, {{60, 0, 2}});
+    const JunctionSet none;
+    const WorldMeshSet set = build_edge_mesh(w.g, *w.region, id, none);
+    const Edge& e = *w.g.edge(id);
+    const SurfaceProfile sp = make_surface_profile(*w.region, e);
+    REQUIRE(sp.valid());
+    CHECK(sp.left() == doctest::Approx(7.15));
+    CHECK(sp.right() == doctest::Approx(-7.15));
+    std::size_t checked = 0;
+    for (const char* surface : {"asphalt", "paving"}) {
+        for (const Vec3& p : set.at(surface).positions) {
+            // Straight road along +x from the origin: s = x (to first order), lateral = y.
+            const double s = (p.xy() - e.horizontal.spans.front().start).length();
+            const bool pave = std::string(surface) == "paving";
+            CHECK(p.z == doctest::Approx(edge_point(e, s).z + sp.offset(p.y, !pave)).epsilon(1e-6).scale(1.0));
+            if (!pave) CHECK(p.z == doctest::Approx(edge_surface_z(w.g, *w.region, id, s, p.y)).epsilon(1e-6).scale(1.0));
+            ++checked;
+        }
+    }
+    CHECK(checked > 100);
+    // Camber and kerb: crown at the centreline, kerb top = carriageway edge + upstand.
+    CHECK(sp.offset(0) == doctest::Approx(0));
+    CHECK(sp.offset(5.0) == doctest::Approx(-0.125));
+    CHECK(sp.offset(5.0, false) == doctest::Approx(0.0));  // kerb top at the same lateral
+}
+
+TEST_CASE("render mesh: junction surface function matches the trim lines and the mesh") {
+    World w;
+    w.road({0, 0, 0}, {100, 0, 1}, "residential");
+    const NodeId c = w.g.edges().begin()->second.a;
+    const auto spoke = [&](Vec3 to, const char* type) {
+        DrawRoadSpec s;
+        s.road_type = type;
+        s.start.existing_node = c;
+        s.end.pos = to;
+        REQUIRE(w.st.execute(make_draw_road(s)));
+    };
+    spoke({-100, 0, 2}, "residential");
+    spoke({10, 90, 3}, "b_road");
+    const JunctionSet js = build_junctions(w.g, *w.region, {});
+    const Junction& j = *js.find(c);
+    const JunctionSurface js_surface(w.g, *w.region, j);
+    REQUIRE(js_surface.valid());
+    for (std::size_t i = 0; i < j.arms.size(); ++i) {
+        const JunctionArm& arm = j.arms[i];
+        const Edge& e = *w.g.edge(arm.edge);
+        const SurfaceProfile sp = make_surface_profile(*w.region, e);
+        for (double lat : {-2.5, 0.0, 1.0, 4.0}) {
+            const ArmPoint ap = arm_point(arm, j.trims[i], lat);
+            const double s = arm.at_a ? j.trims[i] : e.horizontal.length() - j.trims[i];
+            const double ed = edge_point(e, s).z + sp.offset(arm.at_a ? lat : -lat);
+            CHECK(js_surface.z(ap.pos.xy()) == doctest::Approx(ed).epsilon(1e-6).scale(0.01));
+        }
+    }
+    const WorldMeshSet jm = build_junction_mesh(w.g, *w.region, j);
+    for (const Vec3& p : jm.at("asphalt").positions) CHECK(p.z == doctest::Approx(js_surface.z(p.xy())).epsilon(1e-9).scale(1.0));
+    CHECK(junction_surface_z(w.g, *w.region, j, {0, 0}) == doctest::Approx(js_surface.z({0, 0})));
+}
+
+TEST_CASE("render mesh: edge boundary polylines") {
+    World w;
+    const EdgeId id = w.road({0, 0, 0}, {100, 0, 3}, "b_road");
+    const JunctionSet none;
+    EdgeBoundary bd;
+    const WorldMeshSet set = build_edge_mesh(w.g, *w.region, id, none, {}, &bd);
+    REQUIRE(bd.left.size() >= 2);
+    REQUIRE(bd.left.size() == bd.right.size());
+    const SurfaceProfile sp = make_surface_profile(*w.region, *w.g.edge(id));
+    for (std::size_t i = 0; i < bd.left.size(); ++i) {
+        CHECK(bd.left[i].y == doctest::Approx(sp.left()));
+        CHECK(bd.right[i].y == doctest::Approx(sp.right()));
+        CHECK(bd.left[i].z == doctest::Approx(edge_point(*w.g.edge(id), bd.left[i].x).z + sp.offset(sp.left(), false)));
+    }
+    CHECK(bd.left.front().x == doctest::Approx(0));
+    CHECK(bd.left.back().x == doctest::Approx(100));
+}
+
+TEST_CASE("render mesh: 2-arm joints are filled (type change and heading kink) and seamless pairs are left alone") {
+    struct Case {
+        const char* second_type;
+        Vec3 end;
+        bool needs_joint;
+    };
+    for (const Case& cs : {Case{"b_road", {200, 0, 0}, true}, Case{"residential", {200, 40, 0}, true},
+                           Case{"residential", {200, 0, 0}, false}}) {
+        World w;
+        const EdgeId first = w.road({0, 0, 0}, {100, 0, 0}, "residential");
+        const NodeId mid = w.g.edge(first)->b;
+        DrawRoadSpec s;
+        s.road_type = cs.second_type;
+        s.start.existing_node = mid;
+        s.end.pos = cs.end;
+        REQUIRE(w.st.execute(make_draw_road(s)));
+        const EdgeId second = w.g.edges().rbegin()->first;
+        const JunctionSet none;
+        INFO(cs.second_type << " to (" << cs.end.x << ", " << cs.end.y << ")");
+        const WorldMeshSet joint = build_joint_mesh(w.g, *w.region, mid);
+        double a_max = -1e9, b_min = 1e9;
+        for (const auto& [name, m] : build_edge_mesh(w.g, *w.region, first, none))
+            for (const Vec3& p : m.positions) a_max = std::max(a_max, p.x);
+        for (const auto& [name, m] : build_edge_mesh(w.g, *w.region, second, none))
+            for (const Vec3& p : m.positions) b_min = std::min(b_min, p.x);
+        if (!cs.needs_joint) {
+            CHECK(joint.empty());
+            CHECK(a_max == doctest::Approx(100).epsilon(1e-6));
+            CHECK(b_min == doctest::Approx(100).epsilon(1e-6));
+            continue;
+        }
+        check_valid(joint);
+        CHECK(a_max < 100 - 3.9);  // both edges are cut back by joint_length
+        CHECK(b_min > 100 + 3.9);
+        // The gap between the end rings is covered over the narrower cross-section.
+        for (double lat : {-4.5, -2.0, 0.0, 2.0, 4.5}) CHECK(in_any_triangle(joint, {100, lat}));
+        // Rings weld: joint vertices on the edge end lines exist in the edge meshes.
+        for (EdgeId id : {first, second}) {
+            if (cs.end.y != 0) break;
+            const WorldMeshSet em = build_edge_mesh(w.g, *w.region, id, none);
+            std::size_t matched = 0, on_line = 0;
+            for (const auto& [name, jm] : joint)
+                for (const Vec3& p : jm.positions) {
+                    const double line = id == first ? a_max : b_min;
+                    if (std::abs(p.x - line) > 0.05) continue;
+                    ++on_line;
+                    for (const auto& [en, e2] : em) {
+                        bool hit = false;
+                        for (const Vec3& q : e2.positions)
+                            if (std::pow(q.x - p.x, 2) + std::pow(q.y - p.y, 2) + std::pow(q.z - p.z, 2) < 1e-6) { hit = true; break; }
+                        if (hit) { ++matched; break; }
+                    }
+                }
+            CHECK(on_line > 4);
+            CHECK(matched > 0);
+        }
+    }
+}
+
+TEST_CASE("zz triangulate debug") {
+    std::vector<Vec2> pts{{0, 0}, {10, 0}, {10, 10}, {0, 10}, {1, 4}, {3, 4}, {3, 6}, {1, 6}};
+    std::vector<std::array<std::uint32_t, 3>> tris;
+    const bool ok = triangulate_polygons(pts, {{0, 1, 2, 3}, {4, 5, 6, 7}}, tris);
+    MESSAGE("ok " << ok << " tris " << tris.size());
+    double a = 0;
+    for (const auto& t : tris) {
+        const double s = (pts[t[1]] - pts[t[0]]).cross(pts[t[2]] - pts[t[0]]) / 2;
+        a += s;
+        MESSAGE(t[0] << " " << t[1] << " " << t[2] << " area " << s);
+    }
+    MESSAGE("total " << a);
 }

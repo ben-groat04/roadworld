@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <string>
 
 namespace cp {
 
@@ -79,10 +81,14 @@ JunctionArm make_arm(const RoadGraph& graph, const Edge& e, bool at_a, const Reg
     std::vector<std::pair<double, double>> kerbs;  // (lateral, width)
     for (const Lane& l : all) {
         const double lat = at_a ? l.offset : -l.offset;
-        left = std::max(left, lat + l.width / 2);
-        right = std::max(right, -(lat - l.width / 2));
-        if (l.lane_type == "kerb") kerbs.push_back({lat, l.width});
         const LaneType* lt = region.lane_type(l.lane_type);
+        // A verge is ground dressing beside a kerbless road, not part of the junction cross-section:
+        // the kerb line there is the edge of the paved strip.
+        if (!(lt && lt->profile == "verge")) {
+            left = std::max(left, lat + l.width / 2);
+            right = std::max(right, -(lat - l.width / 2));
+        }
+        if (l.lane_type == "kerb") kerbs.push_back({lat, l.width});
         if (!lt || !lt->connects_at_junctions || l.dir == TravelDir::None) continue;
         LaneRef r;
         r.edge = e.id;
@@ -176,18 +182,140 @@ std::vector<int> major_arm_indices(const std::vector<JunctionArm>& arms) {
 }
 
 std::vector<double> resolve_corner_radii(NodeId node, const std::vector<JunctionArm>& arms,
-                                         const JunctionOverrides& overrides) {
+                                         const JunctionOverrides& overrides, const RegionPack* region) {
     std::vector<double> r(arms.size(), kDefaultCornerRadius);
     for (std::size_t k = 0; k < arms.size(); ++k) {
-        // Region default: the larger of the two arms' road-type radii (0 = n/a), else the fallback.
-        const double pack = std::max(arms[k].corner_radius, arms[(k + 1) % arms.size()].corner_radius);
-        if (pack > 0) r[k] = pack;
-        const CornerKey key{node, arms[(k + 1) % arms.size()].edge, arms[k].edge};
+        const std::size_t j = (k + 1) % arms.size();
+        // Region default: the larger of the two arms' road-type radii (0 = n/a), else the fallback. With a
+        // region the pack's table for the pair of road classes wins over that, scaled by the corner skew.
+        double base = std::max(arms[k].corner_radius, arms[j].corner_radius);
+        if (region) {
+            const double table = region->junction.corner_radius_for(arms[k].road_class, arms[j].road_class);
+            if (table > 0) base = table;
+            double theta = arms[j].heading_out - arms[k].heading_out;
+            if (theta <= 0) theta += 2 * kPi;
+            if (base > 0 && theta < kPi - 0.01) base *= region->junction.skew_factor(theta);
+        }
+        if (base > 0) r[k] = base;
+        const CornerKey key{node, arms[j].edge, arms[k].edge};
         const auto it = overrides.corner_radius.find(key);
         if (it != overrides.corner_radius.end()) r[k] = it->second;
     }
     return r;
 }
+
+double flare_spread(const JunctionArm& arm, double s, bool left) {
+    const ArmFlare& f = arm.flare;
+    const double w = left ? f.spread_left : f.spread_right;
+    if (!(f.length > 0) || w <= 0 || s >= f.length) return 0;
+    if (s <= f.full) return w;
+    const double span = f.length - f.full;
+    if (span < 1e-9) return 0;
+    const double t = (s - f.full) / span;
+    return w * (1 - t * t * (3 - 2 * t));
+}
+
+double flared_lateral(const JunctionArm& arm, double s, double lateral) {
+    if (lateral > 0) return lateral + flare_spread(arm, s, true);
+    if (lateral < 0) return lateral - flare_spread(arm, s, false);
+    return lateral;
+}
+
+namespace {
+
+struct PocketPlan {
+    int arm = -1, to_arm = -1;
+    bool forced = false, left = true;  // left: the offside (outbound lane) side is the +lateral side
+};
+
+// Where a turn pocket goes at this node: a two-way major arm whose offside has a lesser road leaving at
+// roughly a right angle, with a two-way through arm opposite. The region rule decides by default; a
+// per-junction override forces a pocket on (class and angle limits relaxed) or off.
+std::vector<PocketPlan> plan_pockets(const Junction& j, const RegionPack& region, const JunctionOverrides& ov) {
+    std::vector<PocketPlan> out;
+    const TurnPocketRules& R = region.junction.turn_pockets;
+    const int n = static_cast<int>(j.arms.size());
+    if (j.cls != NodeClass::Junction || n < 3 || n > 4) return out;
+    for (int ai = 0; ai < n; ++ai) {
+        const JunctionArm& A = j.arms[static_cast<std::size_t>(ai)];
+        if (A.inbound_count() == 0 || A.outbound_count() == 0) continue;
+        const auto it = ov.turn_pockets.find({j.node, A.edge});
+        if (it != ov.turn_pockets.end() && !it->second) continue;
+        const bool forced = it != ov.turn_pockets.end();
+        if (!forced && (!R.enabled || A.road_class < R.major_class_min)) continue;
+        int bi = -1;
+        double bend = 1e9;
+        for (int c = 0; c < n; ++c) {
+            if (c == ai) continue;
+            const double d = std::fabs(wrap_angle(j.arms[static_cast<std::size_t>(c)].heading_out - (A.heading_out + kPi)));
+            if (d < bend) bend = d, bi = c;
+        }
+        if (bi < 0 || bend > (forced ? 0.5 : R.max_bend)) continue;
+        const JunctionArm& B = j.arms[static_cast<std::size_t>(bi)];
+        if (B.inbound_count() == 0 || B.outbound_count() == 0) continue;
+        if (!forced && B.road_class < R.major_class_min) continue;
+        double lat = 0;
+        int cnt = 0;
+        for (const LaneRef& l : A.lanes)
+            if (!l.inbound) lat += l.lateral, ++cnt;
+        const bool left = cnt > 0 && lat / cnt > 0;
+        for (int c = 0; c < n; ++c) {
+            if (c == ai || c == bi) continue;
+            const JunctionArm& M = j.arms[static_cast<std::size_t>(c)];
+            const double phi = wrap_angle(M.heading_out - A.heading_out);
+            if ((phi > 0) != left) continue;
+            const double lo = forced ? 0.5 : R.min_minor_angle, hi = forced ? kPi - 0.5 : R.max_minor_angle;
+            if (std::fabs(phi) < lo || std::fabs(phi) > hi) continue;
+            if (M.outbound_count() == 0) continue;
+            if (!forced && (M.road_class > R.minor_class_max || M.road_class >= A.road_class)) continue;
+            out.push_back({ai, c, forced, left});
+            break;
+        }
+    }
+    return out;
+}
+
+double area2(const std::vector<Vec2>& r) {
+    double a = 0;
+    for (std::size_t i = 0; i < r.size(); ++i) a += r[i].cross(r[(i + 1) % r.size()]);
+    return a;
+}
+
+// Pocket lane and hatched ghost island polygons, from the finished flare of the pocket's arm.
+void build_pocket_polygons(const Junction& j, TurnPocket& p) {
+    const JunctionArm& A = j.arms[static_cast<std::size_t>(p.arm)];
+    const bool left = A.flare.spread_left > A.flare.spread_right;
+    const double sign = left ? 1.0 : -1.0;
+    const double w = p.lane_width;
+    const auto at = [&](double s, double lat) { return arm_point(A, s, lat).pos; };
+    const double s0 = p.storage_length, s1 = A.flare.length;
+    // Pocket lane: the strip [0, w] beside the centre line from the node to the end of the full spread.
+    std::vector<Vec2> lane, ghost;
+    for (double s = 0; s < s0; s += 1.0) lane.push_back(at(s, 0).xy());
+    lane.push_back(at(s0, 0).xy());
+    lane.push_back(at(s0, sign * w).xy());
+    for (double s = s0 - 1.0; s > 0; s -= 1.0) lane.push_back(at(s, sign * w).xy());
+    lane.push_back(at(0, sign * w).xy());
+    // Ghost island: from the end of the lane to the nose; the outer edge follows the shifted lane edge.
+    for (double s = s0; s < s1; s += 1.0) ghost.push_back(at(s, 0).xy());
+    ghost.push_back(at(s1, 0).xy());
+    for (double s = s1 - 1.0; s > s0; s -= 1.0) ghost.push_back(at(s, sign * flare_spread(A, s, left)).xy());
+    ghost.push_back(at(s0, sign * w).xy());
+    p.centreline.clear();
+    for (double s = s0; s > 0; s -= 1.0) p.centreline.push_back(at(s, sign * w / 2));
+    p.centreline.push_back(at(0, sign * w / 2));
+    for (std::vector<Vec2>* poly : {&lane, &ghost}) {
+        std::vector<Vec2> clean;
+        for (const Vec2& v : *poly)
+            if (clean.empty() || (clean.back() - v).length() > 1e-6) clean.push_back(v);
+        while (clean.size() > 1 && (clean.front() - clean.back()).length() <= 1e-6) clean.pop_back();
+        if (clean.size() < 3 || std::fabs(area2(clean)) < 1e-3) continue;
+        if (area2(clean) < 0) std::reverse(clean.begin(), clean.end());
+        (poly == &lane ? p.lane : p.ghost).push_back(std::move(clean));
+    }
+}
+
+}  // namespace
 
 JunctionSet build_plain_junctions(const RoadGraph& graph, const RegionPack& region, const JunctionOverrides& overrides,
                                   const std::vector<NodeId>& only) {
@@ -206,13 +334,75 @@ JunctionSet build_plain_junctions(const RoadGraph& graph, const RegionPack& regi
         j.cls = classify_arms(j.arms);
         if (j.arms.size() < 3) continue;
         j.major_arms = major_arm_indices(j.arms);
-        j.corner_radii = resolve_corner_radii(id, j.arms, overrides);
+        j.corner_radii = resolve_corner_radii(id, j.arms, overrides, &region);
         if (j.cls == NodeClass::Merge || j.cls == NodeClass::Diverge) {
             generate_merge_diverge(j, graph, region, overrides);
         } else {
+            // ---- approach shaping: roundabout flares (requested through the overrides) and turn pockets
+            std::map<std::size_t, ArmShape> shapes;  // arm index -> wanted shape
+            for (std::size_t a = 0; a < j.arms.size(); ++a) {
+                const auto it = overrides.arm_shapes.find({id, j.arms[a].edge, j.arms[a].at_a});
+                if (it != overrides.arm_shapes.end()) shapes[a] = it->second;
+            }
+            if (region.junction.turn_pockets.enabled || !overrides.turn_pockets.empty()) {
+                const TurnPocketRules& R = region.junction.turn_pockets;
+                for (const PocketPlan& pp : plan_pockets(j, region, overrides)) {
+                    if (shapes.count(static_cast<std::size_t>(pp.arm))) continue;  // already shaped (roundabout)
+                    const Edge* e = graph.edge(j.arms[static_cast<std::size_t>(pp.arm)].edge);
+                    const RoadType* t = e ? region.road_type(e->road_type) : nullptr;
+                    const double speed = t ? t->speed_limit : 0;
+                    ArmShape sh;
+                    (pp.left ? sh.spread_left : sh.spread_right) = R.lane_width;
+                    sh.hold = R.lookup(R.storage, speed, 20.0);
+                    sh.taper = R.lookup(R.taper_ratio, speed, 15.0) * R.lane_width;
+                    sh.min_taper = R.min_taper_ratio * R.lane_width;
+                    sh.what = "turn pocket";
+                    shapes[static_cast<std::size_t>(pp.arm)] = sh;
+                    TurnPocket tp;
+                    tp.arm = pp.arm;
+                    tp.to_arm = pp.to_arm;
+                    tp.forced = pp.forced;
+                    tp.lane_width = R.lane_width;
+                    j.pockets.push_back(tp);
+                }
+            }
+            for (const auto& [a, sh] : shapes) {
+                j.arms[a].flare.spread_left = sh.spread_left;
+                j.arms[a].flare.spread_right = sh.spread_right;
+            }
             j.trims = compute_trims(j.arms, j.corner_radii);
+            std::string dropped;
+            for (const auto& [a, sh] : shapes) {
+                JunctionArm& arm = j.arms[a];
+                const double full = std::max(sh.hold, j.trims[a] + 3.0);
+                const double avail = arm.edge_length / 2 - full;
+                const double wanted = sh.length > 0 ? std::max(sh.length - full, sh.min_taper) : sh.taper;
+                if (avail < sh.min_taper - 1e-9 || avail < 1.0) {
+                    arm.flare = ArmFlare{};
+                    if (dropped.empty()) dropped = sh.what + " on edge " + std::to_string(arm.edge.value) + " does not fit";
+                    j.pockets.erase(std::remove_if(j.pockets.begin(), j.pockets.end(),
+                                                   [&](const TurnPocket& p) { return p.arm == static_cast<int>(a); }),
+                                    j.pockets.end());
+                } else {
+                    arm.flare.full = full;
+                    arm.flare.length = full + std::min(wanted, avail);
+                }
+            }
+            if (!dropped.empty()) j.trims = compute_trims(j.arms, j.corner_radii);
+            for (const auto& [a, sh] : shapes)
+                if (j.arms[a].flare.active()) j.trims[a] = j.arms[a].flare.length;
+            for (TurnPocket& p : j.pockets) {
+                const ArmFlare& f = j.arms[static_cast<std::size_t>(p.arm)].flare;
+                p.storage_length = f.full;
+                p.taper_length = f.length - f.full;
+            }
             generate_connectors(j, j.side, overrides, region);
             generate_geometry(j, graph, region, overrides);
+            for (TurnPocket& p : j.pockets) build_pocket_polygons(j, p);
+            if (!dropped.empty() && !j.degraded) {
+                j.degraded = true;
+                j.degraded_reason = dropped;
+            }
         }
         set.junctions.emplace(id, std::move(j));
     }

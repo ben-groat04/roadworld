@@ -6,8 +6,8 @@
   "driving_side": "left",
   "_comment": "A40 / minor-road T-junction near Brynich, Wales: PHOTO-ONLY approximation (the junction could not be identified in OpenStreetMap from the catalogue notes; see SOURCES.md). Local metres, origin = junction centre, x east, y north. A40 is a two-way b_road on a gentle bend, the minor road joins from the south with a wide bellmouth. Flat (z = 0).",
   "roads": [
-    { "type": "b_road", "points": [[-160, 40, 0], [-80, 16, 0], [0, 0, 0], [80, -6, 0], [160, -4, 0]], "notes": "A40, single carriageway" },
-    { "type": "b_road", "points": [[0, -80, 0], [0, -40, 0], [0, 0, 0]], "notes": "minor road from the south" }
+    { "type": "a_road_rural", "points": [[-160, 40, 0], [-80, 16, 0], [0, 0, 0], [80, -6, 0], [160, -4, 0]], "notes": "A40, single carriageway" },
+    { "type": "b_road_rural", "points": [[0, -80, 0], [0, -40, 0], [0, 0, 0]], "notes": "minor road from the south" }
   ],
   "junctions": {
     "corner_radii": [

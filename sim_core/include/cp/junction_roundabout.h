@@ -86,9 +86,16 @@ std::string check_place_roundabout(const RoadGraph& graph, Vec3 centre, double r
 RoadCommandPtr make_place_roundabout(Vec3 centre, double radius, const std::string& ring_road_type,
                                      const RegionPack& region);
 
+// A splitter island. Two-way approach: a teardrop centred on the arm, widest at the ring (half the class width on
+// each side), its sides following the shifted kerbs of the flared approach (ArmFlare), nose at the flare end.
+// Dual-carriageway approach (two one-way arms at adjacent ring nodes): the central reservation between the two
+// carriageways carried into the ring, `arm` and `arm_b` being the two arms.
 struct SplitterIsland {
     int arm = 0;                 // index into JunctionGroup::arms
-    std::vector<Vec2> polygon;   // teardrop, CCW
+    int arm_b = -1;              // dual-carriageway pair: the other arm
+    double length = 0;           // m, from the ring edge to the nose
+    double width = 0;            // m, at the ring end
+    std::vector<Vec2> polygon;   // CCW
 };
 
 // Which connectors of a ring node give way, and to what. Priority data only (no lane choice or
@@ -106,7 +113,12 @@ struct RoundaboutLayout {
     JunctionGroup group;
     bool ok = false;         // false: the island and splitters are empty and `error` says why
     std::string error;
-    PolygonSet island;       // central island: one CCW ring
+    PolygonSet island;       // central island: one CCW ring (the raised part: inside the apron when there is one)
+    PolygonSet apron;        // over-run apron collar round the island (small rings only): outer CCW ring + CW hole, else empty
+    // Render data from the region rules (surface classes are lane-type surface names).
+    std::string island_surface, splitter_surface, apron_surface;
+    double island_kerb_upstand = 0;  // m; 0 = the render default
+    bool island_kerbed = true;       // the central island and splitters have a raised kerb (the apron does not)
     std::vector<SplitterIsland> splitters;
     std::vector<GiveWay> give_way;
     // The ring nodes' own junctions with the forced fillet radii (and player overrides) applied;

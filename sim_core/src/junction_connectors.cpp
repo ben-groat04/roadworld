@@ -99,26 +99,55 @@ bool paths_cross(const std::vector<Vec3>& p, const std::vector<Vec3>& q, double 
 
 }  // namespace
 
+namespace {
+
+// One end of a connector. On a flared arm the lane runs along its shifted line from the trim line in to where
+// the spread is full ("inner"); the connector curve proper starts there. `run` holds the points from the trim
+// line (first) up to, not including, the inner point.
+struct ConnEnd {
+    ArmPoint inner;
+    std::vector<Vec2> run;
+};
+
+ConnEnd conn_end(const JunctionArm& arm, const LaneRef& lane, double trim) {
+    ConnEnd e;
+    e.inner = arm_point(arm, trim, lane.lateral);
+    const double spread = flare_spread(arm, 0.0, lane.lateral > 0);
+    if (arm.flare.active() && spread > 0 && lane.lateral != 0 && trim > arm.flare.full + 1e-6) {
+        const double s_in = arm.flare.full;
+        e.inner = arm_point(arm, s_in, flared_lateral(arm, s_in, lane.lateral));
+        for (double s = trim; s > s_in + 0.5; s -= 1.0)
+            e.run.push_back(arm_point(arm, s, flared_lateral(arm, s, lane.lateral)).pos.xy());
+        e.run.front() = arm_point(arm, trim, lane.lateral).pos.xy();
+    }
+    return e;
+}
+
+}  // namespace
+
 std::vector<Vec3> make_connector_path(const JunctionArm& from_arm, const LaneRef& from_lane, double trim_from,
                                       const JunctionArm& to_arm, const LaneRef& to_lane, double trim_to,
                                       const std::vector<Vec3>* via) {
     const ArmPoint a = arm_point(from_arm, trim_from, from_lane.lateral);
     const ArmPoint b = arm_point(to_arm, trim_to, to_lane.lateral);
-    const double h0 = a.heading_out + kPi, h1 = b.heading_out;
-    std::vector<Vec2> pts{a.pos.xy()};
+    const ConnEnd fe = conn_end(from_arm, from_lane, trim_from), te = conn_end(to_arm, to_lane, trim_to);
+    const double h0 = fe.inner.heading_out + kPi, h1 = te.inner.heading_out;
+    std::vector<Vec2> pts{fe.inner.pos.xy()};
     std::vector<double> hs{h0};
     if (via) {
         for (std::size_t i = 0; i < via->size(); ++i) pts.push_back((*via)[i].xy());
     }
-    pts.push_back(b.pos.xy());
+    pts.push_back(te.inner.pos.xy());
     hs.resize(pts.size());
     hs.back() = h1;
     for (std::size_t i = 1; i + 1 < pts.size(); ++i) {
         const Vec2 d = pts[i + 1] - pts[i - 1];
         hs[i] = std::atan2(d.y, d.x);
     }
-    std::vector<Vec2> xy;
+    std::vector<Vec2> xy = fe.run;
+    if (!xy.empty()) xy.push_back(pts[0]);
     for (std::size_t i = 0; i + 1 < pts.size(); ++i) append_segment(xy, pts[i], hs[i], pts[i + 1], hs[i + 1]);
+    for (auto it = te.run.rbegin(); it != te.run.rend(); ++it) xy.push_back(*it);
     std::vector<double> cum(xy.size(), 0.0);
     for (std::size_t i = 1; i < xy.size(); ++i) cum[i] = cum[i - 1] + (xy[i] - xy[i - 1]).length();
     const double total = cum.back() > 0 ? cum.back() : 1.0;
@@ -308,6 +337,35 @@ void generate_connectors(Junction& junction, DrivingSide side, const JunctionOve
             lc.enabled = false;
         }
         lc.path = make_connector_path(fa, fl, trim_of(c.af), ta, tl, trim_of(c.at), via);
+        if (!via && lc.kind == TurnKind::Offside) {
+            // Offside turn out of a turn pocket: the vehicle keeps its lane to the start of the pocket,
+            // changes into the pocket over the first part of it (smoothstep, tangent at both ends), then turns.
+            for (const TurnPocket& p : junction.pockets) {
+                if (p.arm != c.af || p.to_arm != c.at || !fa.flare.active()) continue;
+                const double side = fa.flare.spread_left > fa.flare.spread_right ? 1.0 : -1.0;
+                const double lat_p = side * p.lane_width / 2;
+                const double s0 = p.storage_length, lc_len = std::min(12.0, s0 * 0.6), s_p = s0 - lc_len;
+                if (lc_len < 1.0 || trim_of(c.af) <= s0) break;
+                std::vector<Vec3> path;
+                for (double s = trim_of(c.af); s > s0; s -= 1.0)
+                    path.push_back(arm_point(fa, s, flared_lateral(fa, s, fl.lateral)).pos);
+                const int steps = std::max(4, static_cast<int>(std::ceil(lc_len / 1.0)));
+                for (int i = 0; i < steps; ++i) {
+                    const double t = static_cast<double>(i) / steps, w = t * t * (3 - 2 * t);
+                    const double s = s0 - lc_len * t;
+                    path.push_back(arm_point(fa, s, fl.lateral + (lat_p - fl.lateral) * w).pos);
+                }
+                LaneRef pocket_lane = fl;
+                pocket_lane.lateral = lat_p;
+                const std::vector<Vec3> rest = make_connector_path(fa, pocket_lane, s_p, ta, tl, trim_of(c.at), nullptr);
+                if (rest.size() < 2) break;
+                path.front() = lc.path.front();
+                path.insert(path.end(), rest.begin(), rest.end());
+                lc.path = std::move(path);
+                lc.via_pocket = true;
+                break;
+            }
+        }
         junction.connectors.push_back(std::move(lc));
     }
 

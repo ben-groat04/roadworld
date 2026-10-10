@@ -17,3 +17,13 @@ add_custom_target(export_fixtures
 add_executable(export_mesh export_mesh.cpp)
 target_link_libraries(export_mesh PRIVATE scene_tools)
 target_compile_definitions(export_mesh PRIVATE CP_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+
+# Sim performance benchmark (docs/sim-performance-baseline.md); build in Release:  bench --quick
+add_executable(bench bench.cpp)
+target_link_libraries(bench PRIVATE sim_core)
+target_compile_definitions(bench PRIVATE CP_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+if(MSVC)
+  target_compile_options(bench PRIVATE /W4 /permissive-)
+else()
+  target_compile_options(bench PRIVATE -Wall -Wextra -Wpedantic)
+endif()
