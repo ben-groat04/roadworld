@@ -336,7 +336,7 @@ function processMouse() {
     if (pk) { hov = pk.road; if (!hov) { const on = nearestOnRoad(pk.x, pk.y, 12 * pk.wpp, null, pk.z); hov = on ? on.r : null; } }
     state.hover = hov;
   }
-  dirty();
+  needsUI = true; needsRender = true; overlayDirty = true;   // hover/preview only: no shadow-casting geometry changed, so not shadowDirty
 }
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('pointerenter', () => { mouseIn = true; });

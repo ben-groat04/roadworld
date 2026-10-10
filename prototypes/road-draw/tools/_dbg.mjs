@@ -74,13 +74,13 @@ mkdirSync(outDir, { recursive: true });
 const t0 = Date.now();
 // Prefer an installed Edge/Chrome (no browser download); fall back to Playwright's own chromium if present.
 // Software GL flags are Linux-only (no GPU in cloud boxes); on Windows/macOS the real GPU is used.
-const launchArgs = process.platform === 'linux' ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [];
-let browser = null; const launchErrs = [];
+const launchArgs = process.platform === 'linux' ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : process.platform === 'win32' ? ['--use-angle=d3d11', '--force_high_performance_gpu'] : [];   // win32: steer onto the discrete GPU
+let browser = null, browserName = null; const launchErrs = [];
 for (const opt of [{ channel: 'msedge' }, { channel: 'chrome' }, {}]) {
-  try { browser = await chromium.launch({ ...opt, args: launchArgs }); break; } catch (e) { launchErrs.push((opt.channel || 'bundled chromium') + ': ' + String(e.message).split('\n')[0]); }
+  try { browser = await chromium.launch({ ...opt, args: launchArgs }); browserName = opt.channel; break; } catch (e) { launchErrs.push((opt.channel || 'bundled chromium') + ': ' + String(e.message).split('\n')[0]); }
 }
 if (!browser) { console.error('no usable browser (need Edge, Chrome, or playwright chromium already installed):\n' + launchErrs.join('\n')); process.exit(4); }
-console.error('browser: ' + (browser.version ? browser.version() : '?'));
+console.error('browser: ' + (browserName || 'chromium') + ' ' + browser.version());
 const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
 const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
@@ -149,8 +149,11 @@ const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOT
   return out;
 }, { CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY, TIGHT });
 
+
+if (process.env.SHOT) { const [tx,ty,dist,elev,look,path] = process.env.SHOT.split(","); await page.evaluate(({tx,ty,dist,elev,look}) => { const P = window.__proto, az = Math.atan2(-Math.cos(look * Math.PI / 180), Math.sin(look * Math.PI / 180)); P.setView(+tx, +ty, +dist, az, (90 - elev) * Math.PI / 180); P.renderNow(); }, {tx,ty,dist,elev,look}); await page.waitForTimeout(300); await page.evaluate(() => window.__proto.renderNow()); await page.screenshot({ path }); await browser.close(); process.exit(0); }
+if (process.env.DBG) { const fn = eval("(" + readFileSync(process.env.DBG, "utf8") + ")"); console.log(JSON.stringify(await page.evaluate(fn), null, 1)); await browser.close(); process.exit(0); }
 if (CHECK_MODE) {
-  const results = await page.evaluate(CHECKS_IN_PAGE); console.log(await page.evaluate(DBGFN));
+  const results = await page.evaluate(CHECKS_IN_PAGE);
   await page.waitForTimeout(300);
   const consoleErrs = [...new Set(errors)];
   results.push({ name: 'no_console_errors', pass: consoleErrs.length === 0, msg: consoleErrs.length ? consoleErrs.join(' | ') : '0 errors' });
@@ -454,13 +457,3 @@ function CHECKS_IN_PAGE() {
     done('no_bare_steps', w, bad, n, `${n} texel steps > 1 m, all inside wall solids or bridge/tunnel zones`); }
   return results;
 }
-
-function DBGFN(){
-  const P=window.__proto,GR=P.GRID_RES,GH=P.GH,GN=P.GN,roads=P.roads().filter(r=>r.samples);
-  const cl=new Map();
-  for(let j=0;j<GN-1;j++)for(let i=0;i<GN-1;i++){const g=GH[j*GN+i];for(const[di,dj]of[[1,0],[0,1]]){const st=Math.abs(GH[(j+dj)*GN+i+di]-g);if(st>1){const x=(i+di/2)*GR,y=(j+dj/2)*GR,k=Math.floor(x/25)+','+Math.floor(y/25);let c=cl.get(k);if(!c)cl.set(k,c={n:0,x,y,mx:0});c.n++;c.mx=Math.max(c.mx,st);}}}
-  const out=[];for(const[k,c]of cl){let bd=1e9,bs=null,br=null;for(const r of roads)for(const s of r.samples){const d=Math.hypot(s.x-c.x,s.y-c.y);if(d<bd){bd=d;bs=s;br=r}}
-   out.push(`${k} n=${c.n} mx=${c.mx.toFixed(1)} at(${c.x.toFixed(0)},${c.y.toFixed(0)}) road#${br.id} type${br.type} d=${bd.toFixed(1)} br=${bs.br} tu=${bs.tu} wL=${bs.wL} wR=${bs.wR} dz=${(bs.z-bs.t).toFixed(1)}`);}
-  return out.join('\n');
-}
-

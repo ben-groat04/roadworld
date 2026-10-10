@@ -2,7 +2,11 @@
 #include <cmath>
 #include <memory>
 
+#include <cstdio>
+#include <vector>
+
 #include "doctest/doctest.h"
+#include "portable_rng.h"
 #include "cp/junction.h"
 #include "cp/road_commands.h"
 
@@ -265,4 +269,123 @@ TEST_CASE("geometry: identical for either driving side") {
     check_valid(r);
     CHECK(area(r.carriageway[0]) == doctest::Approx(area(l.carriageway[0])));
     CHECK(r.pavements.size() == l.pavements.size());
+}
+
+// ---------------------------------------------------------------- curved-arm fuzz
+
+namespace {
+
+// Distance from p to the kerb curve (arm, lateral) over s in [0, smax]; also returns the s found.
+double kerb_distance(const JunctionArm& arm, double lateral, Vec3 p, double smax, double& s_out) {
+    double best = 1e18, bs = 0;
+    const auto probe = [&](double s) {
+        const double d = (arm_point(arm, s, lateral).pos.xy() - p.xy()).length();
+        if (d < best) best = d, bs = s;
+    };
+    for (double s = 0; s <= smax + 1e-9; s += 0.02) probe(s);
+    const double c = bs;
+    for (double s = std::max(0.0, c - 0.02); s <= std::min(smax, c + 0.02); s += 0.0005) probe(s);
+    s_out = bs;
+    return best;
+}
+
+double ring_distance(const std::vector<Vec2>& ring, Vec2 p) {
+    double best = 1e18;
+    for (std::size_t i = 0; i < ring.size(); ++i) {
+        const Vec2 a = ring[i], b = ring[(i + 1) % ring.size()], ab = b - a;
+        const double l2 = ab.x * ab.x + ab.y * ab.y;
+        const double t = l2 > 0 ? std::clamp((p - a).x * ab.x / l2 + (p - a).y * ab.y / l2, 0.0, 1.0) : 0.0;
+        best = std::min(best, (a + ab * t - p).length());
+    }
+    return best;
+}
+
+}  // namespace
+
+TEST_CASE("geometry: curved-arm fuzz (3-5 arms)") {
+    static const char* types[] = {"residential", "b_road", "a_road_dual"};
+    PortableRng rng{20260101};
+    int built = 0, degraded = 0, fillets = 0, shrunk = 0, needless = 0;
+    for (int iter = 0; iter < 400; ++iter) {
+        Net n;
+        const int arms = 3 + static_cast<int>(rng.uniform(0, 3));
+        std::vector<double> degs;
+        while (static_cast<int>(degs.size()) < arms) {
+            const double d = rng.uniform(0, 360);
+            bool ok = true;
+            for (double e : degs)
+                if (std::fabs(std::remainder(d - e, 360.0)) < 15.0) ok = false;
+            if (ok) degs.push_back(d);
+        }
+        for (double d : degs) {
+            DrawRoadSpec s;
+            s.road_type = types[static_cast<int>(rng.uniform(0, 3))];
+            const double len = rng.uniform(90, 140), off = rng.uniform(-35, 35);
+            const double ca = std::cos(d * kDeg), sa = std::sin(d * kDeg);
+            RoadEnd c, far;
+            far.pos = {len * ca, len * sa, 0};
+            c.pos = {0, 0, 0};
+            c.existing_node = n.centre;
+            s.start = c;
+            s.end = far;
+            s.interior.push_back({0.5 * len * ca - off * sa, 0.5 * len * sa + off * ca, 0});
+            REQUIRE(n.st.execute(make_draw_road(s)));
+            if (!n.centre.valid()) n.centre = n.g.edges().rbegin()->second.a;
+        }
+        const JunctionSet set = build_junctions(n.g, *uk(), {});
+        const auto it = set.junctions.find(n.centre);
+        REQUIRE(it != set.junctions.end());
+        const Junction& j = it->second;
+        ++built;
+        const std::size_t na = j.arms.size();
+        if (j.degraded) ++degraded;
+        // Polygon convention: a set starts with an outer (CCW) ring; holes are CW.
+        for (const PolygonSet* ps : {&j.carriageway, &j.pavements})
+            if (!ps->empty()) CHECK(area((*ps)[0]) > 0);
+        for (const auto& p : j.pavements)
+            if (area(p) > 0) CHECK_FALSE(self_intersects(p));
+        if (j.degraded) continue;
+        CHECK(j.carriageway.size() == 1);
+        if (j.carriageway.size() != 1) continue;
+        check_valid(j);
+        // The outline meets every trim line (both kerb points) within 1 mm.
+        for (std::size_t i = 0; i < na; ++i) {
+            const JunctionArm& a = j.arms[i];
+            CHECK(ring_distance(j.carriageway[0], arm_point(a, j.trims[i], a.kerb_left).pos.xy()) < 1e-3);
+            CHECK(ring_distance(j.carriageway[0], arm_point(a, j.trims[i], -a.kerb_right).pos.xy()) < 1e-3);
+        }
+        for (std::size_t k = 0; k < na; ++k) {
+            const std::size_t jj = (k + 1) % na;
+            const CornerCurve& cc = j.corners[k];
+            const JunctionArm &ak = j.arms[k], &aj = j.arms[jj];
+            if (cc.angle >= kPi - 0.01) continue;
+            ++fillets;
+            const double requested = j.corner_radii[k];
+            CHECK(cc.radius >= 0);
+            CHECK(cc.radius <= requested + 1e-9);
+            if (cc.kerb.size() < 2) continue;
+            double sp = 0, sq = 0;
+            // Tangent points lie on the kerbs, inside the trims.
+            CHECK(kerb_distance(ak, ak.kerb_left, cc.kerb.front(), j.trims[k] + 0.5, sp) < 2e-3);
+            CHECK(kerb_distance(aj, -aj.kerb_right, cc.kerb.back(), j.trims[jj] + 0.5, sq) < 2e-3);
+            CHECK(sp <= j.trims[k] + 2e-3);
+            CHECK(sq <= j.trims[jj] + 2e-3);
+            // Tangent: the arc leaves/enters along the kerb headings (chord is within half a step).
+            const Vec2 d0 = cc.kerb[1].xy() - cc.kerb.front().xy();
+            const Vec2 d1 = cc.kerb.back().xy() - cc.kerb[cc.kerb.size() - 2].xy();
+            CHECK(std::fabs(wrap_angle(std::atan2(d0.y, d0.x) - arm_point(ak, sp, 0).heading_out - kPi)) < 0.08);
+            CHECK(std::fabs(wrap_angle(std::atan2(d1.y, d1.x) - arm_point(aj, sq, 0).heading_out)) < 0.08);
+            // A smaller-than-requested radius is only legitimate when a tangent point sits on its trim.
+            if (cc.radius < requested - 1e-9) {
+                ++shrunk;
+                const bool limited = sp > j.trims[k] - 5e-3 || sq > j.trims[jj] - 5e-3;
+                if (!limited) ++needless;
+                if (!limited && needless < 8) std::printf("DBG r %.3f req %.3f sp %.3f/%.3f sq %.3f/%.3f ang %.3f\n", cc.radius, requested, sp, j.trims[k], sq, j.trims[jj], cc.angle);
+                CHECK(limited);
+            }
+        }
+    }
+    std::printf("curved fuzz: built %d degraded %d fillets %d shrunk %d needless %d\n", built, degraded, fillets,
+                shrunk, needless);
+    CHECK(built == 400);
 }

@@ -74,13 +74,13 @@ mkdirSync(outDir, { recursive: true });
 const t0 = Date.now();
 // Prefer an installed Edge/Chrome (no browser download); fall back to Playwright's own chromium if present.
 // Software GL flags are Linux-only (no GPU in cloud boxes); on Windows/macOS the real GPU is used.
-const launchArgs = process.platform === 'linux' ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [];
-let browser = null; const launchErrs = [];
+const launchArgs = process.platform === 'linux' ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : process.platform === 'win32' ? ['--use-angle=d3d11', '--force_high_performance_gpu'] : [];   // win32: steer onto the discrete GPU
+let browser = null, browserName = null; const launchErrs = [];
 for (const opt of [{ channel: 'msedge' }, { channel: 'chrome' }, {}]) {
-  try { browser = await chromium.launch({ ...opt, args: launchArgs }); break; } catch (e) { launchErrs.push((opt.channel || 'bundled chromium') + ': ' + String(e.message).split('\n')[0]); }
+  try { browser = await chromium.launch({ ...opt, args: launchArgs }); browserName = opt.channel; break; } catch (e) { launchErrs.push((opt.channel || 'bundled chromium') + ': ' + String(e.message).split('\n')[0]); }
 }
 if (!browser) { console.error('no usable browser (need Edge, Chrome, or playwright chromium already installed):\n' + launchErrs.join('\n')); process.exit(4); }
-console.error('browser: ' + (browser.version ? browser.version() : '?'));
+console.error('browser: ' + (browserName || 'chromium') + ' ' + browser.version());
 const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
 const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });
