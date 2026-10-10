@@ -1,0 +1,153 @@
+{
+  "_comment": "SYNTHETIC testland marking rules (test fixture, not a real country). Yellow centre lines, no give-way triangle, speeds in kph, all dimensions differ from the UK pack.",
+  "version": 4,
+  "speed_unit": "kph",
+  "shoulder_lane_types": [ "hard_strip" ],
+  "min_mark_m": 0.4,
+  "wear": { "strength": 0.45, "patch_period_m": 45, "patch_weight": 0.4, "wheel_boost": 0.25, "wheel_offset_m": 0.75, "wheel_half_width_m": 0.3,
+            "source": "synthetic" },
+
+  "colours": {
+    "paint_white":  { "rgb": [0.86, 0.87, 0.90] },
+    "paint_yellow": { "rgb": [0.95, 0.74, 0.10] }
+  },
+
+  "styles": {
+    "centre_yel_slow": { "colour": "paint_yellow", "strands": [ { "width_m": 0.12, "mark_m": 3.0, "gap_m": 3.0 } ] },
+    "centre_yel_fast": { "colour": "paint_yellow", "strands": [ { "width_m": 0.12, "mark_m": 4.5, "gap_m": 7.5 } ] },
+    "centre_yel_dbl":  { "colour": "paint_yellow", "strands": [ { "offset_m": 0.11, "width_m": 0.09, "mark_m": 1.0, "gap_m": 0.0 }, { "offset_m": -0.11, "width_m": 0.09, "mark_m": 1.0, "gap_m": 0.0 } ] },
+
+    "warn_yel_slow": { "colour": "paint_yellow", "strands": [ { "width_m": 0.12, "mark_m": 5.0, "gap_m": 2.5 } ] },
+    "warn_yel_fast": { "colour": "paint_yellow", "strands": [ { "width_m": 0.16, "mark_m": 7.5, "gap_m": 3.75 } ] },
+
+    "lane_slow":      { "colour": "paint_white", "strands": [ { "width_m": 0.12, "mark_m": 1.5, "gap_m": 3.5 } ] },
+    "lane_fast":      { "colour": "paint_white", "strands": [ { "width_m": 0.12, "mark_m": 3.0, "gap_m": 9.0 } ] },
+    "lane_fast_wide": { "colour": "paint_white", "strands": [ { "width_m": 0.18, "mark_m": 3.0, "gap_m": 9.0 } ] },
+
+    "edge_thin":  { "colour": "paint_white", "strands": [ { "width_m": 0.14, "mark_m": 1.0, "gap_m": 0.0 } ] },
+    "edge_thick": { "colour": "paint_white", "strands": [ { "width_m": 0.22, "mark_m": 1.0, "gap_m": 0.0 } ] },
+    "edge_heavy": { "colour": "paint_white", "strands": [ { "width_m": 0.27, "mark_m": 1.0, "gap_m": 0.0 } ] },
+
+    "bay_edge":    { "colour": "paint_white", "strands": [ { "width_m": 0.12, "mark_m": 1.0, "gap_m": 0.0 } ] },
+    "bay_tick": { "colour": "paint_white", "strands": [ { "width_m": 0.13, "mark_m": 1.0, "gap_m": 0.0 } ] },
+
+    "giveway_slow": { "colour": "paint_white", "strands": [ { "width_m": 0.25, "mark_m": 0.5, "gap_m": 0.25 } ] },
+    "giveway_fast": { "colour": "paint_white", "strands": [ { "width_m": 0.35, "mark_m": 0.8, "gap_m": 0.4 } ] },
+    "stop_bar":     { "colour": "paint_white", "strands": [ { "width_m": 0.30, "mark_m": 1.0, "gap_m": 0.0 } ] },
+    "zebra_gw":     { "colour": "paint_white", "strands": [ { "width_m": 0.28, "mark_m": 0.5, "gap_m": 0.25 } ] },
+
+    "mouth_a": { "colour": "paint_white", "strands": [ { "width_m": 0.12, "mark_m": 0.8, "gap_m": 1.2 } ] },
+    "mouth_b": { "colour": "paint_white", "strands": [ { "width_m": 0.17, "mark_m": 1.6, "gap_m": 2.4 } ] },
+    "mouth_c": { "colour": "paint_white", "strands": [ { "width_m": 0.23, "mark_m": 1.6, "gap_m": 2.4 } ] },
+
+    "fill_pale": { "colour": "paint_white", "fill": true }
+  },
+
+  "sets": {
+    "town": {
+      "boundaries": [
+        { "id": "centre", "source": "synthetic", "category": "centre_line", "left": "driving", "right": "driving", "relation": "opposing",
+          "style": [ { "if": { "width_min": 12 }, "style": "centre_yel_dbl" },
+                     { "if": { "width_min": 5.8, "speed_max": 50 }, "style": "centre_yel_slow" },
+                     { "if": { "width_min": 5.8 }, "style": "centre_yel_fast" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "speed_max": 50 }, "value": 4 }, { "value": 6 } ],
+                       "style": [ { "if": { "speed_max": 50 }, "style": "warn_yel_slow" }, { "style": "warn_yel_fast" } ] } ] },
+        { "id": "lane", "source": "synthetic", "category": "lane_line", "left": "driving", "right": "driving", "relation": "same",
+          "style": [ { "if": { "speed_max": 50 }, "style": "lane_slow" }, { "if": { "speed_max": 70 }, "style": "lane_fast" }, { "style": "lane_fast_wide" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "speed_max": 50 }, "value": 4 }, { "value": 6 } ],
+                       "style": [ { "if": { "speed_max": 50 }, "style": "warn_yel_slow" }, { "style": "warn_yel_fast" } ] } ] },
+        { "id": "bay_line", "source": "synthetic", "category": "parking_bay", "left": "driving", "right": "parking", "relation": "any", "style": "bay_edge" }
+      ],
+      "bays": [
+        { "lane_type": "parking", "length_m": 5.5, "style": "bay_tick", "keepout_m": 8.0, "edge_clear_m": 0.08 }
+      ]
+    },
+
+    "country": {
+      "boundaries": [
+        { "id": "centre", "source": "synthetic", "category": "centre_line", "left": "driving", "right": "driving", "relation": "opposing",
+          "style": [ { "if": { "width_min": 5.8, "speed_max": 70 }, "style": "centre_yel_slow" },
+                     { "if": { "width_min": 5.8 }, "style": "centre_yel_fast" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "speed_max": 50 }, "value": 4 }, { "value": 6 } ],
+                       "style": [ { "if": { "speed_max": 70 }, "style": "warn_yel_slow" }, { "style": "warn_yel_fast" } ] },
+                     { "kind": "curvature", "min_curvature": 0.006, "min_length_m": 25,
+                       "style": [ { "if": { "speed_min": 70, "width_min": 6.5 }, "style": "centre_yel_dbl" },
+                                  { "style": "warn_yel_fast" } ] } ] },
+        { "id": "edge", "source": "synthetic", "category": "edge_line", "left": "driving", "right": "hard_strip|hard_shoulder|verge", "relation": "any",
+          "style": [ { "if": { "speed_min": 80 }, "style": "edge_thick" }, { "style": "edge_thin" } ],
+          "inset_m": 0.2 }
+      ],
+      "bays": []
+    },
+
+    "divided": {
+      "boundaries": [
+        { "id": "lane", "source": "synthetic", "category": "lane_line", "left": "driving", "right": "driving", "relation": "same",
+          "style": [ { "if": { "speed_min": 60 }, "style": "lane_fast_wide" }, { "style": "lane_slow" } ],
+          "zones": [ { "kind": "approach",
+                       "min_marks": [ { "if": { "speed_max": 60 }, "value": 4 }, { "value": 6 } ],
+                       "style": [ { "if": { "speed_max": 60 }, "style": "warn_yel_slow" }, { "style": "warn_yel_fast" } ] } ] },
+        { "id": "edge", "source": "synthetic", "category": "edge_line", "left": "driving", "right": "hard_strip|hard_shoulder", "relation": "any",
+          "style": [ { "if": { "speed_min": 80 }, "style": "edge_heavy" }, { "style": "edge_thick" } ],
+          "inset_m": 0.3 }
+      ],
+      "bays": []
+    }
+  },
+
+  "junction": {
+    "give_way": {
+      "style": [ { "if": { "speed_max": 50 }, "style": "giveway_slow" }, { "style": "giveway_fast" } ],
+      "setback_m": 0.7,
+      "line_gap_m": 0.4,
+      "equal_class": "straightest_pair_has_priority",
+      "equal_class_max_deviation_deg": 25
+    },
+    "stop_line": { "style": "stop_bar", "setback_m": 0.8, "line_gap_m": 0.45 },
+    "zebra": {
+      "style": "fill_pale", "stripe_width_m": 0.45, "gap_m": 0.55, "band_width_m": 3.4, "clear_m": 1.2,
+      "give_way_style": "zebra_gw", "give_way_gap_m": 1.1, "min_start_gap_m": 1.3
+    },
+    "mouth_edge": {
+      "style": [ { "if": { "speed_max": 50 }, "style": "mouth_a" }, { "if": { "speed_max": 80 }, "style": "mouth_b" }, { "style": "mouth_c" } ],
+      "max_deviation_deg": 25
+    },
+    "roundabout_entry": {
+      "style": [ { "if": { "speed_max": 40 }, "style": "giveway_slow" }, { "style": "giveway_fast" } ],
+      "setback_m": 0.9, "line_gap_m": 0.35
+    },
+    "splitter": {
+      "outline_style": [ { "if": { "speed_min": 50 }, "style": "edge_thick" }, { "style": "edge_thin" } ],
+      "outline_gap_m": 0.2,
+      "hatch_style": "fill_pale", "hatch_length_m": 14, "hatch_width_m": 1.7, "stripe_width_m": 0.25, "pitch_m": 0.9, "angle_deg": 55
+    },
+    "gore": {
+      "same_direction": "diagonal",
+      "opposing": "chevron",
+      "style": "fill_pale", "stripe_width_m": 0.25, "pitch_m": 1.1, "angle_deg": 55, "min_area_m2": 0.08,
+      "chevron": { "style": "fill_pale", "stripe_width_m": 0.25, "pitch_m": 1.1, "angle_deg": 40 },
+      "border_style": [ { "if": { "speed_min": 50 }, "style": "edge_thick" }, { "style": "edge_thin" } ],
+      "edge_style": [ { "if": { "speed_min": 50 }, "style": "edge_thick" }, { "style": "edge_thin" } ],
+      "edge_inset_m": 0.2
+    },
+    "arrows": {
+      "min_inbound_lanes": 2,
+      "distances_m": [ 7.0, 19.0, 33.0 ],
+      "length_m": [ { "if": { "speed_max": 50 }, "value": 4.5 }, { "if": { "speed_max": 80 }, "value": 6.5 }, { "value": 8.5 } ],
+      "width_m": 0.9,
+      "style": "fill_pale",
+      "glyphs": {
+        "ahead": [ [ [0.0,-0.1], [0.58,-0.1], [0.58,-0.42], [1.0,0.0], [0.58,0.42], [0.58,0.1], [0.0,0.1] ] ],
+        "turn": [ [ [0.0,-0.1], [0.46,-0.1], [0.69,0.13], [0.84,-0.02], [0.83,0.39], [0.43,0.4], [0.58,0.25], [0.4,0.1], [0.0,0.1] ] ],
+        "ahead_turn": [
+          [ [0.0,-0.1], [0.58,-0.1], [0.58,-0.42], [1.0,0.0], [0.58,0.42], [0.58,0.1], [0.0,0.1] ],
+          [ [0.1,0.1], [0.22,0.1], [0.37,0.25], [0.47,0.12], [0.46,0.4], [0.18,0.42], [0.28,0.28] ]
+        ],
+        "fork": { "parts": [ "turn", "turn:mirror" ] }
+      }
+    }
+  }
+}

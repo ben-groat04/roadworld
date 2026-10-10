@@ -1,0 +1,97 @@
+{
+  "_comment": "SYNTHETIC test-fixture region pack. Not a real country: every number differs from the UK pack on purpose (right-hand traffic, km/h, other widths, radii, rules) so that a UK value hard-coded in sim_core shows up as a mismatch in tests/test_region_neutrality.cpp. Do not use for look work.",
+  "id": "testland",
+  "version": 7,
+  "driving_side": "right",
+  "speed_unit": "km/h",
+  "headroom_m": 4.6,
+  "plan_crossing_junction_dz_m": 1.4,
+  "grading": {
+    "formation_drop_m": 0.22,
+    "batter": 2.6,
+    "verge_m": 1.1,
+    "wall_thickness_m": 1.2,
+    "wall_start_m": 9,
+    "wall_cap_m": 14,
+    "wall_slack_m": 0.5,
+    "tunnel_clear_height_m": 6.1
+  },
+  "structures": {
+    "parapet_height_m": 1.15,
+    "max_pier_spacing_m": 26,
+    "min_bridge_length_m": 17,
+    "pier_road_clearance_m": 2.6,
+    "wall_panel_m": 3.5,
+    "tunnel_rise_k": 0.27,
+    "coping_thickness_m": 0.2,
+    "coping_overhang_m": 0.06
+  },
+  "roundabout": {
+    "entry_corner_radius_m": 7.5,
+    "exit_corner_radius_m": 14,
+    "ring_corner_radius_factor": 0.8,
+    "max_arc_rad": 1.4,
+    "max_ring_edges": 12,
+    "min_island_radius_m": 4.5,
+    "min_edge_length_m": 5,
+    "min_tool_radius_m": 10,
+    "max_tool_radius_m": 90,
+    "splitter_length_m": 14,
+    "splitter_width_m": 2.2,
+    "central_island_surface": "paving",
+    "splitter_surface": "grass",
+    "island_kerb_upstand_m": 0.16,
+    "size_classes": [
+      { "max_radius_m": 14, "entry_corner_radius_m": 5,  "exit_corner_radius_m": 9.5, "splitter_length_m": 10, "splitter_width_m": 2.1, "apron_width_m": 1.2 },
+      { "max_radius_m": 26, "entry_corner_radius_m": 10, "exit_corner_radius_m": 18,  "splitter_length_m": 28, "splitter_width_m": 2.7 },
+      { "max_radius_m": 45, "entry_corner_radius_m": 18, "exit_corner_radius_m": 30,  "splitter_length_m": 40, "splitter_width_m": 3.3 },
+      {                     "entry_corner_radius_m": 22, "exit_corner_radius_m": 36,  "splitter_length_m": 50, "splitter_width_m": 4.0 }
+    ],
+    "splitter_speed_factors": [
+      { "max_speed_kph": 40, "factor": 0.8 },
+      { "max_speed_kph": 60, "factor": 1.05 },
+      { "max_speed_kph": 80, "factor": 1.3 },
+      { "factor": 1.5 }
+    ],
+    "apron_island_radius_max_m": 12,
+    "apron_surface": "grass"
+  },
+  "junction": {
+    "_corner_radius_by_class": "testland classes: farm_track 25, local 45, collector 65, ring 70, arterial 80, rural_trunk 95, expressway_dual 110. First match wins.",
+    "corner_radius_by_class": [
+      { "minor_max": 30, "major_max": 50, "radius_m": 3.5 },
+      { "minor_max": 30, "major_max": 85, "radius_m": 5.5 },
+      { "minor_max": 30, "radius_m": 9 },
+      { "minor_max": 50, "major_max": 50, "radius_m": 5 },
+      { "minor_max": 50, "major_max": 85, "radius_m": 8 },
+      { "minor_max": 50, "radius_m": 11.5 },
+      { "minor_max": 85, "major_max": 85, "radius_m": 9.5 },
+      { "minor_max": 85, "radius_m": 13 },
+      { "radius_m": 17 }
+    ],
+    "skew_factor": { "min": 0.7, "max": 1.35 },
+    "turn_pockets": {
+      "enabled": true,
+      "major_class_min": 90,
+      "minor_class_max": 60,
+      "lane_width_m": 3.05,
+      "max_bend_rad": 0.1,
+      "min_minor_angle_rad": 1.1,
+      "max_minor_angle_rad": 2.0,
+      "min_taper_ratio": 9,
+      "min_storage_m": 12,
+      "taper_ratio": [
+        { "max_speed_kph": 40, "ratio": 12 },
+        { "max_speed_kph": 60, "ratio": 17 },
+        { "max_speed_kph": 90, "ratio": 22 },
+        { "ratio": 28 }
+      ],
+      "storage": [
+        { "max_speed_kph": 40, "length_m": 14 },
+        { "max_speed_kph": 60, "length_m": 22 },
+        { "max_speed_kph": 90, "length_m": 32 },
+        { "length_m": 44 }
+      ]
+    }
+  }
+}
