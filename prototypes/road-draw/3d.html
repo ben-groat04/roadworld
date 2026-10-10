@@ -292,10 +292,12 @@ function terrainH(x, y) {
   return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v);
 }
 // Current graded ground: exactly the rendered mesh surface (triangles a-b-d and a-d-c).
-function hAt(x, y) {
+function hAt(x, y) { return hTri(TG, x, y); }
+const hBase = (x, y) => hTri(TH, x, y);   // original ground as the (linear) mesh would show it
+function hTri(A, x, y) {
   const fx = clamp(x / CELL, 0, TN - 1.0001), fy = clamp(y / CELL, 0, TN - 1.0001);
   const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j, k = j * TN + i;
-  const a = TG[k], b = TG[k + 1], c = TG[k + TN], d = TG[k + TN + 1];
+  const a = A[k], b = A[k + 1], c = A[k + TN], d = A[k + TN + 1];
   return u >= v ? a + u * (b - a) + v * (d - b) : a + u * (d - c) + v * (c - a);
 }
 
@@ -377,7 +379,7 @@ function applyRoad(r, rg) {
     const sm = sampAt(idx); if (sm.br || sm.tu) continue;
     const d = Math.sqrt(BD[idx]), wall = BL[idx] > 0 ? sm.wL : sm.wR, form = formAt(idx), old = TG[idx]; let h = old;
     if (wall === 1) { if (d <= hw + SHOULDER) { h = form; MK[idx] = 1; } }
-    else if (wall === 2) { if (d <= hw + 0.05) { h = form; MK[idx] = 2; } }
+    else if (wall === 2) { if (d <= hw + 0.05 - 5.7) h = form; }   // only well inside the wall block, so no ramp shows outside it
     else if (d <= hw + SHOULDER) h = form;
     else { const e = d - hw - SHOULDER; h = h > form ? Math.min(h, form + e / bt) : Math.max(h, form - e / bt); }
     TG[idx] = h; if (Math.abs(h - old) > 0.02) GR[idx] = 1;
@@ -508,7 +510,7 @@ class MB {
   }
 }
 const lin = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
-const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: lin('#587a3a'), soil: lin('#5d5a3c'), mark: lin('#f2f2f2'), conc: lin('#b4b2ab'), concDk: lin('#8f8d87'), cap: lin('#628443'), tube: lin('#4a4a4c'), parapet: lin('#c9c7c0') };
+const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: lin('#587a3a'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#b4b2ab'), concDk: lin('#8f8d87'), cap: lin('#628443'), tube: lin('#4a4a4c'), parapet: lin('#c9c7c0') };
 const stdMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, ...o });
 const MAT = {
   asph: stdMat({ roughness: 0.96 }), pave: stdMat(), kerb: stdMat(), verge: stdMat({ roughness: 1 }), soil: stdMat({ roughness: 1 }),
@@ -613,7 +615,7 @@ function buildRoadGroup(r) {
     for (let q = 0; q < cnt; q++) {
       const pp = poseAt(r, S[a].s + len * (q + 0.5) / cnt); let k = a; while (k < b && S[k].s < S[a].s + len * (q + 0.5) / cnt) k++;
       const lw = Math.min(hw * 0.55, 3.5), zt = pp.z + zo - DECK_T + 0.05; let gnd = 1e9;
-      for (const al of [-1, 1]) for (const la of [-lw, lw]) { const c = latPt({ x: pp.x + Math.cos(pp.h) * al, y: pp.y + Math.sin(pp.h) * al, h: pp.h }, la, 0); gnd = Math.min(gnd, hAt(c[0], c[1]), terrainH(c[0], c[1])); }
+      for (const al of [-1, 1]) for (const la of [-lw, lw]) { const c = latPt({ x: pp.x + Math.cos(pp.h) * al, y: pp.y + Math.sin(pp.h) * al, h: pp.h }, la, 0); gnd = Math.min(gnd, hAt(c[0], c[1]), hBase(c[0], c[1])); }
       if (zt - gnd < 1.5) continue;
       const saved = S[k]; S[k] = { ...saved, x: pp.x, y: pp.y, h: pp.h };
       obox(k, -1.0, 1.0, -lw, lw, gnd - 1.5, zt, B.conc); S[k] = saved;
@@ -626,14 +628,16 @@ function buildRoadGroup(r) {
       if (b <= a) continue;
       if (kind === 1) {
         const inner = hw + SHOULDER, outer = inner + TCUT, tops = new Float32Array(n);
-        for (let k = a; k <= b; k++) tops[k] = Math.max(...[inner, (inner + outer) / 2, outer].map(l => { const c = latPt(S[k], sg * l, 0); return terrainH(c[0], c[1]); })) + 0.25;
+        const raw = new Float32Array(n);
+        for (let k = a; k <= b; k++) { let m = -1e9; for (let l = inner; l <= outer + 0.01; l += 2) { const c = latPt(S[k], sg * l, 0); m = Math.max(m, hBase(c[0], c[1])); } raw[k] = m; }
+        for (let k = a; k <= b; k++) { let m = -1e9; for (let q = Math.max(a, k - 2); q <= Math.min(b, k + 2); q++) m = Math.max(m, raw[q]); tops[k] = m + 0.4; }
         const zb = k => S[k].z + zo - FORM_DROP - 1.0, zt = k => tops[k];
         const A = sg > 0 ? [inner, inner + 0.6] : [-inner - 0.6, -inner], Bq = sg > 0 ? [inner + 0.6, outer] : [-outer, -inner - 0.6];
         extrude(a, b, A[0], A[1], zb, zt, { top: B.conc, noL1: sg > 0, noL0: sg < 0 });
         extrude(a, b, Bq[0], Bq[1], zb, zt, { top: B.cap, side: B.conc, noL0: sg > 0, noL1: sg < 0 });
       } else {
         const edge = hw + 0.05, bots = new Float32Array(n);
-        for (let k = a; k <= b; k++) bots[k] = Math.min(...[0, 3, 6, 9].map(l => { const c = latPt(S[k], sg * (edge + l), 0); return Math.min(terrainH(c[0], c[1]), hAt(c[0], c[1])); })) - 2.0;
+        for (let k = a; k <= b; k++) bots[k] = Math.min(...[0, 3, 6, 9].map(l => { const c = latPt(S[k], sg * (edge + l), 0); return Math.min(hBase(c[0], c[1]), hAt(c[0], c[1])); })) - 2.0;
         const L = sg > 0 ? [edge - TFILL, edge] : [-edge, -edge + TFILL];
         extrude(a, b, L[0], L[1], k => bots[k], k => S[k].z + zo - 0.05, { top: B.conc });
       }
@@ -650,7 +654,7 @@ function buildRoadGroup(r) {
     }
     const W = hw + SHOULDER + TCUT;
     for (const [k, a0, a1] of [[a, -1.4, 0.0], [b, 0.0, 1.4]]) {
-      const z0 = S[k].z + zo - 0.45, colTop = l => { const c = latPt(S[k], l, 0); return Math.max(terrainH(c[0], c[1]), hAt(c[0], c[1])) + 0.6; };
+      const z0 = S[k].z + zo - 0.45, colTop = l => { const c = latPt(S[k], l, 0); return Math.max(hBase(c[0], c[1]), hAt(c[0], c[1])) + 0.6; };
       for (const sg of [1, -1]) for (let l = hw; l < W - 0.01; l += 2) {
         const l1 = Math.min(W, l + 2), top = Math.max(colTop(sg * l), colTop(sg * l1), S[k].z + TUNNEL_H + 1.5);
         obox(k, a0, a1, sg > 0 ? l : -l1, sg > 0 ? l1 : -l, z0, top, B.conc);
