@@ -178,7 +178,7 @@ diffuseColor.rgb = gcol * gcol * kn;`)
   for (int a = -1; a <= 1; a++) { float wgt = a == 0 ? 2.0 : 1.0; float o = float(a) * ge;
     gdx += wgt * (Hg(gw + vec2(ge, o)) - Hg(gw + vec2(-ge, o)));
     gdy += wgt * (Hg(gw + vec2(o, ge)) - Hg(gw + vec2(o, -ge))); }
-  vec3 gNormal = normalize(vec3(-gdx / 4.0, 2.0 * ge, gdy / 4.0));`);
+  vec3 gNormal = normalize(vec3(-gdx / 4.0, 2.0 * ge, gdy / 4.0));`)
       .replace('#include <normal_fragment_begin>', `vec3 normal = normalize((viewMatrix * vec4(gNormal, 0.0)).xyz); vec3 nonPerturbedNormal = normal;`);
   };
   return m;
