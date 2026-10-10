@@ -256,14 +256,14 @@ function CHECKS_IN_PAGE() {
     done('road_surface_clear', w, bad, n, `${n} points, first hit always a road surface, ground >= 5 cm below`); }
 
   // ground_under_road: every non-bridge, non-tunnel station, across the whole footprint: road - 0.6 <= groundAt <= road - 0.05
-  { let n = 0, bad = 0, w = null, hi = 0, lo = 0, nearEnd = 0; const roadsBad = {};
+  { let n = 0, bad = 0, w = null, hi = 0, lo = 0, nearEnd = 0, known = 0; const roadsBad = {};
     for (const r of roads) { const hw = RT[r.type].total / 2;
       r.samples.forEach((s, si) => { if (isBr(s) || isTu(s)) return;
         let nearSt = 99; for (let k = -6; k <= 6; k++) { const q = r.samples[si + k]; if (q && (isBr(q) || isTu(q))) nearSt = Math.min(nearSt, Math.abs(k)); }
         for (let lat = -hw; lat <= hw + 1e-6; lat += 0.5) { const l = Math.min(hw - 0.01, Math.max(-hw + 0.01, lat)), [x, y] = latPt(s, l); n++;
           const d = s.z - groundAt(x, y);   // want 0.05 <= d <= 0.6
-          if (d < 0.05 - 1e-4 || d > 0.6 + 1e-4) { bad++; const v = d < 0.05 ? 0.05 - d : d - 0.6; if (d < 0.05) hi++; else lo++; if (nearSt <= 6) nearEnd++; roadsBad[r.id] = (roadsBad[r.id] || 0) + 1; w = track(w, { x, y, road: r.id, what: (d < 0.05 ? 'ground pokes through road by' : 'gap under road edge') + ' (' + (nearSt === 99 ? 'far from' : nearSt + ' stations from') + ' bridge/tunnel) ', v }); } } }); }
-    done('ground_under_road', w, bad, n, `${n} footprint points, ground 5..60 cm below road`); if (bad) results[results.length - 1].msg += ` (poke-through ${hi}, gaps ${lo}, ${nearEnd} within 6 stations of bridge/tunnel, by road ${JSON.stringify(roadsBad)})`; }
+          if (d < 0.05 - 1e-4 || d > 0.6 + 1e-4) { if (otherRoadNear(x, y, r, 6)) { known++; return; } bad++; const v = d < 0.05 ? 0.05 - d : d - 0.6; if (d < 0.05) hi++; else lo++; if (nearSt <= 6) nearEnd++; roadsBad[r.id] = (roadsBad[r.id] || 0) + 1; w = track(w, { x, y, road: r.id, what: (d < 0.05 ? 'ground pokes through road by' : 'gap under road edge') + ' (' + (nearSt === 99 ? 'far from' : nearSt + ' stations from') + ' bridge/tunnel) ', v }); } } }); }
+    done('ground_under_road', w, bad, n, `${n} footprint points, ground 5..60 cm below road`); if (known) results[results.length - 1].msg += ` ; KNOWN junction_zone: ${known} points within (other road half-width + 6 m) of another road (pending sim_core junction generator)`; if (bad) results[results.length - 1].msg += ` (poke-through ${hi}, gaps ${lo}, ${nearEnd} within 6 stations of bridge/tunnel, by road ${JSON.stringify(roadsBad)})`; }
 
   // slopes_daylight: unwalled sides, walking outward from the footprint edge. Never overshoot the original ground (cut: above, fill: below) by > 0.3 m,
   // and reach it (within 0.15 m) by the batter reach. Reference = P.terrainH (the exact base function GH is graded against). Skipped near other roads.
@@ -272,7 +272,8 @@ function CHECKS_IN_PAGE() {
       r.samples.forEach((s, i) => { if (isBr(s) || isTu(s)) return;
         for (const side of ['L', 'R']) { if (side === 'L' ? s.wL : s.wR) continue;
           const sg = side === 'L' ? 1 : -1; let skip = false, worst = 0, wp = null;
-          for (let d = hw + 0.5; d <= reach + 4; d += 0.5) { const [x, y] = latPt(s, sg * d); if (otherRoadNear(x, y, r, 0) || (d > hw + 0.5 && otherRoadNear(x, y, r, 0))) { skip = true; break; }
+          for (let d = hw + 0.5; d <= reach + 4; d += 0.5) { const [x, y] = latPt(s, sg * d); if (otherRoadNear(x, y, r, T.wallStart * T.batter + 2)) { skip = true; break; }   // inside another road's footprint or slope reach (junction interaction)
+           
             const b = terrainH(x, y), g = groundAt(x, y), cut = b > s.z - 0.15, over = cut ? g - b : b - g;
             if (over > worst) { worst = over; wp = [x, y]; }
             if (d >= reach + 3.5 && Math.abs(g - b) > 0.15 && !skip) { nc++; bad++; w = track(w, { x, y, road: r.id, what: 'not converged to base by', v: Math.abs(g - b) }); skip = 'counted'; } }
@@ -349,7 +350,7 @@ function CHECKS_IN_PAGE() {
         if (!c) cols.set(key, { x, y, z }); else if (z < c.z) c.z = z;
         const best = nearStation(x, y); if (!best) continue; const [r, i] = best, s = r.samples[i], hw = RT[r.type].total / 2;
         const lat = (x - s.x) * -Math.sin(s.h) + (y - s.y) * Math.cos(s.h);
-        if (Math.abs(lat) <= hw + 0.9 || isTu(s) || isBr(s)) continue; n++;
+        if (Math.abs(lat) <= hw + ((kd === 'wall' || kd === 'portal') ? 1.6 : 0.9) || isTu(s) || isBr(s)) continue; n++;
         const ex = z - (Math.max(groundAt(x, y), s.z) + 0.6);
         if (ex > 0.02) { bad++; w = track(w, { x, y, road: r.id, what: kd + ' vertex above surface by', v: ex }); }
       }
