@@ -1,4 +1,4 @@
-// terrain.js: terrain generation, height sampling, terrain mesh, vertex colours, water.
+// terrain.js: base terrain generator, graded-ground height grid GH (shared with earthworks.js), clipmap ground rendering, water.
 // ===== Terrain data (same generator as the 2D prototype). TH = original, TG = graded. =====
 const TN = 513, CELL = WORLD / (TN - 1);
 const TH = new Float32Array(TN * TN);
@@ -30,9 +30,7 @@ function terrainH(x, y) {
   const row = jj => cr(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), u);
   return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v);
 }
-// Ground as rendered by the (linear) mesh: triangles a-b-d and a-d-c.
-function hAt(x, y) { return hTri(TH, x, y); }
-const hBase = (x, y) => hTri(TH, x, y);   // original ground as the (linear) mesh would show it
+// Triangle-interpolated height on a regular grid: triangles a-b-d and a-d-c.
 function hTri(A, x, y) {
   const fx = clamp(x / CELL, 0, TN - 1.0001), fy = clamp(y / CELL, 0, TN - 1.0001);
   const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j, k = j * TN + i;
@@ -40,47 +38,152 @@ function hTri(A, x, y) {
   return u >= v ? a + u * (b - a) + v * (d - b) : a + u * (d - c) + v * (c - a);
 }
 
-// Terrain mesh (513 x 513, 4 m cells). three position = (x, h, -y).
-const tGeo = new THREE.BufferGeometry();
-const tPos = new Float32Array(TN * TN * 3), tNor = new Float32Array(TN * TN * 3), tCol = new Float32Array(TN * TN * 3);
-for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) { const k = (j * TN + i) * 3; tPos[k] = i * CELL; tPos[k + 1] = TH[j * TN + i]; tPos[k + 2] = -j * CELL; }
-{
-  const idx = new Uint32Array((TN - 1) * (TN - 1) * 6); let p = 0;
-  for (let j = 0; j < TN - 1; j++) for (let i = 0; i < TN - 1; i++) {
-    const a = j * TN + i, b = a + 1, c = a + TN, d = c + 1;
-    idx[p++] = a; idx[p++] = b; idx[p++] = d; idx[p++] = a; idx[p++] = d; idx[p++] = c;
-  }
-  tGeo.setIndex(new THREE.BufferAttribute(idx, 1));
-}
-tGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
-tGeo.setAttribute('normal', new THREE.BufferAttribute(tNor, 3));
-tGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
-tGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(WORLD / 2, 60, -WORLD / 2), WORLD);
 
-// Corridor mask: 1 px = 1 m over the world, white where a road's earthwork replaces the terrain. Fragments with mask > 0.5 are discarded.
-const maskCanvas = document.createElement('canvas'); maskCanvas.width = maskCanvas.height = WORLD;
-const maskCtx = maskCanvas.getContext('2d');
-maskCtx.fillStyle = '#000'; maskCtx.fillRect(0, 0, WORLD, WORLD);
-const maskTex = new THREE.CanvasTexture(maskCanvas);
-maskTex.flipY = false; maskTex.generateMipmaps = false; maskTex.minFilter = maskTex.magFilter = THREE.LinearFilter;
-maskTex.wrapS = maskTex.wrapT = THREE.ClampToEdgeWrapping;
-function addMaskDiscard(shader) {
-  shader.uniforms.uMask = { value: maskTex };
-  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vMaskXZ;')
-    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMaskXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
-  // Conservative, smooth discard: erode the (linearly filtered, antialiased) mask by ~1 m using 4 diagonal taps, so the discard edge sits well inside the earthwork edge and has no 1 m stair-steps.
-  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec2 vMaskXZ;\nuniform sampler2D uMask;`)
-    .replace('void main() {', `void main() {
-  { vec2 mq = vec2(vMaskXZ.x, -vMaskXZ.y), e = vec2(1.0, 1.0); const float MW = ${WORLD.toFixed(1)};
-    float mm = texture2D(uMask, mq / MW).r;
-    if (mm > 0.4) discard; }`);
+// ===== Graded ground grid GH (0.5 m). Declared here (terrain.js loads before earthworks.js); earthworks.js writes into GH and calls onGroundChanged(box). =====
+const GRID_RES = 0.5, GN = Math.round(WORLD / GRID_RES) + 1;
+const GH = new Float32Array(GN * GN);
+(function initGH() {   // bicubic (Catmull-Rom, same as terrainH) upsample of TH, separable
+  const R = Math.round(CELL / GRID_RES), W = [];
+  for (let p = 0; p < R; p++) { const t = p / R, f = (a, b, c, d) => b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a))); W.push([f(1, 0, 0, 0), f(0, 1, 0, 0), f(0, 0, 1, 0), f(0, 0, 0, 1)]); }
+  const tmp = new Float32Array(TN * GN);
+  for (let j = 0; j < TN; j++) for (let k = 0; k < GN; k++) {
+    const i = Math.floor(k / R), w = W[k % R], r = j * TN, i0 = Math.max(0, i - 1), i2 = Math.min(TN - 1, i + 1), i3 = Math.min(TN - 1, i + 2);
+    tmp[j * GN + k] = w[0] * TH[r + i0] + w[1] * TH[r + i] + w[2] * TH[r + i2] + w[3] * TH[r + i3];
+  }
+  for (let y = 0; y < GN; y++) {
+    const j = Math.floor(y / R), w = W[y % R], j0 = Math.max(0, j - 1) * GN, j1 = j * GN, j2 = Math.min(TN - 1, j + 1) * GN, j3 = Math.min(TN - 1, j + 2) * GN;
+    for (let k = 0; k < GN; k++) GH[y * GN + k] = w[0] * tmp[j0 + k] + w[1] * tmp[j1 + k] + w[2] * tmp[j2 + k] + w[3] * tmp[j3 + k];
+  }
+})();
+// Graded ground height at world (x, y): triangles a-b-d and a-d-c per 0.5 m cell (matches the finest mesh ring).
+function groundAt(x, y) {
+  const fx = clamp(x / GRID_RES, 0, GN - 1.0001), fy = clamp(y / GRID_RES, 0, GN - 1.0001);
+  const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j, k = j * GN + i;
+  const a = GH[k], b = GH[k + 1], c = GH[k + GN], d = GH[k + GN + 1];
+  return u >= v ? a + u * (b - a) + v * (d - b) : a + u * (d - c) + v * (c - a);
 }
-// Terrain material (masked) and the identical unmasked one used by road earthworks.
-const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
-const terrainMat = groundMat.clone(); terrainMat.onBeforeCompile = addMaskDiscard;
-const terrain = new THREE.Mesh(tGeo, terrainMat);
-terrain.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); terrain.customDepthMaterial.onBeforeCompile = addMaskDiscard;
-terrain.userData.kind = 'terrain'; terrain.receiveShadow = true; terrain.castShadow = false; terrain.renderOrder = 5; terrain.frustumCulled = false; scene.add(terrain);
+const hAt = groundAt;   // shim: everything that used the old base-terrain height now sees the graded ground
+function hBase(x, y) { return hTri(TH, x, y); }   // original ground as the (linear 4 m) mesh would show it
+
+// ===== Textures: GH (R32F, nearest + manual bilinear), base TH (R32F) =====
+const hTex = new THREE.DataTexture(GH, GN, GN, THREE.RedFormat, THREE.FloatType);
+hTex.minFilter = hTex.magFilter = THREE.NearestFilter; hTex.generateMipmaps = false; hTex.flipY = false; hTex.unpackAlignment = 4; hTex.needsUpdate = true;
+const hSrcTex = new THREE.DataTexture(GH, GN, GN, THREE.RedFormat, THREE.FloatType);   // never uploaded itself: source for sub-rectangle copies
+hSrcTex.minFilter = hSrcTex.magFilter = THREE.NearestFilter; hSrcTex.generateMipmaps = false; hSrcTex.flipY = false;
+const tbTex = new THREE.DataTexture(TH, TN, TN, THREE.RedFormat, THREE.FloatType);
+tbTex.minFilter = tbTex.magFilter = THREE.NearestFilter; tbTex.generateMipmaps = false; tbTex.needsUpdate = true;
+let hTexLive = false;   // true once the first full upload has been issued by a draw
+// box: null (everything) or { i0, j0, i1, j1 } in grid indices (inclusive), or { x0, y0, x1, y1 } / { minX, minY, maxX, maxY } in metres.
+function onGroundChanged(box) {
+  needsRender = true;
+  if (!hTexLive) return;   // first full upload still pending
+  let i0 = 0, j0 = 0, i1 = GN - 1, j1 = GN - 1;
+  if (box) {
+    if (box.i0 != null) { i0 = box.i0; j0 = box.j0; i1 = box.i1; j1 = box.j1; }
+    else {
+      const x0 = box.x0 ?? box.minX, y0 = box.y0 ?? box.minY, x1 = box.x1 ?? box.maxX, y1 = box.y1 ?? box.maxY;
+      if (x0 != null) { i0 = Math.floor(x0 / GRID_RES) - 1; j0 = Math.floor(y0 / GRID_RES) - 1; i1 = Math.ceil(x1 / GRID_RES) + 1; j1 = Math.ceil(y1 / GRID_RES) + 1; }
+    }
+  }
+  i0 = clamp(Math.floor(i0), 0, GN - 1); j0 = clamp(Math.floor(j0), 0, GN - 1); i1 = clamp(Math.ceil(i1), i0, GN - 1); j1 = clamp(Math.ceil(j1), j0, GN - 1);
+  if (i1 < i0 || j1 < j0) return;
+  if ((i1 - i0 + 1) * (j1 - j0 + 1) > GN * GN * 0.5) { hTex.needsUpdate = true; return; }
+  renderer.copyTextureToTexture(hSrcTex, hTex, new THREE.Box2(new THREE.Vector2(i0, j0), new THREE.Vector2(i1 + 1, j1 + 1)), new THREE.Vector2(i0, j0));
+}
+
+// ===== Ground clipmap: concentric rings at 0.5, 1, 2, 4, 8, 16 m, all centred on one point snapped to 16 m so every ring's grid lines up exactly =====
+const RING_N = 256, RING_SP = [0.5, 1, 2, 4, 8, 16];
+const GLSL_H = `
+const float G_RES = ${GRID_RES.toFixed(3)};
+const float G_WORLD = ${WORLD.toFixed(1)};
+uniform highp sampler2D uH;
+float Hi(ivec2 p) { return texelFetch(uH, clamp(p, ivec2(0), ivec2(${GN - 1})), 0).r; }
+float Hg(vec2 w) {   // bilinear graded height at world (x, y)
+  vec2 g = clamp(w, 0.0, G_WORLD) / G_RES; ivec2 i = ivec2(floor(g)); vec2 f = g - vec2(i);
+  return mix(mix(Hi(i), Hi(i + ivec2(1, 0)), f.x), mix(Hi(i + ivec2(0, 1)), Hi(i + ivec2(1, 1)), f.x), f.y);
+}`;
+const ringU = { uH: { value: hTex }, uTB: { value: tbTex }, uCentre: { value: new THREE.Vector2() }, uWater: { value: T.water } };
+const ringIdx = (full) => {
+  const n = RING_N, h = n / 2, q = n / 4, out = []; const V = (i, j) => (j + h) * (n + 1) + (i + h);
+  for (let j = -h; j < h; j++) for (let i = -h; i < h; i++) {
+    if (!full && i >= -q && i < q && j >= -q && j < q) continue;
+    const a = V(i, j), b = V(i + 1, j), c = V(i, j + 1), d = V(i + 1, j + 1); out.push(a, b, d, a, d, c);
+  }
+  return new THREE.BufferAttribute(new Uint32Array(out), 1);
+};
+const ringGeo = (full) => {
+  const n = RING_N, h = n / 2, pos = new Float32Array((n + 1) * (n + 1) * 3);
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) { const k = (j * (n + 1) + i) * 3; pos[k] = i - h; pos[k + 2] = j - h; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(ringIdx(full));
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(WORLD / 2, 60, -WORLD / 2), WORLD * 2); g.boundingBox = new THREE.Box3(new THREE.Vector3(-1e5, -100, -1e5), new THREE.Vector3(1e5, 400, 1e5));
+  return g;
+};
+const GEO_FULL = ringGeo(true), GEO_HOLE = ringGeo(false);
+function makeRingMat(sp) {
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
+  m.customProgramCacheKey = () => 'groundring';
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, ringU); sh.uniforms.uSp = { value: sp }; sh.uniforms.uN = { value: RING_N };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+${GLSL_H}
+uniform highp sampler2D uTB; uniform vec2 uCentre; uniform float uSp, uN; varying vec3 vW; varying float vDelta;
+float crm(float a, float b, float c, float d, float t) { return b + 0.5 * t * (c - a + t * (2.0 * a - 5.0 * b + 4.0 * c - d + t * (3.0 * (b - c) + d - a))); }
+float Bi(int x, int y) { return texelFetch(uTB, clamp(ivec2(x, y), ivec2(0), ivec2(${TN - 1})), 0).r; }
+float baseH(vec2 w) {   // Catmull-Rom of the 4 m base terrain (same as terrainH on the CPU)
+  vec2 f = clamp(w / ${CELL.toFixed(1)}, 0.0, ${TN - 1}.0 - 0.001); ivec2 i = ivec2(floor(f)); vec2 u = f - vec2(i);
+  float r0 = crm(Bi(i.x - 1, i.y - 1), Bi(i.x, i.y - 1), Bi(i.x + 1, i.y - 1), Bi(i.x + 2, i.y - 1), u.x);
+  float r1 = crm(Bi(i.x - 1, i.y), Bi(i.x, i.y), Bi(i.x + 1, i.y), Bi(i.x + 2, i.y), u.x);
+  float r2 = crm(Bi(i.x - 1, i.y + 1), Bi(i.x, i.y + 1), Bi(i.x + 1, i.y + 1), Bi(i.x + 2, i.y + 1), u.x);
+  float r3 = crm(Bi(i.x - 1, i.y + 2), Bi(i.x, i.y + 2), Bi(i.x + 1, i.y + 2), Bi(i.x + 2, i.y + 2), u.x);
+  return crm(r0, r1, r2, r3, u.y);
+}`).replace('#include <beginnormal_vertex>', `
+vec2 lp = position.xz;
+vec2 wp = clamp(uCentre + lp * uSp, 0.0, G_WORLD);
+float gh = Hg(wp);
+{ // crack-free seam: odd vertices on the outer edge take the average of their even neighbours (what the next coarser ring interpolates)
+  float hn = uN * 0.5 - 0.5; vec2 s = vec2(0.0);
+  if (abs(lp.x) > hn && mod(abs(lp.y), 2.0) > 0.5) s = vec2(0.0, uSp); else if (abs(lp.y) > hn && mod(abs(lp.x), 2.0) > 0.5) s = vec2(uSp, 0.0);
+  if (s.x + s.y > 0.0) gh = 0.5 * (Hg(wp - s) + Hg(wp + s));
+}
+float ne = max(uSp, G_RES);
+vec3 objectNormal = normalize(vec3(-(Hg(wp + vec2(ne, 0.0)) - Hg(wp - vec2(ne, 0.0))), 2.0 * ne, Hg(wp + vec2(0.0, ne)) - Hg(wp - vec2(0.0, ne))));
+#ifdef USE_TANGENT
+vec3 objectTangent = vec3(tangent.xyz);
+#endif`).replace('#include <begin_vertex>', `vec3 transformed = vec3(wp.x, gh, -wp.y); vW = transformed; vDelta = gh - baseH(wp);`)
+      .replace('#include <project_vertex>', `vec4 mvPosition = viewMatrix * vec4(transformed, 1.0); gl_Position = projectionMatrix * mvPosition;`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+${GLSL_H}
+uniform float uSp, uWater; varying vec3 vW; varying float vDelta;
+float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453) - 0.5; }
+float vnz(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hsh(i), hsh(i + vec2(1, 0)), f.x), mix(hsh(i + vec2(0, 1)), hsh(i + vec2(1, 1)), f.x), f.y); }`)
+      .replace('#include <color_fragment>', `
+vec2 wq = vec2(vW.x, -vW.z); float hb = vW.y - vDelta;
+float gr = smoothstep(0.1, 0.45, abs(vDelta));
+vec3 gcol = mix(vec3(0.27, 0.43, 0.17), vec3(0.5, 0.47, 0.26), clamp((hb - 5.0) / 150.0, 0.0, 1.0));
+float slp = length(gNormal.xz) / max(gNormal.y, 0.05);
+float rt = clamp((slp - 0.55) / 0.4, 0.0, 1.0); rt = rt * rt * (3.0 - 2.0 * rt) * (1.0 - 0.75 * gr);
+gcol = mix(gcol, vec3(0.47, 0.45, 0.42), rt);
+gcol = mix(gcol, vec3(0.36, 0.33, 0.24), clamp((uWater + 1.2 - hb) / 3.0, 0.0, 0.8) * (1.0 - gr));
+gcol = mix(gcol, vec3(0.30, 0.50, 0.16), gr * 0.55);
+float kn = 1.0 + 0.1 * (vnz(wq / 4.0) + 0.6 * vnz(wq / 1.3));
+diffuseColor.rgb = gcol * gcol * kn;`)
+      .replace('void main() {', `void main() {
+  vec2 gw = vec2(vW.x, -vW.z); float ge = max(uSp, G_RES);
+  vec3 gNormal = normalize(vec3(-(Hg(gw + vec2(ge, 0.0)) - Hg(gw - vec2(ge, 0.0))), 2.0 * ge, Hg(gw + vec2(0.0, ge)) - Hg(gw - vec2(0.0, ge))));`)
+      .replace('#include <normal_fragment_begin>', `vec3 normal = normalize((viewMatrix * vec4(gNormal, 0.0)).xyz); vec3 nonPerturbedNormal = normal;`);
+  };
+  return m;
+}
+const terrain = new THREE.Group(); terrain.userData.kind = 'terrain';
+const rings = RING_SP.map((sp, k) => {
+  const m = new THREE.Mesh(k === 0 ? GEO_FULL : GEO_HOLE, makeRingMat(sp));
+  m.userData.kind = 'terrain'; m.receiveShadow = true; m.castShadow = false; m.renderOrder = 5; m.frustumCulled = false; m.matrixAutoUpdate = false;
+  m.onBeforeRender = () => {
+    if (k === 0) { hTexLive = true; ringU.uCentre.value.set(Math.round(camera.position.x / 16) * 16, Math.round(-camera.position.z / 16) * 16); }
+  };
+  terrain.add(m); return m;
+});
+scene.add(terrain);
 
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42];
@@ -96,30 +199,17 @@ function terrainColour(x, y, out) {
   const n = hash2(i, j) * (1 - u) * (1 - v) + hash2(i + 1, j) * u * (1 - v) + hash2(i, j + 1) * (1 - u) * v + hash2(i + 1, j + 1) * u * v, k = 1 + n * 0.1;
   out[0] = c[0] * c[0] * k; out[1] = c[1] * c[1] * k; out[2] = c[2] * c[2] * k;   // approx sRGB -> linear
 }
-{
-  const o = [0, 0, 0];
-  for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) {
-    const k = j * TN + i, il = Math.max(0, i - 1), ir = Math.min(TN - 1, i + 1), jd = Math.max(0, j - 1), ju = Math.min(TN - 1, j + 1);
-    const sx = (TH[j * TN + ir] - TH[j * TN + il]) / ((ir - il) * CELL), sy = (TH[ju * TN + i] - TH[jd * TN + i]) / ((ju - jd) * CELL), inv = 1 / Math.sqrt(sx * sx + sy * sy + 1);
-    tNor[k * 3] = -sx * inv; tNor[k * 3 + 1] = inv; tNor[k * 3 + 2] = sy * inv;
-    terrainColour(i * CELL, j * CELL, o); tCol[k * 3] = o[0]; tCol[k * 3 + 1] = o[1]; tCol[k * 3 + 2] = o[2];
-  }
-}
-function updateTerrainMesh() {}   // base terrain is static (kept for callers)
+function updateTerrainMesh() {}   // ground is drawn straight from GH; earthworks.js calls onGroundChanged(box)
+const maskCanvas = document.createElement('canvas');   // shim: the corridor mask is gone (ui.js still lists it in the debug export)
 
-// Height texture (float, nearest + manual bilinear in the shader) so water only draws where the base terrain is below the water level.
-const hTex = new THREE.DataTexture(TH, TN, TN, THREE.RedFormat, THREE.FloatType);
-hTex.minFilter = hTex.magFilter = THREE.NearestFilter; hTex.generateMipmaps = false; hTex.needsUpdate = true;
+// Water: only draws where the graded ground (height texture) is below the water level.
 const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f7fa6, transparent: true, opacity: 0.88, roughness: 0.15, metalness: 0.1, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
 waterMat.onBeforeCompile = shader => {
   shader.uniforms.uH = { value: hTex }; shader.uniforms.uLevel = { value: T.water }; waterMat.userData.sh = shader;
   shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
-  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;\nuniform sampler2D uH;\nuniform float uLevel;')
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;\nuniform float uLevel;\n' + GLSL_H)
     .replace('void main() {', `void main() {
-  { vec2 g = vec2(vWXZ.x, -vWXZ.y) / ${WORLD.toFixed(1)} * ${(TN - 1).toFixed(1)}; vec2 f = fract(g); vec2 i0 = floor(g) + 0.5; const float N = ${TN.toFixed(1)};
-    float a = texture2D(uH, i0 / N).r, b = texture2D(uH, (i0 + vec2(1.0, 0.0)) / N).r, c = texture2D(uH, (i0 + vec2(0.0, 1.0)) / N).r, d = texture2D(uH, (i0 + 1.0) / N).r;
-    float h = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-    if (h > uLevel + 0.2) discard; }`);
+  if (Hg(vec2(vWXZ.x, -vWXZ.y)) > uLevel + 0.2) discard;`);
 };
 const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), waterMat);
 water.userData.kind = 'water'; water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);

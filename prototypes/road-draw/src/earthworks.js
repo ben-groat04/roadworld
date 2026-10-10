@@ -76,7 +76,6 @@ function rebuild(r) {
 const GRID_RES = 0.5, GN = WORLD / GRID_RES + 1;
 const GH = new Float32Array(GN * GN);
 const GK = CELL / GRID_RES;   // grid steps per base cell (8)
-const REACH_MAX = 17.45 / 2 + 12 * 2 + 3;   // loose upper bound on any road's influence distance (used to pull in neighbouring roads)
 const reachOfRoad = ty => ty.total / 2 + T.wallStart * T.batter + 2;
 function roadBox(r) {
   const S = r.samples, m = reachOfRoad(ROAD_TYPES[r.type]) + 1; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -95,60 +94,70 @@ function groundAt(x, y) {   // bilinear graded height
   const fx = clamp(x / GRID_RES, 0, GN - 1.0001), fy = clamp(y / GRID_RES, 0, GN - 1.0001), i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, k = j * GN + i;
   return GH[k] * (1 - u) * (1 - v) + GH[k + 1] * u * (1 - v) + GH[k + GN] * (1 - u) * v + GH[k + GN + 1] * u * v;
 }
-const TILE = 256;   // texels per tile side (128 m)
-const tFpD = new Float32Array((TILE + 1) * (TILE + 1)), tFpZ = new Float32Array(tFpD.length), tCut = new Float32Array(tFpD.length), tFill = new Float32Array(tFpD.length);
-// Rasterise one segment (a -> b) of a road into the tile scratch. (ti0, tj0) = tile origin texel, (ti1, tj1) inclusive end.
-function rasterSeg(A, B, hw, R, ti0, tj0, ti1, tj1) {
-  const dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy; if (L2 < 1e-12) return;
-  const i0 = Math.max(ti0, Math.floor((Math.min(A.x, B.x) - R) / GRID_RES)), i1 = Math.min(ti1, Math.ceil((Math.max(A.x, B.x) + R) / GRID_RES));
-  const j0 = Math.max(tj0, Math.floor((Math.min(A.y, B.y) - R) / GRID_RES)), j1 = Math.min(tj1, Math.ceil((Math.max(A.y, B.y) + R) / GRID_RES));
-  const W = TILE + 1, bt = T.batter, R2 = R * R, dz = B.z - A.z, wA = A, wB = B;
-  for (let j = j0; j <= j1; j++) {
-    const py = j * GRID_RES, ry = py - A.y;
-    for (let i = i0; i <= i1; i++) {
-      const px = i * GRID_RES, rx = px - A.x;
-      let t = (rx * dx + ry * dy) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey; if (d2 > R2) continue;
-      const dd = Math.sqrt(d2), zf = A.z + t * dz - FORM_DROP, o = (j - tj0) * W + (i - ti0);
-      if (dd <= hw) { const q = dd / hw; if (q < tFpD[o]) { tFpD[o] = q; tFpZ[o] = zf; } continue; }
-      const e = dd - hw, E = t < 0.5 ? wA : wB, wall = (dx * ry - dy * rx) > 0 ? E.wL : E.wR;   // cross > 0: texel is on the left
-      if (wall) { if (e <= WALL_THICK / 2) { const q = dd / hw; if (q < tFpD[o]) { tFpD[o] = q; tFpZ[o] = zf; } } continue; }   // formation up to the wall; the mesh hides the step
-      const b = baseIJ(i, j);
-      if (b > zf) { const v = zf + e / bt; if (v < b && v < tCut[o]) tCut[o] = v; }
-      else { const v = zf - e / bt; if (v > b && v > tFill[o]) tFill[o] = v; }
+// ---- Pure core (portable to C++): plain arrays and numbers only, no THREE / DOM / globals. ----
+// roadsData: [{ hw, reach, bbox:{x0,y0,x1,y1}, samples:[{x,y,z,h,br,tu,wL,wR}] }]; params: { formDrop, batter, wallThick }.
+// baseSampler(x, y) -> base height. Writes nx*ny graded heights to out (row-major, texel (i,j) at x0+i*res, y0+j*res).
+function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
+  const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick / 2;
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
+  const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
+  for (const rd of roadsData) {
+    const bb = rd.bbox; if (bb && (bb.x1 < x0 || bb.x0 > tx1 || bb.y1 < y0 || bb.y0 > ty1)) continue;
+    const S = rd.samples, hw = rd.hw, R = rd.reach, R2 = R * R;
+    for (let k = 0; k + 1 < S.length; k++) {
+      const A = S[k], B = S[k + 1];
+      if (A.br || A.tu || B.br || B.tu) continue;   // bridge / tunnel stations are not graded
+      const dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy; if (L2 < 1e-12) continue;
+      const i0 = Math.max(0, Math.floor((Math.min(A.x, B.x) - R - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((Math.max(A.x, B.x) + R - x0) / res));
+      const j0 = Math.max(0, Math.floor((Math.min(A.y, B.y) - R - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((Math.max(A.y, B.y) + R - y0) / res));
+      const dz = B.z - A.z;
+      for (let j = j0; j <= j1; j++) {
+        const ry = y0 + j * res - A.y;
+        for (let i = i0; i <= i1; i++) {
+          const rx = x0 + i * res - A.x;
+          let t = (rx * dx + ry * dy) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey; if (d2 > R2) continue;
+          const dd = Math.sqrt(d2), zf = A.z + t * dz - fd, o = j * nx + i;
+          if (dd <= hw) { const q = dd / hw; if (q < fpD[o]) { fpD[o] = q; fpZ[o] = zf; } continue; }
+          const e = dd - hw, E = t < 0.5 ? A : B, wall = (dx * ry - dy * rx) > 0 ? E.wL : E.wR;   // cross > 0: texel on the left
+          if (wall) { if (e <= half) { const q = dd / hw; if (q < fpD[o]) { fpD[o] = q; fpZ[o] = zf; } } continue; }   // formation up to the wall; the wall mesh hides the step
+          const b = base[o];
+          if (b > zf) { const v = zf + e / bt; if (v < b && v < cutM[o]) cutM[o] = v; }
+          else { const v = zf - e / bt; if (v > b && v > fillM[o]) fillM[o] = v; }
+        }
+      }
     }
   }
+  for (let o = 0; o < N; o++) {
+    let g;
+    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; if (cutM[o] < g) g = cutM[o]; if (fillM[o] > g) g = fillM[o]; }
+    out[o] = g;
+  }
+}
+// ---- THREE-facing glue: tiles the box into 64 m tiles, feeds gradeTile, writes GH. ----
+const TILE_M = 64;
+const tileOut = new Float32Array((TILE_M / GRID_RES) * (TILE_M / GRID_RES));
+const gridBase = (x, y) => baseIJ(Math.round(x / GRID_RES), Math.round(y / GRID_RES));   // base sampler for grid-aligned texels
+function roadsData() {
+  return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = reachOfRoad(ty), sb = []; for (let i = 0; i + 1 < r.samples.length; i += 4) { const a = r.samples[i], b = r.samples[Math.min(i + 4, r.samples.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
+    return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: r.samples, segBoxes: sb }; });
 }
 // Recompute GH inside box {x0,y0,x1,y1} (world metres) from base + all roads. Calls onGroundChanged(box) with the snapped box.
 function gradeRegion(box) {
   const gi0 = clamp(Math.floor(box.x0 / GRID_RES), 0, GN - 1), gj0 = clamp(Math.floor(box.y0 / GRID_RES), 0, GN - 1);
   const gi1 = clamp(Math.ceil(box.x1 / GRID_RES), 0, GN - 1), gj1 = clamp(Math.ceil(box.y1 / GRID_RES), 0, GN - 1);
   if (gi1 < gi0 || gj1 < gj0) return;
-  const W = TILE + 1, live = roads.filter(r => r.samples && r.samples.length > 1);
-  for (let tj = gj0; tj <= gj1; tj += TILE) for (let ti = gi0; ti <= gi1; ti += TILE) {
-    const ti1 = Math.min(ti + TILE - 1, gi1), tj1 = Math.min(tj + TILE - 1, gj1);
-    tFpD.fill(9); tCut.fill(1e9); tFill.fill(-1e9);
-    const x0 = ti * GRID_RES - REACH_MAX, x1 = (ti1 + 1) * GRID_RES + REACH_MAX, y0 = tj * GRID_RES - REACH_MAX, y1 = (tj1 + 1) * GRID_RES + REACH_MAX;
-    for (const r of live) {
-      const bb = r.bbox; if (bb && (bb.x1 < x0 || bb.x0 > x1 || bb.y1 < y0 || bb.y0 > y1)) continue;
-      const S = r.samples, ty = ROAD_TYPES[r.type], hw = ty.total / 2, R = reachOfRoad(ty);
-      for (let i = 0; i + 1 < S.length; i++) {
-        const A = S[i], B = S[i + 1];
-        if (A.br || A.tu || B.br || B.tu) continue;
-        if (Math.max(A.x, B.x) + R < ti * GRID_RES || Math.min(A.x, B.x) - R > (ti1 + 1) * GRID_RES || Math.max(A.y, B.y) + R < tj * GRID_RES || Math.min(A.y, B.y) - R > (tj1 + 1) * GRID_RES) continue;
-        rasterSeg(A, B, hw, R, ti, tj, ti1, tj1);
-      }
+  const rd = roadsData(), TS = TILE_M / GRID_RES, params = { formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK };
+  for (let tj = gj0; tj <= gj1; tj += TS) for (let ti = gi0; ti <= gi1; ti += TS) {
+    const nx = Math.min(TS, gi1 - ti + 1), ny = Math.min(TS, gj1 - tj + 1);
+    const tx0 = ti * GRID_RES, ty0 = tj * GRID_RES, tx1 = tx0 + nx * GRID_RES, ty1 = ty0 + ny * GRID_RES;
+    if (!rd.some(q => q.segBoxes.some(b => b[2] >= tx0 && b[0] <= tx1 && b[3] >= ty0 && b[1] <= ty1))) {   // no road reaches this tile: plain base
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) GH[(tj + j) * GN + ti + i] = baseIJ(ti + i, tj + j);
+      continue;
     }
-    for (let j = tj; j <= tj1; j++) for (let i = ti; i <= ti1; i++) {
-      const o = (j - tj) * W + (i - ti); let g;
-      if (tFpD[o] < 9) g = tFpZ[o];
-      else {
-        g = baseIJ(i, j);
-        if (tCut[o] < g) g = tCut[o];
-        if (tFill[o] > g) g = tFill[o];
-      }
-      GH[j * GN + i] = g;
-    }
+    gradeTile(gridBase, rd, params, tx0, ty0, nx, ny, GRID_RES, tileOut);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) GH[(tj + j) * GN + ti + i] = tileOut[j * nx + i];
   }
   const out = { x0: gi0 * GRID_RES, y0: gj0 * GRID_RES, x1: gi1 * GRID_RES, y1: gj1 * GRID_RES };
   if (typeof onGroundChanged === 'function') onGroundChanged(out);

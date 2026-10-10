@@ -31,3 +31,16 @@ Likely suspects, in order: (1) `BuildSettingsVersion.Latest` / `EngineIncludeOrd
 - [ ] World Partition level for 20 km+ maps; confirm large world coordinates behave with doubles.
 - [ ] Lumen/Nanite/shadow cost with the junction-heavy test network.
 - [ ] Sim on its own fixed-timestep thread, renderer interpolates (currently everything runs on the game thread).
+
+## Claude Code + Unreal MCP (local session)
+Recommended: Epic's own **Unreal MCP** plugin, built into UE 5.8 (experimental). No Fab download and no copy into `Plugins/`. Community plugins (chongdashu/unreal-mcp, mirno-ehf/ue5-mcp) are only for UE 5.7 and earlier.
+
+1. In the editor: Edit -> Plugins, enable **Unreal MCP** and **All Toolsets** (Toolset Registry comes in as a dependency; without All Toolsets the server has no tools). Restart.
+2. Edit -> Editor Preferences -> General -> Model Context Protocol: tick **Auto Start Server** (default port 8000, path `/mcp`). Or run `ModelContextProtocol.StartServer` in the editor console each session.
+3. In the editor console run `ModelContextProtocol.GenerateClientConfig ClaudeCode`. It writes `.mcp.json`; check the Output Log for where. Move or merge it into the repo root. Or add it by hand:
+   `claude mcp add --transport http --scope project unreal-mcp http://127.0.0.1:8000/mcp`
+   (equivalent `.mcp.json`: `{"mcpServers":{"unreal-mcp":{"type":"http","url":"http://127.0.0.1:8000/mcp"}}}`; the generated file's exact contents were not verified, so prefer the generated one.)
+4. Run `claude` from `C:\...\roadworld` (the folder holding `.mcp.json`), with the editor open on `unreal/CityPainter`. Check `/mcp` shows `unreal-mcp`, then ask "what actors are in the level?".
+5. Optional: Epic's Claude Code plugin (MIT), `/plugin install unreal-engine-skills-for-claude-code@claude-plugins-official`. Needs Git Bash or WSL for its hook.
+
+Notes: loopback only, no authentication, tool calls run serially on the game thread. Commit before agent sessions. The server must be restarted along with the editor after adding new tools. Python, console command, build, screenshot and log tools: unverified, so use `list_toolsets` to check.
