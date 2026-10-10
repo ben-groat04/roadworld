@@ -72,10 +72,8 @@ function addMaskDiscard(shader) {
   shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec2 vMaskXZ;\nuniform sampler2D uMask;`)
     .replace('void main() {', `void main() {
   { vec2 mq = vec2(vMaskXZ.x, -vMaskXZ.y), e = vec2(1.0, 1.0); const float MW = ${WORLD.toFixed(1)};
-    float mm = min(min(texture2D(uMask, (mq + e * vec2(1.0, 1.0)) / MW).r, texture2D(uMask, (mq + e * vec2(-1.0, 1.0)) / MW).r),
-                   min(texture2D(uMask, (mq + e * vec2(1.0, -1.0)) / MW).r, texture2D(uMask, (mq + e * vec2(-1.0, -1.0)) / MW).r));
-    mm = min(mm, texture2D(uMask, mq / MW).r);
-    if (mm > 0.55) discard; }`);
+    float mm = texture2D(uMask, mq / MW).r;
+    if (mm > 0.4) discard; }`);
 }
 // Terrain material (masked) and the identical unmasked one used by road earthworks.
 const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
