@@ -40,6 +40,9 @@ const DUAL = { cc: [1000, -300], R: 1000, a0: 25, a1: 60, n: 9 };
 //    ground on the line, so the road is on fill (mean ~7 m, max ~10 m, below the 12 m bridge cap) with no cuts. [x, y, z]
 const MOTORWAY = [[900, 1800, 79.3], [720, 1800, 79.3], [540, 1800, 79.3]];
 
+// 8. tight_curve_fill: residential U-turn (radius ~45 m) on gentle ground (~100 m, relief ~4 m) with the deck held at 110.5 m: fill ~8-12 m all round the bend,
+//    so slopes from the two sides of the bend overlap on the inside. [x, y, z]
+const TIGHT = { c: [1700, 880], R: 45, z: 110.5 };
 // Camera views. target = [x, y] (terrain target), dist = camera distance from target (m), elev = degrees looking down,
 // look = compass-style heading the camera LOOKS toward, degrees (0 = +x east, 90 = +y north), or 'dyn:<name>' computed at runtime.
 // Registered below after the scene is drawn (some depend on measured geometry).
@@ -53,6 +56,7 @@ const VIEWS = {
   tunnel_side: () => ({ target: info.portal.xy, dist: TUNNEL_FRONT_DIST, elev: 14, look: info.portal.heading + 45 }),
   dual_curve: () => ({ target: info.dualMid, dist: 90, elev: 22, look: info.dualHeading + 35 }),
   motorway: () => ({ target: [720, 1800], dist: 100, elev: 18, look: 60 }),
+  tight_curve_fill: () => ({ target: [1668, 880], dist: 110, elev: 24, look: 160 }),
   overview: () => ({ target: [850, 850], dist: 2700, elev: 50, look: 100 }),
 };
 // ======================================================================================================================
@@ -80,7 +84,7 @@ if (await page.evaluate(() => window.__proto.state.profile)) await page.keyboard
 await page.evaluate(() => { for (const id of ['hud', 'tune']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; } });
 
 // Draw the scene in the page. Returns derived geometry used by the views.
-const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY }) => {
+const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY, TIGHT }) => {
   const P = window.__proto, h = P.hAt;
   const deg = r => r * 180 / Math.PI;
   // Unit vectors at (x,y): u = uphill (fall line), t = contour tangent (u rotated +90 deg).
@@ -125,10 +129,15 @@ const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOT
     out.dualHeading = deg(am + Math.PI / 2); }
   // 7
   draw('motorway', 4, MOTORWAY);
+  // 8
+  { const c = TIGHT.c, R = TIGHT.R, z = TIGHT.z, pts = [[c[0] + 60, c[1] - R, z], [c[0] + 20, c[1] - R, z]];
+    for (const a of [-135, -180, -225]) pts.push([c[0] + R * Math.cos(a * Math.PI / 180), c[1] + R * Math.sin(a * Math.PI / 180), z]);
+    pts.push([c[0] + 20, c[1] + R, z], [c[0] + 60, c[1] + R, z]); pts.splice(2, 0, [c[0], c[1] - R, z]); pts.splice(6, 0, [c[0], c[1] + R, z]);
+    draw('tight_curve_fill', 1, pts); }
   P.flushGrade();
   out.stats = stats; out.roadCount = P.roads().length;
   return out;
-}, { CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY });
+}, { CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY, TIGHT });
 
 if (CHECK_MODE) {
   const results = await page.evaluate(CHECKS_IN_PAGE);
@@ -408,5 +417,26 @@ function CHECKS_IN_PAGE() {
         }
       } }
     done('ground_hidden_by_walls', w, bad, n, n ? `${n} ground samples across wall faces, all hidden or natural` : 'WARNING no wall runs'); if (!n) results[results.length - 1].pass = false; if (bad) results[results.length - 1].msg += ' [' + Object.entries(cat).map(([k, v]) => k + ':' + v).join(' ') + ']'; }
+
+  // no_bare_steps: every neighbouring-texel step > 1.0 m in GH, away from bridge/tunnel zones, must lie inside a wall solid
+  // (wallRuns point: lateral [lo,hi] from the wall line +-0.6 m, within 2.5 m along). Anything else is a bare near-vertical ground face.
+  { const GR = P.GRID_RES, GNN = Math.round(2048 / GR) + 1, GHH = P.GH, W = new Map(), WC = 4; let n = 0, bad = 0, w = null;
+    for (const r of roads) for (const run of wallRuns(r)) { const sg = run.side === 'L' ? 1 : -1, lo = run.lo != null ? run.lo : 0, hi = run.hi != null ? run.hi : 1.0;
+      for (const p of run.pts) { const key = Math.floor(p.x / WC) * 100003 + Math.floor(p.y / WC); let l = W.get(key); if (!l) W.set(key, l = []); l.push({ p, sg, lo, hi }); } }
+    const inWall = (x, y) => { const cx = Math.floor(x / WC), cy = Math.floor(y / WC);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const l = W.get((cx + a) * 100003 + cy + b); if (!l) continue;
+        for (const q of l) { const dx = x - q.p.x, dy = y - q.p.y; if (dx * dx + dy * dy > 3.5 * 3.5) continue;
+          const e = (dx * -Math.sin(q.p.h) + dy * Math.cos(q.p.h)) * q.sg, al = dx * Math.cos(q.p.h) + dy * Math.sin(q.p.h);
+          if (e >= q.lo - 0.8 && e <= q.hi + 0.8 && Math.abs(al) <= 2.5) return true; } }
+      return false; };
+    const stuct = (x, y) => { const cx = Math.floor(x / SC), cy = Math.floor(y / SC), m = 3;   // within 8 m of a bridge/tunnel station
+      for (let a = -m; a <= m; a++) for (let b = -m; b <= m; b++) { const l = sh.get((cx + a) * 100003 + cy + b); if (!l) continue; for (const [r, i] of l) { const s = r.samples[i]; if ((isBr(s) || isTu(s)) && (s.x - x) ** 2 + (s.y - y) ** 2 < (RT[r.type].total / 2 + 12) ** 2) return true; } }
+      return false; };
+    const GW = Math.min(GNN, P.GN || GNN);
+    for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { const g = GHH[j * GW + i];
+      for (const [di, dj] of [[1, 0], [0, 1]]) { if (i + di >= GW || j + dj >= GW) continue; const st = Math.abs(GHH[(j + dj) * GW + i + di] - g); if (st <= 1.0) continue; n++;
+        const x = (i + di / 2) * GR, y = (j + dj / 2) * GR;
+        if (inWall(x, y) || stuct(x, y)) continue; bad++; w = track(w, { x, y, road: 0, what: 'bare ground step', v: st }); } }
+    done('no_bare_steps', w, bad, n, `${n} texel steps > 1 m, all inside wall solids or bridge/tunnel zones`); }
   return results;
 }

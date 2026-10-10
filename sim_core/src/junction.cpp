@@ -78,7 +78,8 @@ JunctionArm make_arm(const RoadGraph& graph, const Edge& e, bool at_a, const Reg
 
     const RoadType* type = region.road_type(e.road_type);
     if (!type) return arm;
-    arm.road_class = static_cast<int>(std::lround(type->design_speed * 3.6));
+    arm.road_class = type->road_class > 0 ? type->road_class : static_cast<int>(std::lround(type->design_speed * 3.6));
+    arm.corner_radius = type->corner_radius;
 
     std::vector<Lane> all = instantiate_lanes(e, *type, region.driving_side);
     double left = 0, right = 0;
@@ -185,6 +186,9 @@ std::vector<double> resolve_corner_radii(NodeId node, const std::vector<Junction
                                          const JunctionOverrides& overrides) {
     std::vector<double> r(arms.size(), kDefaultCornerRadius);
     for (std::size_t k = 0; k < arms.size(); ++k) {
+        // Region default: the larger of the two arms' road-type radii (0 = n/a), else the fallback.
+        const double pack = std::max(arms[k].corner_radius, arms[(k + 1) % arms.size()].corner_radius);
+        if (pack > 0) r[k] = pack;
         const CornerKey key{node, arms[(k + 1) % arms.size()].edge, arms[k].edge};
         const auto it = overrides.corner_radius.find(key);
         if (it != overrides.corner_radius.end()) r[k] = it->second;

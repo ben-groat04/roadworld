@@ -44,6 +44,8 @@ struct RoadType {
     bool dual = false;
     double speed_limit = 0;   // m/s
     double design_speed = 0;  // m/s
+    int road_class = 0;        // relative importance (higher = more major); 0 = unset (use design speed in km/h)
+    double corner_radius = 0;  // m, default junction kerb fillet radius; 0 = unset (not applicable)
     double median_gap = 0;    // m, dual types only
     // half: centre -> nearside, one direction (two-way types).
     // one_way_variant, carriageway: offside -> nearside, whole cross-section.

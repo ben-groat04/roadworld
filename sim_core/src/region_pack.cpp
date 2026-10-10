@@ -203,6 +203,9 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     if (rt.two_way && rt.dual) err.set(ctx + ": cannot be both two_way and dual");
     rt.speed_limit = get_number(e, "speed_limit", ctx, err) * speed_to_mps;
     rt.design_speed = get_number(e, "design_speed_kph", ctx, err) / 3.6;
+    rt.road_class = static_cast<int>(std::lround(opt_number(e, "road_class", 0, ctx, err)));
+    rt.corner_radius = opt_number(e, "corner_radius_m", 0, ctx, err);
+    if (rt.corner_radius < 0) err.set(ctx + ": corner_radius_m must not be negative");
     if (err.failed()) return rt;
     if (!(rt.speed_limit > 0)) err.set(ctx + ": speed_limit must be positive");
     if (!(rt.design_speed > 0)) err.set(ctx + ": design_speed_kph must be positive");

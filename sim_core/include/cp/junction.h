@@ -76,6 +76,7 @@ struct JunctionArm {
     // Proxy for road class until the region pack gets an explicit field: design speed in km/h
     // (rounded). Higher = more major. Only compared between arms.
     int road_class = 0;
+    double corner_radius = 0;   // m, region-pack default fillet radius of this arm's road type (0 = n/a)
     double edge_length = 0;     // m, bounds the usable trim
     // Centreline from the node outward (s measured from the node, heading = heading_out(s)),
     // sampled for at most kArmSampleLength. Trim lines and connector ends are read from it
@@ -230,7 +231,7 @@ struct JunctionOverrides {
 
 // ---------------------------------------------------------------- functions
 
-inline constexpr double kDefaultCornerRadius = 6.0;  // m; a region pack field later
+inline constexpr double kDefaultCornerRadius = 6.0;  // m; fallback when the region pack gives no corner_radius_m
 
 // Real (junction.cpp). Arms of `node` in CCW order, with lanes from instantiate_lanes using
 // region.driving_side. A loop edge (a == b) yields two arms with the same edge id.
