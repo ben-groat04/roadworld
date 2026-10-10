@@ -280,7 +280,7 @@ function buildRoadGroup(r) {
       const q = rs[i], a = rs[Math.max(0, i - 1)], b = rs[Math.min(m - 1, i + 1)], t = hdir([a.x, a.y], [b.x, b.y]);
       let u = [-t[1] * sg, t[0] * sg];
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
-      const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go, hB(q.x, q.y), hB(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)) - 1.0, top = Math.min(q.top, q.zTop + 0.7);   // fill wall: barrier-height cap (+0.55 above road level)
+      const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go, hB(q.x, q.y), hB(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)) - 1.0, top = Math.min(q.top, q.zTop + 0.7, Math.max(Math.min(gi, go) + 0.55, zb + 0.1));   // fill wall: barrier-height cap (+0.55 above road level)
       let zt = top;
       const tp = d => { const tgt = Math.min(top, gSm[i] - 0.1); return tgt + (top - tgt) * clamp(d / TAPER_L, 0, 1); };   // ends sink into the graded ground
       if (tapA) zt = Math.min(zt, tp(cum[i]));

@@ -93,7 +93,7 @@ function baseIJ(i, j) {
 // baseSampler(x, y) -> base height. Writes nx*ny graded heights to out (row-major, texel (i,j) at x0+i*res, y0+j*res).
 function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
   const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick - res;   // wall band: texels with e <= wallThick-res take the inside (formation) value, so the one-texel ramp to natural lies inside the solid
-  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), sideC = new Uint8Array(N), sideF = new Uint8Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N);
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
   for (const rd of roadsData) {
@@ -128,14 +128,14 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
         else if (e > half) continue;
         fpD[o] = 0; if (zw < fpZ[o]) fpZ[o] = zw; }
       continue; }   // formation up to the wall; the wall mesh hides the step
-      const b = base[o]; if (b > zf) sideC[o] = 1; else sideF[o] = 1;
+      const b = base[o];
       if (b > zf) { const v = zf + e / bt; if (v < b) { if (v < cutM[o]) { cutM[o] = v; cutE[o] = e; } } }
       else { const v = zf - e / bt; if (v > b) { if (v > fillM[o]) { fillM[o] = v; fillE[o] = e; } } }
     }
   }
   for (let o = 0; o < N; o++) {
     let g;
-    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const hc = cutM[o] < g, hf = fillM[o] > g; if (hc && hf) g = cutE[o] <= fillE[o] ? cutM[o] : fillM[o]; else if (hc) g = cutM[o]; else if (hf) g = fillM[o]; if (sideC[o] && sideF[o]) g = Math.min(base[o] + 0.12, Math.max(base[o] - 0.12, g)); }   // one road cuts here, another fills: stay within 12 cm of natural so neither overshoots   // never cross the base to the wrong side: take the nearer of a cut and a fill slope
+    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const hc = cutM[o] < g, hf = fillM[o] > g; if (hc && hf) g = cutE[o] <= fillE[o] ? cutM[o] : fillM[o]; else if (hc) g = cutM[o]; else if (hf) g = fillM[o]; }   // never cross the base to the wrong side: take the nearer of a cut and a fill slope
     out[o] = g;
   }
 }
