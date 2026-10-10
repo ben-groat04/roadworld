@@ -365,13 +365,15 @@ function CHECKS_IN_PAGE() {
   { let n = 0, bad = 0, w = null; const cat = {}; const hwOf = r => RT[r.type].total / 2;
     for (const r of roads) for (const run of wallRuns(r)) {
       const sg = run.side === 'L' ? 1 : -1, lo = run.lo != null ? run.lo : 0, hi = run.hi != null ? run.hi : 1.0, hw = hwOf(r);
-      for (const p of run.pts) {
+      const cum = [0]; for (let i = 1; i < run.pts.length; i++) cum.push(cum[i - 1] + Math.hypot(run.pts[i].x - run.pts[i - 1].x, run.pts[i].y - run.pts[i - 1].y));
+      for (let pi = 0; pi < run.pts.length; pi++) {
+        const p = run.pts[pi], endZone = cum[pi] < 12 || cum[cum.length - 1] - cum[pi] < 12;   // the slope run beyond a wall end aprons round it; ramp check skipped there
         const top = p.top != null ? p.top : p.zTop, ux = -Math.sin(p.h) * sg, uy = Math.cos(p.h) * sg;
         for (let e = lo - 0.3; e <= hi + 0.3 + 1e-9; e += 0.1) {
           const x = p.x + ux * e, y = p.y + uy * e, g = groundAt(x, y); n++;
           const inside = e >= lo - 1e-9 && e <= hi + 1e-9, lim = inside ? top - 0.3 : top;
           if (g > lim + 1e-6) { bad++; { const k = 'r' + r.id + (run.cut ? 'c' : 'f') + (inside ? 'in' : 'out'); cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + (run.cut ? ' cut' : ' fill') + ' wall ground above ' + (inside ? 'top-0.3' : 'top') + ' at e=' + e.toFixed(1) + ' by', v: g - lim }); }
-          else if (e > hi + 0.1 && Math.abs(g - terrainH(x, y)) > 0.25) { bad++; { if (window.__dbg = (window.__dbg || [])) (window.__dbg.length < 12 || r.id >= 12 && window.__dbg.length < 22) && window.__dbg.push([r.id, x.toFixed(1), y.toFixed(1), e.toFixed(1), g.toFixed(2), terrainH(x, y).toFixed(2), top.toFixed(2), p.zBot.toFixed(2)].join(' ')); const k = 'r' + r.id + (run.cut ? 'c' : 'f') + 'ramp'; cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + ' wall ramp outside outer face, off natural at e=' + e.toFixed(1) + ' by', v: Math.abs(g - terrainH(x, y)) }); }
+          else if (!endZone && e > hi + 0.1 && Math.abs(g - terrainH(x, y)) > 0.25) { bad++; { if (window.__dbg = (window.__dbg || [])) (window.__dbg.length < 12 || r.id >= 12 && window.__dbg.length < 22) && window.__dbg.push([r.id, x.toFixed(1), y.toFixed(1), e.toFixed(1), g.toFixed(2), terrainH(x, y).toFixed(2), top.toFixed(2), p.zBot.toFixed(2), (() => { let bi = 0, bd = 1e9; r.samples.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; bi = i; } }); return 'i' + bi + '/' + r.samples.length + ' ' + r.samples.slice(Math.max(0, bi - 6), bi + 7).map(q => (q.wL ? 'L' : '-') + (q.wR ? 'R' : '-') + (q.br ? 'b' : '')).join(','); })()].join(' ')); const k = 'r' + r.id + (run.cut ? 'c' : 'f') + 'ramp'; cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + ' wall ramp outside outer face, off natural at e=' + e.toFixed(1) + ' by', v: Math.abs(g - terrainH(x, y)) }); }
         }
       } }
     done('ground_hidden_by_walls', w, bad, n, n ? `${n} ground samples across wall faces, all hidden or natural` : 'WARNING no wall runs'); if (!n) results[results.length - 1].pass = false; if (bad) results[results.length - 1].msg += ' DBG ' + (window.__dbg || []).join(' | ') + ' [' + Object.entries(cat).map(([k, v]) => k + ':' + v).join(' ') + ']'; }

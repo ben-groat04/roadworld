@@ -162,6 +162,7 @@ function buildRoadGroup(r) {
     }
     return m;
   };
+  const gMin2 = (pose, a0, a1, l0, l1) => Math.min(groundMin(pose, a0, a1, l0, l1, gAt), groundMin(pose, a0, a1, l0, l1, hB));   // lowest of graded + base ground under a footprint
   // Oriented prism: along range A0..A1 (signed, from pose p), top height sloping zt0 (at A0) -> zt1 (at A1).
   const sbox = (p, A0, A1, l0, l1, zb, zt0, zt1, bk, topB) => {
     const c = Math.cos(p.h), sn = Math.sin(p.h), V = (al, la, z) => [p.x + c * al - sn * la, p.y + sn * al + c * la, z];
@@ -182,14 +183,14 @@ function buildRoadGroup(r) {
     const len = S[b2].s - S[a2].s, spans = Math.max(1, Math.round(len / 32)), pw = hw * 0.55;
     for (let q = 1; q < spans; q++) {
       const pp = poseAt(r, S[a2].s + len * q / spans), zdk = pp.z + zo - DECK_T;
-      const gnd = groundMin(pp, -0.9, 0.9, -pw, pw);
+      const gnd = gMin2(pp, -1.2, 1.2, -(hw - 0.9), hw - 0.9);
       obox(pp, -0.7, 0.7, -pw, pw, Math.min(gnd, zdk - 1.0) - 1.0, zdk - 1.0, CB.pier.c);
       obox(pp, -1.2, 1.2, -(hw - 0.9), hw - 0.9, zdk - 1.0, zdk, CB.pier.d);   // crosshead / pier cap
     }
     // Closed abutments at both ends: bearing wall + ballast wall + short wing walls following the embankment slope.
     for (const [k, dr] of [[a2, -1], [b2, 1]]) {
       const p = S[k], zr = p.z + zo, A = (x, y) => dr > 0 ? [x, y] : [-y, -x];
-      const gnd = Math.min(groundMin(p, ...A(-1.4, 0.6), -hw, hw, gAt), groundMin(p, ...A(0.6, 6), -hw - 0.5, hw + 0.5, gAt), groundMin(p, ...A(-1.4, 0.6), -hw, hw)), zbA = Math.min(gnd, zr - DECK_T - 0.5) - 1.0;
+      const gnd = Math.min(gMin2(p, ...A(-1.4, 0.6), -hw - 0.5, hw + 0.5), gMin2(p, ...A(0.6, 6.5), -hw - 0.5, hw + 0.5)), zbA = Math.min(gnd, zr - DECK_T - 0.5) - 1.0;
       obox(p, ...A(-1.4, 0.0), -hw, hw, zbA, zr - DECK_T, CB.abutment.c);                  // front (bearing) wall under the deck end
       obox(p, ...A(0.0, 0.5), -hw, hw, zbA, zr - 0.03, CB.abutment.c, CB.abutment.d);           // ballast wall up to road level
       for (const sg of [1, -1]) {                                                  // wing walls, top sloping 1:2 down into the fill
@@ -287,7 +288,9 @@ function buildRoadGroup(r) {
     const alOf = (al, la) => [P0.x + c * al * dir - sn * la, P0.y + sn * al * dir + c * la];
     // headwall height: cover natural ground across the full width (at the face and just behind it) + 1 m
     let gmax = -1e9; for (const al of [0, HEAD_T, 4]) for (let la = -Wd; la <= Wd + 1e-6; la += 1) { const q = alOf(al, la); gmax = Math.max(gmax, hB(q[0], q[1])); }
-    const zt = Math.max(zr + TUNNEL_H + 1.5, gmax + 1.0), zb = zr - 2.5;
+    const zt = Math.max(zr + TUNNEL_H + 1.5, gmax + 1.0);
+    let gmn = 1e9; for (const al of [0, HEAD_T]) for (let la = -Wd; la <= Wd + 1e-6; la += 1) { const q = alOf(al, la); gmn = Math.min(gmn, hB(q[0], q[1]), gAt(q[0], q[1])); }
+    const zb = Math.min(zr - 2.5, gmn - 1.0);
     const ob = (a0, a1, l0, l1, z0, z1, bk) => obox(P0, Math.min(a0 * dir, a1 * dir), Math.max(a0 * dir, a1 * dir), l0, l1, z0, z1, bk);
     ob(0, HEAD_T, OW, Wd, zb, zt - CAP_P, CB.portal.c); ob(0, HEAD_T, -Wd, -OW, zb, zt - CAP_P, CB.portal.c);
     ob(0, HEAD_T, -OW, OW, zr + OPEN_H, zt - CAP_P, CB.portal.c);
@@ -318,7 +321,7 @@ function buildRoadGroup(r) {
       for (let i = 0; i <= NS; i++) {
         const t = i / NS, ps = poseAt(r, sApp + (P0.s - sApp) * t), lat = edge0 + (Wf - edge0) * t, ln = lnorm(ps.h), f = fwd(ps.h), cp = latPt(ps, sg * lat, 0);
         const u = [(-dir * sa) * f[0] + ca * sg * ln[0], (-dir * sa) * f[1] + ca * sg * ln[1]], ul = Math.hypot(u[0], u[1]);
-        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: botA * (1 - t) + zb * t, zt: topA * (1 - t) + zt * t });
+        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: Math.min(botA * (1 - t) + zb * t, hB(cp[0], cp[1]) - 1, gAt(cp[0], cp[1]) - 1), zt: topA * (1 - t) + zt * t });
       }
       wallStations(st, CB.portal);
     }

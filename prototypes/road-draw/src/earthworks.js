@@ -93,7 +93,7 @@ function baseIJ(i, j) {
 // baseSampler(x, y) -> base height. Writes nx*ny graded heights to out (row-major, texel (i,j) at x0+i*res, y0+j*res).
 function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
   const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick - res;   // wall band: texels with e <= wallThick-res take the inside (formation) value, so the one-texel ramp to natural lies inside the solid
-  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9);
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), cutE = new Float32Array(N), fillE = new Float32Array(N);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
   for (const rd of roadsData) {
@@ -101,7 +101,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
     const S = rd.samples, hw = rd.hw, R = rd.reach, R2 = R * R;
     for (let k = 0; k + 1 < S.length; k++) {
       const A = S[k], B = S[k + 1];
-      if (A.br || A.tu || B.br || B.tu) continue;   // bridge / tunnel stations are not graded
+      if ((A.br || A.tu) && (B.br || B.tu)) continue;   // bridge / tunnel stations are not graded; a segment with one structure end is graded up to the abutment / portal
       const dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy; if (L2 < 1e-12) continue;
       const i0 = Math.max(0, Math.floor((Math.min(A.x, B.x) - R - x0) / res)), i1 = Math.min(nx - 1, Math.ceil((Math.max(A.x, B.x) + R - x0) / res));
       const j0 = Math.max(0, Math.floor((Math.min(A.y, B.y) - R - y0) / res)), j1 = Math.min(ny - 1, Math.ceil((Math.max(A.y, B.y) + R - y0) / res));
@@ -113,19 +113,19 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
           let t = (rx * dx + ry * dy) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
           const ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey; if (d2 > R2) continue;
           const dd = Math.sqrt(d2), zf = A.z + t * dz - fd, o = j * nx + i;
-          if (dd <= hw) { const q = dd / hw; if (q < fpD[o]) { fpD[o] = q; fpZ[o] = zf; } continue; }
+          if (dd <= hw) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }   // union of footprints: lowest formation wins (never pokes through any road)
           const e = dd - hw, E = t < 0.5 ? A : B, wall = (dx * ry - dy * rx) > 0 ? E.wL : E.wR;   // cross > 0: texel on the left
-          if (wall) { if (e <= half) { const q = dd / hw; if (q < fpD[o]) { fpD[o] = q; fpZ[o] = zf; } } continue; }   // formation up to the wall; the wall mesh hides the step
+          if (wall) { if (e <= half) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; } continue; }   // formation up to the wall; the wall mesh hides the step
           const b = base[o];
-          if (b > zf) { const v = zf + e / bt; if (v < b && v < cutM[o]) cutM[o] = v; }
-          else { const v = zf - e / bt; if (v > b && v > fillM[o]) fillM[o] = v; }
+          if (b > zf) { const v = zf + e / bt; if (v < b && v < cutM[o]) { cutM[o] = v; cutE[o] = e; } }
+          else { const v = zf - e / bt; if (v > b && v > fillM[o]) { fillM[o] = v; fillE[o] = e; } }
         }
       }
     }
   }
   for (let o = 0; o < N; o++) {
     let g;
-    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; if (cutM[o] < g) g = cutM[o]; if (fillM[o] > g) g = fillM[o]; }
+    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const hc = cutM[o] < g, hf = fillM[o] > g; if (hc && hf) g = cutE[o] <= fillE[o] ? cutM[o] : fillM[o]; else if (hc) g = cutM[o]; else if (hf) g = fillM[o]; }   // never cross the base to the wrong side: take the nearer of a cut and a fill slope
     out[o] = g;
   }
 }
@@ -133,10 +133,22 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
 const TILE_M = 64;
 const tileOut = new Float32Array((TILE_M / GRID_RES) * (TILE_M / GRID_RES));
 const gridBase = hBaseFine;   // bicubic base (terrain.js), identical to the initial GH fill   // base sampler for grid-aligned texels
+// Median sides: a dual carriageway's inner side (facing its opposite-direction, parallel partner of the same type) gets no wall; sets s.mL / s.mR.
+function markMedians() {
+  const rs = roads.filter(r => r.samples && r.samples.length > 1);
+  for (const r of rs) for (const s of r.samples) s.mL = s.mR = false;
+  for (const r of rs) { const ty = ROAD_TYPES[r.type]; if (!ty.dual) continue; const lim = ty.gap + ty.total + 2, bb = r.bbox;
+    for (const r2 of rs) { if (r2 === r || r2.type !== r.type) continue; const b2 = r2.bbox; if (bb && b2 && (b2.x1 < bb.x0 || b2.x0 > bb.x1 || b2.y1 < bb.y0 || b2.y0 > bb.y1)) continue;
+      for (let i = 0; i < r.samples.length; i += 2) { const s = r.samples[i], nx = -Math.sin(s.h), ny = Math.cos(s.h);
+        for (let k = 0; k < r2.samples.length; k += 2) { const t = r2.samples[k], dx = t.x - s.x, dy = t.y - s.y; if (Math.abs(dx) > lim || Math.abs(dy) > lim) continue; const d = Math.hypot(dx, dy); if (d > lim) continue;
+          const lat = dx * nx + dy * ny; if (Math.abs(d - Math.abs(lat)) < 2 && Math.cos(t.h - s.h) < -0.7) { if (lat > 0) s.mL = true; else s.mR = true; } } } } }
+  for (const r of rs) for (let i = 1; i < r.samples.length; i += 2) { const s = r.samples[i], p = r.samples[i - 1], q = r.samples[Math.min(i + 1, r.samples.length - 1)]; s.mL = p.mL || q.mL || s.mL; s.mR = p.mR || q.mR || s.mR; }
+}
 function roadsData() {
+  markMedians();
   return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = reachOfRoad(ty), sb = [], full = r.samples, dec = [];
-    for (let i = 0; i < full.length; i += 2) { const a = full[i], b = full[Math.min(i + 1, full.length - 1)], c = full[Math.min(i + 2, full.length - 1)]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, br: a.br || b.br || (i > 0 && full[i - 1].br), tu: a.tu || b.tu || (i > 0 && full[i - 1].tu) }); }   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
-    if ((full.length - 1) % 2) { const a = full[full.length - 1]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, br: a.br, tu: a.tu }); } for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
+    for (let i = 0; i < full.length; i += 2) { const a = full[i], b = full[Math.min(i + 1, full.length - 1)], c = full[Math.min(i + 2, full.length - 1)]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.mL ? 0 : a.wL, wR: a.mR ? 0 : a.wR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR }); }   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
+    if ((full.length - 1) % 2) { const a = full[full.length - 1]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.mL ? 0 : a.wL, wR: a.mR ? 0 : a.wR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR }); } for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
     return { hw: ty.total / 2, reach: R, bbox: r.bbox, samples: dec, segBoxes: sb }; });
 }
 // Recompute GH inside box {x0,y0,x1,y1} (world metres) from base + all roads. Calls onGroundChanged(box) with the snapped box.
