@@ -192,12 +192,15 @@ TEST_CASE("A: T with a one-way side arm only uses its lanes in one direction") {
 
 TEST_CASE("A: dual carriageway T keeps lanes in order and never crosses from one approach") {
     Net n;
+    // A dual edge is one carriageway (2 lanes, one direction): eastbound in from the west, out to the east.
+    n.polar(180, 150, "a_road_dual", false, true);
     n.polar(0, 150, "a_road_dual");
-    n.polar(180, 150, "a_road_dual");
     n.polar(-90, 80);
     const Junction j = n.build();
-    // From each dual arm: 2 straight (lane to lane) + 1 side-road turn; side road: 2 to each dual arm.
-    CHECK(j.connectors.size() == 10);
+    // West carriageway: 2 straight (lane to lane) + 1 side-road turn from its offside lane;
+    // side road (1 lane) into the 2 outbound lanes of the east carriageway.
+    CHECK(j.connectors.size() == 5);
+    CHECK(count(j, TurnKind::Straight) == 2);
     for (const auto& c : j.connectors) {
         const auto& fa = j.arms[static_cast<std::size_t>(c.arm_from)];
         if (fa.inbound_count() == 2 && c.kind != TurnKind::Straight) {
