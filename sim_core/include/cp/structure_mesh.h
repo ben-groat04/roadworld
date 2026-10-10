@@ -28,6 +28,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "cp/heightfield.h"
@@ -135,7 +136,7 @@ struct StructureParams {
     double block_bury = 1.0;          // m, block foot below the lowest ground under it
 
     // ---- piers ----
-    double max_pier_spacing = 40.0;      // m, longest clear distance between supports (region; the prototype used about 32)
+    double max_pier_spacing = 30.0;      // m, longest clear distance between supports (region; typical UK overbridge span)
     double pier_search = 0.4;            // fraction of the spacing a pier may move to avoid roads
     double pier_shaft_along = 1.4;       // m, thickness along the road
     double pier_shaft_width = 0.5;       // fraction of the road half-width, each side of the centre
@@ -147,6 +148,9 @@ struct StructureParams {
     double pier_footing_bury = 1.2;      // m, footing foot below the lowest ground under it
     double pier_min_height = 0.5;        // m, shorter shafts are skipped
     double pier_road_clearance = 2.0;    // m, footing keeps this far from another road's cross-section
+    double pier_road_clearance_min = 0.3; // m, fallback when nothing fits (a narrow central reservation)
+    double pier_junction_radius = 12.0;  // m, no pier within this of a junction node
+    double pier_pier_clearance = 6.0;    // m, no pier this close to another bridge's pier
     double pier_ground_clearance = 1.0;  // m, a road is "below" the deck if it is this far under the soffit
 
     // ---- abutments and wing walls ----

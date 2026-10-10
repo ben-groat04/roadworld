@@ -9,6 +9,7 @@
 #include <fstream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
@@ -17,6 +18,7 @@
 
 #include "cp/edge_sampling.h"
 #include "cp/lanes.h"
+#include "cp/render_mesh.h"
 #include "nlohmann/json.hpp"
 
 namespace cp {
@@ -1104,6 +1106,25 @@ LinePoly make_line_poly(const Edge& e, double lateral, const SamplingParams& sp)
 
 // Points of the offset line between plan lengths [l0, l1], z from the vertical profile at the true
 // centreline arc length; extra points keep the vertical chord error under `tol`.
+// Params whose surface_height follows the render mesh's cross-section (crossfall, kerb upstand) of the given
+// edges unless the caller supplied its own callback (which always wins).
+MarkingParams with_mesh_surface(const MarkingParams& p, const RegionPack& region, const RoadGraph& g, const std::vector<EdgeId>& edges) {
+    MarkingParams eff = p;
+    if (p.surface_height) return eff;
+    auto profiles = std::make_shared<std::map<EdgeId, SurfaceProfile>>();
+    for (EdgeId id : edges) {
+        const Edge* e = g.edge(id);
+        if (!e) continue;
+        SurfaceProfile sp = make_surface_profile(region, *e);
+        if (sp.valid()) profiles->emplace(id, sp);
+    }
+    eff.surface_height = [profiles](EdgeId id, double, double lateral, double centre_z) {
+        auto it = profiles->find(id);
+        return it == profiles->end() ? centre_z : centre_z + it->second.offset(lateral);
+    };
+    return eff;
+}
+
 // Road surface z of an edge at (s, lateral): the callback when supplied, else the centreline profile.
 double edge_surface_z(const MarkingParams& p, const Edge& e, double s, double lateral) {
     const double z = e.vertical.z(s);
@@ -1865,10 +1886,11 @@ struct EdgeGen {
 }  // namespace
 
 MarkingSet generate_edge_markings(const RoadGraph& graph, const RegionPack& region, const MarkingRules& rules,
-                                  const JunctionSet& junctions, EdgeId edge, const MarkingParams& params) {
+                                  const JunctionSet& junctions, EdgeId edge, const MarkingParams& params_in) {
     MarkingSet out;
     const Edge* e = graph.edge(edge);
     if (!e) return out;
+    const MarkingParams params = with_mesh_surface(params_in, region, graph, {edge});
     const RoadType* rt = region.road_type(e->road_type);
     if (!rt) {
         out.warnings.push_back("edge " + std::to_string(edge.value) + ": unknown road type \"" + e->road_type + "\"");
@@ -1909,8 +1931,12 @@ struct JGen {
     const MarkingParams& params;
     Builder b;
     std::vector<ArmLayout> layout;
+    const JunctionSurface* surface = nullptr;
 
+    // Surface height inside the junction: the render mesh's blend of the arms' profiles; the nearest
+    // connector / arm point when that is unavailable.
     double surface_z(Vec2 p) const {
+        if (surface && surface->valid()) return surface->z(p);
         double best = 1e18, z = j.pos.z;
         auto consider = [&](const Vec3& q) {
             const double d = (q.xy() - p).length();
@@ -2277,8 +2303,9 @@ struct JGen {
                     b.edge = ai.edge;
                     for (const DashSpan& d : layout_flush(len, sd.mark, sd.gap, min_mark)) {
                         const double t0 = d.s0 / len, t1 = d.s1 / len;
-                        const std::vector<Vec3> c{{p0.x + (p1.x - p0.x) * t0, p0.y + (p1.y - p0.y) * t0, p0.z + (p1.z - p0.z) * t0},
-                                                  {p0.x + (p1.x - p0.x) * t1, p0.y + (p1.y - p0.y) * t1, p0.z + (p1.z - p0.z) * t1}};
+                        std::vector<Vec3> c{{p0.x + (p1.x - p0.x) * t0, p0.y + (p1.y - p0.y) * t0, 0.0},
+                                            {p0.x + (p1.x - p0.x) * t1, p0.y + (p1.y - p0.y) * t1, 0.0}};
+                        for (Vec3& q : c) q.z = surface_z(q.xy());
                         std::vector<Vec3> ring;
                         if (stroke_ring(c, sd.width, ring)) b.add(MarkingCategory::EdgeLine, *sid, ring, true);
                     }
@@ -2348,6 +2375,7 @@ struct JGen {
             if (!st || st->strands.empty()) continue;
             const double shift = cands[x].side * (w / 2 - gr.edge_inset_m);
             std::vector<Vec3> pts = offset_points(c.path, shift);
+            for (Vec3& q : pts) q.z = surface_z(q.xy());
             std::vector<Vec3> ring;
             if (stroke_ring(pts, st->strands[0].width, ring)) b.add(MarkingCategory::EdgeLine, *sid, ring, true);
         }
@@ -2364,14 +2392,18 @@ struct JGen {
 }  // namespace
 
 MarkingSet generate_junction_markings(const RoadGraph& graph, const RegionPack& region, const MarkingRules& rules,
-                                      const Junction& junction, const MarkingParams& params) {
+                                      const Junction& junction, const MarkingParams& params_in) {
     MarkingSet out;
     if (junction.cls == NodeClass::End || junction.cls == NodeClass::Joint) return out;
     if (!junction.trims.empty() && junction.trims.size() != junction.arms.size()) {
         out.warnings.push_back("junction " + std::to_string(junction.node.value) + ": trims do not match arms");
         return out;
     }
-    JGen g{graph, region, rules, junction, params, Builder{out, rules, params, EdgeId{}, junction.node}, {}};
+    std::vector<EdgeId> edges;
+    for (const JunctionArm& a : junction.arms) edges.push_back(a.edge);
+    const MarkingParams params = with_mesh_surface(params_in, region, graph, edges);
+    const JunctionSurface surface(graph, region, junction);
+    JGen g{graph, region, rules, junction, params, Builder{out, rules, params, EdgeId{}, junction.node}, {}, &surface};
     g.layout = compute_arm_layout(graph, region, rules, junction, params);
     g.give_way_and_stop();
     g.zebras();
@@ -2383,10 +2415,13 @@ MarkingSet generate_junction_markings(const RoadGraph& graph, const RegionPack& 
 }
 
 MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& region, const MarkingRules& rules,
-                                      const JunctionSet& junctions, const RoundaboutLayout& layout, const MarkingParams& params) {
+                                      const JunctionSet& junctions, const RoundaboutLayout& layout, const MarkingParams& params_in) {
     MarkingSet out;
     const SplitterRule& sr = rules.splitter;
     if (!sr.enabled || !layout.ok || layout.group.nodes.empty()) return out;
+    std::vector<EdgeId> arm_edges;
+    for (const RoundaboutArm& a : layout.group.arms) arm_edges.push_back(a.edge);
+    const MarkingParams params = with_mesh_surface(params_in, region, graph, arm_edges);
     Builder b{out, rules, params, EdgeId{}, layout.group.nodes.front()};
     for (const SplitterIsland& sp : layout.splitters) {
         if (sp.polygon.size() < 3 || sp.arm < 0 || static_cast<std::size_t>(sp.arm) >= layout.group.arms.size()) continue;

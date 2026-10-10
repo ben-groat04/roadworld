@@ -468,6 +468,22 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
                               !(g.wall_start > 0) || !(g.wall_cap > 0) || g.wall_slack < 0 || !(g.tunnel_clear_height > 0)))
             err.set(c + ": a value is out of range");
     }
+    if (const json* sr = optional_member(rj, "structures")) {
+        StructureRules& s = pack.structures;
+        const std::string c = "region.structures";
+        s.parapet_height = opt_number(*sr, "parapet_height_m", s.parapet_height, c, err);
+        s.max_pier_spacing = opt_number(*sr, "max_pier_spacing_m", s.max_pier_spacing, c, err);
+        s.min_bridge_length = opt_number(*sr, "min_bridge_length_m", s.min_bridge_length, c, err);
+        s.pier_road_clearance = opt_number(*sr, "pier_road_clearance_m", s.pier_road_clearance, c, err);
+        s.wall_panel = opt_number(*sr, "wall_panel_m", s.wall_panel, c, err);
+        s.tunnel_rise_k = opt_number(*sr, "tunnel_rise_k", s.tunnel_rise_k, c, err);
+        s.coping_thickness = opt_number(*sr, "coping_thickness_m", s.coping_thickness, c, err);
+        s.coping_overhang = opt_number(*sr, "coping_overhang_m", s.coping_overhang, c, err);
+        if (!err.failed() && (!(s.parapet_height > 0) || !(s.max_pier_spacing >= 4) || s.min_bridge_length < 0 || s.pier_road_clearance < 0 ||
+                              !(s.wall_panel >= 1) || !(s.tunnel_rise_k > 0.02 && s.tunnel_rise_k < 2) || !(s.coping_thickness > 0) ||
+                              s.coping_overhang < 0))
+            err.set(c + ": a value is out of range");
+    }
 
     const json tj = parse_json(road_types_text, "road_types.json", err);
     const json* arr = require(tj, "road_types", "road_types.json", err);

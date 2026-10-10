@@ -1,8 +1,8 @@
 // Tests for the structure meshes (sim_core/include/cp/structure_mesh.h): bridges, tunnels, retaining walls.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
 #include <functional>
 #include <map>
 #include <memory>
@@ -221,15 +221,17 @@ const FnGround kFlat0([](double, double) { return 0.0; });
 }  // namespace
 
 TEST_CASE("bridge: parts, closed solids, counts") {
+    StructureParams P40;
+    P40.max_pier_spacing = 40;
     Bridged b(uk());
-    const StructureMeshes s = build_edge_structures(b.w.g, *b.w.region, b.e, kFlat0);
+    const StructureMeshes s = build_edge_structures(b.w.g, *b.w.region, b.e, kFlat0, P40);
     check_valid(s);
     REQUIRE(s.bridges.size() == 1);
     const BridgeInfo& info = s.bridges[0];
     CHECK_FALSE(info.solid_block);
     CHECK_FALSE(info.crosses_road);
     CHECK(info.pier_s.size() == 1);  // 80 m span, 40 m maximum spacing
-    CHECK(info.longest_span <= StructureParams{}.max_pier_spacing + 1e-6);
+    CHECK(info.longest_span <= P40.max_pier_spacing + 1e-6);
     CHECK_FALSE(info.span_too_long);
     CHECK(of_kind(s, ElementKind::Deck).size() == 1);
     CHECK(of_kind(s, ElementKind::Parapet).size() == 2);
@@ -292,9 +294,11 @@ TEST_CASE("bridge: deck top sits just under the road surface and parapets stand 
 }
 
 TEST_CASE("bridge: piers reach the ground and stand on footings") {
+    StructureParams P40;
+    P40.max_pier_spacing = 40;
     Bridged b(uk());
     const FnGround rolling([](double x, double y) { return 1.0 + 0.5 * std::sin(0.1 * y) + 0.02 * x; });
-    const StructureMeshes s = build_edge_structures(b.w.g, *b.w.region, b.e, rolling);
+    const StructureMeshes s = build_edge_structures(b.w.g, *b.w.region, b.e, rolling, P40);
     check_valid(s);
     const auto piers = of_kind(s, ElementKind::Pier), foots = of_kind(s, ElementKind::PierFooting), caps = of_kind(s, ElementKind::PierCap);
     REQUIRE(piers.size() == 1);
@@ -317,7 +321,7 @@ TEST_CASE("bridge: piers reach the ground and stand on footings") {
 
 TEST_CASE("bridge: piers keep out of the roads crossing underneath") {
     World w;
-    // E-W bridge, 120 m span at z = 8; a dual carriageway runs N-S at x = 0 on the ground.
+    // E-W bridge, 120 m span at z = 8; a dual carriageway runs N-S at x = 0 (where the middle pier would go) on the ground.
     const EdgeId br = w.road({-100, 0, 8}, {100, 0, 8}, "b_road");
     w.road({0, -100, 0}, {0, 100, 0}, "a_road_dual", true);
     w.span(br, 40, 160, StructureKind::Bridge);
@@ -703,9 +707,7 @@ TEST_CASE("walls: portal wall level is reported and the exclusion zone drops wal
 
 TEST_CASE("structures: both driving sides mirror, and builds are deterministic") {
     Bridged l(uk());
-    std::fputs("B", stderr);
     Bridged r(uk_right());
-    std::fputs("C", stderr);
     const StructureMeshes sl = build_edge_structures(l.w.g, *l.w.region, l.e, kFlat0);
     const StructureMeshes sr = build_edge_structures(r.w.g, *r.w.region, r.e, kFlat0);
     check_valid(sr);
@@ -743,7 +745,10 @@ TEST_CASE("structures: the interchange bridge") {
     CHECK(b.crosses_road);
     CHECK_FALSE(b.solid_block);
     CHECK(b.s1 - b.s0 == doctest::Approx(40.0).epsilon(0.01));
-    CHECK_FALSE(b.span_too_long);
+    // The fixture's central reservation is only 0.2 m wide (carriageways 11 m apart, 10.8 m cross-sections): no pier fits,
+    // so the 40 m span is flagged rather than a pier put on a carriageway or hard strip.
+    CHECK(b.span_too_long);
+    CHECK(b.pier_s.empty());
     CHECK(of_kind(s, ElementKind::Deck).size() == 1);
     CHECK(of_kind(s, ElementKind::Parapet).size() == 2);
     CHECK(of_kind(s, ElementKind::AbutmentStem).size() == 2);

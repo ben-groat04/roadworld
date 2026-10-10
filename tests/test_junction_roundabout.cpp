@@ -550,7 +550,7 @@ TEST_CASE("roundabout: forced fillets, and connector and corner overrides are ho
     net.spokes({0, 90, 180, 270}, 100);
     REQUIRE(net.place(20));
     const JunctionGroup g = the_group(net);
-    const RoundaboutRules& prm = net.region->roundabout;
+    const RoundaboutSizeClass prm = net.region->roundabout.size_class(g.radius);
     const JunctionSet base = net.junctions();
     const NodeId n0 = g.nodes[0];
     const Junction& j0 = *base.find(n0);
@@ -977,7 +977,8 @@ TEST_CASE("roundabout: realistic rings give valid, non-degraded geometry at ever
             if (j->cls != NodeClass::Junction) continue;
             const bool bad = j->degraded || j->carriageway.empty();
             if (bad) ++failures;
-            CHECK_MESSAGE(!j->degraded, "node " << n.value << ": " << j->degraded_reason);
+            INFO("node " << n.value << ": " << j->degraded_reason);
+            CHECK(!j->degraded);
             CHECK_MESSAGE(!j->carriageway.empty(), "node " << n.value << " has no carriageway");
             for (const PolygonSet* ps : {&j->carriageway, &j->pavements})
                 for (const auto& r : *ps) CHECK_MESSAGE(simple(r), "node " << n.value);

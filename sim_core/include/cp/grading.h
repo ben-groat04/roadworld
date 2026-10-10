@@ -23,6 +23,7 @@
 
 #include "cp/heightfield.h"
 #include "cp/region_pack.h"
+#include "cp/tile_key.h"
 #include "cp/road_graph.h"
 #include "cp/vec.h"
 
@@ -168,9 +169,11 @@ struct GradingRoad {
     double half_width = 0;
     double reach = 0;                      // m from the centreline at which a slope may still change ground
     Box2 bbox;
+    Box2 core;                             // samples' box grown by the half width: the footprint's extent
     std::vector<GradingSample> samples;    // decimated (every 2nd sample + portal neighbours)
     std::vector<Box2> seg_boxes;           // coarse boxes (pairs of segments, grown by reach) for tile culling
     std::vector<PortalPlane> planes;
+    std::vector<int> nbr;                  // indices of the other prepared roads whose boxes overlap: a slope never reaches across them
 };
 
 // Recomputes the walls of every road with its neighbours in place, runs mark_medians and
@@ -191,9 +194,6 @@ struct TileSpec {
     double res = 0.5;
 };
 
-struct TileKey {
-    std::int64_t i = 0, j = 0;
-};
 
 // Tile `key` of cells x cells texels on the global grid of resolution res (texel (i, j) of the
 // world is at (i * res, j * res)), so 20 km+ maps are addressed by integer keys.
@@ -214,6 +214,15 @@ std::vector<float> sample_natural_tile(const GroundFn& ground, const TileSpec& t
 // and the prepared roads. Pure and deterministic: each texel depends only on its position, so
 // results do not depend on how the world is cut into tiles. Writes `out` (nx * ny) and, when
 // not null, `footprint`.
+// Scratch arrays of grade_tile_into, reusable between calls (no allocation after the first call
+// of a given size). One workspace per worker thread; never share one between threads.
+struct GradeWorkspace {
+    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey;
+    std::vector<std::uint8_t> rq_w;
+};
+void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t,
+                     const float* natural, float* out, std::uint8_t* footprint, GradeWorkspace& ws);
+// Same with a temporary workspace.
 void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t,
                      const float* natural, float* out, std::uint8_t* footprint = nullptr);
 GradedTile grade_tile(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t,

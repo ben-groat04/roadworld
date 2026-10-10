@@ -170,7 +170,7 @@ TEST_CASE("geometry: Y junction at 120 degrees") {
     for (double d : {90.0, 210.0, 330.0}) n.polar(d, 100);
     const Junction j = n.build();
     check_valid(j);
-    const double trim = (5 * std::cos(120 * kDeg) + 5) / std::sin(120 * kDeg) + 6 / std::tan(60 * kDeg);
+    const double trim = (5 * std::cos(120 * kDeg) + 5) / std::sin(120 * kDeg) + 8 / std::tan(60 * kDeg);  // residential 6 m x skew factor 1.333 at 120 degrees
     for (std::size_t i = 0; i < 3; ++i) {
         CHECK(j.trims[i] == doctest::Approx(trim));
         CHECK(j.corners[i].kerb.size() >= 3);
@@ -200,8 +200,8 @@ TEST_CASE("geometry: mixed widths (residential into a B road)") {
     n.polar(-90, 80, "residential");
     const Junction j = n.build();
     check_valid(j);
-    // Region radius is the larger of the two road types' (B road 10 m).
-    CHECK(j.corners[0].radius == doctest::Approx(10.0));
+    // Class-pair default: residential onto a B road is 9 m.
+    CHECK(j.corners[0].radius == doctest::Approx(9.0));  // residential onto a B road (class-pair table)
     CHECK(j.corners[1].kerb.empty());
     // Both sides of a B road are 3.4 m kerb offsets, the residential's are 5.0: the polygon
     // still closes around all three trim lines.

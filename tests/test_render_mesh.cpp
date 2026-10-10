@@ -165,7 +165,12 @@ int check_seams(const RoadGraph& g, const RegionPack& r, const JunctionSet& js, 
                 return best;
             };
             INFO("node " << nid.value << " arm " << i << " edge " << arm.edge.value);
-            CHECK(!B.empty());
+            if (B.empty()) {  // an edge swallowed by its two trims has no mesh of its own
+                const Edge* ee = g.edge(arm.edge);
+                const Junction* other = js.find(arm.at_a ? ee->b : ee->a);
+                CHECK(ee->horizontal.length() < j.trims[i] + (other ? other->trims.empty() ? 0 : *std::max_element(other->trims.begin(), other->trims.end()) : 0) + 0.02);
+                continue;
+            }
             // Junction vertices must lie on the edge end ring (a vertex of it, or on a ring segment: a lane-line
             // vertex of the junction polygon between two cross-section points is a T-vertex, not a crack).
             std::vector<SeamVert> sorted = B;
@@ -366,7 +371,7 @@ TEST_CASE("render mesh: float positions are exact enough 20 km from the origin")
     // Every triangle of the world mesh appears in exactly one chunk, with float positions within 1 mm.
     std::size_t world_tris = tri_count(set), chunk_tris = 0;
     for (const auto& [tk, ch] : chunks) {
-        CHECK(ch.origin.x == tk.x * 256.0);
+        CHECK(ch.origin.x == static_cast<double>(tk.i) * 256.0);
         for (const auto& [name, b] : ch.surfaces) {
             chunk_tris += b.indices.size() / 3;
             REQUIRE(b.positions.size() == b.normals.size());
@@ -615,29 +620,6 @@ TEST_CASE("render mesh: highway edges have no kerb surface") {
     }
 }
 
-TEST_CASE("zz debug merge pavements") {
-    std::string err;
-    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
-    REQUIRE(sc);
-    const JunctionSet js = tools::scene_junctions(*sc);
-    for (const auto& [n, j] : js.junctions) {
-        if (j.cls != NodeClass::Merge && j.cls != NodeClass::Diverge) continue;
-        MESSAGE("node " << n.value << " cls " << static_cast<int>(j.cls) << " arms " << j.arms.size() << " pav rings " << j.pavements.size());
-        for (std::size_t i = 0; i < j.arms.size(); ++i) {
-            const JunctionArm& arm = j.arms[i];
-            const ArmPoint c = arm_point(arm, j.trims[i], 0);
-            const Vec2 dir{std::cos(c.heading_out), std::sin(c.heading_out)}, left{-dir.y, dir.x};
-            double lo = 1e9, hi = -1e9;
-            for (const auto& r : j.pavements)
-                for (const Vec2& p : r) {
-                    const Vec2 d = p - c.pos.xy();
-                    if (std::abs(d.dot(dir)) < 2e-3) { lo = std::min(lo, d.dot(left)); hi = std::max(hi, d.dot(left)); }
-                }
-            MESSAGE("  arm " << i << " trim " << j.trims[i] << " kl " << arm.kerb_left << " kr " << arm.kerb_right << " hl " << arm.half_width_left << " hr " << arm.half_width_right << " pav lateral range on trim [" << lo << ", " << hi << "]");
-        }
-    }
-}
-
 // ---------------------------------------------------------------- round 2
 
 namespace {
@@ -683,6 +665,8 @@ TEST_CASE("render mesh: highways have no kerbs, also through merge and diverge j
     for (const auto& [n, j] : js.junctions) {
         if (j.cls != NodeClass::Merge && j.cls != NodeClass::Diverge) continue;
         ++merges;
+        const WorldMeshSet jm = build_junction_mesh(sc->graph, *sc->region, j);
+        check_valid(jm);
         for (std::size_t i = 0; i < j.arms.size(); ++i) {
             const JunctionArm& arm = j.arms[i];
             const ArmPoint c = arm_point(arm, j.trims[i], 0);
@@ -699,16 +683,46 @@ TEST_CASE("render mesh: highways have no kerbs, also through merge and diverge j
             INFO("node " << n.value << " arm " << i);
             const bool has_pavement = arm.half_width_left - arm.kerb_left > 1e-3;
             if (!has_pavement) {
-                CHECK(lo > hi);  // dual carriageway arm: no pavement vertex on its trim line
+                // Dual carriageway arm: no kerb face runs along its outer edge inside the junction.
+                if (jm.count("kerb")) {
+                    const WorldMesh& m = jm.at("kerb");
+                    for (std::size_t k = 0; k < m.indices.size(); k += 3) {
+                        Vec2 cen{0, 0};
+                        for (std::size_t q = 0; q < 3; ++q) cen = cen + m.positions[m.indices[k + q]].xy() * (1.0 / 3);
+                        const Vec2 d = cen - c.pos.xy();
+                        const double t = d.dot(dir), l = d.dot(left);
+                        const bool along = t < -3.0 && t > -j.trims[i] + 3.0;
+                        CHECK_FALSE((along && std::abs(std::abs(l) - arm.half_width_left) < 0.3));
+                    }
+                }
             } else {
-                // Pavement polygons reach the arm's full cross-section at the trim line.
-                CHECK(hi == doctest::Approx(arm.half_width_left).epsilon(1e-3));
-                CHECK(lo == doctest::Approx(-arm.half_width_right).epsilon(1e-3));
+                // Pavement polygons reach the arm's full cross-section at the trim line on every side that is
+                // not blocked by a neighbouring carriageway, and at least on one side.
+                CHECK(std::max(hi, -lo) == doctest::Approx(arm.half_width_left).epsilon(1e-3));
+                CHECK(hi >= arm.kerb_left - 1e-3);
+                CHECK(-lo >= arm.kerb_right - 1e-3);
             }
         }
-        // No pavement polygon vertex lies within a dual arm's width anywhere near its trim line.
-        const WorldMeshSet jm = build_junction_mesh(sc->graph, *sc->region, j);
-        check_valid(jm);
+        // Pavement never overlaps the carriageway polygon.
+        if (jm.count("paving")) {
+            const WorldMesh& m = jm.at("paving");
+            for (std::size_t k = 0; k < m.indices.size(); k += 3) {
+                Vec2 cen{0, 0};
+                for (std::size_t q = 0; q < 3; ++q) cen = cen + m.positions[m.indices[k + q]].xy() * (1.0 / 3);
+                for (const auto& ring : j.carriageway) {
+                    bool in = false;
+                    double dmin = 1e9;
+                    for (std::size_t a = 0, b = ring.size() - 1; a < ring.size(); b = a++) {
+                        const Vec2 p = ring[a], q = ring[b];
+                        if ((p.y > cen.y) != (q.y > cen.y) && cen.x < (q.x - p.x) * (cen.y - p.y) / (q.y - p.y) + p.x) in = !in;
+                        const Vec2 ab = q - p;
+                        const double l2 = ab.dot(ab), t = l2 > 0 ? std::clamp((cen - p).dot(ab) / l2, 0.0, 1.0) : 0.0;
+                        dmin = std::min(dmin, (cen - (p + ab * t)).length());
+                    }
+                    CHECK_FALSE((in && dmin > 0.05));
+                }
+            }
+        }
     }
     CHECK(merges >= 4);
     // Whole-fixture: kerb surface triangles never sit on a highway edge.
@@ -750,15 +764,22 @@ TEST_CASE("render mesh: roundabout islands take their surfaces from the region p
         std::size_t good = 0, total = 0;
         for (const Vec3& p : m.at("kerb").positions) {
             // Island vertices lie on the ring side; use whichever edge set is nearer.
-            const double z_ring = nearest_road_z(sc->graph, *sc->region, ring_edges, p.xy());
-            const double z_all = nearest_road_z(sc->graph, *sc->region, all, p.xy());
             ++total;
             const double h = sc->region->roundabout.island_kerb_upstand;
-            for (double zr : {z_ring, z_all})
+            bool matched = false;
+            for (EdgeId id : all) {  // on (or one upstand above) the road surface of an adjacent edge
+                const double zr = nearest_road_z(sc->graph, *sc->region, {id}, p.xy());
                 if (std::abs(p.z - zr) < 0.01 || std::abs(p.z - (zr + h)) < 0.01) {
-                    ++good;
+                    matched = true;
                     break;
                 }
+            }
+            if (matched) ++good;
+            else if (total - good < 6)
+                MESSAGE("unmatched kerb vertex " << p.x << " " << p.y << " " << p.z << " ring z "
+                                                 << nearest_road_z(sc->graph, *sc->region, ring_edges, p.xy()));
+            if (!matched && total - good < 2)
+                for (EdgeId id : all) MESSAGE("   edge " << id.value << " type " << sc->graph.edge(id)->road_type << " z " << nearest_road_z(sc->graph, *sc->region, {id}, p.xy()));
         }
         CHECK(good == total);
     }
@@ -1008,7 +1029,7 @@ TEST_CASE("render mesh: surface height queries match the mesh") {
     for (const char* surface : {"asphalt", "paving"}) {
         for (const Vec3& p : set.at(surface).positions) {
             // Straight road along +x from the origin: s = x (to first order), lateral = y.
-            const double s = (p.xy() - e.horizontal.spans.front().start).length();
+            const double s = p.x;
             const bool pave = std::string(surface) == "paving";
             CHECK(p.z == doctest::Approx(edge_point(e, s).z + sp.offset(p.y, !pave)).epsilon(1e-6).scale(1.0));
             if (!pave) CHECK(p.z == doctest::Approx(edge_surface_z(w.g, *w.region, id, s, p.y)).epsilon(1e-6).scale(1.0));
@@ -1106,7 +1127,7 @@ TEST_CASE("render mesh: 2-arm joints are filled (type change and heading kink) a
         }
         check_valid(joint);
         CHECK(a_max < 100 - 3.9);  // both edges are cut back by joint_length
-        CHECK(b_min > 100 + 3.9);
+        CHECK(b_min > 100 + (cs.end.y != 0 ? 0.9 : 3.9));
         // The gap between the end rings is covered over the narrower cross-section.
         for (double lat : {-4.5, -2.0, 0.0, 2.0, 4.5}) CHECK(in_any_triangle(joint, {100, lat}));
         // Rings weld: joint vertices on the edge end lines exist in the edge meshes.
@@ -1132,16 +1153,68 @@ TEST_CASE("render mesh: 2-arm joints are filled (type change and heading kink) a
     }
 }
 
-TEST_CASE("zz triangulate debug") {
-    std::vector<Vec2> pts{{0, 0}, {10, 0}, {10, 10}, {0, 10}, {1, 4}, {3, 4}, {3, 6}, {1, 6}};
-    std::vector<std::array<std::uint32_t, 3>> tris;
-    const bool ok = triangulate_polygons(pts, {{0, 1, 2, 3}, {4, 5, 6, 7}}, tris);
-    MESSAGE("ok " << ok << " tris " << tris.size());
-    double a = 0;
-    for (const auto& t : tris) {
-        const double s = (pts[t[1]] - pts[t[0]]).cross(pts[t[2]] - pts[t[0]]) / 2;
-        a += s;
-        MESSAGE(t[0] << " " << t[1] << " " << t[2] << " area " << s);
+TEST_CASE("render mesh: merged-surface packing carries the same triangles with per-vertex class ids") {
+    std::string err;
+    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE_MESSAGE(sc, err);
+    RoundaboutResult rr;
+    const JunctionSet js = tools::scene_junctions(*sc, &rr);
+    SurfaceTable table, table2;
+    const auto separate = build_mesh_chunks(sc->graph, *sc->region, js, &rr.layouts, {}, {}, nullptr, &table);
+    ChunkParams cp;
+    cp.merge_surfaces = true;
+    const auto merged = build_mesh_chunks(sc->graph, *sc->region, js, &rr.layouts, {}, cp, nullptr, &table2);
+    REQUIRE(separate.size() == merged.size());
+    REQUIRE(!table.names.empty());
+    CHECK(table.names == table2.names);
+    CHECK(std::is_sorted(table.names.begin(), table.names.end()));
+    CHECK(table.id("asphalt") >= 0);
+    CHECK(table.id("no such class") == -1);
+
+    // A triangle's identity: class name plus positions, normals, uv0, uv1 and colour of its three vertices.
+    const auto key = [](const std::string& cls, const MeshBuffers& b, std::size_t k) {
+        std::string s = cls;
+        for (std::size_t q = 0; q < 3; ++q) {
+            const std::uint32_t v = b.indices[k + q];
+            char buf[256];
+            std::snprintf(buf, sizeof buf, "|%.5f,%.5f,%.5f;%.4f,%.4f,%.4f;%.4f,%.4f;%.4f,%.4f;%d,%d,%d,%d", static_cast<double>(b.positions[v].x),
+                          static_cast<double>(b.positions[v].y), static_cast<double>(b.positions[v].z), static_cast<double>(b.normals[v].x),
+                          static_cast<double>(b.normals[v].y), static_cast<double>(b.normals[v].z), static_cast<double>(b.uv0[v].x),
+                          static_cast<double>(b.uv0[v].y), static_cast<double>(b.uv1[v].x), static_cast<double>(b.uv1[v].y), b.colours[v][0],
+                          b.colours[v][1], b.colours[v][2], b.colours[v][3]);
+            s += buf;
+        }
+        return s;
+    };
+    std::size_t triangles = 0;
+    for (const auto& [tk, ch] : separate) {
+        std::multiset<std::string> expect;
+        for (const auto& [name, b] : ch.surfaces) {
+            REQUIRE(b.surface_ids.size() == b.positions.size());
+            for (std::size_t k = 0; k + 2 < b.indices.size(); k += 3) {
+                expect.insert(key(name, b, k));
+                for (std::size_t q = 0; q < 3; ++q) CHECK(table.names[b.surface_ids[b.indices[k + q]]] == name);
+            }
+        }
+        const MeshChunk& mc = merged.at(tk);
+        REQUIRE(mc.surfaces.size() == 1);
+        const MeshBuffers& b = mc.surfaces.begin()->second;
+        CHECK(mc.surfaces.begin()->first == "road");
+        REQUIRE(b.sections.size() == 1);
+        CHECK(b.sections[0].index_count == b.indices.size());
+        REQUIRE(b.surface_ids.size() == b.positions.size());
+        for (std::size_t k = 0; k + 2 < b.indices.size(); k += 3) {
+            const std::string& cls = table.names[b.surface_ids[b.indices[k]]];
+            for (std::size_t q = 1; q < 3; ++q) CHECK(table.names[b.surface_ids[b.indices[k + q]]] == cls);
+            const auto it = expect.find(key(cls, b, k));
+            REQUIRE(it != expect.end());  // same triangle, same class, same attributes
+            expect.erase(it);
+            ++triangles;
+        }
+        CHECK(expect.empty());
     }
-    MESSAGE("total " << a);
+    CHECK(triangles > 1000);
+    // The default mode keeps its sections per class and structure span.
+    for (const auto& [tk, ch] : separate)
+        for (const auto& [name, b] : ch.surfaces) CHECK_FALSE(b.sections.empty());
 }

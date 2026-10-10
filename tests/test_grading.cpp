@@ -30,7 +30,7 @@ constexpr double kTolGeom = 1e-9;      // m: classification outputs (doubles on 
 
 const char* const kCases[] = {"straight_crossfall", "cutting",     "embankment",        "tight_curve_high_fill",
                               "wall_steep_side",    "bridge_valley", "tunnel_curved_grade", "dual_pair",
-                              "crossing_and_ends"};
+                              "crossing_and_ends",  "steep_pair"};
 
 bool verbose() {
 #if defined(_MSC_VER)
@@ -94,6 +94,13 @@ GradingParams parse_params(const json& j) {
     p.wall_start = j["wallStart"];
     p.wall_cap = j["wallCap"];
     p.wall_slack = j["wallSlack"];
+    p.wing_max = j["wingMax"];
+    p.wing_ratio = j["wingRatio"];
+    p.wing_min_h = j["wingMinH"];
+    p.round_daylight = j["roundDaylight"];
+    p.round_hinge = j["roundHinge"];
+    p.wall_ramp = j["wallRamp"];
+    p.plane_margin = j["planeMargin"];
     const json& t = j["tunnel"];
     p.tunnel.lining = t["lining"];
     p.tunnel.margin = t["margin"];
@@ -286,7 +293,7 @@ TEST_CASE("grading: wall runs match the prototype") {
             }
         }
     }
-    CHECK(total > 200);  // the cases contain real walls
+    CHECK(total > 250);  // the cases contain real walls
 }
 
 TEST_CASE("grading: tunnel table and bore probes match the prototype") {
@@ -375,6 +382,82 @@ TEST_CASE("grading: footprint mask covers the carriageway and nothing far from r
         CHECK(gt.footprint[static_cast<std::size_t>(tj * g.t.nx + ti)] == 1);
     }
     CHECK(gt.footprint[0] == 0);
+}
+
+TEST_CASE("grading: a slope that meets a neighbouring road's earthworks needs no wall") {
+    auto c = make_case("steep_pair");  // level roads at y = 0 and y = 14 cut into a 0.55 hillside
+    int inner0 = 0, outer0 = 0, inner1 = 0, outer1 = 0;
+    for (const RoadSample& s : c->roads[0].samples) { inner0 += s.wL != 0; outer0 += s.wR != 0; }
+    for (const RoadSample& s : c->roads[1].samples) { inner1 += s.wR != 0; outer1 += s.wL != 0; }
+    CHECK(inner0 == 0);
+    CHECK(inner1 == 0);
+    CHECK(outer0 > 30);
+    CHECK(outer1 > 30);
+    // the same road alone, against the bare hillside, needs a wall on both sides
+    SampledRoad alone = c->roads[0];
+    classify_road(alone, c->ground, c->params, StructureMode::Auto);
+    int l = 0, r = 0;
+    for (const RoadSample& s : alone.samples) { l += s.wL != 0; r += s.wR != 0; }
+    CHECK(l > 30);
+    CHECK(r > 30);
+}
+
+TEST_CASE("grading: portal approaches are slopes with a short wing wall, not 24 m slabs") {
+    auto c = make_case("tunnel_curved_grade");
+    const SampledRoad& r = c->roads[0];
+    int first = -1, wall_before = 0;
+    for (std::size_t i = 0; i < r.samples.size(); ++i)
+        if (r.samples[i].tu) { first = static_cast<int>(i); break; }
+    REQUIRE(first > 12);
+    double len = 0;
+    for (int i = first - 1; i >= 0 && r.samples[static_cast<std::size_t>(i)].wL; --i) {
+        ++wall_before;
+        len += std::hypot(r.samples[static_cast<std::size_t>(i)].x - r.samples[static_cast<std::size_t>(i + 1)].x,
+                          r.samples[static_cast<std::size_t>(i)].y - r.samples[static_cast<std::size_t>(i + 1)].y);
+    }
+    CHECK(wall_before >= 2);
+    CHECK(len <= c->params.wing_max + 4);  // wing length plus a sample or two
+    CHECK(r.samples[static_cast<std::size_t>(first - 1)].wwL == doctest::Approx(1.0));  // full wall at the headwall
+    CHECK(r.samples[static_cast<std::size_t>(first - wall_before)].wwL < 0.2);          // tapers into the plain slope
+    CHECK(r.samples[static_cast<std::size_t>(first - wall_before - 3)].wL == 0);        // slope beyond the wing
+}
+
+TEST_CASE("grading: slope tops and toes are rolled over, daylight does not move materially") {
+    auto c = make_case("cutting");
+    const Graded g = grade_region(*c);
+    GradingParams sharp = c->params;
+    sharp.round_daylight = 0;
+    sharp.round_hinge = 0;
+    const GradedTile gs = grade_tile(c->prepared, sharp, g.t, g.base);
+    double max_dip = 0, max_diff_far = 0;
+    std::size_t differ = 0;
+    for (std::size_t o = 0; o < g.h.size(); ++o) {
+        const double d = static_cast<double>(g.h[o]) - gs.height[o];
+        max_dip = std::max(max_dip, std::abs(d));
+        differ += std::abs(d) > 1e-6;
+        if (std::abs(g.base[o] - gs.height[o]) < 1e-6) max_diff_far = std::max(max_diff_far, std::abs(d));
+    }
+    CHECK(differ > 100);                                   // something is rounded
+    CHECK(max_dip < c->params.round_daylight / 2 + 0.3);   // by well under a metre
+    CHECK(max_diff_far < 0.4);   // natural ground only dips/rises within a few decimetres at the roll-over
+    // rounded top of a cutting: the profile across the slope has no crease (second difference stays small)
+    const SampledRoad& r = c->roads[0];
+    const RoadSample& s = r.samples[r.samples.size() / 2];
+    double worst2 = 0;
+    for (double d = c->roads[0].half_width + 2; d < c->roads[0].half_width + 30; d += 0.5) {
+        auto h = [&](double q) { return g.at(s.x, s.y + q); };
+        worst2 = std::max(worst2, std::abs(h(d - 0.5) - 2 * h(d) + h(d + 0.5)));
+    }
+    double worst2_sharp = 0;
+    {
+        Graded sh = g;
+        sh.h = gs.height;
+        for (double d = c->roads[0].half_width + 2; d < c->roads[0].half_width + 30; d += 0.5) {
+            auto h = [&](double q) { return sh.at(s.x, s.y + q); };
+            worst2_sharp = std::max(worst2_sharp, std::abs(h(d - 0.5) - 2 * h(d) + h(d + 0.5)));
+        }
+    }
+    CHECK(worst2 < worst2_sharp);
 }
 
 TEST_CASE("grading: Auto structure rule reports required bridge and tunnel spans") {
@@ -627,7 +710,7 @@ TEST_CASE("grading invariants: wall height cap, ground hidden by walls, no bare 
         CHECK_MESSAGE(hidden.count == 0, "ground_hidden_by_walls: " << hidden.count << "/" << hidden.total << " bad, worst " << hidden.worst_v << " " << hidden.worst);
         CHECK_MESSAGE(bare.count == 0, "no_bare_steps: " << bare.count << "/" << bare.total << " bad, worst " << bare.worst_v << " " << bare.worst);
     }
-    CHECK(wall_pts > 200);
+    CHECK(wall_pts > 250);
     CHECK(hidden_samples > 5000);
     CHECK(steps_checked > 100);
 }
@@ -833,12 +916,27 @@ TEST_CASE("grading: performance of a 256 x 256 tile with 10 roads (informational
     const std::vector<float> nat = sample_natural_tile(c->ground, t);
     std::vector<float> out(nat.size());
     std::vector<std::uint8_t> fp(nat.size());
-    grade_tile_into(prepared, c->params, t, nat.data(), out.data(), fp.data());  // warm up
-    const int reps = 5;
-    const auto t0 = std::chrono::steady_clock::now();
-    for (int i = 0; i < reps; ++i) grade_tile_into(prepared, c->params, t, nat.data(), out.data(), fp.data());
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
-    if (verbose()) std::fprintf(stderr, "[grading perf] 256x256 tile, 10 roads: %.2f ms\n", ms);
+    GradeWorkspace ws;
+    auto time_ms = [&](const std::vector<GradingRoad>& rd) {
+        grade_tile_into(rd, c->params, t, nat.data(), out.data(), fp.data(), ws);  // warm up
+        const int reps = 5;
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; i < reps; ++i) grade_tile_into(rd, c->params, t, nat.data(), out.data(), fp.data(), ws);
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / reps;
+    };
+    const double ms = time_ms(prepared);
+    std::vector<GradingRoad> no_nbr = prepared;
+    for (GradingRoad& r : no_nbr) r.nbr.clear();
+    if (verbose()) std::fprintf(stderr, "[grading perf] 256x256 tile, 10 roads: %.2f ms with workspace (%.2f ms without the neighbour-block test)\n", ms, time_ms(no_nbr));
     CHECK(ms < 2000);  // generous: only guards against a pathological slowdown in Debug builds
     CHECK(std::count(fp.begin(), fp.end(), 1) > 1000);
+}
+
+// grading.h, render_mesh.h and structure_mesh.h share cp::TileKey (tile_key.h): they must coexist in one translation unit.
+#include "cp/render_mesh.h"
+#include "cp/structure_mesh.h"
+TEST_CASE("grading: shares cp::TileKey with render_mesh.h and structure_mesh.h") {
+    const TileSpec t = tile_spec(TileKey{2, -3}, 128, 0.5);
+    CHECK(t.x0 == 128.0);
+    CHECK(t.y0 == -192.0);
 }

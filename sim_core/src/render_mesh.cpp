@@ -1417,7 +1417,7 @@ WorldMeshSet build_roundabout_mesh(const RoadGraph& graph, const RegionPack& reg
         }
         if (rules.island_kerb_upstand <= 0 && rt->kerb_upstand) H = *rt->kerb_upstand;
         r.prof = build_profile(*r.e, *rt, region, P);
-        r.c = sample_centreline(*r.e);
+        r.c = sample_centreline(*r.e, {0.005, 0.02, 2.0});
         return r;
     };
     std::vector<RoadRef> ring;
@@ -1490,12 +1490,6 @@ MeshBuffers pack_buffers(const WorldMesh& mesh, Vec3 origin) {
     return b;
 }
 
-TileKey tile_of(Vec2 p, double tile_size) {
-    return {static_cast<std::int32_t>(std::floor(p.x / tile_size)), static_cast<std::int32_t>(std::floor(p.y / tile_size))};
-}
-
-Vec3 tile_origin(TileKey t, double tile_size) { return {t.x * tile_size, t.y * tile_size, 0}; }
-
 namespace {
 
 struct Box {
@@ -1515,13 +1509,15 @@ bool touches(const Box& b, const std::set<TileKey>* only, double ts) {
     if (b.lo.x > b.hi.x) return false;
     const TileKey a = tile_of(b.lo, ts), c = tile_of(b.hi, ts);
     for (const TileKey& t : *only)
-        if (t.x >= a.x && t.x <= c.x && t.y >= a.y && t.y <= c.y) return true;
+        if (t.i >= a.i && t.i <= c.i && t.j >= a.j && t.j <= c.j) return true;
     return false;
 }
 
 void distribute(std::map<TileKey, MeshChunk>& chunks, const WorldMeshSet& set, const ChunkParams& cp,
-                const std::set<TileKey>* only) {
+                const std::set<TileKey>* only, const SurfaceTable& table) {
     for (const auto& [name, m] : set) {
+        const int sid = table.id(name);
+        const std::string target = cp.merge_surfaces ? std::string("road") : name;
         std::map<TileKey, std::vector<u32>> remap;
         std::vector<SectionRange> secs = m.sections;
         if (secs.empty()) {
@@ -1540,8 +1536,8 @@ void distribute(std::map<TileKey, MeshChunk>& chunks, const WorldMeshSet& set, c
                 MeshChunk& ch = chunks[tk];
                 ch.tile = tk;
                 ch.origin = tile_origin(tk, cp.tile_size);
-                MeshBuffers& buf = ch.surfaces[name];
-                if (opened.insert(tk).second) {
+                MeshBuffers& buf = ch.surfaces[target];
+                if (!cp.merge_surfaces && opened.insert(tk).second) {
                     SectionRange r = sec;
                     r.first_index = static_cast<u32>(buf.indices.size());
                     r.index_count = 0;
@@ -1553,10 +1549,11 @@ void distribute(std::map<TileKey, MeshChunk>& chunks, const WorldMeshSet& set, c
                     if (rm[v] == 0xFFFFFFFFu) {
                         rm[v] = static_cast<u32>(buf.positions.size());
                         push_vertex(buf, m, v, ch.origin);
+                        buf.surface_ids.push_back(static_cast<std::uint8_t>(sid < 0 ? 0 : sid));
                     }
                     buf.indices.push_back(rm[v]);
                 }
-                buf.sections.back().index_count += 3;
+                if (!cp.merge_surfaces) buf.sections.back().index_count += 3;
             }
         }
     }
@@ -1564,12 +1561,30 @@ void distribute(std::map<TileKey, MeshChunk>& chunks, const WorldMeshSet& set, c
 
 }  // namespace
 
+int SurfaceTable::id(const std::string& name) const {
+    const auto it = std::lower_bound(names.begin(), names.end(), name);
+    return it != names.end() && *it == name ? static_cast<int>(it - names.begin()) : -1;
+}
+
+SurfaceTable make_surface_table(const RegionPack& region, const RenderMeshParams& params) {
+    std::set<std::string> s{params.default_surface, params.island_kerb_surface, region.roundabout.central_island_surface,
+                            region.roundabout.splitter_surface};
+    for (const auto& [id, lt] : region.lane_types)
+        if (!lt.surface.empty()) s.insert(lt.surface);
+    SurfaceTable t;
+    t.names.assign(s.begin(), s.end());
+    if (t.names.size() > 255) t.names.resize(255);
+    return t;
+}
+
 std::map<TileKey, MeshChunk> build_mesh_chunks(const RoadGraph& graph, const RegionPack& region,
                                                const JunctionSet& junctions,
                                                const std::vector<RoundaboutLayout>* roundabouts,
                                                const RenderMeshParams& params, const ChunkParams& chunk,
-                                               const std::set<TileKey>* only) {
+                                               const std::set<TileKey>* only, SurfaceTable* table_out) {
     std::map<TileKey, MeshChunk> chunks;
+    const SurfaceTable table = make_surface_table(region, params);
+    if (table_out) *table_out = table;
     for (const auto& [id, e] : graph.edges()) {
         if (only) {
             Box b;
@@ -1577,7 +1592,7 @@ std::map<TileKey, MeshChunk> build_mesh_chunks(const RoadGraph& graph, const Reg
             b.grow(30);
             if (!touches(b, only, chunk.tile_size)) continue;
         }
-        distribute(chunks, build_edge_mesh(graph, region, id, junctions, params), chunk, only);
+        distribute(chunks, build_edge_mesh(graph, region, id, junctions, params), chunk, only, table);
     }
     for (const auto& [node, j] : junctions.junctions) {
         if (only) {
@@ -1588,7 +1603,7 @@ std::map<TileKey, MeshChunk> build_mesh_chunks(const RoadGraph& graph, const Reg
             b.grow(2);
             if (!touches(b, only, chunk.tile_size)) continue;
         }
-        distribute(chunks, build_junction_mesh(graph, region, j, params), chunk, only);
+        distribute(chunks, build_junction_mesh(graph, region, j, params), chunk, only, table);
     }
     for (const auto& [nid, nd] : graph.nodes()) {
         if (only) {
@@ -1597,7 +1612,7 @@ std::map<TileKey, MeshChunk> build_mesh_chunks(const RoadGraph& graph, const Reg
             b.grow(params.joint_length + 15);
             if (!touches(b, only, chunk.tile_size)) continue;
         }
-        distribute(chunks, build_joint_mesh(graph, region, nid, params), chunk, only);
+        distribute(chunks, build_joint_mesh(graph, region, nid, params), chunk, only, table);
     }
     if (roundabouts) {
         for (const RoundaboutLayout& l : *roundabouts) {
@@ -1610,9 +1625,16 @@ std::map<TileKey, MeshChunk> build_mesh_chunks(const RoadGraph& graph, const Reg
                 b.grow(2);
                 if (!touches(b, only, chunk.tile_size)) continue;
             }
-            distribute(chunks, build_roundabout_mesh(graph, region, l, params), chunk, only);
+            distribute(chunks, build_roundabout_mesh(graph, region, l, params), chunk, only, table);
         }
     }
+    if (chunk.merge_surfaces)  // one section for the whole merged buffer
+        for (auto& [tk, ch] : chunks)
+            for (auto& [name, buf] : ch.surfaces) {
+                SectionRange r;
+                r.index_count = static_cast<u32>(buf.indices.size());
+                buf.sections.assign(1, r);
+            }
     return chunks;
 }
 

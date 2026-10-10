@@ -82,12 +82,8 @@ JunctionArm make_arm(const RoadGraph& graph, const Edge& e, bool at_a, const Reg
     for (const Lane& l : all) {
         const double lat = at_a ? l.offset : -l.offset;
         const LaneType* lt = region.lane_type(l.lane_type);
-        // A verge is ground dressing beside a kerbless road, not part of the junction cross-section:
-        // the kerb line there is the edge of the paved strip.
-        if (!(lt && lt->profile == "verge")) {
-            left = std::max(left, lat + l.width / 2);
-            right = std::max(right, -(lat - l.width / 2));
-        }
+        left = std::max(left, lat + l.width / 2);
+        right = std::max(right, -(lat - l.width / 2));
         if (l.lane_type == "kerb") kerbs.push_back({lat, l.width});
         if (!lt || !lt->connects_at_junctions || l.dir == TravelDir::None) continue;
         LaneRef r;
@@ -375,7 +371,13 @@ JunctionSet build_plain_junctions(const RoadGraph& graph, const RegionPack& regi
             for (const auto& [a, sh] : shapes) {
                 JunctionArm& arm = j.arms[a];
                 const double full = std::max(sh.hold, j.trims[a] + 3.0);
-                const double avail = arm.edge_length / 2 - full;
+                // Half the edge (the far end may be a junction with its own trim); all of it but 2 m when the far end has none.
+                double cap = arm.edge_length / 2;
+                if (const Edge* ge = graph.edge(arm.edge)) {
+                    const NodeId far = arm.at_a ? ge->b : ge->a;
+                    if (far != id && graph.edges_at(far).size() < 3) cap = arm.edge_length - 2.0;
+                }
+                const double avail = cap - full;
                 const double wanted = sh.length > 0 ? std::max(sh.length - full, sh.min_taper) : sh.taper;
                 if (avail < sh.min_taper - 1e-9 || avail < 1.0) {
                     arm.flare = ArmFlare{};

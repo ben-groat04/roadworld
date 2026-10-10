@@ -128,6 +128,8 @@ double now_ms() {
 constexpr double kMB = 1024.0 * 1024.0;
 constexpr int kSchema = 1;
 bool g_trace = false;
+int g_dirty_ring = 0;
+std::vector<cp::NodeId> g_last_dn;  // diagnostics: the dirty nodes of the last update
 
 // ------------------------------------------------------------------------------------------ OS memory
 struct OsMem {
@@ -238,6 +240,30 @@ Stat stat_of(std::vector<double> v) {
 }
 
 // ------------------------------------------------------------------------------------------ hashes of outputs
+// TileKey changed shape (x, y) -> (i, j) while this tool was written: accept either.
+template <class K>
+std::int64_t tk_a(const K& k) {
+    if constexpr (requires { k.i; }) return static_cast<std::int64_t>(k.i);
+    else return static_cast<std::int64_t>(k.x);
+}
+template <class K>
+std::int64_t tk_b(const K& k) {
+    if constexpr (requires { k.j; }) return static_cast<std::int64_t>(k.j);
+    else return static_cast<std::int64_t>(k.y);
+}
+template <class K = cp::TileKey>
+K tk_make(std::int64_t a, std::int64_t b) {
+    K k{};
+    if constexpr (requires { k.i; }) {
+        k.i = a;
+        k.j = b;
+    } else {
+        k.x = static_cast<decltype(k.x)>(a);
+        k.y = static_cast<decltype(k.y)>(b);
+    }
+    return k;
+}
+
 std::uint64_t hash_junctions(const cp::JunctionSet& js) {
     Hasher h;
     for (const auto& [id, j] : js.junctions) {
@@ -283,7 +309,7 @@ std::uint64_t hash_junctions(const cp::JunctionSet& js) {
 std::uint64_t hash_chunks(const std::map<cp::TileKey, cp::MeshChunk>& chunks) {
     Hasher h;
     for (const auto& [k, c] : chunks) {
-        h.u(static_cast<std::uint64_t>(static_cast<std::uint32_t>(k.x)) << 32 | static_cast<std::uint32_t>(k.y));
+        h.u(static_cast<std::uint64_t>(tk_a(k)) * 1000003ull ^ static_cast<std::uint64_t>(tk_b(k)));
         for (const auto& [name, b] : c.surfaces) {
             h.bytes(name.data(), name.size());
             h.vec_pod(b.positions);
@@ -693,7 +719,7 @@ void build_dual_corridor(Net& n, const CorridorSpec& cs, GenInfo& info) {
         for (double p : prot) {
             double d = std::abs(u - p);
             if (closed) d = std::min(d, L - d);
-            if (d < 0.4 * cs.seg) {
+            if (d < 0.8 * cs.seg) {
                 clear = false;
                 break;
             }
@@ -812,11 +838,11 @@ void build_dual_corridor(Net& n, const CorridorSpec& cs, GenInfo& info) {
 // ---- motorway ---------------------------------------------------------------------------------
 void gen_motorway(Net& n, Rng& rng, int target, GenInfo& info) {
     const double length = 20000;
-    const int K = std::max(1, (target + 1499) / 1500);
+    const int K = std::max(1, (target + 429) / 430);  // about 430 edges per 20 km corridor at the 150 m minimum chain spacing
     const int per = target / K;
     const int ix_count = 7;
     const double budget = std::max(40.0, per - ix_count * 23.0);
-    const double seg = std::clamp(2 * length / budget, 25.0, 600.0);
+    const double seg = std::clamp(2 * length / budget, 150.0, 600.0);
     info.detail = std::to_string(K) + " corridor(s) of 20 km, chain spacing " + std::to_string(static_cast<int>(seg)) + " m";
     for (int k = 0; k < K; ++k) {
         LineCorridor lc;
@@ -1197,8 +1223,8 @@ constexpr double kTile = 256.0;
 void add_tiles_around(std::set<cp::TileKey>& out, cp::Vec2 p, double margin) {
     const cp::TileKey lo = cp::tile_of({p.x - margin, p.y - margin}, kTile);
     const cp::TileKey hi = cp::tile_of({p.x + margin, p.y + margin}, kTile);
-    for (std::int32_t x = lo.x; x <= hi.x; ++x)
-        for (std::int32_t y = lo.y; y <= hi.y; ++y) out.insert(cp::TileKey{x, y});
+    for (std::int64_t x = tk_a(lo); x <= tk_a(hi); ++x)
+        for (std::int64_t y = tk_b(lo); y <= tk_b(hi); ++y) out.insert(tk_make(x, y));
 }
 void add_edge_tiles(std::set<cp::TileKey>& out, const cp::Edge& e) {
     const double L = e.horizontal.length();
@@ -1233,6 +1259,7 @@ void update_caches(Net& net, Caches& c, const Tools& t, const cp::RoadGraph& bef
         if (const cp::Node* nd = g.node(id)) add_tiles_around(tiles, nd->pos.xy(), 60);
         if (const cp::Node* nd = before.node(id)) add_tiles_around(tiles, nd->pos.xy(), 60);
         for (cp::EdgeId e : before.edges_at(id)) {
+            de_set.insert(e);  // old edges too: the cache entries of deleted edges must be dropped
             const cp::Edge* ed = before.edge(e);
             if (!ed) continue;
             add_edge_tiles(tiles, *ed);
@@ -1240,8 +1267,40 @@ void update_caches(Net& net, Caches& c, const Tools& t, const cp::RoadGraph& bef
             stale_candidates.insert(ed->b);
         }
     }
+    // erase_node() drops a node from dirty_nodes(), so edges whose BOTH ends were removed (a new street between two
+    // split nodes, undone) are not reachable from any dirty node: follow removed nodes through the old adjacency.
+    for (std::vector<cp::NodeId> work(stale_candidates.begin(), stale_candidates.end()); !work.empty();) {
+        const cp::NodeId id = work.back();
+        work.pop_back();
+        if (g.node(id)) continue;
+        for (cp::EdgeId e : before.edges_at(id)) {
+            if (!de_set.insert(e).second) continue;
+            if (const cp::Edge* ed = before.edge(e)) {
+                add_edge_tiles(tiles, *ed);
+                if (stale_candidates.insert(ed->a).second) work.push_back(ed->a);
+                if (stale_candidates.insert(ed->b).second) work.push_back(ed->b);
+            }
+        }
+    }
+    for (int ring = 0; ring < g_dirty_ring; ++ring) {  // experiment: widen the dirty set by whole hops
+        std::set<cp::NodeId> have(dn.begin(), dn.end()), add;
+        for (cp::NodeId id : dn)
+            for (cp::EdgeId e : g.edges_at(id))
+                if (const cp::Edge* ed = g.edge(e)) {
+                    if (!have.count(ed->a)) add.insert(ed->a);
+                    if (!have.count(ed->b)) add.insert(ed->b);
+                }
+        for (cp::NodeId id : add) {
+            dn.push_back(id);
+            for (cp::EdgeId e : g.edges_at(id)) {
+                de_set.insert(e);
+                if (const cp::Edge* ed = g.edge(e)) add_edge_tiles(tiles, *ed);
+            }
+        }
+    }
     std::vector<cp::EdgeId> de(de_set.begin(), de_set.end());
     net.graph.clear_dirty();
+    g_last_dn.assign(dn.begin(), dn.end());
     double t1 = now_ms();
     if (ut) ut->dirty = t1 - t0;
 
@@ -1288,15 +1347,18 @@ void update_caches(Net& net, Caches& c, const Tools& t, const cp::RoadGraph& bef
         if (ut) ut->mesh[tol] = t1 - t0;
     }
 
+    std::vector<cp::NodeId> dn_all = dn;  // plus the removed nodes, so cache entries keyed by them are dropped
+    for (cp::NodeId id : stale_candidates)
+        if (!g.node(id)) dn_all.push_back(id);
     // Markings.
     t0 = now_ms();
-    cp::rebuild_dirty_markings(c.marks, g, *t.region, *t.rules, c.js, dn, de, t.mp);
+    cp::rebuild_dirty_markings(c.marks, g, *t.region, *t.rules, c.js, dn_all, de, t.mp);
     t1 = now_ms();
     if (ut) ut->marks = t1 - t0;
 
 #if CPB_LIGHTS
     t0 = now_ms();
-    cp::rebuild_dirty_street_lights(c.lights, g, *t.region, c.js, &c.layouts, dn, de);
+    cp::rebuild_dirty_street_lights(c.lights, g, *t.region, c.js, &c.layouts, dn_all, de);
     t1 = now_ms();
     if (ut) ut->lights = t1 - t0;
 #endif
@@ -1378,6 +1440,7 @@ void run_edit_loop(Net& net, NetRun& nr, const Tools& t, const Opts& o, Rng rng)
         nr.notes.push_back("edit loop skipped: no suitable edges in the middle of the network");
         return;
     }
+    std::map<std::string, int> refusals;  // why the place tool refused candidate sites
     const char* names[5] = {"new street splits two edges", "move one control point", "delete one edge", "change one road type",
                             "place one roundabout"};
     for (int type = 0; type < 5; ++type) {
@@ -1442,7 +1505,10 @@ void run_edit_loop(Net& net, NetRun& nr, const Tools& t, const Opts& o, Rng rng)
                 const cp::NodeId nd = mid_junction_nodes[static_cast<std::size_t>(rng.below(static_cast<int>(mid_junction_nodes.size())))];
                 const cp::Node* nn = net.graph.node(nd);
                 if (!nn) break;
-                if (!cp::check_place_roundabout(net.graph, nn->pos, 20, net.ring_type, *t.region).empty()) break;
+                if (const std::string why = cp::check_place_roundabout(net.graph, nn->pos, 20, net.ring_type, *t.region); !why.empty()) {
+                    ++refusals[why.substr(0, 90)];
+                    break;
+                }
                 ok = net.stack.execute(cp::make_place_roundabout(nn->pos, 20, net.ring_type, *t.region));
                 break;
             }
@@ -1479,6 +1545,37 @@ void run_edit_loop(Net& net, NetRun& nr, const Tools& t, const Opts& o, Rng rng)
                               a.junc == b.junc ? "match" : "DIFFER", a.chunks == b.chunks ? "match" : "DIFFER", a.marks == b.marks ? "match" : "DIFFER",
                               a.lights == b.lights ? "match" : "DIFFER", o.edit_tol, full_ms);
                 er.verify_detail = buf;
+                if (a.marks != b.marks) {  // which entries differ
+                    std::size_t de_ = 0, dj_ = 0;
+                    std::string ex;
+                    for (const auto* side : {&c.marks.edges, &fresh.marks.edges})
+                        for (const auto& [id, ms] : *side) {
+                            const auto& other = side == &c.marks.edges ? fresh.marks.edges : c.marks.edges;
+                            auto it = other.find(id);
+                            const std::uint64_t hb = it == other.end() ? 0 : hash_markset(it->second);
+                            if (hash_markset(ms) != hb && (side == &c.marks.edges || it == other.end())) {
+                                ++de_;
+                                if (ex.size() < 200) {
+                                    const cp::Edge* ee = net.graph.edge(id);
+                                    ex += " e" + std::to_string(id.value);
+                                    if (!ee) ex += "(gone)";
+                                    else {
+                                        auto dirty = [&](cp::NodeId n_) { return std::find(g_last_dn.begin(), g_last_dn.end(), n_) != g_last_dn.end(); };
+                                        ex += "(" + ee->road_type + (dirty(ee->a) || dirty(ee->b) ? ", at dirty node" : ", NOT at a dirty node") +
+                                              ", arms " + std::to_string(net.graph.edges_at(ee->a).size()) + "/" + std::to_string(net.graph.edges_at(ee->b).size()) + ")";
+                                    }
+                                }
+                            }
+                        }
+                    for (const auto* side : {&c.marks.junctions, &fresh.marks.junctions})
+                        for (const auto& [id, ms] : *side) {
+                            const auto& other = side == &c.marks.junctions ? fresh.marks.junctions : c.marks.junctions;
+                            auto it = other.find(id);
+                            const std::uint64_t hb = it == other.end() ? 0 : hash_markset(it->second);
+                            if (hash_markset(ms) != hb && (side == &c.marks.junctions || it == other.end())) ++dj_;
+                        }
+                    er.verify_detail += " | markings differ in " + std::to_string(de_) + " edge entries, " + std::to_string(dj_) + " junction entries;" + ex;
+                }
                 er.phase_ms["full_rebuild_post_edit"].push_back(full_ms);
                 // Resynchronise from the fresh state so a mismatch does not poison later iterations.
                 c = std::move(fresh);
@@ -1492,10 +1589,12 @@ void run_edit_loop(Net& net, NetRun& nr, const Tools& t, const Opts& o, Rng rng)
         std::fprintf(stderr, "  [edit] %-30s %d iterations%s\n", names[type], er.iters, er.verified ? (er.verify_ok ? " (verified)" : " (MISMATCH)") : "");
         nr.edits.push_back(std::move(er));
     }
+    for (const auto& [why, n] : refusals) nr.notes.push_back("place-roundabout edit: site refused " + std::to_string(n) + "x: " + why);
 }
 
 // resolve_corner_radii gained an optional region argument while this tool was written: use it when present.
-std::vector<double> corner_radii_for(cp::NodeId id, const std::vector<cp::JunctionArm>& arms, const cp::JunctionOverrides& ov,
+template <class Arms>
+std::vector<double> corner_radii_for(cp::NodeId id, const Arms& arms, const cp::JunctionOverrides& ov,
                                      const cp::RegionPack& region) {
     if constexpr (requires { cp::resolve_corner_radii(id, arms, ov, &region); }) return cp::resolve_corner_radii(id, arms, ov, &region);
     else return cp::resolve_corner_radii(id, arms, ov);
@@ -1566,8 +1665,7 @@ void measure_network(Net& net, NetRun& nr, const Opts& o, int reps, Rng edit_rng
             double tc = 0, tt = 0, tcn = 0, tg = 0, tm = 0;
             for (const auto& [id, nd] : g.nodes()) {
                 double a = now_ms();
-                if (g_trace) std::fprintf(stderr, "node %llu
-", static_cast<unsigned long long>(id.value));
+                if (g_trace) std::fprintf(stderr, "node %llu\n", static_cast<unsigned long long>(id.value));
                 cp::Junction j;
                 j.node = id;
                 j.pos = nd.pos;
@@ -1871,7 +1969,7 @@ std::unique_ptr<NetRun> bench_one(const std::string& gen, const std::string& siz
     nr->cmd_ms = net->cmds.ms;
     nr->cmd_failed = net->cmds.failed;
     nr->notes = net->notes;
-    if (nr->notes.size() > 6) nr->notes.resize(6);
+
     double len = 0;
     for (const auto& [id, e] : net->graph.edges()) len += e.horizontal.length();
     nr->length_km = len / 1000.0;
@@ -2227,6 +2325,7 @@ int main(int argc, char** argv) {
         else if (a == "--no-edit") o.edit = false;
         else if (a == "--quick") o.quick = true;
         else if (a == "--trace") g_trace = true;
+        else if (a == "--dirty-ring") g_dirty_ring = static_cast<int>(std::strtol(next().c_str(), nullptr, 10));
         else if (a == "--json") o.json = next();
         else if (a == "--data") o.data = next();
         else {

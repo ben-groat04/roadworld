@@ -371,6 +371,14 @@ public:
             }
             bands_.push_back(std::move(b));
         }
+        for (const auto& [nid, nd] : graph.nodes())
+            if (graph.edges_at(nid).size() >= 3) junctions_.push_back(nd.pos.xy());
+    }
+
+    bool near_junction(double x, double y, double r) const {
+        for (const Vec2& j : junctions_)
+            if (std::hypot(x - j.x, y - j.y) < r) return true;
+        return false;
     }
 
     // Is (x, y) inside the band of another edge (carriageway, or the whole cross-section when `full`,
@@ -405,6 +413,7 @@ private:
         Vec2 lo, hi;
     };
     std::vector<Band> bands_;
+    std::vector<Vec2> junctions_;
 };
 
 // ---------------------------------------------------------------- shared builder environment
@@ -423,6 +432,7 @@ struct Env {
     double len = 0;
     double trim_a = 0, trim_b = 0;
     const std::vector<WallEnd>* wall_ends = nullptr;
+    std::vector<Vec2>* placed_piers = nullptr;  // piers of bridges built before this one
 };
 
 void add_instance(StructureMeshes& out, const char* kind, EdgeId edge, const InstanceTransform& t) {
@@ -732,12 +742,16 @@ PierPlan plan_piers(const Env& v, double s0, double s1) {
     const double L = s1 - s0, maxsp = std::max(P.max_pier_spacing, 4.0);
     const double hw = std::max(v.pr.d_left, -v.pr.d_right);
     const double pw = std::max(0.6, P.pier_shaft_width * hw);
-    const double ha = P.pier_shaft_along / 2 + P.pier_footing_margin + P.pier_road_clearance;
-    const double hl = pw + P.pier_footing_margin + P.pier_road_clearance;
+    const double ha0 = P.pier_shaft_along / 2 + P.pier_footing_margin, hl0 = pw + P.pier_footing_margin;
     const double min_sep = 4.0;
-    const auto blocked = [&](double s) {
-        if (!v.others) return false;
+    const auto blocked = [&](double s, double cl) {
+        const double ha = ha0 + cl, hl = hl0 + cl;
         const Frame f = frame_at(v.e, s);
+        if (v.placed_piers)
+            for (const Vec2& q : *v.placed_piers)
+                if (std::hypot(q.x - f.p.x, q.y - f.p.y) < P.pier_pier_clearance + ha0) return true;
+        if (!v.others) return false;
+        if (v.others->near_junction(f.p.x, f.p.y, P.pier_junction_radius)) return true;
         const double zlim = f.z + v.pr.z_at(0) - P.deck_top_gap - P.slab_depth - P.pier_ground_clearance;
         const int na = std::max(1, static_cast<int>(std::ceil(2 * ha / 0.75))), nd = std::max(1, static_cast<int>(std::ceil(2 * hl / 0.75)));
         const BoxFrame bf = box_frame(f);
@@ -748,19 +762,22 @@ PierPlan plan_piers(const Env& v, double s0, double s1) {
             }
         return false;
     };
-    const auto place = [&](double ideal, double lo, double hi, double& out) {
+    const auto place_cl = [&](double ideal, double lo, double hi, double& out, double cl) {
         const double window = P.pier_search * maxsp;
         for (double off = 0; off <= window + 1e-9; off += 0.5)
             for (const double sg : {1.0, -1.0}) {
                 if (off == 0 && sg < 0) continue;
                 const double s = ideal + sg * off;
                 if (s < lo + min_sep || s > hi - min_sep) continue;
-                if (!blocked(s)) {
+                if (!blocked(s, cl)) {
                     out = s;
                     return true;
                 }
             }
         return false;
+    };
+    const auto place = [&](double ideal, double lo, double hi, double& out) {
+        return place_cl(ideal, lo, hi, out, P.pier_road_clearance) || place_cl(ideal, lo, hi, out, P.pier_road_clearance_min);
     };
     std::vector<double> supports{s0, s1};
     const int n = std::max(1, static_cast<int>(std::ceil(L / maxsp - 1e-9)));
@@ -831,6 +848,7 @@ void emit_pier(Env& v, double s, BridgeInfo& info, int tag) {
     emit_box(v.sink, bf, -P.pier_cap_along / 2, P.pier_cap_along / 2, cl0, cl1, cap_bot, cap_top);
     v.sink.end();
     info.pier_s.push_back(s);
+    if (v.placed_piers) v.placed_piers->push_back(f.p);
     if (water) info.pier_in_water = true;
 }
 
@@ -1023,7 +1041,7 @@ void build_tunnel(Env& v, const StructureSpan& span, int tag) {
     const std::size_t n = F.size();
     if (n < 2) return;
 
-    const double W = std::max(v.pr.d_left, -v.pr.d_right);
+    const double WL = v.pr.d_left, WR = v.pr.d_right, Wc = 0.5 * (WL - WR), c0 = 0.5 * (WL + WR), W = Wc;  // walls at the cross-section edges, arch centred between them
     if (W < 1.0) return;
     const int N = std::max(4, P.tunnel_arch_segments);
     const double zr = v.pr.z_at(v.pr.d_right), zl = v.pr.z_at(v.pr.d_left);
@@ -1031,7 +1049,7 @@ void build_tunnel(Env& v, const StructureSpan& span, int tag) {
     const double rise = std::max(P.tunnel_rise_k * W, 0.05);
     const double R = (W * W + rise * rise) / (2 * rise);
     const double zc = Hs + rise - R;
-    const auto roof = [&](double q) { return zc + std::sqrt(std::max(R * R - q * q, 0.0)); };
+    const auto roof = [&](double q) { return zc + std::sqrt(std::max(R * R - (q - c0) * (q - c0), 0.0)); };
 
     TunnelBore bore;
     bore.edge = v.id;
@@ -1047,18 +1065,16 @@ void build_tunnel(Env& v, const StructureSpan& span, int tag) {
     };
     std::vector<PSeg> segs;
     const auto radial = [&](double q, double z) {
-        const double nx = -q, nz = zc - z, l = std::hypot(nx, nz);
+        const double nx = c0 - q, nz = zc - z, l = std::hypot(nx, nz);
         return l > 1e-9 ? Vec2{nx / l, nz / l} : Vec2{0, -1};
     };
-    if (-W < v.pr.d_right - 1e-6) segs.push_back({{v.pr.d_right, zr}, {-W, zr}, {0, 1}, {0, 1}});
-    segs.push_back({{-W, zr}, {-W, Hs}, {1, 0}, {1, 0}});
+    segs.push_back({{WR, zr}, {WR, Hs}, {1, 0}, {1, 0}});
     for (int j = 0; j < N; ++j) {
-        const double q0 = -W + 2 * W * j / N, q1 = -W + 2 * W * (j + 1) / N;
+        const double q0 = WR + 2 * Wc * j / N, q1 = WR + 2 * Wc * (j + 1) / N;
         const double z0 = j == 0 ? Hs : roof(q0), z1 = j + 1 == N ? Hs : roof(q1);
         segs.push_back({{q0, z0}, {q1, z1}, radial(q0, z0), radial(q1, z1)});
     }
-    segs.push_back({{W, Hs}, {W, zl}, {-1, 0}, {-1, 0}});
-    if (W > v.pr.d_left + 1e-6) segs.push_back({{W, zl}, {v.pr.d_left, zl}, {0, 1}, {0, 1}});
+    segs.push_back({{WL, Hs}, {WL, zl}, {-1, 0}, {-1, 0}});
     std::vector<double> run(segs.size() + 1, 0.0);
     for (std::size_t k = 0; k < segs.size(); ++k) run[k + 1] = run[k] + (segs[k].b - segs[k].a).length();
 
@@ -1089,7 +1105,7 @@ void build_tunnel(Env& v, const StructureSpan& span, int tag) {
         for (int k = 0; k < count && lat > 0.5; ++k) {
             const double s = s0 + L * (k + 0.5) / count;
             const Frame f = frame_at(v.e, s);
-            for (const double row : {-lat, lat}) {
+            for (const double row : {c0 - lat, c0 + lat}) {
                 InstanceTransform t;
                 t.position = lp(f, row, f.z + roof(row) - P.lamp_drop);
                 t.yaw = f.h;
@@ -1108,13 +1124,13 @@ void build_tunnel(Env& v, const StructureSpan& span, int tag) {
             return vx(Vec3{f.p.x + c * al * dir - sn * la, f.p.y + sn * al * dir + c * la, z}, u, vv);
         };
         const double HT = P.headwall_thickness, ct = P.coping_thickness, o = P.coping_overhang;
-        const double Wh = W + P.wall_thickness;
+        const double WhL = WL + P.wall_thickness, WhR = WR - P.wall_thickness;
         const double zb = f.z - P.headwall_foot;
         const Vec3 front = fwd_of(f.h) * static_cast<double>(-dir), back = front * -1.0, lat_dir = left_of(f.h);
         // Lateral breakpoints: stub outer, arch points, stub outer.
-        std::vector<double> brk{-Wh};
-        for (int j = 0; j <= N; ++j) brk.push_back(-W + 2 * W * j / N);
-        brk.push_back(Wh);
+        std::vector<double> brk{WhR};
+        for (int j = 0; j <= N; ++j) brk.push_back(WR + 2 * Wc * j / N);
+        brk.push_back(WhL);
         const std::size_t nb = brk.size();
         std::vector<double> top(nb);
         for (std::size_t k = 0; k < nb; ++k) {
@@ -1125,7 +1141,7 @@ void build_tunnel(Env& v, const StructureSpan& span, int tag) {
                     g = std::max({g, v.ground.height(q.x, q.y), v.ground.natural_height(q.x, q.y)});
                 }
             double t = g + P.headwall_ground_margin;
-            if (std::abs(brk[k]) <= W + 1e-9) t = std::max(t, f.z + roof(std::min(std::abs(brk[k]), W)) + P.headwall_crown);
+            if (brk[k] >= WR - 1e-9 && brk[k] <= WL + 1e-9) t = std::max(t, f.z + roof(brk[k]) + P.headwall_crown);
             top[k] = t;
         }
         if (v.wall_ends)
@@ -1137,21 +1153,21 @@ void build_tunnel(Env& v, const StructureSpan& span, int tag) {
         std::vector<double> bt(nb);
         for (std::size_t k = 0; k < nb; ++k) bt[k] = top[k] - ct;
         // Floor chain (lower pieces under the opening): the road's top profile between the walls.
-        std::vector<double> fl{-W};
+        std::vector<double> fl{WR};
         for (const Vec2& p : v.pr.top)
-            if (p.x > -W + 1e-6 && p.x < W - 1e-6) fl.push_back(p.x);
-        fl.push_back(W);
+            if (p.x > WR + 1e-6 && p.x < WL - 1e-6) fl.push_back(p.x);
+        fl.push_back(WL);
         const auto zfl = [&](double d) { return f.z + v.pr.z_at(d); };
         const double zHs = f.z + Hs;
 
         v.sink.begin(ElementKind::Headwall, structure_surface::concrete, v.id, StructureKind::Tunnel, f.s, f.s, false, tag * 2 + (start ? 0 : 1));
         const auto face = [&](double al, Vec3 hint) {
-            // Left stub (lateral -Wh .. -W) and right stub, with the opening's side edge as extra vertices.
-            v.sink.poly({V(al, -Wh, zb, -Wh, zb), V(al, -W, zb, -W, zb), V(al, -W, zfl(-W), -W, zfl(-W)), V(al, -W, zHs, -W, zHs),
-                         V(al, -W, bt[1], -W, bt[1]), V(al, -Wh, bt[0], -Wh, bt[0])},
+            // Left stub (lateral WhR .. WR) and right stub, with the opening's side edge as extra vertices.
+            v.sink.poly({V(al, WhR, zb, WhR, zb), V(al, WR, zb, WR, zb), V(al, WR, zfl(WR), WR, zfl(WR)), V(al, WR, zHs, WR, zHs),
+                         V(al, WR, bt[1], WR, bt[1]), V(al, WhR, bt[0], WhR, bt[0])},
                         hint);
-            v.sink.poly({V(al, W, zb, W, zb), V(al, Wh, zb, Wh, zb), V(al, Wh, bt[nb - 1], Wh, bt[nb - 1]), V(al, W, bt[nb - 2], W, bt[nb - 2]),
-                         V(al, W, zHs, W, zHs), V(al, W, zfl(W), W, zfl(W))},
+            v.sink.poly({V(al, WL, zb, WL, zb), V(al, WhL, zb, WhL, zb), V(al, WhL, bt[nb - 1], WhL, bt[nb - 1]), V(al, WL, bt[nb - 2], WL, bt[nb - 2]),
+                         V(al, WL, zHs, WL, zHs), V(al, WL, zfl(WL), WL, zfl(WL))},
                         hint);
             for (int j = 0; j < N; ++j) {
                 const std::size_t k = static_cast<std::size_t>(j) + 1;
@@ -1170,25 +1186,25 @@ void build_tunnel(Env& v, const StructureSpan& span, int tag) {
             v.sink.quad(V(0, brk[k], bt[k], 0, brk[k]), V(HT, brk[k], bt[k], HT, brk[k]), V(HT, brk[k + 1], bt[k + 1], HT, brk[k + 1]),
                         V(0, brk[k + 1], bt[k + 1], 0, brk[k + 1]), kUp);
         {
-            std::vector<double> bb{-Wh, -W};
+            std::vector<double> bb{WhR, WR};
             for (std::size_t k = 1; k + 1 < fl.size(); ++k) bb.push_back(fl[k]);
-            bb.push_back(W);
-            bb.push_back(Wh);
-            // bb includes -W and W once each (fl.front()/back()).
+            bb.push_back(WL);
+            bb.push_back(WhL);
+            // bb includes WR and WL once each (fl.front()/back()).
             for (std::size_t k = 0; k + 1 < bb.size(); ++k)
                 v.sink.quad(V(0, bb[k], zb, 0, bb[k]), V(HT, bb[k], zb, HT, bb[k]), V(HT, bb[k + 1], zb, HT, bb[k + 1]), V(0, bb[k + 1], zb, 0, bb[k + 1]), kDown);
         }
         for (const int sgn : {-1, 1}) {
-            const double e = sgn * Wh, tt = sgn < 0 ? bt[0] : bt[nb - 1];
+            const double e = sgn * WhL, tt = sgn < 0 ? bt[0] : bt[nb - 1];
             v.sink.quad(V(0, e, zb, 0, zb), V(HT, e, zb, HT, zb), V(HT, e, tt, HT, tt), V(0, e, tt, 0, tt), lat_dir * static_cast<double>(sgn));
         }
         v.sink.end();
 
         // Coping slab over the whole headwall top.
         v.sink.begin(ElementKind::HeadwallCoping, structure_surface::coping, v.id, StructureKind::Tunnel, f.s, f.s, true, tag * 2 + (start ? 0 : 1));
-        std::vector<double> cb{-Wh - o};
+        std::vector<double> cb{WhR - o};
         cb.insert(cb.end(), brk.begin(), brk.end());
-        cb.push_back(Wh + o);
+        cb.push_back(WhL + o);
         std::vector<double> ctop{top[0]};
         ctop.insert(ctop.end(), top.begin(), top.end());
         ctop.push_back(top[nb - 1]);
@@ -1445,14 +1461,14 @@ void finish(StructureMeshes& out) {
 
 void build_edge_into(StructureMeshes& out, Sink& sink, const RoadGraph& graph, const RegionPack& region, EdgeId id,
                      const GroundSampler& ground, const StructureParams& P, const OtherRoads* others, double trim_a,
-                     double trim_b, const std::vector<WallEnd>* wall_ends) {
+                     double trim_b, const std::vector<WallEnd>* wall_ends, std::vector<Vec2>* placed = nullptr) {
     const Edge* e = graph.edge(id);
     if (!e || e->horizontal.spans.empty() || e->structure.empty()) return;
     const RoadType* rt = region.road_type(e->road_type);
     if (!rt) return;
     XProfile pr = make_profile(*e, *rt, region);
     if (!pr.ok()) return;
-    Env v{graph, region, ground, P, sink, out, others, *e, id, std::move(pr), e->horizontal.length(), trim_a, trim_b, wall_ends};
+    Env v{graph, region, ground, P, sink, out, others, *e, id, std::move(pr), e->horizontal.length(), trim_a, trim_b, wall_ends, placed};
     int bi = 0, ti = 0;
     for (const StructureSpan& span : e->structure) {
         if (span.kind == StructureKind::Bridge) build_bridge(v, span, bi++);
@@ -1473,6 +1489,15 @@ StructureParams structure_params_for(const RegionPack& region) {
     StructureParams p;
     p.wall_thickness = region.grading.wall_thickness;
     p.tunnel_clear_height = region.grading.tunnel_clear_height;
+    const StructureRules& r = region.structures;
+    p.parapet_height = r.parapet_height;
+    p.max_pier_spacing = r.max_pier_spacing;
+    p.min_bridge_length = r.min_bridge_length;
+    p.pier_road_clearance = r.pier_road_clearance;
+    p.wall_panel = r.wall_panel;
+    p.tunnel_rise_k = r.tunnel_rise_k;
+    p.coping_thickness = r.coping_thickness;
+    p.coping_overhang = r.coping_overhang;
     return p;
 }
 
@@ -1570,12 +1595,13 @@ StructureMeshes build_structures(const RoadGraph& graph, const RegionPack& regio
         for (const auto& [id, e] : graph.edges()) ids.push_back(id);
     const OtherRoads others(graph, region);
     const std::vector<WallEnd> wall_ends = out.wall_ends;
+    std::vector<Vec2> placed;
     for (EdgeId id : ids) {
         const Edge* e = graph.edge(id);
         if (!e || e->structure.empty()) continue;
         StructureMeshes part;
         Sink sink(part, params.depth_range);
-        build_edge_into(part, sink, graph, region, id, ground, params, &others, 0, 0, &wall_ends);
+        build_edge_into(part, sink, graph, region, id, ground, params, &others, 0, 0, &wall_ends, &placed);
         finish(part);
         append_structures(out, part);
     }

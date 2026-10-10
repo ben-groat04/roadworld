@@ -19,10 +19,16 @@
 #include "cp/layout_io.h"
 #include "cp/markings.h"
 #include "cp/render_mesh.h"
+#include "cp/structure_mesh.h"
 #include "scene_fixture.h"
 
 namespace {
 constexpr double kMarkingLift = 0.005;  // m above the surface (stand-in for a renderer depth bias)
+
+// Layouts have no terrain: structures stand on a flat plane at z = 0.
+struct FlatGround final : cp::GroundSampler {
+    double height(double, double) const override { return 0.0; }
+};
 }
 
 int main(int argc, char** argv) {
@@ -82,6 +88,10 @@ int main(int argc, char** argv) {
         cp::append_mesh(all, cp::build_junction_mesh(*graph, *region, j, params));
     for (const auto& l : rr.layouts)
         cp::append_mesh(all, cp::build_roundabout_mesh(*graph, *region, l, params));
+
+    // Structures (bridges, tunnels) on flat ground at z = 0; there are no retaining walls without grading.
+    const FlatGround flat;
+    const cp::StructureMeshes structs = cp::build_structures(*graph, *region, flat, cp::structure_params_for(*region));
 
     // Markings: one mesh per colour id, lifted kMarkingLift above the surface.
     std::map<std::string, cp::WorldMesh> mark_meshes;
@@ -160,6 +170,8 @@ int main(int argc, char** argv) {
         if (!write_obj(name + "_" + surface + ".obj", "surface", surface, m)) return 1;
     for (const auto& [colour, m] : mark_meshes)
         if (!write_obj("markings_" + colour + ".obj", "marking", colour, m)) return 1;
+    for (const auto& [surface, m] : structs.meshes)
+        if (!write_obj(name + "_structure_" + surface + ".obj", "structure", surface, m)) return 1;
 
     auto num = [](double v) { return cp::tools::json_number(v, 3); };
     std::string nodes_json;
@@ -175,6 +187,39 @@ int main(int argc, char** argv) {
                         "], \"fov_deg\": " + num(c.fov_deg) + ", \"aspect\": " + num(c.aspect) +
                         ", \"photo\": " + cp::tools::json_string(c.photo) + "}";
     }
+    const auto flag = [](bool b) { return b ? "true" : "false"; };
+    std::string structures_json = "{\n    \"bridges\": [";
+    for (std::size_t i = 0; i < structs.bridges.size(); ++i) {
+        const cp::BridgeInfo& b = structs.bridges[i];
+        std::string piers;
+        for (const double s : b.pier_s) piers += (piers.empty() ? "" : ", ") + num(s);
+        structures_json += std::string(i ? ",\n      " : "\n      ") + "{\"edge\": " + std::to_string(b.edge.value) +
+                           ", \"s0\": " + num(b.s0) + ", \"s1\": " + num(b.s1) + ", \"solid_block\": " + flag(b.solid_block) +
+                           ", \"crosses_road\": " + flag(b.crosses_road) + ", \"over_water\": " + flag(b.over_water) +
+                           ", \"pier_in_water\": " + flag(b.pier_in_water) + ", \"span_too_long\": " + flag(b.span_too_long) +
+                           ", \"longest_span\": " + num(b.longest_span) + ", \"pier_s\": [" + piers + "]}";
+    }
+    structures_json += "\n    ],\n    \"tunnels\": [";
+    for (std::size_t i = 0; i < structs.tunnels.size(); ++i) {
+        const cp::TunnelBore& t = structs.tunnels[i];
+        structures_json += std::string(i ? ",\n      " : "\n      ") + "{\"edge\": " + std::to_string(t.edge.value) +
+                           ", \"s0\": " + num(t.s0) + ", \"s1\": " + num(t.s1) + ", \"W\": " + num(t.section.W) +
+                           ", \"Hs\": " + num(t.section.Hs) + ", \"Hc\": " + num(t.section.Hc) + ", \"R\": " + num(t.section.R) +
+                           ", \"zc\": " + num(t.section.zc) + ", \"stations\": " + std::to_string(t.stations.size()) + "}";
+    }
+    structures_json += "\n    ],\n    \"instances\": [";
+    for (std::size_t i = 0; i < structs.instances.size(); ++i) {
+        const cp::InstanceList& l = structs.instances[i];
+        structures_json += std::string(i ? ",\n      " : "\n      ") + "{\"kind\": " + cp::tools::json_string(l.kind) +
+                           ", \"edge\": " + std::to_string(l.edge.value) + ", \"items\": [";
+        for (std::size_t k = 0; k < l.items.size(); ++k) {
+            const cp::InstanceTransform& t = l.items[k];
+            structures_json += std::string(k ? ", " : "") + "[" + num(t.position.x - ox) + ", " + num(t.position.y - oy) + ", " +
+                               num(t.position.z) + ", " + num(t.yaw) + ", " + num(t.pitch) + ", " + num(t.roll) + "]";
+        }
+        structures_json += "]}";
+    }
+    structures_json += "\n    ]\n  }";
     const std::filesystem::path jp = std::filesystem::path(out_dir) / "export.json";
     std::FILE* f = std::fopen(jp.string().c_str(), "wb");
     if (!f) {
@@ -190,7 +235,7 @@ int main(int argc, char** argv) {
                  cp::tools::json_string(name).c_str(), cp::tools::json_string(region->id).c_str(),
                  cp::tools::json_string(side).c_str(), num(ox).c_str(), num(oy).c_str(), num(kMarkingLift).c_str(),
                  num(lo[0] - ox).c_str(), num(lo[1] - oy).c_str(), num(lo[2]).c_str(), num(hi[0] - ox).c_str(),
-                 num(hi[1] - oy).c_str(), num(hi[2]).c_str(), nodes_json.c_str(), cameras_json.c_str(), files_json.c_str());
+                 num(hi[1] - oy).c_str(), num(hi[2]).c_str(), nodes_json.c_str(), structures_json.c_str(), cameras_json.c_str(), files_json.c_str());
     std::fclose(f);
     return 0;
 }

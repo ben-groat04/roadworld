@@ -54,53 +54,65 @@ bool ring_inside(const std::vector<Vec2>& pts, const Ring& inner, const Ring& ou
 
 bool same_point(Vec2 a, Vec2 b) { return std::abs(a.x - b.x) < 1e-9 && std::abs(a.y - b.y) < 1e-9; }
 
-// Joins `hole` (clockwise) into `loop` (counter-clockwise) through a zero-width bridge.
+// Does segment p-q cross or touch segment a-b anywhere other than at p or q themselves?
+bool blocks(Vec2 p, Vec2 q, Vec2 a, Vec2 b) {
+    const auto side = [](Vec2 u, Vec2 v, Vec2 w) {
+        const double c = (v - u).cross(w - u);
+        return std::abs(c) < 1e-9 ? 0 : (c > 0 ? 1 : -1);
+    };
+    const auto on_seg = [](Vec2 u, Vec2 v, Vec2 w) {  // w on segment u-v (collinear assumed)
+        return std::min(u.x, v.x) - 1e-9 <= w.x && w.x <= std::max(u.x, v.x) + 1e-9 &&
+               std::min(u.y, v.y) - 1e-9 <= w.y && w.y <= std::max(u.y, v.y) + 1e-9;
+    };
+    const bool a_end = same_point(a, p) || same_point(a, q), b_end = same_point(b, p) || same_point(b, q);
+    // An edge meeting the segment at one of its ends blocks it only by running back along it.
+    if (a_end || b_end) {
+        const Vec2 other = a_end ? b : a;
+        if (side(p, q, other) != 0) return false;
+        const Vec2 end = a_end ? (same_point(a, p) ? p : q) : (same_point(b, p) ? p : q);
+        const Vec2 far = same_point(end, p) ? q : p;
+        return on_seg(end, far, other) && !same_point(other, end);
+    }
+    const int s1 = side(p, q, a), s2 = side(p, q, b), s3 = side(a, b, p), s4 = side(a, b, q);
+    if (s1 != s2 && s3 != s4) return true;  // proper crossing or touching
+    if (s1 == 0 && on_seg(p, q, a)) return true;
+    if (s2 == 0 && on_seg(p, q, b)) return true;
+    if (s3 == 0 && on_seg(a, b, p)) return true;
+    if (s4 == 0 && on_seg(a, b, q)) return true;
+    return false;
+}
+
+// Joins `hole` (clockwise) into `loop` (counter-clockwise) through a zero-width bridge: the shortest
+// hole vertex to loop vertex segment that no edge blocks and that runs through the polygon's interior.
 bool bridge_hole(const std::vector<Vec2>& pts, Ring& loop, const Ring& hole) {
-    std::size_t mi = 0;
-    for (std::size_t i = 1; i < hole.size(); ++i)
-        if (pts[hole[i]].x > pts[hole[mi]].x) mi = i;
-    const Vec2 M = pts[hole[mi]];
-    double best_x = kInf;
-    std::size_t p = loop.size();
-    for (std::size_t i = 0; i < loop.size(); ++i) {
-        const Vec2 a = pts[loop[i]], b = pts[loop[(i + 1) % loop.size()]];
-        if (same_point(a, M)) {  // touching vertex: bridge of zero length
-            best_x = M.x;
-            p = i;
-            break;
-        }
-        if (a.y == b.y || !((a.y <= M.y && b.y >= M.y) || (b.y <= M.y && a.y >= M.y))) continue;
-        const double x = a.x + (M.y - a.y) * (b.x - a.x) / (b.y - a.y);
-        if (x >= M.x - 1e-9 && x < best_x) {
-            best_x = x;
-            p = a.x > b.x ? i : (i + 1) % loop.size();
-        }
-    }
-    if (p == loop.size()) return false;
-    if (!same_point(pts[loop[p]], M)) {
-        // A vertex inside the triangle (M, hit, P) blocks the bridge; take the one closest in angle.
-        const Vec2 I{best_x, M.y}, P = pts[loop[p]];
-        double best_ang = kInf, best_d = kInf;
-        std::size_t q = p;
-        for (std::size_t i = 0; i < loop.size(); ++i) {
-            const Vec2 Q = pts[loop[i]];
-            if (i == p || Q.x < M.x - 1e-12 || same_point(Q, M)) continue;
-            const double d1 = area2(M, I, Q), d2 = area2(I, P, Q), d3 = area2(P, M, Q);
-            const bool in = (d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0);
-            if (!in) continue;
-            const double ang = std::abs(std::atan2(Q.y - M.y, Q.x - M.x)), d = (Q - M).length();
-            if (ang < best_ang - 1e-12 || (ang <= best_ang + 1e-12 && d < best_d)) {
-                best_ang = ang;
-                best_d = d;
-                q = i;
+    double best = kInf;
+    std::size_t bh = 0, bl = 0;
+    bool found = false;
+    for (std::size_t hi = 0; hi < hole.size(); ++hi)
+        for (std::size_t li = 0; li < loop.size(); ++li) {
+            const Vec2 H = pts[hole[hi]], L = pts[loop[li]];
+            const double d = (H - L).length();
+            if (d >= best) continue;
+            if (d > 1e-9) {
+                bool clear = true;
+                for (std::size_t e = 0; e < loop.size() && clear; ++e)
+                    clear = !blocks(H, L, pts[loop[e]], pts[loop[(e + 1) % loop.size()]]);
+                for (std::size_t e = 0; e < hole.size() && clear; ++e)
+                    clear = !blocks(H, L, pts[hole[e]], pts[hole[(e + 1) % hole.size()]]);
+                if (!clear) continue;
+                const Vec2 mid = (H + L) * 0.5;
+                if (!point_in_ring(mid, pts, loop) || point_in_ring(mid, pts, hole)) continue;
             }
+            best = d;
+            bh = hi;
+            bl = li;
+            found = true;
         }
-        p = q;
-    }
-    Ring merged(loop.begin(), loop.begin() + static_cast<std::ptrdiff_t>(p) + 1);
-    for (std::size_t k = 0; k <= hole.size(); ++k) merged.push_back(hole[(mi + k) % hole.size()]);
-    merged.push_back(loop[p]);
-    merged.insert(merged.end(), loop.begin() + static_cast<std::ptrdiff_t>(p) + 1, loop.end());
+    if (!found) return false;
+    Ring merged(loop.begin(), loop.begin() + static_cast<std::ptrdiff_t>(bl) + 1);
+    for (std::size_t k = 0; k <= hole.size(); ++k) merged.push_back(hole[(bh + k) % hole.size()]);
+    merged.push_back(loop[bl]);
+    merged.insert(merged.end(), loop.begin() + static_cast<std::ptrdiff_t>(bl) + 1, loop.end());
     loop = std::move(merged);
     return true;
 }

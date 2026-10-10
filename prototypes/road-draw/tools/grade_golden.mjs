@@ -48,6 +48,8 @@ const CASES = [
   { name: 'bridge_valley', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0.02 }, { k: 'gauss', amp: -22, cx: 140, cy: 0, sx: 28, sy: 1e4 }, ripple], roads: [{ type: 3, pts: [[0, 0, 30], [280, 0, 30]] }] },
   { name: 'tunnel_curved_grade', off: [15000, -9000], terms: [{ k: 'plane', c0: 12, cx: 0.01, cy: 0 }, { k: 'gauss', amp: 45, cx: 150, cy: 50, sx: 45, sy: 45 }, ripple], roads: [{ type: 2, pts: [[0, 0, 10], [90, 20, 13], [180, 70, 17], [240, 150, 20]] }] },
   { name: 'dual_pair', off: NOISE_OFF, terms: [{ k: 'plane', c0: 20, cx: 0, cy: 0.15 }, { k: 'gauss', amp: 6, cx: 100, cy: 0, sx: 40, sy: 50 }, ripple], roads: [{ type: 3, pts: [[0, 0, 20], [200, 0, 20]] }, { type: 3, pts: [[200, 13.3, 20], [0, 13.3, 20]] }] },
+  // two level parallel roads on a hillside that is steeper than the batter in the middle and flat at both ends: alone each needs walls both sides; side by side the inner sides meet the neighbour's earthworks and need none
+  { name: 'steep_pair', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0 }, { k: 'slopeEnv', slope: 0.52, yc: 0, cx: 100, sig: 40 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [200, 0, 30]] }, { type: 2, pts: [[0, 15, 30], [200, 15, 30]] }] },
   { name: 'crossing_and_ends', off: NOISE_OFF, terms: [{ k: 'plane', c0: 20, cx: 0, cy: 0 }, { k: 'gauss', amp: 5, cx: 60, cy: 30, sx: 30, sy: 30 }, ripple], roads: [{ type: 2, pts: [[0, 0, 20], [160, 0, 20]] }, { type: 1, pts: [[100, -70, 20], [100, 70, 20]] }] },
 ];
 
@@ -67,7 +69,7 @@ function buildCase(c) {
   const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER'), roundK: run('ROUND_DAYLIGHT / (2 * T.batter)'), roundHinge: run('ROUND_HINGE') };
   const out = {
     name: c.name, version: 1, quant: 1e-4, terrain,
-    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundReach: run('ROUND_REACH'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
+    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingRatio: run('WING_RATIO'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundHinge: run('ROUND_HINGE'), roundReach: run('ROUND_REACH'), wallRamp: run('WALL_RAMP'), planeMargin: run('PLANE_MARGIN'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
     roads: [], tiles: [],
   };
   rsJs.forEach((r, ri) => {

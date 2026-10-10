@@ -729,34 +729,119 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
     if (poly.size() < 3) return fail(lay, "ring has no geometry");
     const Ring island = inflate_ring(poly, -in_ext);
     if (island.size() < 3) return fail(lay, "the island outline is empty (ring too tight or too irregular)");
+    // Over-run apron: a low paved collar round a small island (the raised island shrinks inside it).
     lay.island.push_back(island);
+    if (cls.apron_width > 0 && prm.apron_island_radius_max > 0) {
+        const double island_r = std::sqrt(std::fabs(signed_area(island)) / kPi);
+        if (island_r < prm.apron_island_radius_max) {
+            const Ring inner = inflate_ring(island, -cls.apron_width);
+            if (inner.size() >= 3 && std::fabs(signed_area(inner)) > 1.0) {
+                Ring hole = inner;
+                std::reverse(hole.begin(), hole.end());
+                lay.apron = {island, hole};
+                lay.island = {inner};
+            }
+        }
+    }
 
-    // ---- splitter islands on two-way approaches
+    // ---- splitter islands
+    // Two-way approach: a teardrop between the shifted kerbs of the flare (no lane is narrower than the road
+    // type's lane beside it). Its ring-side edge follows the circle of the ring's outer kerb.
+    const double ring_out_r = group.radius + out_ext;
+    const auto project = [&](Vec2 p) {
+        const Vec2 d = p - group.centre;
+        const double len = d.length();
+        return len > 1e-9 ? group.centre + d * (ring_out_r / len) : p;
+    };
+    const auto ring_junction_arm = [&](const RoundaboutArm& arm, const Junction** jout) -> const JunctionArm* {
+        const auto jt = lay.ring_junctions.find(group.nodes[static_cast<std::size_t>(arm.ring_index)]);
+        if (jt == lay.ring_junctions.end()) return nullptr;
+        for (const JunctionArm& ja : jt->second.arms)
+            if (ja.edge == arm.edge) {
+                *jout = &jt->second;
+                return &ja;
+            }
+        return nullptr;
+    };
+    std::vector<bool> paired(group.arms.size(), false);
     for (std::size_t gi = 0; gi < group.arms.size(); ++gi) {
         const RoundaboutArm& arm = group.arms[gi];
         if (!(arm.entry && arm.exit)) continue;
-        const auto jt = lay.ring_junctions.find(group.nodes[static_cast<std::size_t>(arm.ring_index)]);
-        if (jt == lay.ring_junctions.end()) continue;
-        const Junction& j = jt->second;
-        for (std::size_t k = 0; k < j.arms.size() && k < j.trims.size(); ++k) {
-            const JunctionArm& ja = j.arms[k];
-            if (ja.edge != arm.edge) continue;
-            const double s0 = j.trims[k];
-            const double len = std::min(prm.splitter_length, ja.edge_length - s0 - 1.0);
-            if (len < 4.0) break;
-            constexpr int kSteps = 6;
-            const double hw = prm.splitter_width / 2;
+        const Junction* j = nullptr;
+        const JunctionArm* ja = ring_junction_arm(arm, &j);
+        if (!ja || !ja->flare.active()) continue;
+        const double s0 = std::min(out_ext, ja->flare.length - 2.0), s1 = ja->flare.length;
+        const double h0 = std::max(ja->flare.spread_left, ja->flare.spread_right);
+        SplitterIsland sp;
+        sp.arm = static_cast<int>(gi);
+        sp.length = s1 - s0;
+        sp.width = 2 * h0;
+        std::vector<Vec2> left, right;
+        for (double s = s0; s < s1; s += 1.0) {
+            left.push_back(arm_point(*ja, s, flare_spread(*ja, s, true)).pos.xy());
+            right.push_back(arm_point(*ja, s, -flare_spread(*ja, s, false)).pos.xy());
+        }
+        left.push_back(arm_point(*ja, s1, 0).pos.xy());
+        sp.polygon = left;
+        for (std::size_t q = right.size(); q-- > 1;) sp.polygon.push_back(right[q]);
+        // ring end: from the right corner round to the left corner along the ring circle
+        const Vec2 r0 = right.front(), l0 = left.front();
+        sp.polygon.push_back(project(r0));
+        for (int q = 1; q < 5; ++q) {
+            const double t = q / 5.0;
+            sp.polygon.push_back(project(r0 + (l0 - r0) * t));
+        }
+        sp.polygon.front() = project(sp.polygon.front());
+        if (signed_area(sp.polygon) < 0) std::reverse(sp.polygon.begin(), sp.polygon.end());
+        lay.splitters.push_back(std::move(sp));
+    }
+    // Dual-carriageway approach: two one-way arms (one in, one out) on adjacent ring nodes, roughly parallel.
+    // The splitter is the central reservation between them carried into the ring.
+    for (std::size_t ga = 0; ga < group.arms.size(); ++ga) {
+        const RoundaboutArm& A = group.arms[ga];
+        if (paired[ga] || !(A.entry && !A.exit)) continue;
+        const Edge* ea = graph.edge(A.edge);
+        const RoadType* ta = ea ? region.road_type(ea->road_type) : nullptr;
+        if (!ta || !ta->dual) continue;
+        for (std::size_t gb = 0; gb < group.arms.size(); ++gb) {
+            const RoundaboutArm& B = group.arms[gb];
+            if (paired[gb] || !(B.exit && !B.entry)) continue;
+            const Edge* eb = graph.edge(B.edge);
+            const RoadType* tb = eb ? region.road_type(eb->road_type) : nullptr;
+            if (!tb || tb != ta) continue;
+            const int di = (A.ring_index - B.ring_index + static_cast<int>(n)) % static_cast<int>(n);
+            if (di != 1 && di != static_cast<int>(n) - 1) continue;
+            const Junction *ja_j = nullptr, *jb_j = nullptr;
+            const JunctionArm *ja = ring_junction_arm(A, &ja_j), *jb = ring_junction_arm(B, &jb_j);
+            if (!ja || !jb) continue;
+            if (std::fabs(wrap_angle(ja->heading_out - jb->heading_out)) > 0.5) continue;
+            // Inner (median) side of each carriageway: toward the other one.
+            const Vec2 pa = arm_point(*ja, 5.0, 0).pos.xy(), pb = arm_point(*jb, 5.0, 0).pos.xy();
+            const Vec2 na{-std::sin(ja->heading_out), std::cos(ja->heading_out)};
+            const Vec2 nb{-std::sin(jb->heading_out), std::cos(jb->heading_out)};
+            const double sa = (pb - pa).x * na.x + (pb - pa).y * na.y >= 0 ? 1.0 : -1.0;
+            const double sb = -((pb - pa).x * nb.x + (pb - pa).y * nb.y) >= 0 ? 1.0 : -1.0;
+            const double lat_a = sa > 0 ? ja->kerb_left : -ja->kerb_right;
+            const double lat_b = sb > 0 ? jb->kerb_left : -jb->kerb_right;
+            const double speed = ta->speed_limit;
+            const double len = std::min({cls.splitter_length * prm.splitter_speed_factor(speed),
+                                         ja->edge_length / 2 - 1.0, jb->edge_length / 2 - 1.0});
+            if (len < 4.0) continue;
+            const double s0 = std::min(out_ext, len - 2.0);
             SplitterIsland sp;
-            sp.arm = static_cast<int>(gi);
-            for (int q = 0; q <= kSteps; ++q) {
-                const double t = static_cast<double>(q) / kSteps;
-                sp.polygon.push_back(arm_point(ja, s0 + len * t, hw * (1 - t * t)).pos.xy());
-            }
-            for (int q = kSteps - 1; q >= 0; --q) {
-                const double t = static_cast<double>(q) / kSteps;
-                sp.polygon.push_back(arm_point(ja, s0 + len * t, -hw * (1 - t * t)).pos.xy());
-            }
+            sp.arm = static_cast<int>(ga);
+            sp.arm_b = static_cast<int>(gb);
+            sp.length = len - s0;
+            for (double s = s0; s < len; s += 2.0) sp.polygon.push_back(arm_point(*ja, s, lat_a).pos.xy());
+            sp.polygon.push_back(arm_point(*ja, len, lat_a).pos.xy());
+            sp.polygon.push_back(arm_point(*jb, len, lat_b).pos.xy());
+            for (double s = len - 2.0; s > s0; s -= 2.0) sp.polygon.push_back(arm_point(*jb, s, lat_b).pos.xy());
+            const Vec2 b0 = arm_point(*jb, s0, lat_b).pos.xy(), a0 = arm_point(*ja, s0, lat_a).pos.xy();
+            sp.width = (b0 - a0).length();
+            sp.polygon.push_back(project(b0));
+            for (int q = 1; q < 5; ++q) sp.polygon.push_back(project(b0 + (a0 - b0) * (q / 5.0)));
             if (signed_area(sp.polygon) < 0) std::reverse(sp.polygon.begin(), sp.polygon.end());
+            paired[ga] = paired[gb] = true;
             lay.splitters.push_back(std::move(sp));
             break;
         }

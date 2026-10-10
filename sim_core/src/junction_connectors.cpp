@@ -342,8 +342,8 @@ void generate_connectors(Junction& junction, DrivingSide side, const JunctionOve
             // changes into the pocket over the first part of it (smoothstep, tangent at both ends), then turns.
             for (const TurnPocket& p : junction.pockets) {
                 if (p.arm != c.af || p.to_arm != c.at || !fa.flare.active()) continue;
-                const double side = fa.flare.spread_left > fa.flare.spread_right ? 1.0 : -1.0;
-                const double lat_p = side * p.lane_width / 2;
+                const double pside = fa.flare.spread_left > fa.flare.spread_right ? 1.0 : -1.0;
+                const double lat_p = pside * p.lane_width / 2;
                 const double s0 = p.storage_length, lc_len = std::min(12.0, s0 * 0.6), s_p = s0 - lc_len;
                 if (lc_len < 1.0 || trim_of(c.af) <= s0) break;
                 std::vector<Vec3> path;

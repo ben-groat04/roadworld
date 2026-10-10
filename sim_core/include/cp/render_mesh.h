@@ -66,6 +66,7 @@
 #include "cp/junction.h"
 #include "cp/junction_roundabout.h"
 #include "cp/road_graph.h"
+#include "cp/tile_key.h"
 
 namespace cp {
 
@@ -136,13 +137,11 @@ struct MeshBuffers {
     std::vector<Float2> uv1;       // lane-relative, see the file header
     // RGBA8 masks, channel layout in the file header (R wear, G edge dirt, B variation, A reserved = 0).
     std::vector<std::array<std::uint8_t, 4>> colours;
+    // Per-vertex surface class id (index into SurfaceTable::names); filled by build_mesh_chunks, empty from
+    // pack_buffers. Lets one master material pick the texture layer when classes are merged.
+    std::vector<std::uint8_t> surface_ids;
     std::vector<std::uint32_t> indices;
     std::vector<SectionRange> sections;
-};
-
-struct TileKey {
-    std::int32_t x = 0, y = 0;
-    friend constexpr auto operator<=>(const TileKey&, const TileKey&) = default;
 };
 
 struct MeshChunk {
@@ -256,10 +255,22 @@ void append_mesh(WorldMeshSet& dst, const WorldMeshSet& src);
 
 struct ChunkParams {
     double tile_size = 256.0;  // m
+    // false (default): one buffer per surface class, keyed by class name, with edge / structure sections.
+    // true: all classes of a tile in ONE buffer keyed "road" with one section (one draw call per tile and
+    // shadow pass); surface_ids says which class each vertex came from. Every class currently belongs to
+    // that single opaque group; a class that must stay separate (e.g. transparent) would get the second
+    // key, none exists yet. Triangles, positions, normals, uvs and masks are identical in both modes.
+    bool merge_surfaces = false;
 };
 
-TileKey tile_of(Vec2 p, double tile_size);
-Vec3 tile_origin(TileKey t, double tile_size);
+// Surface class id table: names in sorted order, id = index (at most 255 classes). Built from the region
+// pack (every lane type surface, the roundabout surfaces, the default and island kerb surfaces), so ids
+// are stable for a given data set regardless of what a build contains.
+struct SurfaceTable {
+    std::vector<std::string> names;
+    int id(const std::string& name) const;  // -1 if unknown
+};
+SurfaceTable make_surface_table(const RegionPack& region, const RenderMeshParams& params = {});
 
 // Builds every edge, junction, joint and roundabout island into per-tile chunks. A triangle belongs to
 // the tile containing its centroid (vertices are duplicated across tile borders), so a tile's content
@@ -270,6 +281,7 @@ std::map<TileKey, MeshChunk> build_mesh_chunks(const RoadGraph& graph, const Reg
                                                const JunctionSet& junctions,
                                                const std::vector<RoundaboutLayout>* roundabouts,
                                                const RenderMeshParams& params = {}, const ChunkParams& chunk = {},
-                                               const std::set<TileKey>* only = nullptr);
+                                               const std::set<TileKey>* only = nullptr,
+                                               SurfaceTable* table = nullptr);
 
 }  // namespace cp

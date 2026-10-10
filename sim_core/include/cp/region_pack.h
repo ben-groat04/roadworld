@@ -197,6 +197,19 @@ struct GradingRules {
     double tunnel_clear_height = 5.5;  // m, tunnel springline height above the road (side-wall headroom)
 };
 
+// Structure dimensions (region.json "structures" object, used by structure_mesh.h). The values here are the
+// fallbacks used when a pack omits a field; they match StructureParams defaults.
+struct StructureRules {
+    double parapet_height = 1.0;        // m
+    double max_pier_spacing = 30.0;     // m, longest clear span between supports
+    double min_bridge_length = 20.0;    // m, shorter flagged spans are solid blocks unless over a road or water
+    double pier_road_clearance = 2.0;   // m, footing clearance to another road's cross-section
+    double wall_panel = 4.0;            // m, retaining wall panel length
+    double tunnel_rise_k = 0.2;         // tunnel arch rise as a fraction of the half-width
+    double coping_thickness = 0.15;     // m
+    double coping_overhang = 0.04;      // m
+};
+
 struct RegionPack {
     std::string id;
     int version = 0;
@@ -206,6 +219,7 @@ struct RegionPack {
     RoundaboutRules roundabout;
     JunctionRules junction;
     GradingRules grading;
+    StructureRules structures;
     std::map<std::string, LaneType> lane_types;
     std::map<std::string, RoadType> road_types;
 

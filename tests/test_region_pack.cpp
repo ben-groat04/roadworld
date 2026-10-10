@@ -274,3 +274,29 @@ TEST_CASE("UK rural and urban main road types") {
                            t.markings == "motorway"),
                           id);
 }
+
+TEST_CASE("structures block is optional, validated, and set in the UK pack") {
+    auto lt = parse_lane_types(R"({"lane_types":[{"id":"driving","surface":"asphalt","connects_at_junctions":true,"users":["car"]}]})");
+    REQUIRE_MESSAGE(lt, lt.error);
+    const std::string rtj = road_types(R"({"lane":"driving","width_m":3.0})");
+    const auto with = [&](const std::string& body) {
+        return parse_region_pack(*lt, std::string(R"({"id":"t","driving_side":"left","speed_unit":"kph","structures":)") + body + "}", rtj);
+    };
+    auto plain = parse_region_pack(*lt, kRegion, rtj);
+    REQUIRE_MESSAGE(plain, plain.error);
+    CHECK(plain->structures.max_pier_spacing == doctest::Approx(30));
+    CHECK(plain->structures.parapet_height == doctest::Approx(1.0));
+    auto set = with(R"({"parapet_height_m":1.1,"max_pier_spacing_m":25,"wall_panel_m":3,"coping_thickness_m":0.2})");
+    REQUIRE_MESSAGE(set, set.error);
+    CHECK(set->structures.parapet_height == doctest::Approx(1.1));
+    CHECK(set->structures.max_pier_spacing == doctest::Approx(25));
+    CHECK(set->structures.wall_panel == doctest::Approx(3));
+    CHECK(set->structures.coping_thickness == doctest::Approx(0.2));
+    CHECK(set->structures.tunnel_rise_k == doctest::Approx(0.2));  // unset: default
+    CHECK_FALSE(with(R"({"max_pier_spacing_m":1})"));
+    CHECK_FALSE(with(R"({"parapet_height_m":0})"));
+    CHECK_FALSE(with(R"({"wall_panel_m":"wide"})"));
+    auto uk = load_region_pack_by_id(CP_DATA_DIR, "uk");
+    REQUIRE_MESSAGE(uk, uk.error);
+    CHECK(uk->structures.max_pier_spacing == doctest::Approx(30));
+}
