@@ -192,10 +192,10 @@ void ConvertBuffers(const cp::MeshBuffers& Src, FSection& Dst)
 	Dst.Indices.resize(Base + Src.indices.size());
 	for (std::size_t i = 0; i + 2 < Src.indices.size(); i += 3)
 	{
-		// Winding rule: swap indices 1 and 2.
+		// Winding rule (see CPRoadMeshBuild.h): front face is CCW seen from outside in both frames; copy unchanged.
 		Dst.Indices[Base + i] = static_cast<std::int32_t>(Src.indices[i]);
-		Dst.Indices[Base + i + 1] = static_cast<std::int32_t>(Src.indices[i + 2]);
-		Dst.Indices[Base + i + 2] = static_cast<std::int32_t>(Src.indices[i + 1]);
+		Dst.Indices[Base + i + 1] = static_cast<std::int32_t>(Src.indices[i + 1]);
+		Dst.Indices[Base + i + 2] = static_cast<std::int32_t>(Src.indices[i + 2]);
 	}
 }
 
@@ -419,13 +419,13 @@ FOutput BuildRender(FWorld& W, const FSettings& S)
 			{
 				const std::uint32_t A = Tri[i], B = Tri[i + 1], C = Tri[i + 2];
 				// Make the triangle counter-clockwise in sim plan first (do not trust the ring orientation),
-				// then apply the winding rule (swap 1 and 2).
+				// (winding rule in CPRoadMeshBuild.h: no extra swap; CCW seen from above is the front face).
 				const cp::Vec2 Ab{Pts[B].x - Pts[A].x, Pts[B].y - Pts[A].y};
 				const cp::Vec2 Ac{Pts[C].x - Pts[A].x, Pts[C].y - Pts[A].y};
 				const bool bCcw = Ab.cross(Ac) >= 0.0;
 				Sec.Indices.push_back(Base + static_cast<std::int32_t>(A));
-				Sec.Indices.push_back(Base + static_cast<std::int32_t>(bCcw ? C : B));
 				Sec.Indices.push_back(Base + static_cast<std::int32_t>(bCcw ? B : C));
+				Sec.Indices.push_back(Base + static_cast<std::int32_t>(bCcw ? C : B));
 				++Out.Stats.MarkTriangles;
 				Out.Stats.TrianglesByMarkingColour[Sec.Key] += 1;
 			}

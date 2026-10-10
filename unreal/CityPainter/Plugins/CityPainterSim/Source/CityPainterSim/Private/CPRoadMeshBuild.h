@@ -11,10 +11,14 @@
 //     UE.X = sim.y * 100,  UE.Y = sim.x * 100,  UE.Z = sim.z * 100
 //   Heading: sim heading h (radians CCW from +x east) -> UE yaw degrees = 90 - degrees(h).
 //   Directions (normals, tangents) use the same swap without the scale: (nx, ny, nz) -> (ny, nx, nz).
-//   The swap is a reflection (determinant -1). Seen from above, the map looks identical in both frames (north up,
-//   east right), so a triangle that is counter-clockwise from its front face in sim_core is still counter-clockwise
-//   from above in UE, but Unreal's front face is CLOCKWISE. Rule: swap indices 1 and 2 of every triangle
-//   ((a, b, c) -> (a, c, b)). Normals / tangent directions are NOT negated.
+//   The axis swap is a reflection (determinant -1) and the UE frame is left-handed, so the PICTURE seen from above is
+//   identical in both frames (north up, east right): a triangle counter-clockwise from its front face in sim_core is
+//   still counter-clockwise from the same side in UE. Unreal's ProceduralMeshComponent front face is COUNTER-CLOCKWISE
+//   seen from outside (derived from Engine/Plugins/Runtime/ProceduralMeshComponent/Source/ProceduralMeshComponent/
+//   Private/KismetProceduralMeshLibrary.cpp GenerateBoxMesh + ConvertQuadToTriangles: the +Z face is emitted (v0,v1,v3),
+//   which is CCW seen from above). The reflection and the handedness cancel, so the rule is: DO NOT reorder indices.
+//   Normals / tangent directions are swapped like positions and NOT negated.
+//   (An earlier version swapped indices 1 and 2 here, assuming a clockwise front face; that culled every top face.)
 //   Tangent sign: sim_core's bitangent = normal x tangent (right-handed) points along +v. With the swap, Unreal's
 //   TangentY = TangentZ x TangentX (same component formula, left-handed frame) points along -v, so
 //   FProcMeshTangent::bFlipTangentY must be TRUE for sim w = +1 (stored here as TangentFlipY).
@@ -68,7 +72,7 @@ struct FSection
 	std::vector<std::uint8_t> TangentFlipY;       // 1 = FProcMeshTangent::bFlipTangentY
 	std::vector<FFloat2> UV0;                     // metres (u across, v along); markings: tile-relative sim metres
 	std::vector<std::array<std::uint8_t, 4>> Colour;  // R, G, B, A
-	std::vector<std::int32_t> Indices;            // UE (clockwise front face) winding, triples
+	std::vector<std::int32_t> Indices;            // UE winding (CCW seen from outside, same order as sim), triples
 };
 
 struct FTile

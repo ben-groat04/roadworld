@@ -2,6 +2,7 @@
 
 Files (default, interchange layout of CPRoadMeshActor; deterministic names, overwritten each run):
   look_01_aerial, look_02_roundabout_oblique, look_03_roundabout_approach, look_04_tee_minor_arm,
+  look_07_underside (camera below the road looking up),
   look_05_slip_merge, look_06_kerb_closeup.
 The former "old" argument (views of the removed CPRoadNetworkActor) now fails with a clear message.
 
@@ -64,6 +65,7 @@ INTERCHANGE_VIEWS = [
     ("look_04_tee_minor_arm", sim(50, 228.6, 1.8), sim(0, 230, 1.6)),        # on the side road looking west at the T, 1.6 m up
     ("look_05_slip_merge", sim(215, 60, 25), sim(255, 8, 0.5)),              # oblique over the east on-slip merging into the dual
     ("look_06_kerb_closeup", sim(-2.4, 148, 4.3), sim(-3.3, 153, 3.7)),      # 0.5 m above the road, 1 m from the west kerb of the minor road
+    ("look_07_underside", sim(150, -5.5, -600), sim(150, 5.5, 0)),             # 6 m BELOW the dual carriageway looking up: the underside must be culled (sky/floor show through)
 ]
 
 VIEWS = INTERCHANGE_VIEWS

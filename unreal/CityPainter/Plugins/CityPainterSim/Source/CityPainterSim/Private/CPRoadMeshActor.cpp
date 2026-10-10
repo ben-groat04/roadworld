@@ -97,7 +97,7 @@ void CreateSection(UProceduralMeshComponent* Comp, int32 SectionIndex, const CPB
 	{
 		Tris.Add(Idx);
 	}
-	// Winding was already flipped to Unreal's convention in CPRoadMeshBuild.cpp; do not flip again.
+	// Winding follows the rule in CPRoadMeshBuild.h (indices unchanged from sim); do not reorder here.
 	Comp->CreateMeshSection(SectionIndex, Verts, Tris, Normals, UV0, Colors, Tangents, /*bCreateCollision=*/false);
 }
 

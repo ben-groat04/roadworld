@@ -216,6 +216,7 @@ def strip_template_terrain(eas):
 
 
 FLOOR_Z_CM = -3000.0  # the interchange has cuttings/underpasses; a floor at z=-10 cm hid the road in the first screenshots
+FLOOR_SCALE = 20000.0  # plane is 100 cm: 20000x => 20 km square, so the horizon is floor, not the blue sky-atmosphere ground
 
 
 def ensure_floor(eas):
@@ -223,7 +224,7 @@ def ensure_floor(eas):
     mat = unreal.load_asset(mat_path) if asset_exists(mat_path) else None
     for a in find_actors(eas, unreal.StaticMeshActor):
         if a.get_actor_label() == "CP_Floor":
-            if abs(a.get_actor_location().z - FLOOR_Z_CM) < 1.0:
+            if abs(a.get_actor_location().z - FLOOR_Z_CM) < 1.0 and abs(a.get_actor_scale3d().x - FLOOR_SCALE) < 1.0:
                 cp.log("reuse floor CP_Floor")
                 return a
             # Moving an external (World Partition) actor does not mark it dirty, so the move was silently not saved:
@@ -240,8 +241,8 @@ def ensure_floor(eas):
     a.get_editor_property("static_mesh_component").set_static_mesh(mesh)
     if mat is not None:
         a.get_editor_property("static_mesh_component").set_material(0, mat)
-    a.set_actor_scale3d(unreal.Vector(2000.0, 2000.0, 1.0))  # plane is 100 cm: 2000x => 2 km square
-    cp.log("spawned floor CP_Floor (2 km)")
+    a.set_actor_scale3d(unreal.Vector(FLOOR_SCALE, FLOOR_SCALE, 1.0))
+    cp.log("spawned floor CP_Floor (20 km)")
     return a
 
 
