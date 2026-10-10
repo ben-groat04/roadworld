@@ -175,6 +175,7 @@ struct Junction {
     std::vector<CornerCurve> corners;  // per corner k (size n)
     PolygonSet carriageway;            // asphalt inside the trim lines and corners
     PolygonSet pavements;              // pavement/kerb polygons around the corners and between arms
+    PolygonSet gore;                   // [C] Merge/Diverge only: nose/gore area between the two nearly parallel arms (hatching)
     std::vector<CrossingSpot> crossings;
 
     // [A] fills (C for Merge/Diverge):
@@ -279,6 +280,11 @@ std::vector<Vec3> make_connector_path(const JunctionArm& from_arm, const LaneRef
 // `graph` gives access to edge geometry for kerb offsets. Does not touch connectors.
 void generate_geometry(Junction& junction, const RoadGraph& graph, const RegionPack& region,
                        const JunctionOverrides& overrides);
+
+// [C] Taper length (m) of a merge/diverge from the main carriageway design speed (m/s). Parametric
+// table in junction_merge.cpp (should move to the region pack). The junction itself covers at most
+// kArmSampleLength of it (trims are clamped to the stored arm centreline and half the edge length).
+double merge_taper_length(double design_speed_ms);
 
 // [C] For cls Merge/Diverge only: sets trims, connectors (lane add/drop and taper), corners,
 // carriageway, pavements, crossings, replacing both A and B for that node.

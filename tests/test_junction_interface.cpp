@@ -242,7 +242,7 @@ TEST_CASE("build_junctions: only 3+ arm nodes appear, with arms, trims and major
 
 // ---- golden numbers the parts must hit (enable when implemented) ----
 
-TEST_CASE("[A golden] T junction of two residential roads: 6 connectors" * doctest::skip()) {
+TEST_CASE("[A golden] T junction of two residential roads: 6 connectors") {
     Net n;
     n.polar(0, 100);
     n.polar(180, 100);
