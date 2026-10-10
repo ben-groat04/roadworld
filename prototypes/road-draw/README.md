@@ -1,6 +1,6 @@
 # Road Draw prototype (3D, throwaway UX test tool)
 
-Open `index.html` in Chrome or Edge (double-click it, no server needed). It loads three.js from jsdelivr, so it needs internet access.
+Edit `src/*`, run `node build.mjs`, then open `index.html` (generated, do not edit) in Chrome or Edge (double-click it, no server needed). It loads three.js from jsdelivr, so it needs internet access.
 
 ## Controls
 
@@ -18,6 +18,6 @@ Cuttings and embankments (1:2 slopes), retaining walls, bridges, tunnels and wat
 
 ## Tests
 
-`node prototypes/road-draw/test-geom.mjs` checks the geometry block (`<script id="geom">`) in `3d.html` if it exists, otherwise `index.html`.
+`node prototypes/road-draw/test-geom.mjs` checks `src/geom.js` directly.
 
 Not production code: findings feed the real tool in Unreal.

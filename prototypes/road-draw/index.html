@@ -1,55 +1,61 @@
 <!doctype html>
+<!-- GENERATED, edit src/ and run node build.mjs -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Road Draw Prototype</title>
+<title>Road Draw 3D</title>
 <style>
   :root { --bg: #0d1117; --panel: #161b22; --text: #e6edf3; --muted: #8b949e; --accent: #ffd866; --err: #ff7b72; --warn: #f5a623; --border: #30363d; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
   canvas { display: block; }
-  #plan { cursor: crosshair; }
+  #view { cursor: crosshair; }
   #prof { border-top: 1px solid var(--border); }
   #hud { position: absolute; left: 12px; top: 12px; background: rgba(13,17,23,0.82); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; max-width: min(560px, calc(100vw - 24px)); pointer-events: none; }
   .err { color: var(--err); } .warn { color: var(--warn); }
-  #tune { position: absolute; right: 12px; top: 12px; background: rgba(13,17,23,0.88); border: 1px solid var(--border); border-radius: 6px; width: 220px; }
+  #tune { position: absolute; right: 12px; top: 12px; background: rgba(13,17,23,0.88); border: 1px solid var(--border); border-radius: 6px; width: 230px; }
   #tune-toggle { width: 100%; background: none; border: 0; color: var(--text); padding: 7px 10px; text-align: left; cursor: pointer; font: inherit; }
   #tune-body { display: none; padding: 0 10px 10px; }
   #tune.open #tune-body { display: block; }
   #tune label { display: block; margin-top: 6px; color: var(--muted); }
   #tune label span { color: var(--text); float: right; }
   #tune input { width: 100%; accent-color: var(--accent); }
-  #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -60%); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; width: min(620px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.5); cursor: pointer; }
+  #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -60%); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; width: min(640px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.5); cursor: pointer; }
   #help h2 { margin: 0 0 8px; font-size: 17px; }
   #help table { border-collapse: collapse; width: 100%; }
   #help td { padding: 3px 6px; vertical-align: top; border-bottom: 1px solid var(--border); }
   #help td:first-child { white-space: nowrap; color: var(--accent); }
   #help p { color: var(--muted); margin: 10px 0 0; }
 </style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
 </head>
 <body>
-<canvas id="plan"></canvas>
+<canvas id="view"></canvas>
 <canvas id="prof"></canvas>
 <div id="hud"></div>
 <div id="tune"><button id="tune-toggle">⚙ Tuning</button><div id="tune-body"></div></div>
 <div id="help">
-  <h2>Road Draw prototype</h2>
+  <h2>Road Draw 3D prototype</h2>
   <table>
-    <tr><td>Left click</td><td>Add a point (the clothoid refits through all points). Clicking onto an existing road connects and finishes.</td></tr>
-    <tr><td>Double-click / Enter / right-click</td><td>Finish road</td></tr>
+    <tr><td>Left click</td><td>Add a point (the clothoid refits through all points). Clicking onto an existing road connects and finishes. Click onto a bridge deck to start from it.</td></tr>
+    <tr><td>Double-click / Enter / right-click (no drag)</td><td>Finish road</td></tr>
     <tr><td>Esc / Backspace</td><td>Cancel road / remove last point</td></tr>
     <tr><td>Hold Shift</td><td>Snapping off (angle, length, guidelines, roads)</td></tr>
     <tr><td>PgUp / PgDn  or  ] / [</td><td>Raise / lower the next point 1 m (Shift: 5 m). In edit mode: the hovered handle.</td></tr>
     <tr><td>1 2 3 4</td><td>Residential · B road · Dual carriageway · Motorway (dual types: one stroke places two one-way carriageways)</td></tr>
     <tr><td>O</td><td>Toggle one-way (single-carriageway types)</td></tr>
-    <tr><td>C</td><td>Colour: plain / curvature / gradient</td></tr>
-    <tr><td>E or Tab</td><td>Toggle draw / edit. Edit: click a road, drag its handles, Del deletes it.</td></tr>
+    <tr><td>C</td><td>Road colour: plain / curvature / gradient</td></tr>
+    <tr><td>Tab</td><td>Toggle draw / edit. Edit: click a road, drag its handles (terrain regrades on release), Del deletes it.</td></tr>
     <tr><td>Ctrl+Z / Ctrl+Y</td><td>Undo / redo</td></tr>
-    <tr><td>Right/middle drag, wheel</td><td>Pan, zoom</td></tr>
+    <tr><td>Right drag / middle drag / wheel</td><td>Orbit / pan / zoom</td></tr>
+    <tr><td>W A S D or arrows · Q E</td><td>Pan along the ground · rotate</td></tr>
+    <tr><td>P</td><td>Toggle the profile panel</td></tr>
     <tr><td>H</td><td>Toggle this help</td></tr>
   </table>
-  <p>Curvature and gradient are advisory (amber). Red means the road would break graphically and the click is refused. Profile panel below: blue fill, orange cut, red where cut/fill passes the wall cap (would need a bridge or tunnel). Click to close.</p>
+  <p>The terrain is graded to follow each road: cuttings and embankments at the batter slope, retaining walls where cut/fill exceeds "wall start", bridges (fill) and tunnels (cut) beyond "wall cap". Curvature and gradient are advisory (amber). Red means the road would break graphically and the click is refused. Profile: blue fill, orange cut, red = over the wall cap, measured against the original ground. Click to close.</p>
 </div>
 <script id="geom">
 // ===== Geometry (pure, no DOM). Mirrors sim_core clothoid / clothoid_chain / vertical_profile. =====
@@ -238,19 +244,117 @@ const G = (() => {
   return { wrap, fres, fitG1, fitChain, point, head, curv, chainPose, sample, profile, profZ, profGrade };
 })();
 </script>
-<script>
+<script type="module">
+// config.js: imports, region/road-type data, tunables T and constants.
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
 // ===== Config (data-driven; UK values are just the first region pack) =====
-const DRIVING_SIDE = 'left';          // 'left' (UK) or 'right'
-const WORLD = 2048;                    // metres, square
+const DRIVING_SIDE = 'left';
+const WORLD = 2048;
 const ROAD_TYPES = {
   1: { id: 'residential', name: 'Residential street', carriageway: 10.0, total: 14.3, lanes: 1, speedKph: 50,  minR: 20,   maxGrade: 10, kc: 10,  ks: 9,  dual: false, edge: '#8f8d86' },
   2: { id: 'b_road',      name: 'B road / main road', carriageway: 6.5,  total: 10.8, lanes: 1, speedKph: 70,  minR: 180,  maxGrade: 8,  kc: 30,  ks: 20, dual: false, edge: '#8f8d86' },
   3: { id: 'a_road_dual', name: 'A road / dual c\'way', carriageway: 8.8, total: 10.8, lanes: 2, speedKph: 100, minR: 720,  maxGrade: 6,  kc: 100, ks: 26, dual: true, gap: 2.5, edge: '#5f7d4a' },
   4: { id: 'motorway',    name: 'Motorway',           carriageway: 14.95, total: 17.45, lanes: 3, speedKph: 120, minR: 1020, maxGrade: 4, kc: 182, ks: 37, dual: true, gap: 3.0, edge: '#5f7d4a' },
 };
-const T = { snapAngle: 15, snapLen: 8, wallCap: 12, kMul: 1, minSpan: 4 };
+const T = { snapAngle: 15, snapLen: 8, wallCap: 12, wallStart: 6, batter: 2, kMul: 1, minSpan: 4, water: 14 };
+const SHOULDER = 1.0, FORM_DROP = 0.15, PAVE_H = 0.12, DECK_T = 1.2, TUNNEL_H = 5.5, PARAPET_H = 1.0;
 
-// ===== Terrain =====
+// scene.js: renderer, camera, lights, sky, fog, shadow, shared state, view/camera control.
+// ===== Scene =====
+const canvas = document.getElementById('view'), profCv = document.getElementById('prof'), fc = profCv.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.92;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const SKY = 0xb9d3e6;   // horizon / fog colour (hazy morning)
+const scene = new THREE.Scene(); scene.background = new THREE.Color(SKY); scene.fog = new THREE.Fog(SKY, 1800, 7500);
+// Sky dome: vertical gradient, follows the camera, ignores fog and depth.
+const skyDome = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { top: { value: new THREE.Color(0x3f7fc4) }, mid: { value: new THREE.Color(0x8fbbe0) }, hor: { value: new THREE.Color(SKY) }, glow: { value: new THREE.Color(0xffd9a8) }, sunDir: { value: new THREE.Vector3(-0.7, 0.5, 0.45).normalize() } },
+  vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: 'uniform vec3 top,mid,hor,glow,sunDir; varying vec3 vD; void main(){ vec3 d=normalize(vD); float h=max(d.y,0.0); vec3 c=mix(hor,mid,smoothstep(0.0,0.18,h)); c=mix(c,top,smoothstep(0.15,0.8,h)); float g=pow(max(dot(d,sunDir),0.0),8.0); c+=glow*g*0.35*(1.0-h); if(d.y<0.0) c=hor; gl_FragColor=vec4(c,1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
+}));
+skyDome.renderOrder = -10; skyDome.frustumCulled = false; scene.add(skyDome);
+const camera = new THREE.PerspectiveCamera(50, 1, 1, 20000);
+const hemi = new THREE.HemisphereLight(0xbcd8f5, 0x6b6a52, 0.95); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffe0b0, 3.4); scene.add(sun, sun.target);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004;
+const SUN_DIR = new THREE.Vector3(-0.7, 0.5, 0.45).normalize();
+const w3 = (x, y, z) => [x, z, -y];
+
+// ===== State =====
+const state = { mode: 'draw', type: 1, oneWay: false, colour: 0, draw: null, dz: 0, snap: null, mouse: [0, 0], shift: false,
+  hover: null, sel: null, hoverHandle: -1, drag: null, help: true, profile: true, flash: 0, preview: null, pick: null };
+const COLOUR_MODES = ['plain', 'curvature', 'gradient'];
+let needsUI = true, needsRender = true, overlayDirty = true, mouseDirty = false, mouseIn = false;
+function dirty() { needsUI = true; needsRender = true; overlayDirty = true; }
+
+// ===== View =====
+let VW = 1, VH = 1, PROF_H = 190;
+function resize() {
+  PROF_H = state.profile ? Math.min(220, Math.round(innerHeight * 0.28)) : 0;
+  VW = innerWidth; VH = Math.max(100, innerHeight - PROF_H);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(dpr); renderer.setSize(VW, VH); camera.aspect = VW / VH; camera.updateProjectionMatrix();
+  profCv.style.display = state.profile ? 'block' : 'none';
+  profCv.width = VW * dpr; profCv.height = PROF_H * dpr; profCv.style.width = VW + 'px'; profCv.style.height = PROF_H + 'px';
+  fc.setTransform(dpr, 0, 0, dpr, 0, 0); profDpr = dpr;
+  dirty();
+}
+let profDpr = 1;
+
+const controls = new OrbitControls(camera, canvas);
+controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+controls.screenSpacePanning = false; controls.enableDamping = false;
+controls.minDistance = 15; controls.maxDistance = 3800; controls.maxPolarAngle = 1.42; controls.minPolarAngle = 0.05; controls.zoomSpeed = 1.1;
+controls.addEventListener('change', () => { needsRender = true; mouseDirty = true; overlayDirty = true; });
+function setView(tx, ty, dist, az, polar) {
+  const gx = clamp(tx, 0, WORLD), gy = clamp(ty, 0, WORLD), gz = hAt(gx, gy);
+  controls.target.set(gx, gz, -gy);
+  camera.position.set(gx + dist * Math.sin(polar) * Math.sin(az), gz + dist * Math.cos(polar), -gy + dist * Math.sin(polar) * Math.cos(az));
+  controls.update(); dirty();
+}
+const keys = new Set();
+function updateCamera(dt) {
+  const tg = controls.target, ox = tg.x, oz = tg.z;
+  let mx = 0, mz = 0, rot = 0;
+  if (keys.has('w') || keys.has('arrowup')) mz += 1; if (keys.has('s') || keys.has('arrowdown')) mz -= 1;
+  if (keys.has('d') || keys.has('arrowright')) mx += 1; if (keys.has('a') || keys.has('arrowleft')) mx -= 1;
+  if (keys.has('q')) rot -= 1; if (keys.has('e')) rot += 1;
+  const dist = camera.position.distanceTo(tg);
+  if (mx || mz) {
+    const fx = tg.x - camera.position.x, fz = tg.z - camera.position.z, fl = Math.hypot(fx, fz) || 1;
+    const sp = dist * 0.9 * dt * (state.shift ? 3 : 1), dx = (fx / fl * mz + (-fz / fl) * mx) * sp, dz = (fz / fl * mz + (fx / fl) * mx) * sp;
+    tg.x += dx; tg.z += dz; camera.position.x += dx; camera.position.z += dz;
+  }
+  if (rot) {
+    const a = rot * 1.3 * dt, c = Math.cos(a), s = Math.sin(a), rx = camera.position.x - tg.x, rz = camera.position.z - tg.z;
+    camera.position.x = tg.x + rx * c - rz * s; camera.position.z = tg.z + rx * s + rz * c;
+  }
+  tg.x = clamp(tg.x, 0, WORLD); tg.z = clamp(tg.z, -WORLD, 0);
+  const gy = hAt(tg.x, -tg.z), dy = gy - tg.y;   // keep the target on the terrain surface, camera moves with it
+  if (Math.abs(dy) > 1e-4) { tg.y = gy; camera.position.y += dy; }
+  const moved = controls.update() || mx || mz || rot || ox !== tg.x || oz !== tg.z;
+  const cg = hAt(camera.position.x, -camera.position.z) + 3;
+  if (camera.position.y < cg) { camera.position.y = cg; controls.update(); }
+  if (moved || Math.abs(dy) > 1e-4) { needsRender = true; mouseDirty = true; overlayDirty = true; }
+  camera.near = Math.max(0.5, dist / 250); camera.far = Math.max(8000, dist * 6); camera.updateProjectionMatrix();
+}
+function updateShadow() {
+  const tg = controls.target, dist = camera.position.distanceTo(tg), half = clamp(dist * 0.95, 80, 1500), ld = half * 2 + 500;
+  sun.target.position.copy(tg); sun.position.copy(tg).addScaledVector(SUN_DIR, ld);
+  const c = sun.shadow.camera; c.left = -half; c.right = half; c.top = half; c.bottom = -half; c.near = 10; c.far = ld * 2 + 400; c.updateProjectionMatrix();
+  sun.shadow.normalBias = half * 2 / 2048 * 1.5;
+  // Atmosphere: fog scales with camera height / distance; dome follows the camera.
+  const hgt = Math.max(camera.position.y, 20), fn = Math.max(300, dist * 1.5 + hgt * 2);
+  scene.fog.near = fn; scene.fog.far = fn * 4.5 + 3000;
+  skyDome.position.copy(camera.position); skyDome.scale.setScalar(Math.max(camera.far * 0.9, 1000));
+}
+
+// terrain.js: terrain generation, height sampling, terrain mesh, vertex colours, water.
+// ===== Terrain data (same generator as the 2D prototype). TH = original, TG = graded. =====
 const TN = 513, CELL = WORLD / (TN - 1);
 const TH = new Float32Array(TN * TN);
 (function genTerrain() {
@@ -264,50 +368,125 @@ const TH = new Float32Array(TN * TN);
   for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) {
     const x = i * CELL, y = j * CELL;
     let h = 10 + 150 * Math.pow(fbm(x / 900, y / 900), 1.7);
-    // Sinuous river valley running roughly south-west to north-east.
     const vx = x - (y * 0.85 + 180 * Math.sin(y / 260));
     h -= 45 * Math.exp(-(vx - 300) * (vx - 300) / (2 * 140 * 140));
-    // A steep escarpment in the north-west.
     h += 35 / (1 + Math.exp(-((y - x * 0.4) - 1250) / 25));
     TH[j * TN + i] = Math.max(2, h);
   }
 })();
+const TG = Float32Array.from(TH);
+const GR = new Uint8Array(TN * TN);       // 1 where grading changed the ground
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+// Original ground (smooth Catmull-Rom, as in 2D): profile panel, cut/fill, wall edge heights.
 function terrainH(x, y) {
-  const fx = Math.max(0, Math.min(TN - 1.001, x / CELL)), fy = Math.max(0, Math.min(TN - 1.001, y / CELL));
+  const fx = clamp(x / CELL, 0, TN - 1.001), fy = clamp(y / CELL, 0, TN - 1.001);
   const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
-  const at = (ii, jj) => TH[Math.max(0, Math.min(TN - 1, jj)) * TN + Math.max(0, Math.min(TN - 1, ii))];
+  const at = (ii, jj) => TH[clamp(jj, 0, TN - 1) * TN + clamp(ii, 0, TN - 1)];
   const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
   const row = jj => cr(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), u);
   return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v);
 }
-const terrainImg = (function renderTerrain() {
-  const R = 2048, mpp = WORLD / R, cv = document.createElement('canvas'); cv.width = cv.height = R;
-  const g = cv.getContext('2d'), img = g.createImageData(R, R), H = new Float32Array(R * R);
-  for (let py = 0; py < R; py++) for (let px = 0; px < R; px++) H[py * R + px] = terrainH((px + 0.5) * mpp, WORLD - (py + 0.5) * mpp);
-  for (let py = 0; py < R; py++) for (let px = 0; px < R; px++) {
-    const k = py * R + px, h = H[k];
-    const hl = H[py * R + Math.max(0, px - 1)], hr = H[py * R + Math.min(R - 1, px + 1)];
-    const hu = H[Math.max(0, py - 1) * R + px], hd = H[Math.min(R - 1, py + 1) * R + px];
-    const nx = (hl - hr) / (2 * mpp), ny = (hd - hu) / (2 * mpp);
-    const shade = Math.max(0, Math.min(1, 0.55 + (nx * -0.6 + ny * 0.6) * 0.9 / Math.sqrt(1 + nx * nx + ny * ny)));
-    const t = Math.min(1, h / 160);
-    let r = 92 + 90 * t, gg = 120 + 50 * t - 40 * t * t, b = 70 + 60 * t;
-    r *= shade * 1.15; gg *= shade * 1.15; b *= shade * 1.15;
-    const c5 = Math.floor(h / 5), c25 = Math.floor(h / 25);
-    if (px + 1 < R && py + 1 < R) {
-      const hr2 = H[k + 1], hd2 = H[k + R];
-      if (Math.floor(hr2 / 25) !== c25 || Math.floor(hd2 / 25) !== c25) { r *= 0.55; gg *= 0.55; b *= 0.55; }
-      else if (Math.floor(hr2 / 5) !== c5 || Math.floor(hd2 / 5) !== c5) { r *= 0.8; gg *= 0.8; b *= 0.8; }
-    }
-    img.data[k * 4] = r; img.data[k * 4 + 1] = gg; img.data[k * 4 + 2] = b; img.data[k * 4 + 3] = 255;
-  }
-  g.putImageData(img, 0, 0);
-  return cv;
-})();
+// Current graded ground: exactly the rendered mesh surface (triangles a-b-d and a-d-c).
+function hAt(x, y) { return hTri(TG, x, y); }
+const hBase = (x, y) => hTri(TH, x, y);   // original ground as the (linear) mesh would show it
+function hTri(A, x, y) {
+  const fx = clamp(x / CELL, 0, TN - 1.0001), fy = clamp(y / CELL, 0, TN - 1.0001);
+  const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j, k = j * TN + i;
+  const a = A[k], b = A[k + 1], c = A[k + TN], d = A[k + TN + 1];
+  return u >= v ? a + u * (b - a) + v * (d - b) : a + u * (d - c) + v * (c - a);
+}
 
-// ===== Roads + commands =====
+// Terrain mesh (513 x 513, 4 m cells). three position = (x, h, -y).
+const tGeo = new THREE.BufferGeometry();
+const tPos = new Float32Array(TN * TN * 3), tNor = new Float32Array(TN * TN * 3), tCol = new Float32Array(TN * TN * 3);
+for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) { const k = (j * TN + i) * 3; tPos[k] = i * CELL; tPos[k + 1] = TG[j * TN + i]; tPos[k + 2] = -j * CELL; }
+{
+  const idx = new Uint32Array((TN - 1) * (TN - 1) * 6); let p = 0;
+  for (let j = 0; j < TN - 1; j++) for (let i = 0; i < TN - 1; i++) {
+    const a = j * TN + i, b = a + 1, c = a + TN, d = c + 1;
+    idx[p++] = a; idx[p++] = b; idx[p++] = d; idx[p++] = a; idx[p++] = d; idx[p++] = c;
+  }
+  tGeo.setIndex(new THREE.BufferAttribute(idx, 1));
+}
+tGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
+tGeo.setAttribute('normal', new THREE.BufferAttribute(tNor, 3));
+tGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
+tGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(WORLD / 2, 60, -WORLD / 2), WORLD);
+const terrain = new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+terrain.receiveShadow = true; terrain.castShadow = true; terrain.frustumCulled = false; scene.add(terrain);
+
+const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42], EARTH = [0.42, 0.47, 0.22];
+function shadeVertex(i, j) {
+  const k = j * TN + i, il = Math.max(0, i - 1), ir = Math.min(TN - 1, i + 1), jd = Math.max(0, j - 1), ju = Math.min(TN - 1, j + 1);
+  const sx = (TG[j * TN + ir] - TG[j * TN + il]) / ((ir - il) * CELL), sy = (TG[ju * TN + i] - TG[jd * TN + i]) / ((ju - jd) * CELL);
+  const inv = 1 / Math.sqrt(sx * sx + sy * sy + 1);
+  tNor[k * 3] = -sx * inv; tNor[k * 3 + 1] = inv; tNor[k * 3 + 2] = sy * inv;
+  const h = TG[k], slope = Math.sqrt(sx * sx + sy * sy);
+  let c = lerp3(GRASS_LO, GRASS_HI, clamp((h - 5) / 150, 0, 1));
+  const rt = clamp((slope - 0.55) / 0.4, 0, 1); c = lerp3(c, ROCK, rt * rt * (3 - 2 * rt));
+  if (GR[k]) c = lerp3(c, EARTH, 0.6);
+  if (h < T.water + 1.2) c = lerp3(c, [0.36, 0.33, 0.24], clamp((T.water + 1.2 - h) / 3, 0, 0.8));
+  const n = (((Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0) % 1000) / 1000 - 0.5, v = 1 + n * 0.1;
+  tCol[k * 3] = c[0] * c[0] * v; tCol[k * 3 + 1] = c[1] * c[1] * v; tCol[k * 3 + 2] = c[2] * c[2] * v;   // approx sRGB -> linear
+}
+function updateTerrainMesh(rg) {
+  const i0 = rg ? rg.i0 : 0, i1 = rg ? rg.i1 : TN - 1, j0 = rg ? rg.j0 : 0, j1 = rg ? rg.j1 : TN - 1;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) tPos[(j * TN + i) * 3 + 1] = TG[j * TN + i];
+  for (let j = Math.max(0, j0 - 1); j <= Math.min(TN - 1, j1 + 1); j++) for (let i = Math.max(0, i0 - 1); i <= Math.min(TN - 1, i1 + 1); i++) shadeVertex(i, j);
+  tGeo.attributes.position.needsUpdate = tGeo.attributes.normal.needsUpdate = tGeo.attributes.color.needsUpdate = true;
+}
+updateTerrainMesh(null);
+
+const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), new THREE.MeshStandardMaterial({ color: 0x2f7fa6, transparent: true, opacity: 0.68, roughness: 0.15, metalness: 0.1, depthWrite: false }));
+water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);
+const apron = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.MeshStandardMaterial({ color: 0x41522f, roughness: 1 }));
+apron.rotation.x = -Math.PI / 2; apron.position.set(WORLD / 2, 0, -WORLD / 2); apron.receiveShadow = true; scene.add(apron);
+
+// earthworks.js: road fitting/sampling, classify, applyRoad, regrade, wall line / edge helpers.
+// ===== Roads: fitting, sampling, structure classification =====
 let roads = [], nextId = 1;
 const undoStack = [], redoStack = [];
+const edgeOf = ty => ty.total / 2 + SHOULDER + CELL;   // formation edge: everything within this of the centreline is graded flat to formation
+const wallLineOf = ty => ty.total / 2 + 0.2;           // retaining wall face: just outside the ribbon (incl. pavement / verge)
+const reachOf = ty => edgeOf(ty) + 28 * T.batter;
+function closeGaps(a, maxGap) { // fill false runs shorter than maxGap that sit between true samples
+  let i = 0; const n = a.length;
+  while (i < n) { if (a[i]) { i++; continue; } let j = i; while (j < n && !a[j]) j++; if (i > 0 && j < n && j - i < maxGap) for (let k = i; k < j; k++) a[k] = true; i = j; }
+}
+function dropShort(a, minRun) {
+  let i = 0; const n = a.length;
+  while (i < n) { if (!a[i]) { i++; continue; } let j = i; while (j < n && a[j]) j++; if (j - i < minRun) for (let k = i; k < j; k++) a[k] = false; i = j; }
+}
+// Per sample: base heights at the formation edges, wall flags, bridge / tunnel flags (shared by grader and mesh builder).
+function classify(r, ty) {
+  const S = r.samples, n = S.length, off = wallLineOf(ty);
+  const br = new Array(n).fill(false), tu = new Array(n).fill(false);
+  const cL = br.slice(), fL = br.slice(), cR = br.slice(), fR = br.slice();
+  for (let i = 0; i < n; i++) {
+    const s = S[i], nx = -Math.sin(s.h), ny = Math.cos(s.h), dz = s.z - hBase(s.x, s.y), form = s.z - FORM_DROP;
+    s.eL = hBase(s.x + nx * off, s.y + ny * off); s.eR = hBase(s.x - nx * off, s.y - ny * off);   // same (linear mesh) base heights the grader uses
+    br[i] = dz > T.wallCap; tu[i] = dz < -T.wallCap;
+    cL[i] = s.eL - form > T.wallStart; fL[i] = form - s.eL > T.wallStart;
+    cR[i] = s.eR - form > T.wallStart; fR[i] = form - s.eR > T.wallStart;
+  }
+  for (const a of [br, tu]) { closeGaps(a, 8); dropShort(a, 8); }
+  for (let i = 0; i < n; i++) if (br[i] && tu[i]) tu[i] = false;
+  for (const a of [cL, fL, cR, fR]) { for (let i = 0; i < n; i++) if (br[i] || tu[i]) a[i] = false; closeGaps(a, 6); dropShort(a, 4); for (let i = 0; i < n; i++) if (br[i] || tu[i]) a[i] = false; }
+  for (let i = 0; i < n; i++) {
+    const s = S[i]; s.br = s.bridge = br[i]; s.tu = s.tunnel = tu[i];   // shared contract: br/tu (existing mesh code) and bridge/tunnel aliases
+    s.wL = cL[i] ? 1 : fL[i] ? 2 : 0; s.wR = cR[i] ? 1 : fR[i] ? 2 : 0;
+  }
+  // Portal approach: the first 2 tunnel samples at each end of a tunnel run are graded to formation with walls on both sides (no batter),
+  // and the grading is pushed on through the ~10 m lining plus one grid cell, so the ground step (up to ~12 m over one 4 m cell) sits behind the lining and never pokes into it.
+  const PORTAL_GRADE = 2 + Math.ceil(10 / 2) + 3;
+  for (let i = 0; i < n; i++) S[i].tp = false;
+  for (let i = 0; i < n; i++) if (tu[i]) {
+    let d0 = 0; while (i - d0 - 1 >= 0 && tu[i - d0 - 1]) d0++;
+    let d1 = 0; while (i + d1 + 1 < n && tu[i + d1 + 1]) d1++;
+    if (d0 < PORTAL_GRADE || d1 < PORTAL_GRADE) { const s = S[i]; s.tp = true; if (!s.wL) s.wL = 1; if (!s.wR) s.wR = 1; }
+  }
+}
 function rebuild(r) {
   const ty = ROAD_TYPES[r.type];
   const ch = G.fitChain(r.pts.map(p => [p.x, p.y]), r.hs, r.he);
@@ -317,36 +496,357 @@ function rebuild(r) {
   r.vp = G.profile(S, r.pts.map(p => p.z), ty.kc * T.kMul, ty.ks * T.kMul);
   r.samples = G.sample(ch, 2);
   for (const s of r.samples) { s.z = G.profZ(r.vp, s.s); s.g = G.profGrade(r.vp, s.s); s.t = terrainH(s.x, s.y); }
+  classify(r, ty);
+  r.ver = (r.ver || 0) + 1;
   return true;
 }
-function exec(cmd) { if (cmd.apply() === false) return false; undoStack.push(cmd); redoStack.length = 0; dirty(); return true; }
-function undo() { const c = undoStack.pop(); if (c) { c.revert(); redoStack.push(c); fixSelection(); dirty(); } }
-function redo() { const c = redoStack.pop(); if (c) { c.apply(); undoStack.push(c); fixSelection(); dirty(); } }
-const AddRoads = list => ({ apply() { roads.push(...list); }, revert() { roads = roads.filter(r => !list.includes(r)); } });
-const DeleteRoad = r => { let idx; return { apply() { idx = roads.indexOf(r); roads.splice(idx, 1); }, revert() { roads.splice(idx, 0, r); } }; };
+
+// ===== Terrain grading (derived from roads; base heights are never lost) =====
+const BD = new Float32Array(TN * TN), BS = new Int32Array(TN * TN), BT = new Float32Array(TN * TN), BL = new Int8Array(TN * TN), MK = new Uint8Array(TN * TN);
+function roadBBox(r) {
+  const reach = reachOf(ROAD_TYPES[r.type]); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const s of r.samples) { if (s.x < x0) x0 = s.x; if (s.x > x1) x1 = s.x; if (s.y < y0) y0 = s.y; if (s.y > y1) y1 = s.y; }
+  return { x0: x0 - reach, y0: y0 - reach, x1: x1 + reach, y1: y1 + reach };
+}
+const boxHit = (a, b) => a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0;
+function applyRoad(r, rg) {
+  const ty = ROAD_TYPES[r.type], S = r.samples, hw = ty.total / 2, reach = reachOf(ty), reach2 = reach * reach, bt = T.batter;
+  const bb = roadBBox(r); r.gbb = bb;
+  const i0 = Math.max(rg.i0, Math.floor(bb.x0 / CELL)), i1 = Math.min(rg.i1, Math.ceil(bb.x1 / CELL));
+  const j0 = Math.max(rg.j0, Math.floor(bb.y0 / CELL)), j1 = Math.min(rg.j1, Math.ceil(bb.y1 / CELL));
+  if (i0 > i1 || j0 > j1) return;
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const k = j * TN + i; BD[k] = Infinity; MK[k] = 0; }
+  for (let k = 0; k + 1 < S.length; k++) {
+    const a = S[k], b = S[k + 1], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+    const si0 = Math.max(i0, Math.floor((Math.min(a.x, b.x) - reach) / CELL)), si1 = Math.min(i1, Math.ceil((Math.max(a.x, b.x) + reach) / CELL));
+    const sj0 = Math.max(j0, Math.floor((Math.min(a.y, b.y) - reach) / CELL)), sj1 = Math.min(j1, Math.ceil((Math.max(a.y, b.y) + reach) / CELL));
+    for (let j = sj0; j <= sj1; j++) for (let i = si0; i <= si1; i++) {
+      const x = i * CELL, y = j * CELL, t = clamp(((x - a.x) * dx + (y - a.y) * dy) / l2, 0, 1);
+      const ex = x - (a.x + dx * t), ey = y - (a.y + dy * t), d2 = ex * ex + ey * ey, idx = j * TN + i;
+      if (d2 < BD[idx]) { BD[idx] = d2; BS[idx] = k; BT[idx] = t; BL[idx] = (dx * (y - a.y) - dy * (x - a.x)) >= 0 ? 1 : -1; }
+    }
+  }
+  const formAt = idx => { const k = BS[idx], t = BT[idx], a = S[k], b = S[k + 1]; return a.z + (b.z - a.z) * t - FORM_DROP; };
+  const sampAt = idx => { const k = BS[idx]; return BT[idx] < 0.5 ? S[k] : S[k + 1]; };
+  const edge2 = edgeOf(ty) * edgeOf(ty), edge = edgeOf(ty), wl2 = wallLineOf(ty) * wallLineOf(ty);
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const idx = j * TN + i; if (!(BD[idx] < reach2)) continue;
+    const sm = sampAt(idx); if (sm.br || (sm.tu && !sm.tp)) continue;
+    const wall = BL[idx] > 0 ? sm.wL : sm.wR, form = formAt(idx), old = TG[idx]; let h = old;
+    if (wall) { if (BD[idx] <= wl2) h = form; else continue; }   // walled side: formation up to the wall line, natural beyond (no batter)
+    else if (BD[idx] <= edge2) h = form;                  // formation (incl. one extra cell so every triangle under the ribbon is fully under it)
+    else { const e = Math.sqrt(BD[idx]) - edge; h = h > form ? Math.min(h, form + e / bt) : Math.max(h, form - e / bt); }
+    TG[idx] = h; if (Math.abs(h - old) > 0.02) GR[idx] = 1;
+  }
+}
+function regradeRegion(box) {
+  const rg = { i0: Math.max(0, Math.floor(box.x0 / CELL)), i1: Math.min(TN - 1, Math.ceil(box.x1 / CELL)), j0: Math.max(0, Math.floor(box.y0 / CELL)), j1: Math.min(TN - 1, Math.ceil(box.y1 / CELL)) };
+  if (rg.i0 > rg.i1 || rg.j0 > rg.j1) return;
+  for (let j = rg.j0; j <= rg.j1; j++) for (let i = rg.i0; i <= rg.i1; i++) { const k = j * TN + i; TG[k] = TH[k]; GR[k] = 0; }
+  for (const r of roads) if (boxHit(roadBBox(r), box)) { applyRoad(r, rg); r.ver = (r.ver || 0) + 1; }
+  updateTerrainMesh(rg);
+}
+let pend = [];
+function touch(r) { if (r.samples) pend.push(roadBBox(r)); if (r.gbb) pend.push(r.gbb); }
+function flushGrade() {
+  if (!pend.length) return;
+  const b = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
+  for (const p of pend) { b.x0 = Math.min(b.x0, p.x0); b.y0 = Math.min(b.y0, p.y0); b.x1 = Math.max(b.x1, p.x1); b.y1 = Math.max(b.y1, p.y1); }
+  pend = []; regradeRegion(b);
+}
+const regradeAll = () => { pend = []; regradeRegion({ x0: 0, y0: 0, x1: WORLD, y1: WORLD }); };
+
+// roadmesh.js: materials, mesh helpers and buildRoadGroup (surface, markings, skirts, walls, bridges, tunnels).
+// ===== Mesh builder: flat-shaded quads in world coords; each quad is wound to face a hint direction =====
+class MB {
+  constructor(col) { this.p = []; this.n = []; this.c = []; this.i = []; this.def = col; }
+  quad(a, b, c, d, hint, col) {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
+    let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    let P = [a, b, c, d], C = col && col.length === 4 ? [col[0], col[1], col[2], col[3]] : null;
+    if (nx * hint[0] + ny * hint[1] + nz * hint[2] < 0) { P = [a, d, c, b]; if (C) C = [C[0], C[3], C[2], C[1]]; nx = -nx; ny = -ny; nz = -nz; }
+    const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+    const base = this.p.length / 3, dc = col && col.length === 3 ? col : this.def;
+    for (let q = 0; q < 4; q++) {
+      const w = w3(P[q][0], P[q][1], P[q][2]), cc = C ? C[q] : dc;
+      this.p.push(w[0], w[1], w[2]); this.n.push(nx, nz, -ny); this.c.push(cc[0], cc[1], cc[2]);
+    }
+    this.i.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  mesh(mat, shadow) {
+    if (!this.i.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    if (mat.map) { const uv = new Float32Array(this.p.length / 3 * 2); for (let q = 0; q < uv.length / 2; q++) { uv[q * 2] = this.p[q * 3] * 0.25; uv[q * 2 + 1] = this.p[q * 3 + 2] * 0.25; } g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); }
+    g.setIndex(this.i);
+    const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.castShadow = !!shadow; return m;
+  }
+}
+const lin = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
+const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: lin('#587a3a'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#b4b2ab'), concDk: lin('#8f8d87'), cap: lin('#628443'), tube: lin('#2a2a2d'), parapet: lin('#c9c7c0') };
+const stdMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, ...o });
+// Subtle procedural asphalt grain (near-white so vertex colours still drive the tint); uv = world metres / 4.
+const asphTex = (() => {
+  try {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 256; const x = cv.getContext('2d'), im = x.createImageData(256, 256);
+    for (let i = 0; i < 256 * 256; i++) { const v = 205 + Math.random() * 50 | 0, k = Math.random() < 0.03 ? -35 : 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v + k; im.data[i * 4 + 3] = 255; }
+    x.putImageData(im, 0, 0);
+    for (let i = 0; i < 40; i++) { x.fillStyle = `rgba(0,0,0,${0.03 + Math.random() * 0.04})`; x.fillRect(Math.random() * 256, Math.random() * 256, 8 + Math.random() * 40, 2 + Math.random() * 6); }
+    const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+  } catch (e) { return null; }
+})();
+const MAT = {
+  asph: stdMat({ roughness: 0.9, map: asphTex }), pave: stdMat(), kerb: stdMat(), verge: stdMat({ roughness: 1 }), soil: stdMat({ roughness: 1 }),
+  mark: stdMat({ roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+  conc: stdMat({ roughness: 0.85 }), cap: stdMat({ roughness: 1 }), tube: stdMat({ roughness: 0.9, emissive: 0x141416 }),
+};
+// Per-road material variants: higher road id => pulled slightly closer in depth, so overlaps never z-fight; markings always above every surface.
+const roadMatCache = new Map();
+function roadMats(id) {
+  const q = id % 64; let m = roadMatCache.get(q);
+  if (!m) {
+    const po = (mat, f, u) => { const c = mat.clone(); c.polygonOffset = true; c.polygonOffsetFactor = f; c.polygonOffsetUnits = u; return c; };
+    m = { asph: po(MAT.asph, -q * 0.1, -q), pave: po(MAT.pave, -q * 0.1 - 0.05, -q - 0.5), verge: po(MAT.verge, -q * 0.1, -q), kerb: po(MAT.kerb, -q * 0.1 - 0.05, -q - 0.5), mark: po(MAT.mark, -10 - q * 0.1, -100 - q) };
+    roadMatCache.set(q, m);
+  }
+  return m;
+}
+const HEAT = { '#e5484d': lin('#e5484d'), '#f5a623': lin('#f5a623'), '#e8d44d': lin('#e8d44d'), '#3fb950': lin('#3fb950') };
+function heatCurv(k, ty) { const R = Math.abs(k) > 1e-9 ? 1 / Math.abs(k) : 1e9; return R < ty.minR * 0.5 ? '#e5484d' : R < ty.minR ? '#f5a623' : R < ty.minR * 2 ? '#e8d44d' : '#3fb950'; }
+function heatGrade(g, ty) { const p = Math.abs(g) * 100; return p > ty.maxGrade * 1.5 ? '#e5484d' : p > ty.maxGrade ? '#f5a623' : p > ty.maxGrade * 0.5 ? '#e8d44d' : '#3fb950'; }
+const UP = [0, 0, 1], DOWN = [0, 0, -1];
+const TCUT = 8.0, TFILL = 4.8;   // wall block thickness (cut: behind the wall line; fill: under the road edge)
+
+// Interpolated pose on a road at arc length s.
+function poseAt(r, s) {
+  const S = r.samples; let lo = 0, hi = S.length - 1;
+  s = clamp(s, S[0].s, S[hi].s);
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (S[m].s <= s) lo = m; else hi = m; }
+  const a = S[lo], b = S[hi], t = b.s > a.s ? (s - a.s) / (b.s - a.s) : 0;
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t, h: a.h + (b.h - a.h) * t };
+}
+const latPt = (p, lat, z) => [p.x - Math.sin(p.h) * lat, p.y + Math.cos(p.h) * lat, z];
+
+function buildRoadGroup(r) {
+  const ty = ROAD_TYPES[r.type], S = r.samples, n = S.length, hw = ty.total / 2, cw = ty.carriageway / 2;
+  const zo = (r.id % 64) * 0.0025, g = new THREE.Group(), RM = roadMats(r.id);
+  const B = {}; for (const k of Object.keys(COL)) B[k] = new MB(COL[k]);
+  B.tunRoad = new MB(COL.asph);
+  const P = (k, lat, dz = 0) => latPt(S[k], lat, S[k].z + zo + dz);
+  const tunSeg = k => S[k].tu && S[k + 1].tu;
+  const lnorm = h => [-Math.sin(h), Math.cos(h), 0], fwd = h => [Math.cos(h), Math.sin(h), 0];
+  const neg = v => [-v[0], -v[1], -v[2]];
+  const strip = (bk, l0, l1, dz, hint, filt) => { for (let k = 0; k + 1 < n; k++) if (!filt || filt(k)) bk.quad(P(k, l0, dz), P(k + 1, l0, dz), P(k + 1, l1, dz), P(k, l1, dz), hint); };
+  const face = (bk, lat, z0, z1, side, filt) => { // vertical strip along the road at lateral offset
+    for (let k = 0; k + 1 < n; k++) if (!filt || filt(k)) bk.quad(P(k, lat, z0), P(k + 1, lat, z0), P(k + 1, lat, z1), P(k, lat, z1), [-Math.sin(S[k].h) * side, Math.cos(S[k].h) * side, 0]);
+  };
+  // Generic extruded box along samples a..b (inclusive); zb/zt are absolute-height functions of the sample index.
+  const extrude = (a, b, l0, l1, zb, zt, o = {}) => {
+    const tb = o.top || B.conc, sb = o.side || B.conc;
+    for (let k = a; k < b; k++) {
+      const q = (l, f, kk) => latPt(S[kk], l, f(kk));
+      if (!o.noTop) tb.quad(q(l0, zt, k), q(l0, zt, k + 1), q(l1, zt, k + 1), q(l1, zt, k), UP);
+      if (!o.noL1) sb.quad(q(l1, zb, k), q(l1, zb, k + 1), q(l1, zt, k + 1), q(l1, zt, k), lnorm(S[k].h));
+      if (!o.noL0) sb.quad(q(l0, zb, k), q(l0, zb, k + 1), q(l0, zt, k + 1), q(l0, zt, k), neg(lnorm(S[k].h)));
+      if (o.bottom) sb.quad(q(l0, zb, k), q(l0, zb, k + 1), q(l1, zb, k + 1), q(l1, zb, k), DOWN);
+    }
+    for (const [kk, sg] of [[a, -1], [b, 1]]) {
+      const q = (l, f) => latPt(S[kk], l, f(kk)), hn = fwd(S[kk].h).map(v => v * sg);
+      sb.quad(q(l0, zb), q(l1, zb), q(l1, zt), q(l0, zt), hn);
+    }
+  };
+  // Oriented box at sample k (along / lateral / vertical ranges).
+  const obox = (k, a0, a1, l0, l1, z0, z1, bk, topB) => {
+    const p = typeof k === 'number' ? S[k] : k, c = Math.cos(p.h), s = Math.sin(p.h);
+    const V = (al, la, z) => [p.x + c * al - s * la, p.y + s * al + c * la, z];
+    const v = [[a0, l0, z0], [a1, l0, z0], [a1, l1, z0], [a0, l1, z0], [a0, l0, z1], [a1, l0, z1], [a1, l1, z1], [a0, l1, z1]].map(q => V(...q));
+    const f = fwd(p.h), ln = lnorm(p.h);
+    bk.quad(v[0], v[1], v[2], v[3], DOWN); (topB || bk).quad(v[4], v[5], v[6], v[7], UP);
+    bk.quad(v[0], v[1], v[5], v[4], neg(ln)); bk.quad(v[3], v[2], v[6], v[7], ln);
+    bk.quad(v[0], v[3], v[7], v[4], neg(f)); bk.quad(v[1], v[2], v[6], v[5], f);
+  };
+  // Surface layers.
+  const cc = k => {
+    if (state.colour === 0) return null;
+    const col = HEAT[state.colour === 1 ? heatCurv(S[k].k, ty) : heatGrade(S[k].g, ty)]; return col;
+  };
+  for (let k = 0; k + 1 < n; k++) {
+    const bk = tunSeg(k) ? B.tunRoad : B.asph, c0 = cc(k), c1 = cc(k + 1);
+    bk.quad(P(k, -cw), P(k + 1, -cw), P(k + 1, cw), P(k, cw), UP, c0 ? [c0, c1, c1, c0] : null);
+  }
+  const surf = k => !tunSeg(k);
+  if (!ty.dual) {
+    for (const sg of [1, -1]) {
+      strip(B.pave, sg * cw, sg * hw, PAVE_H, UP, surf);
+      face(B.kerb, sg * cw, 0, PAVE_H, -sg, surf);
+      face(B.kerb, sg * hw, -FORM_DROP - 0.05, PAVE_H, sg, surf);
+    }
+  } else {
+    for (const sg of [1, -1]) { strip(B.verge, sg * cw, sg * hw, -0.03, UP, surf); face(B.soil, sg * hw, -FORM_DROP - 0.05, -0.03, sg, surf); face(B.kerb, sg * cw, -0.03, 0, -sg, surf); }
+  }
+  // Skirts: vertical earth-coloured faces down the outer edge of the ribbon, hiding any residual sub-cell gap (bridge decks have their own sides).
+  for (const sg of [1, -1]) face(B.soil, sg * hw, -2.0, -FORM_DROP - 0.04, sg, k => surf(k) && !S[k].br && !S[k + 1].br);
+  // Markings (thin white ribbons just above the surface; polygonOffset in the material).
+  const MZ = 0.03, MW = 0.08;
+  const solid = lat => strip(B.mark, lat - MW, lat + MW, MZ, UP, null);
+  const dashed = lat => {
+    const L = r.chain.L;
+    const mph = ty.speedKph / 1.609, mk = mph <= 40 ? 2 : 3, gp = mk * 2;
+    for (let s0 = 1; s0 + mk < L; s0 += mk + gp) {
+      const nq = Math.max(2, Math.ceil(mk)), pts = []; for (let q = 0; q <= nq; q++) pts.push(poseAt(r, s0 + mk * q / nq));
+      for (let q = 0; q < nq; q++) B.mark.quad(latPt(pts[q], lat - MW, pts[q].z + zo + MZ), latPt(pts[q + 1], lat - MW, pts[q + 1].z + zo + MZ), latPt(pts[q + 1], lat + MW, pts[q + 1].z + zo + MZ), latPt(pts[q], lat + MW, pts[q].z + zo + MZ), UP);
+    }
+  };
+  if (!r.oneWay && !ty.dual) dashed(0);
+  else if (ty.lanes > 1) for (let l = 1; l < ty.lanes; l++) dashed(-cw + l * 3.65 + (ty.id === 'motorway' ? 0.7 : 0.5));
+  solid(cw - 0.3); solid(-cw + 0.3);
+
+  // Runs of flags.
+  const runs = f => { const out = []; let i = 0; while (i < n) { if (!f(S[i])) { i++; continue; } let j = i; while (j + 1 < n && f(S[j + 1])) j++; out.push([i, j]); i = j + 1; } return out; };
+  // Bridges: deck slab (1 sample past each end), parapets, piers, abutments.
+  const groundMin = (pose, a0, a1, l0, l1) => { // lowest ground (graded or base) under an oriented footprint
+    let m = 1e9;
+    for (let i = 0; i <= 2; i++) for (let j = 0; j <= 4; j++) {
+      const al = a0 + (a1 - a0) * i / 2, la = l0 + (l1 - l0) * j / 4, c = Math.cos(pose.h), sn = Math.sin(pose.h);
+      const x = pose.x + c * al - sn * la, y = pose.y + sn * al + c * la; m = Math.min(m, hAt(x, y), hBase(x, y));
+    }
+    return m;
+  };
+  for (const [a, b] of runs(s => s.br)) {
+    if (b <= a) continue;
+    const a2 = Math.max(0, a - 1), b2 = Math.min(n - 1, b + 1);
+    extrude(a2, b2, -hw, hw, k => S[k].z + zo - DECK_T, k => S[k].z + zo - 0.03, { noTop: true, bottom: true });
+    for (const sg of [1, -1]) extrude(a, b, sg > 0 ? hw - 0.4 : -hw + 0.1, sg > 0 ? hw - 0.1 : -hw + 0.4, k => S[k].z + zo - 0.03, k => S[k].z + zo + PARAPET_H, { top: B.conc });
+    const len = S[b].s - S[a].s, usable = len - 16, pw = ty.total * 0.7 / 2;
+    if (usable >= 0) {
+      const cnt = Math.floor(usable / 35) + 1;
+      for (let q = 0; q < cnt; q++) {
+        const pp = poseAt(r, S[a].s + 8 + (cnt === 1 ? usable / 2 : usable * q / (cnt - 1)));
+        const gnd = groundMin(pp, -0.75, 0.75, -pw, pw), zt = pp.z + zo - DECK_T + 0.05;
+        obox(pp, -0.75, 0.75, -pw, pw, Math.min(gnd, zt - 0.5) - 1.0, zt, B.conc);
+      }
+    }
+    for (const [k, a0, a1] of [[a, -1.6, -0.4], [b, 0.4, 1.6]]) {
+      const gnd = groundMin(S[k], a0, a1, -hw, hw);
+      obox(k, a0, a1, -hw, hw, Math.min(gnd, S[k].z - DECK_T - 0.5) - 1.0, S[k].z + zo - 0.03, B.conc);
+    }
+  }
+  // Retaining walls: 0.4 m thick, face at the road's outer edge; fill sides form a parapet 0.6 m above the road. extrude() closes each run with end faces.
+  for (const sg of [1, -1]) {
+    const key = sg > 0 ? 'wL' : 'wR', edge = wallLineOf(ty);
+    for (const [a, b] of runs(s => s[key] > 0)) {
+      if (b <= a) continue;
+      const bots = new Float32Array(n), tops = new Float32Array(n);
+      for (let k = a; k <= b; k++) {
+        const c = latPt(S[k], sg * edge, 0), nat = hBase(c[0], c[1]), form = S[k].z + zo - FORM_DROP;
+        bots[k] = Math.min(form, nat) - 1.0; tops[k] = Math.max(S[k].z + zo + 0.6, nat + 0.3);
+      }
+      const L = sg > 0 ? [edge, edge + 0.4] : [-edge - 0.4, -edge];
+      extrude(a, b, L[0], L[1], k => bots[k], k => tops[k], { noTop: true });
+    }
+  }
+  // Tunnels: portal headwalls with a recessed opening, plus a short dark lining so the portal is not see-through.
+  for (const [a, b] of runs(s => s.tu)) {
+    const pa0 = Math.min(n - 1, a + 1), pb0 = Math.max(0, b - 1), ow = hw + 0.5, W = ty.total / 2 + 3, DEPTH = 1.2;
+    const lining = (k0, dir, lim) => { // from the portal sample inwards (dir +1 / -1) for ~10 m, closed by a back wall
+      let k1 = k0; while (k1 + dir >= pa0 && k1 + dir <= pb0 && Math.abs(S[k1].s - S[k0].s) < 10) k1 += dir;
+      if (k1 === k0) return;
+      const lo = Math.min(k0, k1), hi = Math.max(k0, k1);
+      for (let k = lo; k < hi; k++) {
+        B.tube.quad(P(k, ow, 0), P(k + 1, ow, 0), P(k + 1, ow, TUNNEL_H), P(k, ow, TUNNEL_H), neg(lnorm(S[k].h)));
+        B.tube.quad(P(k, -ow, 0), P(k + 1, -ow, 0), P(k + 1, -ow, TUNNEL_H), P(k, -ow, TUNNEL_H), lnorm(S[k].h));
+        B.tube.quad(P(k, -ow, TUNNEL_H), P(k + 1, -ow, TUNNEL_H), P(k + 1, ow, TUNNEL_H), P(k, ow, TUNNEL_H), DOWN);
+      }
+      if (k1 !== (dir > 0 ? pb0 : pa0)) B.tube.quad(P(k1, -ow, -0.6), P(k1, ow, -0.6), P(k1, ow, TUNNEL_H), P(k1, -ow, TUNNEL_H), fwd(S[k1].h).map(v => -v * dir));
+    };
+    // Portal sits on the last graded approach sample (2nd flagged sample from each end); the ground step lies behind the headwall.
+    const pa = pa0, pb = pb0;
+    const hwH = (k, a0, a1) => { let m = 0; const p = S[k]; for (const al of [a0, a1]) for (const la of [-W, -ow, 0, ow, W]) { const x = p.x + Math.cos(p.h) * al - Math.sin(p.h) * la, y = p.y + Math.sin(p.h) * al + Math.cos(p.h) * la; m = Math.max(m, hBase(x, y)); } return Math.max(7.0, m - p.z + 1.0); };
+    lining(pa, 1, a); lining(pb, -1, b);
+    // Earth fill over the graded portal zone (between the cutting walls, above the lining roof) so the graded trench is not open to the sky.
+    const wlE = wallLineOf(ty);
+    for (const [k0, dir] of [[pa, 1], [pb, -1]]) {
+      let k1 = k0; while (k1 + dir >= 0 && k1 + dir < n && S[k1 + dir].tp && S[k1 + dir].tu) k1 += dir;
+      if (k1 === k0) continue;
+      const lo = Math.min(k0, k1), hi = Math.max(k0, k1), tops = {};
+      for (let k = lo; k <= hi; k++) { let m = 1e9; for (const la of [-wlE, 0, wlE]) { const c = latPt(S[k], la, 0); m = Math.min(m, hBase(c[0], c[1])); } tops[k] = Math.max(S[k].z + zo + TUNNEL_H + 0.3, m - 0.1); }
+      extrude(lo, hi, -wlE, wlE, k => S[k].z + zo + TUNNEL_H, k => tops[k], { top: B.soil, side: B.soil, noL0: true, noL1: true });
+    }
+    for (const [k, a0, a1] of [[pa, -DEPTH, 0], [pb, 0, DEPTH]]) {
+      const z0 = S[k].z + zo - 0.6, zt = S[k].z + zo + hwH(k, a0, a1);
+      obox(k, a0, a1, ow, W, z0, zt, B.conc);
+      obox(k, a0, a1, -W, -ow, z0, zt, B.conc);
+      obox(k, a0, a1, -ow, ow, S[k].z + zo + TUNNEL_H, zt, B.conc);
+    }
+  }
+  const add = (bk, mat, shadow, pick) => { const m = bk.mesh(mat, shadow); if (m) { m.userData.road = r; m.userData.pick = pick; g.add(m); } };
+  add(B.asph, RM.asph, false, true); add(B.tunRoad, RM.asph, false, false);
+  add(B.pave, RM.pave, false, true); add(B.verge, RM.verge, false, true); add(B.soil, MAT.soil, false, false); add(B.kerb, RM.kerb, false, false);
+  add(B.mark, RM.mark, false, false); add(B.conc, MAT.conc, true, false); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false);
+  return g;
+}
+
+// Road mesh sync.
+const roadGroup = new THREE.Group(); scene.add(roadGroup);
+const roadObjs = new Map(); let pickMeshes = [];
+function disposeGroup(g) { g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+function syncRoads() {
+  let changed = false;
+  for (const [r, o] of roadObjs) if (!roads.includes(r)) { roadGroup.remove(o.g); disposeGroup(o.g); roadObjs.delete(r); changed = true; }
+  for (const r of roads) {
+    const o = roadObjs.get(r);
+    if (!o || o.ver !== r.ver || o.colour !== state.colour) {
+      if (o) { roadGroup.remove(o.g); disposeGroup(o.g); }
+      const g = buildRoadGroup(r); roadGroup.add(g); roadObjs.set(r, { g, ver: r.ver, colour: state.colour }); changed = true;
+    }
+  }
+  if (changed) { pickMeshes = []; roadGroup.traverse(o => { if (o.userData.pick) pickMeshes.push(o); }); }
+}
+
+// input.js: commands/undo, picking, snapping, drawing preview and overlay, edit mode, keyboard and mouse.
+// ===== Commands =====
+function exec(cmd) { if (cmd.apply() === false) return false; undoStack.push(cmd); redoStack.length = 0; flushGrade(); dirty(); return true; }
+function undo() { const c = undoStack.pop(); if (c) { c.revert(); redoStack.push(c); flushGrade(); fixSelection(); dirty(); } }
+function redo() { const c = redoStack.pop(); if (c) { c.apply(); undoStack.push(c); flushGrade(); fixSelection(); dirty(); } }
+const AddRoads = list => ({ apply() { roads.push(...list); list.forEach(touch); }, revert() { list.forEach(touch); roads = roads.filter(r => !list.includes(r)); } });
+const DeleteRoad = r => { let idx; return { apply() { touch(r); idx = roads.indexOf(r); roads.splice(idx, 1); }, revert() { roads.splice(idx, 0, r); touch(r); } }; };
 const EditPoint = (r, i, before, after) => ({
-  apply() { r.pts[i] = { ...after }; if (!rebuild(r)) { r.pts[i] = { ...before }; rebuild(r); return false; } },
-  revert() { r.pts[i] = { ...before }; rebuild(r); },
+  apply() { touch(r); r.pts[i] = { ...after }; if (!rebuild(r)) { r.pts[i] = { ...before }; rebuild(r); pend = []; return false; } touch(r); },
+  revert() { touch(r); r.pts[i] = { ...before }; rebuild(r); touch(r); },
 });
 function fixSelection() { if (state.sel && !roads.includes(state.sel)) state.sel = null; if (state.hover && !roads.includes(state.hover)) state.hover = null; }
 
-// ===== View =====
-const plan = document.getElementById('plan'), prof = document.getElementById('prof');
-const pc = plan.getContext('2d'), fc = prof.getContext('2d');
-const view = { cx: WORLD / 2, cy: WORLD / 2, zoom: 0.5 };
-let W = 0, H = 0, PW = 0, PH = 0, dpr = 1;
-function resize() {
-  dpr = window.devicePixelRatio || 1; W = innerWidth; H = Math.round(innerHeight * 0.72); PW = innerWidth; PH = innerHeight - H;
-  for (const [c, w, h] of [[plan, W, H], [prof, PW, PH]]) { c.width = w * dpr; c.height = h * dpr; c.style.width = w + 'px'; c.style.height = h + 'px'; }
-  dirty();
+// ===== Picking =====
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function rayTerrain(o, d) {
+  const max = 14000; let prev = 0, inside = false;
+  for (let t = 2; t < max; t += 2) {
+    const x = o.x + d.x * t, y = -(o.z + d.z * t), py = o.y + d.y * t;
+    if (x < 0 || x > WORLD || y < 0 || y > WORLD) { if (inside) return null; prev = t; continue; }
+    inside = true;
+    if (py < hAt(x, y)) {
+      let a = prev, b = t;
+      for (let i = 0; i < 24; i++) { const m = (a + b) / 2; if (o.y + d.y * m < hAt(o.x + d.x * m, -(o.z + d.z * m))) b = m; else a = m; }
+      return (a + b) / 2;
+    }
+    prev = t;
+  }
+  return null;
 }
-const toS = (x, y) => [(x - view.cx) * view.zoom + W / 2, H / 2 - (y - view.cy) * view.zoom];
-const toW = (sx, sy) => [(sx - W / 2) / view.zoom + view.cx, (H / 2 - sy) / view.zoom + view.cy];
-
-// ===== State =====
-const state = { mode: 'draw', type: 1, oneWay: false, colour: 0, draw: null, dz: 0, snap: null, mouse: [0, 0], shift: false,
-  hover: null, sel: null, hoverHandle: -1, drag: null, help: true, flash: 0, preview: null };
-const COLOUR_MODES = ['plain', 'curvature', 'gradient'];
+function pick(sx, sy) {
+  ndc.set(sx / VW * 2 - 1, -(sy / VH) * 2 + 1); ray.setFromCamera(ndc, camera);
+  const o = ray.ray.origin, d = ray.ray.direction, tt = rayTerrain(o, d);
+  const hits = pickMeshes.length ? ray.intersectObjects(pickMeshes, false) : [];
+  let dist = tt, road = null;
+  if (hits.length && (tt == null || hits[0].distance < tt + 0.3)) { dist = hits[0].distance; road = hits[0].object.userData.road; }
+  if (dist == null) return null;
+  const x = o.x + d.x * dist, y = -(o.z + d.z * dist), z = o.y + d.y * dist;
+  return { x, y, z, road, dist, wpp: dist * 2 * Math.tan(camera.fov * Math.PI / 360) / VH };
+}
+const wppAt = (x, y, z) => camera.position.distanceTo(new THREE.Vector3(x, z, -y)) * 2 * Math.tan(camera.fov * Math.PI / 360) / VH;
+function project(x, y, z) { const v = new THREE.Vector3(x, z, -y).project(camera); return [(v.x + 1) / 2 * VW, (1 - v.y) / 2 * VH, v.z]; }
 
 // ===== Snapping =====
 function roadEnds() {
@@ -358,14 +858,16 @@ function roadEnds() {
   }
   return out;
 }
-function nearestOnRoad(x, y, maxD, skip) {
+function nearestOnRoad(x, y, maxD, skip, hitZ) {
   let best = null;
   for (const r of roads) {
     if (r === skip) continue;
     const S = r.samples;
     for (let i = 0; i + 1 < S.length; i++) {
-      const a = S[i], b = S[i + 1], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
-      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l2));
+      const a = S[i], b = S[i + 1];
+      if (hitZ != null && Math.abs(a.z - hitZ) > 15) continue;
+      const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+      const t = clamp(((x - a.x) * dx + (y - a.y) * dy) / l2, 0, 1);
       const px = a.x + dx * t, py = a.y + dy * t, d = Math.hypot(x - px, y - py);
       if (d < maxD && (!best || d < best.d)) {
         const sgn = Math.sign(dx * (y - a.y) - dy * (x - a.x)) || 1;
@@ -375,19 +877,16 @@ function nearestOnRoad(x, y, maxD, skip) {
   }
   return best;
 }
-function computeSnap(sx, sy) {
-  const [mx, my] = toW(sx, sy), px = 1 / view.zoom;
+function computeSnap(pk) {
+  const mx = pk.x, my = pk.y, px = pk.wpp, hz = pk.z;
   const d = state.draw, last = d && d.pts.length ? d.pts[d.pts.length - 1] : null;
   const res = { x: mx, y: my, z: null, kind: 'free', guide: null };
   if (!state.shift) {
-    // 1. existing road ends
     let be = null;
-    for (const e of roadEnds()) { const dd = Math.hypot(e.x - mx, e.y - my); if (dd < 14 * px && (!be || dd < be.dd)) be = { ...e, dd }; }
+    for (const e of roadEnds()) { const dd = Math.hypot(e.x - mx, e.y - my); if (dd < 14 * px && Math.abs(e.z - hz) < 15 && (!be || dd < be.dd)) be = { ...e, dd }; }
     if (be && !(last && Math.hypot(be.x - last.x, be.y - last.y) < 0.01)) return { x: be.x, y: be.y, z: be.z, kind: 'end', out: be.out };
-    // 2. onto an existing road (T-junction)
-    const on = nearestOnRoad(mx, my, 10 * px);
+    const on = nearestOnRoad(mx, my, 10 * px, null, hz);
     if (on) return { x: on.x, y: on.y, z: on.z, kind: 'road', road: on.r };
-    // 3. guideline: straight extension of road ends
     let bg = null;
     for (const e of roadEnds()) {
       const ux = Math.cos(e.out), uy = Math.sin(e.out), t = (mx - e.x) * ux + (my - e.y) * uy;
@@ -396,14 +895,14 @@ function computeSnap(sx, sy) {
       if (dd < 9 * px && (!bg || dd < bg.dd)) bg = { dd, x: qx, y: qy, guide: { type: 'line', x0: e.x, y0: e.y, x1: qx, y1: qy } };
     }
     if (bg) { res.x = bg.x; res.y = bg.y; res.kind = 'guide'; res.guide = bg.guide; }
-    // 4. guideline: parallel offset from a nearby road
     if (!bg) {
-      const near = nearestOnRoad(mx, my, 80);
+      const near = nearestOnRoad(mx, my, 80, null, hz);
       if (near) {
         const tyA = ROAD_TYPES[near.r.type], tyB = ROAD_TYPES[state.type];
-        const base = tyA.total / 2 + (tyB.dual ? tyB.total + tyB.gap / 2 : tyB.total / 2);
+        const single = tyB.dual && state.oneWay;   // one carriageway at a time: centre-to-centre = median gap + carriageway width
+        const base = single ? tyA.total / 2 + (tyA.dual ? tyA.gap / 2 : 0) + tyB.total / 2 + tyB.gap / 2 : tyA.total / 2 + (tyB.dual ? tyB.total + tyB.gap / 2 : tyB.total / 2);
         for (const k of [1, 2, 3]) {
-          const off = base * k + (k - 1) * 0;  // touching kerbs, then whole-road multiples
+          const off = base * k;
           if (Math.abs(Math.abs(near.sd) - off) < 7 * px) {
             const nx = -Math.sin(near.h), ny = Math.cos(near.h), sg = Math.sign(near.sd);
             res.x = near.x + nx * off * sg; res.y = near.y + ny * off * sg; res.kind = 'guide';
@@ -413,7 +912,6 @@ function computeSnap(sx, sy) {
         }
       }
     }
-    // 5. angle + length increments relative to the previous direction
     if (res.kind === 'free' && last) {
       let base = 0;
       if (d.pts.length >= 2) { const p = d.pts[d.pts.length - 2]; base = Math.atan2(last.y - p.y, last.x - p.x); }
@@ -425,18 +923,19 @@ function computeSnap(sx, sy) {
       res.guide = { type: 'line', x0: last.x, y0: last.y, x1: res.x, y1: res.y, faint: true };
     }
   }
+  if (res.kind === 'free' && pk.road) res.z = pk.z;   // clicked onto a bridge deck / road surface
   return res;
 }
+const snapZ = sn => sn.z != null ? sn.z : hAt(sn.x, sn.y) + state.dz;
 
-// ===== Drawing preview + validation =====
+// ===== Preview + validation =====
 function buildPreview() {
   const d = state.draw, sn = state.snap;
   if (!d || !sn) { state.preview = null; return; }
-  const ty = ROAD_TYPES[state.type];
-  const z = sn.z != null ? sn.z : terrainH(sn.x, sn.y) + state.dz;
+  const ty = ROAD_TYPES[state.type], z = sn.z != null ? sn.z + state.dz : hAt(sn.x, sn.y) + state.dz;
   const pts = [...d.pts, { x: sn.x, y: sn.y, z }];
   const he = sn.kind === 'end' ? sn.out + Math.PI : null;
-  const r = { type: state.type, pts, hs: d.hs, he };
+  const r = { id: 0, type: state.type, pts, hs: d.hs, he };
   const pv = { road: null, errors: [], warns: [], cursorZ: z };
   if (pts.length >= 2) {
     for (let i = 0; i + 1 < pts.length; i++) if (Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y) < T.minSpan) { pv.errors.push(`segment shorter than ${T.minSpan} m`); break; }
@@ -448,34 +947,32 @@ function buildPreview() {
       const lastS = r.samples[r.samples.length - 1];
       pv.endR = Math.abs(lastS.k) > 1e-9 ? 1 / Math.abs(lastS.k) : Infinity;
       pv.spanLen = r.chain.spans[r.chain.spans.length - 1].L;
-      pv.heading = ((90 - lastS.h * 180 / Math.PI) % 360 + 360) % 360;  // compass bearing
+      pv.heading = ((90 - lastS.h * 180 / Math.PI) % 360 + 360) % 360;
       const n = pts.length; pv.grade = (pts[n - 1].z - pts[n - 2].z) / pv.spanLen * 100;
-      const halfW = (ty.dual ? ty.gap / 2 + ty.total : ty.total / 2);
+      const halfW = (ty.dual && !state.oneWay ? ty.gap / 2 + ty.total : ty.total / 2);
       if (pv.minR < halfW) pv.errors.push(`too tight: radius ${pv.minR.toFixed(1)} m < half-width ${halfW.toFixed(1)} m (edge folds)`);
       if (pv.minR < ty.minR) pv.warns.push(`radius ${pv.minR.toFixed(0)} m below comfortable ${ty.minR} m for ${ty.name}`);
       if (pv.maxG > ty.maxGrade) pv.warns.push(`grade ${pv.maxG.toFixed(1)}% above advisory ${ty.maxGrade}%`);
-      let cap = false; for (const s of r.samples) if (Math.abs(s.z - s.t) > T.wallCap) cap = true;
-      if (cap) pv.warns.push(`cut/fill over ${T.wallCap} m wall cap: needs bridge/tunnel`);
+      let br = false, tu = false; for (const s of r.samples) { if (s.br) br = true; if (s.tu) tu = true; }
+      if (br) pv.warns.push(`fill over ${T.wallCap} m wall cap: becomes a bridge`);
+      if (tu) pv.warns.push(`cut over ${T.wallCap} m wall cap: becomes a tunnel`);
       if (!r.chain.g2) pv.warns.push('G2 solve fell back to G1 (curvature kink)');
     } else if (!pv.errors.length) pv.errors.push('cannot fit curve');
   }
   state.preview = pv;
 }
-
 function startOrAddPoint() {
   const sn = state.snap; if (!sn) return;
   const pv = state.preview;
   if (pv && pv.errors.length) { state.flash = performance.now(); dirty(); return; }
-  const z = sn.z != null ? sn.z : terrainH(sn.x, sn.y) + state.dz;
-  if (!state.draw) {
-    state.draw = { pts: [{ x: sn.x, y: sn.y, z }], hs: sn.kind === 'end' ? sn.out : null, attach: [sn.kind] };
-  } else {
+  const z = snapZ(sn);
+  if (!state.draw) state.draw = { pts: [{ x: sn.x, y: sn.y, z }], hs: sn.kind === 'end' ? sn.out : null, attach: [sn.kind] };
+  else {
     state.draw.pts.push({ x: sn.x, y: sn.y, z });
     state.draw.attach.push(sn.kind);
     if (sn.kind === 'end' || sn.kind === 'road') { state.draw.he = sn.kind === 'end' ? sn.out + Math.PI : null; finishRoad(); return; }
   }
-  state.dz = 0;
-  dirty();
+  state.dz = 0; dirty();
 }
 function finishRoad() {
   const d = state.draw; state.draw = null; state.preview = null; state.dz = 0;
@@ -483,8 +980,7 @@ function finishRoad() {
   const ty = ROAD_TYPES[state.type];
   const centre = { id: nextId++, type: state.type, oneWay: state.oneWay, pts: d.pts, hs: d.hs, he: d.he ?? null, attach: d.attach };
   if (!rebuild(centre)) { dirty(); return; }
-  if (!ty.dual) { exec(AddRoads([centre])); return; }
-  // Dual: one stroke places two independent one-way carriageways.
+  if (!ty.dual || state.oneWay) { exec(AddRoads([centre])); return; }
   const off = ty.gap / 2 + ty.total / 2, sideSign = DRIVING_SIDE === 'left' ? 1 : -1;
   const offPts = sg => centre.pts.map((p, i) => { const h = G.chainPose(centre.chain, centre.S[i]).h; return { x: p.x - Math.sin(h) * off * sg, y: p.y + Math.cos(h) * off * sg, z: p.z }; });
   const fwd = { id: nextId++, type: state.type, oneWay: true, pts: offPts(sideSign), hs: d.hs, he: d.he ?? null, attach: d.attach };
@@ -494,115 +990,196 @@ function finishRoad() {
   if (made.length) exec(AddRoads(made));
 }
 
-// ===== Rendering =====
-let needs = true; const dirty = () => { needs = true; };
-function offsetLine(S, d) { return S.map(s => [s.x - Math.sin(s.h) * d, s.y + Math.cos(s.h) * d]); }
-function strokePts(ctx, P, w, col, dash) {
-  if (P.length < 2) return;
-  ctx.beginPath(); for (let i = 0; i < P.length; i++) { const [x, y] = toS(P[i][0], P[i][1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
-  ctx.lineWidth = w; ctx.strokeStyle = col; ctx.setLineDash(dash || []); ctx.stroke(); ctx.setLineDash([]);
+// ===== Overlay (ghost road, guides, cursor ring, points, edit handles) =====
+const overlay = new THREE.Group(); scene.add(overlay);
+const scaled = [];   // {obj, px, at: Vector3}
+const KIND_COL = { end: 0x3fb950, road: 0x3fb950, guide: 0x7ee0ff, angle: 0xffffff, free: 0xffffff };
+function clearOverlay() { for (const o of [...overlay.children]) { overlay.remove(o); if (o.geometry) o.geometry.dispose(); } scaled.length = 0; }
+function lineObj(pts, color, dashed, opacity = 1) {
+  const g = new THREE.BufferGeometry().setFromPoints(pts.map(p => new THREE.Vector3(...w3(p[0], p[1], p[2]))));
+  const m = dashed ? new THREE.LineDashedMaterial({ color, dashSize: 4, gapSize: 3, depthTest: false, transparent: true, opacity }) : new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity });
+  const l = new THREE.Line(g, m); if (dashed) l.computeLineDistances(); l.renderOrder = 20; l.frustumCulled = false; return l;
 }
-function heatCurv(k, ty) { const R = Math.abs(k) > 1e-9 ? 1 / Math.abs(k) : 1e9; return R < ty.minR * 0.5 ? '#e5484d' : R < ty.minR ? '#f5a623' : R < ty.minR * 2 ? '#e8d44d' : '#3fb950'; }
-function heatGrade(g, ty) { const p = Math.abs(g) * 100; return p > ty.maxGrade * 1.5 ? '#e5484d' : p > ty.maxGrade ? '#f5a623' : p > ty.maxGrade * 0.5 ? '#e8d44d' : '#3fb950'; }
-function drawRoad(r, opt = {}) {
-  const ty = ROAD_TYPES[r.type], S = r.samples, z = view.zoom;
-  const P = S.map(s => [s.x, s.y]);
-  pc.lineJoin = 'round'; pc.lineCap = 'butt';
-  if (opt.highlight) strokePts(pc, P, ty.total * z + 6, opt.highlight);
-  strokePts(pc, P, Math.max(2, ty.total * z), ty.edge);
-  // Carriageway, optionally heat-coloured per sample.
-  if (state.colour === 0 || opt.ghost) strokePts(pc, P, Math.max(1.5, ty.carriageway * z), opt.ghost ? 'rgba(60,62,68,0.85)' : '#3b3d42');
-  else for (let i = 0; i + 1 < S.length; i++) strokePts(pc, [P[i], P[i + 1]], Math.max(1.5, ty.carriageway * z), state.colour === 1 ? heatCurv(S[i].k, ty) : heatGrade(S[i].g, ty));
-  // Bridge / tunnel hint where cut or fill exceeds the wall cap.
-  for (let i = 0; i + 1 < S.length; i++) {
-    const dz = S[i].z - S[i].t;
-    if (Math.abs(dz) > T.wallCap) strokePts(pc, [P[i], P[i + 1]], Math.max(2, ty.total * z) + 4, dz > 0 ? 'rgba(120,180,255,0.55)' : 'rgba(20,20,20,0.6)', dz > 0 ? [] : [4, 4]);
+function draped(P) {   // sample a 2D polyline every ~3 m onto the ground
+  const out = [];
+  for (let i = 0; i + 1 < P.length; i++) {
+    const l = Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]), n = Math.max(1, Math.ceil(l / 3));
+    for (let k = 0; k < n; k++) { const t = k / n, x = P[i][0] + (P[i + 1][0] - P[i][0]) * t, y = P[i][1] + (P[i + 1][1] - P[i][1]) * t; out.push([x, y, hAt(x, y) + 0.5]); }
   }
-  // Markings (only when zoomed in enough to read).
-  if (z > 0.35 && state.colour === 0) {
-    const mw = Math.max(1, 0.15 * z), cw = ty.carriageway;
-    if (!r.oneWay && !ty.dual) strokePts(pc, P, mw, '#f2f2f2', [3 * z, 6 * z]);
-    else if (ty.lanes > 1) for (let l = 1; l < ty.lanes; l++) strokePts(pc, offsetLine(S, -cw / 2 + l * 3.65 + (ty.id === 'motorway' ? 0.7 : 0.5) - 0.0), mw, '#f2f2f2', [3 * z, 6 * z]);
-    strokePts(pc, offsetLine(S, cw / 2 - 0.3), mw, '#f2f2f2'); strokePts(pc, offsetLine(S, -cw / 2 + 0.3), mw, '#f2f2f2');
-  }
-  if (r.oneWay && z > 0.12) {  // chevrons in travel direction
-    for (let s = 20; s < r.chain.L - 5; s += Math.max(30, 60 / z)) {
-      const p = G.chainPose(r.chain, s), [x, y] = toS(p.x, p.y), a = -p.h, l = Math.max(4, 2.5 * z);
-      pc.beginPath(); pc.moveTo(x - Math.cos(a - 0.5) * l, y - Math.sin(a - 0.5) * l); pc.lineTo(x, y); pc.lineTo(x - Math.cos(a + 0.5) * l, y - Math.sin(a + 0.5) * l);
-      pc.strokeStyle = '#ffd866'; pc.lineWidth = 2; pc.stroke();
-    }
-  }
+  const e = P[P.length - 1]; out.push([e[0], e[1], hAt(e[0], e[1]) + 0.5]); return out;
 }
-function drawGuide(gd) {
-  if (!gd) return;
-  if (gd.type === 'line') strokePts(pc, [[gd.x0, gd.y0], [gd.x1, gd.y1]], 1.5, gd.faint ? 'rgba(255,255,255,0.35)' : '#7ee0ff', [6, 5]);
-  else if (gd.type === 'offset') strokePts(pc, offsetLine(gd.road.samples, gd.off), 1.5, '#7ee0ff', [6, 5]);
+const offsetLine = (S, d) => S.map(s => [s.x - Math.sin(s.h) * d, s.y + Math.cos(s.h) * d]);
+function ghostMesh(S, off, hw, color) {
+  const mb = new MB([1, 1, 1]);
+  for (let k = 0; k + 1 < S.length; k++) {
+    const P = (q, l) => [S[q].x - Math.sin(S[q].h) * (off + l), S[q].y + Math.cos(S[q].h) * (off + l), S[q].z + 0.35];
+    mb.quad(P(k, -hw), P(k + 1, -hw), P(k + 1, hw), P(k, hw), UP);
+  }
+  const m = mb.mesh(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, depthTest: false, depthWrite: false, side: THREE.DoubleSide }), false);
+  if (m) m.renderOrder = 15; return m;
 }
-function renderPlan() {
-  pc.setTransform(dpr, 0, 0, dpr, 0, 0);
-  pc.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg'); pc.fillRect(0, 0, W, H);
-  const [x0, y0] = toS(0, WORLD); pc.imageSmoothingEnabled = true; pc.drawImage(terrainImg, x0, y0, WORLD * view.zoom, WORLD * view.zoom);
-  for (const r of roads) drawRoad(r, { highlight: r === state.sel ? '#ffd866' : r === state.hover && state.mode === 'edit' ? 'rgba(255,216,102,0.45)' : null });
-  // Junction markers: road ends that attach to other roads.
-  for (const r of roads) [0, r.pts.length - 1].forEach((i, k) => {
-    const kind = r.attach && r.attach[i]; if (kind !== 'road' && kind !== 'end') return;
-    const [x, y] = toS(r.pts[i].x, r.pts[i].y); pc.beginPath(); pc.arc(x, y, 5, 0, 7); pc.strokeStyle = '#fff'; pc.lineWidth = 2; pc.stroke();
-  });
+function ball(x, y, z, px, color) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }));
+  m.renderOrder = 30; m.position.set(...w3(x, y, z)); scaled.push({ obj: m, px }); overlay.add(m); return m;
+}
+function buildOverlay() {
+  clearOverlay();
   if (state.mode === 'draw') {
-    const pv = state.preview;
+    const pv = state.preview, ty = ROAD_TYPES[state.type];
     if (pv && pv.road) {
-      const ty = ROAD_TYPES[state.type];
-      if (ty.dual) {
+      const col = pv.errors.length ? 0xe5484d : 0xdde6f0;
+      if (ty.dual && !state.oneWay) {
         const off = ty.gap / 2 + ty.total / 2;
-        for (const sg of [1, -1]) strokePts(pc, offsetLine(pv.road.samples, off * sg), Math.max(2, ty.total * view.zoom), pv.errors.length ? 'rgba(229,72,77,0.6)' : 'rgba(255,255,255,0.25)');
-        strokePts(pc, pv.road.samples.map(s => [s.x, s.y]), 1, 'rgba(255,255,255,0.6)', [4, 4]);
-      } else drawRoad(pv.road, { ghost: true, highlight: pv.errors.length ? 'rgba(229,72,77,0.8)' : null });
+        for (const sg of [1, -1]) { const m = ghostMesh(pv.road.samples, off * sg, ty.total / 2, col); if (m) overlay.add(m); }
+      } else { const m = ghostMesh(pv.road.samples, 0, ty.total / 2, col); if (m) overlay.add(m); }
     }
-    if (state.draw) for (const p of state.draw.pts) { const [x, y] = toS(p.x, p.y); pc.fillStyle = '#ffd866'; pc.beginPath(); pc.arc(x, y, 4, 0, 7); pc.fill(); }
+    if (state.draw) for (const p of state.draw.pts) ball(p.x, p.y, p.z + 0.4, 4, 0xffd866);
     const sn = state.snap;
     if (sn) {
-      drawGuide(sn.guide);
-      const [x, y] = toS(sn.x, sn.y);
-      pc.beginPath(); pc.arc(x, y, sn.kind === 'free' ? 3 : 6, 0, 7);
-      pc.strokeStyle = { end: '#3fb950', road: '#3fb950', guide: '#7ee0ff', angle: '#fff', free: '#fff' }[sn.kind]; pc.lineWidth = 2; pc.stroke();
+      const gd = sn.guide;
+      if (gd && gd.type === 'line') overlay.add(lineObj(draped([[gd.x0, gd.y0], [gd.x1, gd.y1]]), gd.faint ? 0xffffff : 0x7ee0ff, true, gd.faint ? 0.5 : 1));
+      else if (gd && gd.type === 'offset') overlay.add(lineObj(draped(offsetLine(gd.road.samples, gd.off)), 0x7ee0ff, true));
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.72, 1, 40), new THREE.MeshBasicMaterial({ color: KIND_COL[sn.kind], side: THREE.DoubleSide, depthTest: false, transparent: true }));
+      ring.rotation.x = -Math.PI / 2; ring.renderOrder = 30;
+      const z = (sn.z != null ? sn.z : hAt(sn.x, sn.y)) + 0.5;
+      ring.position.set(...w3(sn.x, sn.y, z)); scaled.push({ obj: ring, px: sn.kind === 'free' ? 7 : 11 }); overlay.add(ring);
     }
+  } else {
+    for (const r of roads) if (r === state.sel || r === state.hover) overlay.add(lineObj(r.samples.map(s => [s.x, s.y, s.z + 0.8]), r === state.sel ? 0xffd866 : 0xffe9a8, false));
+    if (state.sel) state.sel.pts.forEach((p, i) => ball(p.x, p.y, p.z + 0.5, i === state.hoverHandle ? 10 : 7, i === state.hoverHandle ? 0xffd866 : 0xffffff));
   }
-  if (state.mode === 'edit' && state.sel) state.sel.pts.forEach((p, i) => {
-    const [x, y] = toS(p.x, p.y); pc.beginPath(); pc.arc(x, y, i === state.hoverHandle ? 8 : 6, 0, 7);
-    pc.fillStyle = i === state.hoverHandle ? '#ffd866' : '#fff'; pc.fill(); pc.strokeStyle = '#111'; pc.lineWidth = 1.5; pc.stroke();
-  });
-  if (performance.now() - state.flash < 250) { pc.fillStyle = 'rgba(229,72,77,0.15)'; pc.fillRect(0, 0, W, H); }
-  // Scale bar.
-  const nice = [10, 20, 50, 100, 200, 500, 1000].find(m => m * view.zoom > 80) || 1000;
-  pc.fillStyle = 'rgba(0,0,0,0.5)'; pc.fillRect(W - 30 - nice * view.zoom - 10, H - 36, nice * view.zoom + 20, 26);
-  pc.fillStyle = '#fff'; pc.fillRect(W - 30 - nice * view.zoom, H - 20, nice * view.zoom, 3); pc.font = '11px system-ui'; pc.fillText(nice + ' m', W - 30 - nice * view.zoom, H - 24);
+  needsRender = true;
 }
+function scaleOverlay() {
+  for (const s of scaled) { const w = camera.position.distanceTo(s.obj.position) * 2 * Math.tan(camera.fov * Math.PI / 360) / VH * s.px; s.obj.scale.set(w, w, w); }
+}
+
+// ===== Input =====
+let down = null;
+function mouseXY(e) { const rc = canvas.getBoundingClientRect(); return [e.clientX - rc.left, e.clientY - rc.top]; }
+function processMouse() {
+  mouseDirty = false;
+  if (!mouseIn || state.drag) return;
+  const [sx, sy] = state.mouse, pk = state.pick = pick(sx, sy);
+  if (state.mode === 'draw') { state.snap = pk ? computeSnap(pk) : null; buildPreview(); }
+  else {
+    state.hoverHandle = -1;
+    if (state.sel) state.sel.pts.forEach((p, i) => { const [hx, hy] = project(p.x, p.y, p.z + 0.5); if (Math.hypot(hx - sx, hy - sy) < 11) state.hoverHandle = i; });
+    let hov = null;
+    if (pk) { hov = pk.road; if (!hov) { const on = nearestOnRoad(pk.x, pk.y, 12 * pk.wpp, null, pk.z); hov = on ? on.r : null; } }
+    state.hover = hov;
+  }
+  dirty();
+}
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointerenter', () => { mouseIn = true; });
+canvas.addEventListener('pointerleave', () => { mouseIn = false; });
+canvas.addEventListener('pointerdown', e => {
+  const [sx, sy] = mouseXY(e); state.mouse = [sx, sy]; mouseIn = true;
+  if (e.button === 1) e.preventDefault();
+  down = { x: sx, y: sy, b: e.button, moved: false };
+  processMouse();
+  if (e.button === 0 && state.mode === 'edit' && state.sel && state.hoverHandle >= 0) {
+    const i = state.hoverHandle, p = state.sel.pts[i];
+    state.drag = { r: state.sel, i, before: { ...p }, dzT: p.z - terrainH(p.x, p.y), planeY: p.z };
+  }
+});
+addEventListener('pointermove', e => {
+  const [sx, sy] = mouseXY(e); state.mouse = [sx, sy]; state.shift = e.shiftKey;
+  if (down && Math.hypot(sx - down.x, sy - down.y) > 4) down.moved = true;
+  if (state.drag && down) {
+    ndc.set(sx / VW * 2 - 1, -(sy / VH) * 2 + 1); ray.setFromCamera(ndc, camera);
+    const o = ray.ray.origin, d = ray.ray.direction;
+    if (Math.abs(d.y) > 1e-5) {
+      const t = (state.drag.planeY - o.y) / d.y;
+      if (t > 0) {
+        const x = clamp(o.x + d.x * t, 1, WORLD - 1), y = clamp(-(o.z + d.z * t), 1, WORLD - 1), dr = state.drag, prev = { ...dr.r.pts[dr.i] };
+        dr.r.pts[dr.i] = { x, y, z: terrainH(x, y) + dr.dzT };
+        if (!rebuild(dr.r)) { dr.r.pts[dr.i] = prev; rebuild(dr.r); }
+        dirty();
+      }
+    }
+    return;
+  }
+  mouseDirty = true;
+});
+addEventListener('pointerup', e => {
+  if (!down) return;
+  const wasClick = !down.moved, b = down.b; down = null;
+  const [sx, sy] = mouseXY(e); state.mouse = [sx, sy];
+  if (state.drag) {
+    const d = state.drag; state.drag = null;
+    const after = { ...d.r.pts[d.i] };
+    d.r.pts[d.i] = d.before; rebuild(d.r);
+    if (!wasClick) exec(EditPoint(d.r, d.i, d.before, after));
+    dirty(); return;
+  }
+  if (!wasClick || e.target !== canvas) return;
+  processMouse();
+  if (state.mode === 'draw') {
+    if (b === 0) startOrAddPoint();
+    else if (b === 2) { if (state.draw && state.draw.pts.length >= 2) finishRoad(); else { state.draw = null; state.preview = null; } dirty(); }
+  } else if (b === 0) { state.sel = state.hover; dirty(); }
+});
+canvas.addEventListener('dblclick', () => { if (state.mode === 'draw' && state.draw && state.draw.pts.length >= 2) finishRoad(); });
+function adjustHeight(delta) {
+  if (state.mode === 'draw') { state.dz += delta; buildPreview(); }
+  else if (state.sel && state.hoverHandle >= 0) { const i = state.hoverHandle, p = state.sel.pts[i]; exec(EditPoint(state.sel, i, { ...p }, { ...p, z: p.z + delta })); }
+  dirty();
+}
+function toggleProfile() { state.profile = !state.profile; resize(); }
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  state.shift = e.shiftKey;
+  const k = e.key, kl = k.toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && kl === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && kl === 'y') { e.preventDefault(); redo(); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (['w', 'a', 's', 'd', 'q', 'e', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(kl)) { keys.add(kl); if (kl.startsWith('arrow')) e.preventDefault(); needsRender = true; return; }
+  if (k >= '1' && k <= '4') { state.type = +k; if (state.mode === 'draw') buildPreview(); }
+  else if (kl === 'o') state.oneWay = !state.oneWay;
+  else if (kl === 'c') state.colour = (state.colour + 1) % 3;
+  else if (kl === 'p') toggleProfile();
+  else if (kl === 'h' || k === '?') { state.help = !state.help; document.getElementById('help').style.display = state.help ? 'block' : 'none'; }
+  else if (k === 'Tab') { e.preventDefault(); state.mode = state.mode === 'draw' ? 'edit' : 'draw'; state.draw = null; state.preview = null; state.snap = null; state.hoverHandle = -1; mouseDirty = true; }
+  else if (k === 'Escape') { if (state.draw) { state.draw = null; state.preview = null; } else state.sel = null; }
+  else if (k === 'Enter') { if (state.draw) finishRoad(); }
+  else if (k === 'Backspace') { e.preventDefault(); if (state.draw) { state.draw.pts.pop(); state.draw.attach.pop(); if (!state.draw.pts.length) state.draw = null; buildPreview(); } }
+  else if (k === 'Delete') { if (state.sel) { exec(DeleteRoad(state.sel)); state.sel = null; } }
+  else if (k === 'PageUp' || k === ']') { e.preventDefault(); adjustHeight(e.shiftKey ? 5 : 1); }
+  else if (k === 'PageDown' || k === '[') { e.preventDefault(); adjustHeight(e.shiftKey ? -5 : -1); }
+  else if (k === 'Shift') mouseDirty = true;
+  dirty();
+});
+addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); if (e.key === 'Shift') { state.shift = false; mouseDirty = true; dirty(); } });
+addEventListener('blur', () => keys.clear());
+addEventListener('resize', resize);
+
+// ui.js: profile panel, HUD, tuning panel, help, main loop and scripting hook.
+// ===== Profile panel (cut / fill against the ORIGINAL ground) =====
 function renderProfile() {
-  fc.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!state.profile) return;
+  const PW = VW, PH = PROF_H;
+  fc.setTransform(profDpr, 0, 0, profDpr, 0, 0);
   fc.fillStyle = getComputedStyle(document.body).getPropertyValue('--panel'); fc.fillRect(0, 0, PW, PH);
   const r = (state.mode === 'draw' && state.preview && state.preview.road) || state.sel || state.hover;
   fc.fillStyle = '#8b949e'; fc.font = '12px system-ui';
-  if (!r) { fc.fillText('Profile: draw a road, or select one in edit mode (E).', 16, 22); return; }
+  if (!r) { fc.fillText('Profile: draw a road, or select one in edit mode (Tab). P hides this panel.', 16, 22); return; }
   const S = r.samples, L = r.chain.L, ml = 52, mr = 16, mt = 22, mb = 24, w = PW - ml - mr, h = PH - mt - mb;
   let lo = Infinity, hi = -Infinity; for (const s of S) { lo = Math.min(lo, s.z, s.t); hi = Math.max(hi, s.z, s.t); }
   const pad = Math.max(5, (hi - lo) * 0.15); lo -= pad; hi += pad;
   const X = s => ml + s / L * w, Y = z => mt + (hi - z) / (hi - lo) * h;
-  // Grid.
   fc.strokeStyle = 'rgba(255,255,255,0.07)'; fc.lineWidth = 1; fc.fillStyle = '#8b949e';
-  const zs = [1, 2, 5, 10, 20, 50].find(v => (hi - lo) / v < 8); for (let z = Math.ceil(lo / zs) * zs; z < hi; z += zs) { fc.beginPath(); fc.moveTo(ml, Y(z)); fc.lineTo(ml + w, Y(z)); fc.stroke(); fc.fillText(z + ' m', 8, Y(z) + 4); }
-  const ss = [10, 20, 50, 100, 200, 500, 1000].find(v => L / v < 10); for (let s = 0; s <= L; s += ss) fc.fillText(s + '', X(s) - 6, PH - 6);
-  // Terrain.
+  const zs = [1, 2, 5, 10, 20, 50].find(v => (hi - lo) / v < 8) || 50; for (let z = Math.ceil(lo / zs) * zs; z < hi; z += zs) { fc.beginPath(); fc.moveTo(ml, Y(z)); fc.lineTo(ml + w, Y(z)); fc.stroke(); fc.fillText(z + ' m', 8, Y(z) + 4); }
+  const ss = [10, 20, 50, 100, 200, 500, 1000].find(v => L / v < 10) || 1000; for (let s = 0; s <= L; s += ss) fc.fillText(s + '', X(s) - 6, PH - 6);
   fc.beginPath(); fc.moveTo(X(0), mt + h); S.forEach(s => fc.lineTo(X(s.s), Y(s.t))); fc.lineTo(X(L), mt + h); fc.fillStyle = '#3a3f2e'; fc.fill();
-  // Cut / fill.
   for (let i = 0; i + 1 < S.length; i++) {
     const a = S[i], b = S[i + 1], dz = (a.z + b.z) / 2 - (a.t + b.t) / 2;
     fc.beginPath(); fc.moveTo(X(a.s), Y(a.z)); fc.lineTo(X(b.s), Y(b.z)); fc.lineTo(X(b.s), Y(b.t)); fc.lineTo(X(a.s), Y(a.t));
     fc.fillStyle = Math.abs(dz) > T.wallCap ? 'rgba(229,72,77,0.55)' : dz > 0 ? 'rgba(126,224,255,0.35)' : 'rgba(245,166,35,0.4)'; fc.fill();
   }
   fc.beginPath(); S.forEach((s, i) => i ? fc.lineTo(X(s.s), Y(s.t)) : fc.moveTo(X(s.s), Y(s.t))); fc.strokeStyle = '#9aa57a'; fc.lineWidth = 1.5; fc.stroke();
-  // Road.
   fc.beginPath(); S.forEach((s, i) => i ? fc.lineTo(X(s.s), Y(s.z)) : fc.moveTo(X(s.s), Y(s.z))); fc.strokeStyle = '#fff'; fc.lineWidth = 2.5; fc.stroke();
-  // Vertical curve extents, control points, grade labels.
   r.vp.forEach((b, i) => {
     if (b.L > 0) { fc.fillStyle = 'rgba(255,216,102,0.18)'; fc.fillRect(X(b.s - b.L / 2), mt, X(b.s + b.L / 2) - X(b.s - b.L / 2), h); }
     fc.fillStyle = '#ffd866'; fc.beginPath(); fc.arc(X(b.s), Y(b.z), 3.5, 0, 7); fc.fill();
@@ -612,13 +1189,13 @@ function renderProfile() {
       fc.fillText((g >= 0 ? '+' : '') + g.toFixed(1) + '%', X((b.s + n.s) / 2) - 16, Y((b.z + n.z) / 2) - 8);
     }
   });
-  fc.fillStyle = '#8b949e'; fc.fillText(`Profile · ${L.toFixed(0)} m · blue = fill, orange = cut, red = over ${T.wallCap} m wall cap (bridge/tunnel) · yellow bands = vertical curves`, ml, 15);
+  fc.fillStyle = '#8b949e'; fc.fillText(`Profile · ${L.toFixed(0)} m · vs original ground · blue = fill, orange = cut, red = over ${T.wallCap} m wall cap (bridge/tunnel) · yellow = vertical curves`, ml, 15);
 }
 function renderHud() {
   const ty = ROAD_TYPES[state.type], pv = state.preview;
-  let html = `<b>${state.mode === 'draw' ? 'DRAW' : 'EDIT'}</b> · ${ty.name}${state.oneWay && !ty.dual ? ' · one-way' : ''} · colour: ${COLOUR_MODES[state.colour]}${state.shift ? ' · <span class="warn">snap off</span>' : ''}`;
+  let html = `<b>${state.mode === 'draw' ? 'DRAW' : 'EDIT'}</b> · ${ty.name}${state.oneWay ? (ty.dual ? ' · <b>single carriageway</b>' : ' · one-way') : ''} · colour: ${COLOUR_MODES[state.colour]}${state.shift ? ' · <span class="warn">snap off</span>' : ''}`;
   if (state.mode === 'draw' && state.snap) {
-    const z = pv ? pv.cursorZ : null;
+    const z = pv ? pv.cursorZ : snapZ(state.snap);
     html += `<br>cursor z ${z != null ? z.toFixed(1) : '-'} m${state.dz ? ` (${state.dz > 0 ? '+' : ''}${state.dz} m)` : ''} · snap: ${state.snap.kind}`;
   }
   if (pv && pv.road) {
@@ -630,110 +1207,55 @@ function renderHud() {
   if (state.mode === 'edit' && state.sel) html += `<br>selected road #${state.sel.id} · ${state.sel.chain.L.toFixed(0)} m · drag handles, PgUp/PgDn height, Del delete`;
   document.getElementById('hud').innerHTML = html;
 }
-function frame() { if (needs) { needs = false; renderPlan(); renderProfile(); renderHud(); } requestAnimationFrame(frame); }
-
-// ===== Input =====
-let down = null;
-plan.addEventListener('contextmenu', e => e.preventDefault());
-plan.addEventListener('mousedown', e => {
-  down = { x: e.offsetX, y: e.offsetY, b: e.button, cx: view.cx, cy: view.cy, moved: false };
-  if (e.button === 0 && state.mode === 'edit' && state.sel && state.hoverHandle >= 0) {
-    const i = state.hoverHandle, p = state.sel.pts[i];
-    state.drag = { r: state.sel, i, before: { ...p }, dzT: p.z - terrainH(p.x, p.y) };
-  }
-});
-addEventListener('mousemove', e => {
-  const rect = plan.getBoundingClientRect(), sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-  state.mouse = [sx, sy]; state.shift = e.shiftKey;
-  if (down) {
-    if (Math.hypot(sx - down.x, sy - down.y) > 4) down.moved = true;
-    if (down.b === 1 || down.b === 2) { view.cx = down.cx - (sx - down.x) / view.zoom; view.cy = down.cy + (sy - down.y) / view.zoom; dirty(); return; }
-    if (state.drag) {
-      const [x, y] = toW(sx, sy), d = state.drag, prev = { ...d.r.pts[d.i] };
-      d.r.pts[d.i] = { x, y, z: terrainH(x, y) + d.dzT };
-      if (!rebuild(d.r)) { d.r.pts[d.i] = prev; rebuild(d.r); }
-      dirty(); return;
-    }
-  }
-  if (sy > H) return;
-  if (state.mode === 'draw') { state.snap = computeSnap(sx, sy); buildPreview(); }
-  else {
-    const [mx, my] = toW(sx, sy);
-    state.hoverHandle = -1;
-    if (state.sel) state.sel.pts.forEach((p, i) => { const [hx, hy] = toS(p.x, p.y); if (Math.hypot(hx - sx, hy - sy) < 9) state.hoverHandle = i; });
-    const on = nearestOnRoad(mx, my, 12 / view.zoom); state.hover = on ? on.r : null;
-  }
-  dirty();
-});
-addEventListener('mouseup', e => {
-  if (!down) return;
-  const wasClick = !down.moved, b = down.b; down = null;
-  if (state.drag) {
-    const d = state.drag; state.drag = null;
-    const after = { ...d.r.pts[d.i] };
-    if (wasClick) { d.r.pts[d.i] = d.before; rebuild(d.r); }
-    else { d.r.pts[d.i] = d.before; rebuild(d.r); exec(EditPoint(d.r, d.i, d.before, after)); }
-    dirty(); return;
-  }
-  if (!wasClick || e.target !== plan) return;
-  if (state.mode === 'draw') {
-    if (b === 0) startOrAddPoint();
-    else if (b === 2) { if (state.draw && state.draw.pts.length >= 2) finishRoad(); else { state.draw = null; state.preview = null; } dirty(); }
-  } else if (b === 0) { state.sel = state.hover; dirty(); }
-});
-plan.addEventListener('dblclick', () => { if (state.mode === 'draw' && state.draw && state.draw.pts.length >= 2) finishRoad(); });
-plan.addEventListener('wheel', e => {
-  e.preventDefault();
-  const [wx, wy] = toW(e.offsetX, e.offsetY);
-  view.zoom = Math.max(0.08, Math.min(12, view.zoom * Math.exp(-e.deltaY * 0.0015)));
-  const [nx, ny] = toW(e.offsetX, e.offsetY); view.cx += wx - nx; view.cy += wy - ny;
-  if (state.mode === 'draw') { state.snap = computeSnap(e.offsetX, e.offsetY); buildPreview(); }
-  dirty();
-}, { passive: false });
-function adjustHeight(delta) {
-  if (state.mode === 'draw') { state.dz += delta; buildPreview(); }
-  else if (state.sel) {
-    const i = state.hoverHandle >= 0 ? state.hoverHandle : -1; if (i < 0) return;
-    const p = state.sel.pts[i]; exec(EditPoint(state.sel, i, { ...p }, { ...p, z: p.z + delta }));
-  }
-  dirty();
-}
-addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT') return;
-  state.shift = e.shiftKey;
-  const k = e.key;
-  if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
-  if ((e.ctrlKey || e.metaKey) && (k === 'y' || k === 'Y')) { e.preventDefault(); redo(); return; }
-  if (k >= '1' && k <= '4') { state.type = +k; buildPreview(); }
-  else if (k === 'o' || k === 'O') state.oneWay = !state.oneWay;
-  else if (k === 'c' || k === 'C') state.colour = (state.colour + 1) % 3;
-  else if (k === 'h' || k === 'H' || k === '?') { state.help = !state.help; document.getElementById('help').style.display = state.help ? 'block' : 'none'; }
-  else if (k === 'e' || k === 'E' || k === 'Tab') { e.preventDefault(); state.mode = state.mode === 'draw' ? 'edit' : 'draw'; state.draw = null; state.preview = null; state.snap = null; state.hoverHandle = -1; }
-  else if (k === 'Escape') { if (state.draw) { state.draw = null; state.preview = null; } else state.sel = null; }
-  else if (k === 'Enter') { if (state.draw) finishRoad(); }
-  else if (k === 'Backspace') { e.preventDefault(); if (state.draw) { state.draw.pts.pop(); state.draw.attach.pop(); if (!state.draw.pts.length) state.draw = null; buildPreview(); } }
-  else if (k === 'Delete') { if (state.sel) { exec(DeleteRoad(state.sel)); state.sel = null; } }
-  else if (k === 'PageUp' || k === ']') { e.preventDefault(); adjustHeight(e.shiftKey ? 5 : 1); }
-  else if (k === 'PageDown' || k === '[') { e.preventDefault(); adjustHeight(e.shiftKey ? -5 : -1); }
-  else if (k === 'Shift' && state.mode === 'draw') { state.snap = computeSnap(...state.mouse); buildPreview(); }
-  dirty();
-});
-addEventListener('keyup', e => { if (e.key === 'Shift') { state.shift = false; if (state.mode === 'draw' && state.snap) { state.snap = computeSnap(...state.mouse); buildPreview(); } dirty(); } });
-addEventListener('resize', resize);
 
 // ===== Tuning panel =====
-const TUNE = [['snapAngle', 'Snap angle °', 5, 45, 5], ['snapLen', 'Snap length m', 1, 50, 1], ['wallCap', 'Wall cap m', 3, 30, 1], ['kMul', 'Vert. curve K ×', 0.25, 2, 0.05], ['minSpan', 'Min segment m', 1, 20, 1]];
+const TUNE = [['snapAngle', 'Snap angle °', 5, 45, 5], ['snapLen', 'Snap length m', 1, 50, 1], ['wallCap', 'Wall cap m (bridge/tunnel)', 3, 30, 1], ['wallStart', 'Wall start m', 2, 12, 1],
+  ['batter', 'Batter (H per V)', 1, 4, 0.1], ['kMul', 'Vert. curve K ×', 0.25, 2, 0.05], ['minSpan', 'Min segment m', 1, 20, 1], ['water', 'Water level m', 0, 60, 0.5]];
 document.getElementById('tune-body').innerHTML = TUNE.map(([k, l, a, b, s]) => `<label>${l} <span id="v-${k}">${T[k]}</span><input type="range" min="${a}" max="${b}" step="${s}" value="${T[k]}" data-k="${k}"></label>`).join('');
-document.querySelectorAll('#tune-body input').forEach(inp => inp.addEventListener('input', () => {
-  const k = inp.dataset.k; T[k] = +inp.value; document.getElementById('v-' + k).textContent = T[k];
-  if (k === 'kMul' || k === 'wallCap') roads.forEach(rebuild);
+let refitTimer = 0;
+function refitAll() { for (const r of roads) rebuild(r); regradeAll(); updateTerrainMesh(null); buildPreview(); dirty(); }
+function setTune(k, v) {
+  T[k] = +v; const el = document.getElementById('v-' + k); if (el) el.textContent = T[k];
+  const inp = document.querySelector(`#tune-body input[data-k="${k}"]`); if (inp && +inp.value !== T[k]) inp.value = T[k];
+  if (k === 'water') { water.position.y = T.water; clearTimeout(refitTimer); refitTimer = setTimeout(() => { updateTerrainMesh(null); dirty(); }, 150); }
+  else if (['kMul', 'wallCap', 'wallStart', 'batter'].includes(k)) { clearTimeout(refitTimer); refitTimer = setTimeout(refitAll, 120); }
   buildPreview(); dirty();
-}));
+}
+document.querySelectorAll('#tune-body input').forEach(inp => inp.addEventListener('input', () => setTune(inp.dataset.k, inp.value)));
 document.getElementById('tune-toggle').addEventListener('click', () => document.getElementById('tune').classList.toggle('open'));
 document.getElementById('help').addEventListener('click', () => { state.help = false; document.getElementById('help').style.display = 'none'; });
 
-resize(); view.zoom = Math.max(W, H) / WORLD * 0.9; requestAnimationFrame(frame);
-window.__proto = { state, roads: () => roads, view, toS, T };  // for automated screenshots
+// ===== Main loop =====
+let lastT = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+  updateCamera(dt);
+  if (mouseDirty) processMouse();
+  syncRoads();
+  if (overlayDirty) { overlayDirty = false; buildOverlay(); }
+  if (needsUI) { needsUI = false; renderProfile(); renderHud(); }
+  if (needsRender || performance.now() - state.flash < 300) {
+    needsRender = false;
+    scaleOverlay(); updateShadow();
+    renderer.render(scene, camera);
+  }
+}
+resize();
+setView(1000, 900, 1300, 0.35, 0.95);
+requestAnimationFrame(frame);
+
+// Scripting hook for automated screenshots.
+window.__proto = {
+  THREE, state, T, scene, camera, controls, roads: () => roads, hAt, terrainH, setView, project, pick, setTune, undo, redo, flushGrade, regradeAll,
+  undoCount: () => undoStack.length, TG, TH,
+  drawRoad(type, pts, oneWay = false) {
+    state.type = type; state.oneWay = oneWay; state.mode = 'draw';
+    state.draw = { pts: pts.map(p => ({ x: p[0], y: p[1], z: p[2] != null ? p[2] : hAt(p[0], p[1]) })), hs: null, attach: pts.map(() => 'free') };
+    finishRoad(); dirty();
+  },
+  renderNow() { syncRoads(); buildOverlay(); scaleOverlay(); updateShadow(); renderer.render(scene, camera); },
+};
 </script>
 </body>
 </html>

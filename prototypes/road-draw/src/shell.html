@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Road Draw 3D</title>
+<style>
+  :root { --bg: #0d1117; --panel: #161b22; --text: #e6edf3; --muted: #8b949e; --accent: #ffd866; --err: #ff7b72; --warn: #f5a623; --border: #30363d; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  canvas { display: block; }
+  #view { cursor: crosshair; }
+  #prof { border-top: 1px solid var(--border); }
+  #hud { position: absolute; left: 12px; top: 12px; background: rgba(13,17,23,0.82); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; max-width: min(560px, calc(100vw - 24px)); pointer-events: none; }
+  .err { color: var(--err); } .warn { color: var(--warn); }
+  #tune { position: absolute; right: 12px; top: 12px; background: rgba(13,17,23,0.88); border: 1px solid var(--border); border-radius: 6px; width: 230px; }
+  #tune-toggle { width: 100%; background: none; border: 0; color: var(--text); padding: 7px 10px; text-align: left; cursor: pointer; font: inherit; }
+  #tune-body { display: none; padding: 0 10px 10px; }
+  #tune.open #tune-body { display: block; }
+  #tune label { display: block; margin-top: 6px; color: var(--muted); }
+  #tune label span { color: var(--text); float: right; }
+  #tune input { width: 100%; accent-color: var(--accent); }
+  #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -60%); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; width: min(640px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.5); cursor: pointer; }
+  #help h2 { margin: 0 0 8px; font-size: 17px; }
+  #help table { border-collapse: collapse; width: 100%; }
+  #help td { padding: 3px 6px; vertical-align: top; border-bottom: 1px solid var(--border); }
+  #help td:first-child { white-space: nowrap; color: var(--accent); }
+  #help p { color: var(--muted); margin: 10px 0 0; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<canvas id="prof"></canvas>
+<div id="hud"></div>
+<div id="tune"><button id="tune-toggle">⚙ Tuning</button><div id="tune-body"></div></div>
+<div id="help">
+  <h2>Road Draw 3D prototype</h2>
+  <table>
+    <tr><td>Left click</td><td>Add a point (the clothoid refits through all points). Clicking onto an existing road connects and finishes. Click onto a bridge deck to start from it.</td></tr>
+    <tr><td>Double-click / Enter / right-click (no drag)</td><td>Finish road</td></tr>
+    <tr><td>Esc / Backspace</td><td>Cancel road / remove last point</td></tr>
+    <tr><td>Hold Shift</td><td>Snapping off (angle, length, guidelines, roads)</td></tr>
+    <tr><td>PgUp / PgDn  or  ] / [</td><td>Raise / lower the next point 1 m (Shift: 5 m). In edit mode: the hovered handle.</td></tr>
+    <tr><td>1 2 3 4</td><td>Residential · B road · Dual carriageway · Motorway (dual types: one stroke places two one-way carriageways)</td></tr>
+    <tr><td>O</td><td>Toggle one-way (single-carriageway types)</td></tr>
+    <tr><td>C</td><td>Road colour: plain / curvature / gradient</td></tr>
+    <tr><td>Tab</td><td>Toggle draw / edit. Edit: click a road, drag its handles (terrain regrades on release), Del deletes it.</td></tr>
+    <tr><td>Ctrl+Z / Ctrl+Y</td><td>Undo / redo</td></tr>
+    <tr><td>Right drag / middle drag / wheel</td><td>Orbit / pan / zoom</td></tr>
+    <tr><td>W A S D or arrows · Q E</td><td>Pan along the ground · rotate</td></tr>
+    <tr><td>P</td><td>Toggle the profile panel</td></tr>
+    <tr><td>H</td><td>Toggle this help</td></tr>
+  </table>
+  <p>The terrain is graded to follow each road: cuttings and embankments at the batter slope, retaining walls where cut/fill exceeds "wall start", bridges (fill) and tunnels (cut) beyond "wall cap". Curvature and gradient are advisory (amber). Red means the road would break graphically and the click is refused. Profile: blue fill, orange cut, red = over the wall cap, measured against the original ground. Click to close.</p>
+</div>
+<script id="geom">
+<!--GEOM-->
+</script>
+<script type="module">
+<!--APP-->
+</script>
+</body>
+</html>
