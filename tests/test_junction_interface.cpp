@@ -247,7 +247,8 @@ TEST_CASE("[A golden] T junction of two residential roads: 6 connectors") {
     n.polar(0, 100);
     n.polar(180, 100);
     n.polar(-90, 80);
-    const Junction& j = build_junctions(n.g, *uk(), {}).junctions.begin()->second;
+    const JunctionSet set = build_junctions(n.g, *uk(), {});
+    const Junction& j = set.junctions.begin()->second;
     REQUIRE(j.connectors.size() == 6);
     int straight = 0, nearside = 0, offside = 0;
     for (const auto& c : j.connectors) {
@@ -264,7 +265,8 @@ TEST_CASE("[A golden] T junction of two residential roads: 6 connectors") {
 TEST_CASE("[B golden] X junction: 4 corners of radius 6 m, trims 11 m, carriageway is one polygon") {
     Net n;
     for (double d : {0.0, 90.0, 180.0, 270.0}) n.polar(d, 100);
-    const Junction& j = build_junctions(n.g, *uk(), {}).junctions.begin()->second;
+    const JunctionSet set = build_junctions(n.g, *uk(), {});
+    const Junction& j = set.junctions.begin()->second;
     CHECK(j.corners.size() == 4);
     CHECK(j.carriageway.size() == 1);
 }

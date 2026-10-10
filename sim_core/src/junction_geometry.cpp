@@ -67,6 +67,41 @@ Vec3 arc_point(const Corner& c, double r, int i, int n) {
     return {c.centre.x + r * std::cos(a), c.centre.y + r * std::sin(a), c.p.z + (c.q.z - c.p.z) * t};
 }
 
+// Fillet of radius r between the left kerb of `ak` (offset a) and the right kerb of `aj` (offset b),
+// found on the real (possibly curved) kerb lines: the arm parameters sp, sq where the circle
+// centres c1(sp) = kerb_k + r n_k and c2(sq) = kerb_j - r n_j coincide. r = 0 gives the kerb
+// intersection. Newton from the straight-kerb estimate; false when it does not converge.
+bool solve_fillet(const JunctionArm& ak, const JunctionArm& aj, double a, double b, double r, double& sp,
+                  double& sq) {
+    const auto f = [&](double s, double t, Vec2& out) {
+        const ArmPoint p = arm_point(ak, s, a), q = arm_point(aj, t, -b);
+        const Vec2 c1 = p.pos.xy() + left_normal(p.heading_out) * r;
+        const Vec2 c2 = q.pos.xy() - left_normal(q.heading_out) * r;
+        out = c1 - c2;
+    };
+    constexpr double h = 0.05;
+    for (int it = 0; it < 40; ++it) {
+        Vec2 f0;
+        f(sp, sq, f0);
+        if (std::hypot(f0.x, f0.y) < 1e-9) return sp >= 0 && sq >= 0;
+        Vec2 fs0, fs1, ft0, ft1;
+        f(sp - h, sq, fs0);
+        f(sp + h, sq, fs1);
+        f(sp, sq - h, ft0);
+        f(sp, sq + h, ft1);
+        const Vec2 ds = (fs1 - fs0) * (0.5 / h), dt = (ft1 - ft0) * (0.5 / h);
+        const double det = ds.cross(dt);
+        if (std::fabs(det) < 1e-9) return false;
+        // Solve [ds dt] [x y]^T = -f0.
+        const Vec2 rhs{-f0.x, -f0.y};
+        const double x = rhs.cross(dt) / det, y = ds.cross(rhs) / det;
+        sp += std::clamp(x, -20.0, 20.0);
+        sq += std::clamp(y, -20.0, 20.0);
+        if (!std::isfinite(sp) || !std::isfinite(sq)) return false;
+    }
+    return false;
+}
+
 int arc_segments(double sweep) { return std::max(2, static_cast<int>(std::ceil(std::fabs(sweep) / kFilletStep))); }
 
 double signed_area(const std::vector<Vec2>& r) {
@@ -75,12 +110,20 @@ double signed_area(const std::vector<Vec2>& r) {
     return a / 2;
 }
 
-std::vector<Vec2> to_ring(const std::vector<Vec3>& pts) {
-    std::vector<Vec2> r;
-    r.reserve(pts.size());
-    for (const Vec3& p : pts) r.push_back(p.xy());
-    if (signed_area(r) < 0) std::reverse(r.begin(), r.end());
-    return r;
+// True when two non-adjacent edges properly cross (touching and collinear overlaps ignored).
+bool ring_self_intersects(const std::vector<Vec2>& r) {
+    const std::size_t n = r.size();
+    const auto o = [](Vec2 p, Vec2 q, Vec2 s) { return (q - p).cross(s - p); };
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t k = i + 2; k < n; ++k) {
+            if (i == 0 && k == n - 1) continue;
+            const Vec2 a = r[i], b = r[(i + 1) % n], c = r[k], d = r[(k + 1) % n];
+            const double d1 = o(a, b, c), d2 = o(a, b, d), d3 = o(c, d, a), d4 = o(c, d, b);
+            if (((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) &&
+                ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9)))
+                return true;
+        }
+    return false;
 }
 
 }  // namespace
@@ -115,6 +158,25 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
             c.radius = std::clamp(junction.corner_radii[k], 0.0, std::max(0.0, fit));
             c.sp = base_k + c.radius / th;
             c.sq = base_j + c.radius / th;
+            // Refine on the real kerb lines (arms may curve): the tangent points must also lie
+            // inside the trims, else shrink the fillet; r = 0 settles for the kerb intersection.
+            for (int tries = 0; tries < 16; ++tries) {
+                double sp = base_k + c.radius / th, sq = base_j + c.radius / th;
+                const bool solved = solve_fillet(ak, aj, a, b, c.radius, sp, sq);
+                if (solved && (c.radius <= 1e-9 || (sp <= trims[k] + 1e-6 && sq <= trims[j] + 1e-6))) {
+                    c.sp = sp;
+                    c.sq = sq;
+                    break;
+                }
+                if (c.radius <= 1e-9) {
+                    c.sp = base_k;
+                    c.sq = base_j;
+                    break;
+                }
+                c.radius = c.radius < 0.25 ? 0.0 : c.radius * 0.7;
+                c.sp = base_k + c.radius / th;
+                c.sq = base_j + c.radius / th;
+            }
         } else {
             c.radius = 0;
         }
@@ -222,8 +284,22 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
         run(aj, trims[j], sj_out, -(aj.kerb_right + w), band);
         band.insert(band.end(), mid.begin(), mid.end());
         run(ak, sk_out, trims[k], ak.kerb_left + w, band);
-        std::vector<Vec2> ring = to_ring(band);
-        if (ring.size() >= 3 && std::fabs(signed_area(ring)) > 1e-6) junction.pavements.push_back(std::move(ring));
+        // Straight bands are kept as drawn; one that crosses itself (curved arms, tight fillets)
+        // goes through a Clipper union to normalise it.
+        std::vector<Vec2> raw;
+        for (const Vec3& p : band) raw.push_back(p.xy());
+        if (signed_area(raw) < 0) std::reverse(raw.begin(), raw.end());
+        if (!ring_self_intersects(raw)) {
+            if (raw.size() >= 3 && std::fabs(signed_area(raw)) > 1e-6) junction.pavements.push_back(std::move(raw));
+            continue;
+        }
+        Clipper2Lib::PathD bp;
+        for (const Vec3& p : band) bp.emplace_back(p.x, p.y);
+        for (const Clipper2Lib::PathD& m : Clipper2Lib::Union(Clipper2Lib::PathsD{bp}, Clipper2Lib::FillRule::NonZero, 3)) {
+            std::vector<Vec2> ring;
+            for (const auto& pt : m) ring.push_back({pt.x, pt.y});
+            if (ring.size() >= 3 && std::fabs(signed_area(ring)) > 1e-3) junction.pavements.push_back(std::move(ring));
+        }
     }
 
     // ---- crossings: one per arm, just outside the trim line

@@ -281,13 +281,13 @@ Loaded<T> finish(T&& value, const Err& err) {
 
 }  // namespace
 
-const LaneType* RegionPack::lane_type(const std::string& id) const {
-    auto it = lane_types.find(id);
+const LaneType* RegionPack::lane_type(const std::string& key) const {
+    auto it = lane_types.find(key);
     return it == lane_types.end() ? nullptr : &it->second;
 }
 
-const RoadType* RegionPack::road_type(const std::string& id) const {
-    auto it = road_types.find(id);
+const RoadType* RegionPack::road_type(const std::string& key) const {
+    auto it = road_types.find(key);
     return it == road_types.end() ? nullptr : &it->second;
 }
 

@@ -33,6 +33,11 @@ ACPRoadNetworkActor::ACPRoadNetworkActor(const FObjectInitializer& ObjectInitial
 	Sim = MakeUnique<FCPSimState>();
 }
 
+ACPRoadNetworkActor::ACPRoadNetworkActor(FVTableHelper& Helper)
+	: Super(Helper)
+{
+}
+
 ACPRoadNetworkActor::~ACPRoadNetworkActor() = default;
 
 void ACPRoadNetworkActor::BeginPlay()

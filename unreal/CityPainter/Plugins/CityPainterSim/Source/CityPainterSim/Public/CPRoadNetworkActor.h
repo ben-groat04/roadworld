@@ -20,6 +20,9 @@ class CITYPAINTERSIM_API ACPRoadNetworkActor : public AActor
 
 public:
 	ACPRoadNetworkActor(const FObjectInitializer& ObjectInitializer);
+	// Out-of-line (.cpp): UHT's generated FVTableHelper constructor would otherwise instantiate
+	// ~TUniquePtr<FCPSimState> against the incomplete type.
+	ACPRoadNetworkActor(FVTableHelper& Helper);
 	virtual ~ACPRoadNetworkActor() override;
 
 	virtual void BeginPlay() override;

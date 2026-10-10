@@ -1,0 +1,10 @@
+// Compiles third_party/clipper2/src/clipper.engine.cpp inside this module (needed by the junction
+// geometry/merge code). See CityPainterSim.Build.cs.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4244 4267 4100 4189 4456 4457 4458 4459 4668 4996 5038 4127 4702 4577 4530)
+#endif
+#include "../../../../../../../../third_party/clipper2/src/clipper.engine.cpp"
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif

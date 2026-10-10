@@ -2,7 +2,7 @@
 #include "cp/clothoid.h"
 
 #include <cmath>
-#include <random>
+#include "portable_rng.h"
 
 using namespace cp;
 
@@ -47,13 +47,12 @@ TEST_CASE("arc evaluation matches circle geometry") {
 }
 
 TEST_CASE("fuzz: G1 fit hits endpoint and heading") {
-    std::mt19937_64 rng(12345);
-    std::uniform_real_distribution<double> pos(-500, 500), ang(-kPi * 0.95, kPi * 0.95);
+    PortableRng rng{12345};
     int fitted = 0;
     for (int i = 0; i < 2000; ++i) {
-        const Vec2 p0{pos(rng), pos(rng)}, p1{pos(rng), pos(rng)};
+        const Vec2 p0{rng.uniform(-500, 500), rng.uniform(-500, 500)}, p1{rng.uniform(-500, 500), rng.uniform(-500, 500)};
         const double phi = std::atan2(p1.y - p0.y, p1.x - p0.x);
-        const double t0 = phi + ang(rng), t1 = phi + ang(rng);
+        const double t0 = phi + rng.uniform(-kPi * 0.95, kPi * 0.95), t1 = phi + rng.uniform(-kPi * 0.95, kPi * 0.95);
         auto c = fit_clothoid_g1(p0, t0, p1, t1);
         REQUIRE(c);
         CHECK(c->length > 0);

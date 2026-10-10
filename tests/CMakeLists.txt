@@ -16,9 +16,14 @@ add_executable(sim_core_tests
   test_junction_connectors.cpp
   test_junction_connectors_fuzz.cpp
   test_junction_merge.cpp
+  test_junction_roundabout.cpp
   test_export_scene.cpp
 )
 target_link_libraries(sim_core_tests PRIVATE sim_core scene_tools)
-target_include_directories(sim_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
+target_include_directories(sim_core_tests SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 add_test(NAME sim_core_tests COMMAND sim_core_tests)
 target_compile_definitions(sim_core_tests PRIVATE CP_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+if(MSVC)
+  # doctest C5285 (specializes std::tuple) is third-party: it is a SYSTEM include, so external warnings off.
+  target_compile_options(sim_core_tests PRIVATE /external:W0)
+endif()

@@ -36,7 +36,8 @@ std::shared_ptr<const RegionPack> pack(DrivingSide side) {
 void build_net(FuzzNet& n, std::mt19937& rng, DrivingSide side) {
     n.region = pack(side);
     n.g.set_region(n.region);
-    std::uniform_real_distribution<double> ang(0, 360);
+    // Portable: std::uniform_real_distribution differs between standard libraries.
+    const auto ang = [](std::mt19937& g) { return 360.0 * (static_cast<double>(g() >> 5) / 134217728.0); };
     const int arms = 3 + static_cast<int>(rng() % 3);
     std::vector<double> degs;
     while (static_cast<int>(degs.size()) < arms) {
@@ -176,11 +177,12 @@ TEST_CASE("A fuzz: coverage, endpoints, determinism, overrides, dirty rebuild") 
             const Junction& j2 = s2.junctions.at(n.centre);
             CHECK(same(j2, build_junctions(n.g, *n.region, ov, {n.centre}).junctions.at(n.centre)));
             CHECK(same(j2, build_junctions(n.g, *n.region, ov).junctions.at(n.centre)));
+            // The keyed corner reports the override (also on reflex corners, which have no fillet);
+            // its radius never exceeds the request (trim clamps may shrink it).
             bool corner_ok = false;
             for (const auto& c2 : j2.corners)
-                if (c2.edge_l == cc.edge_l && c2.edge_r == cc.edge_r && c2.overridden && c2.angle < kPi - 0.01 + 1e-9) {
-                    corner_ok = c2.radius == doctest::Approx(radius) || c2.radius >= 0;
-                }
+                if (c2.edge_l == cc.edge_l && c2.edge_r == cc.edge_r)
+                    corner_ok = c2.overridden && c2.radius >= 0 && c2.radius <= radius + 1e-9;
             CHECK(corner_ok);
             for (const auto& c : j2.connectors) {
                 const ConnectorKey k = key_of(j2, c);

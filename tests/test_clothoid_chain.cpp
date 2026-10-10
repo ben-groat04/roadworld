@@ -2,7 +2,7 @@
 #include "cp/clothoid_chain.h"
 
 #include <cmath>
-#include <random>
+#include "portable_rng.h"
 
 using namespace cp;
 
@@ -15,6 +15,7 @@ void check_passes_through(const ClothoidChain& c, const std::vector<Vec2>& pts) 
         if (i > 0) CHECK(std::abs(wrap_angle(c.spans[i - 1].end_pose().heading - c.spans[i].heading0)) < 1e-9);
     }
 }
+
 }  // namespace
 
 TEST_CASE("two points with natural ends is a straight line") {
@@ -54,17 +55,16 @@ TEST_CASE("pinned start heading is honoured") {
 }
 
 TEST_CASE("fuzz: plausible clicked roads fit G2 through every point") {
-    std::mt19937_64 rng(7);
-    std::uniform_real_distribution<double> step(20, 200), turn(-1.2, 1.2);
+    PortableRng rng{7};
     int g2 = 0;
     const int trials = 300;
     for (int t = 0; t < trials; ++t) {
         std::vector<Vec2> pts{{0, 0}};
         double heading = 0;
-        const int n = 2 + static_cast<int>(rng() % 8);
+        const int n = 2 + static_cast<int>(rng.next() % 8);
         for (int i = 1; i < n; ++i) {
-            heading += turn(rng);
-            const double d = step(rng);
+            heading += rng.uniform(-1.2, 1.2);
+            const double d = rng.uniform(20, 200);
             pts.push_back(pts.back() + Vec2{std::cos(heading), std::sin(heading)} * d);
         }
         auto c = fit_clothoid_chain(pts);

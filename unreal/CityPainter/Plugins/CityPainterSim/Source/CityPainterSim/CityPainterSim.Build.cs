@@ -3,9 +3,8 @@ using UnrealBuildTool;
 
 // Compiles sim_core straight from the repo. UBT only globs the module folder, so
 // each sim_core .cpp is pulled in by a one-line wrapper in Private/SimCore/ that
-// #includes it by relative path. sim_core is C++20. The geometry/graph/command files use no
-// exceptions or RTTI. sim_core is built exception-free (bEnableExceptions = false); RTTI stays off
-// (nlohmann/json does not need it).
+// #includes it by relative path. sim_core is C++20 and exception-free; nlohmann/json (parse with
+// allow_exceptions=false) and Clipper2 (DoError is a no-op) compile throw-free with exceptions off. RTTI stays off.
 // If sim_core gains a new .cpp, add a Private/SimCore/Wrap_<name>.cpp for it.
 public class CityPainterSim : ModuleRules
 {
@@ -29,12 +28,11 @@ public class CityPainterSim : ModuleRules
 		string ThirdParty = Path.Combine(RepoRoot, "third_party");
 
 		PublicIncludePaths.Add(Path.Combine(SimCore, "include"));
-		// third_party/ holds nlohmann/json.hpp (included as "nlohmann/json.hpp"); harmless if absent.
-		foreach (string Dir in new string[] { "." })
-		{
-			string Full = Path.Combine(ThirdParty, Dir);
-			if (Directory.Exists(Full)) { PublicIncludePaths.Add(Full); }
-		}
+		// third_party/ holds nlohmann/json.hpp (included as "nlohmann/json.hpp"); Clipper2 headers are included as
+		// "clipper2/clipper.h" and live under third_party/clipper2/include. Clipper2's .cpp files are compiled via
+		// Private/SimCore/Wrap_clipper2_*.cpp.
+		PrivateIncludePaths.Add(ThirdParty);
+		PrivateIncludePaths.Add(Path.Combine(ThirdParty, "clipper2", "include"));
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "ProceduralMeshComponent" });
 	}
