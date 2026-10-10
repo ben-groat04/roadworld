@@ -17,5 +17,5 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - Lane graph and junction rules are driving-side agnostic: one setting per save, everything mirrors from it.
 
 ## Working style (from the person)
-- The main session (Opus) plans, asks questions, reviews and coordinates. **All coding is delegated to Sonnet subagents** (`Agent` with `model: sonnet`), never written by the main session.
+- The main session (Opus) plans, asks questions, reviews and coordinates. **All coding is delegated to subagents**, never written by the main session: Sonnet (`model: sonnet`) by default, Haiku (`model: haiku`) only for trivial mechanical edits (renames, doc tweaks, config one-liners) where a wrong result is obvious and cheap to redo.
 - Ask the person for input often on design and UX decisions; keep reversible choices moving.
