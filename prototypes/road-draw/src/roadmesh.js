@@ -130,18 +130,17 @@ function buildRoadGroup(r) {
     } else {       // rural: grass verge (dual/motorway: hard strip first), no kerbs or footways
       const hs = ty.dual ? 1.0 : 0, v0 = cw + hs;
       if (hs) strip(B.hard, sg * cw, sg * v0, -0.02, UP, surf);
-      strip(B.verge, sg * v0, sg * hw, -0.03, UP, onGr);
       strip(B.hard, sg * v0, sg * hw, -0.03, UP, k => surf(k) && (S[k].br || S[k + 1].br));   // deck: asphalt right to the parapet
       if (ty.dual) {   // steel barrier on embankments over 2 m
         const emb = k => onGr(k) && S[k].z - Math.min(hB(...latPt(S[k], sg * hw, 0)), hB(...latPt(S[k + 1], sg * hw, 0))) > 2;
         let k0 = 0;
         while (k0 + 1 < n) { if (!emb(k0)) { k0++; continue; } let k1 = k0; while (k1 + 1 < n - 1 && emb(k1 + 1)) k1++;
-          extrude(k0, k1 + 1, sg * (hw - 0.55), sg * (hw - 0.4), kk => S[kk].z + zo + 0.45, kk => S[kk].z + zo + 0.85, { top: B.steel, side: B.steel }); k0 = k1 + 1; }
+          extrude(k0, k1 + 1, sg * (v0 + 0.5), sg * (v0 + 0.65), kk => S[kk].z + zo + 0.45, kk => S[kk].z + zo + 0.85, { top: B.steel, side: B.steel }); k0 = k1 + 1; }
       }
     }
   }
-  // Edge lip: 0.4 m downturned verge-coloured face so the ground (0.15 m below the footprint) never shows a gap.
-  if (!resid) for (const sg of [1, -1]) face(B.verge, sg * hw, -0.43, -0.03, sg, onGr);
+  // Edge lip: 0.4 m downturned asphalt-coloured face at the paved edge so the ground (0.15 m below the footprint) never shows a gap.
+  if (!resid) for (const sg of [1, -1]) face(B.hard, sg * (cw + (ty.dual ? 1.0 : 0)), -0.43, -0.02, sg, onGr);
   // Markings (thin white ribbons just above the surface; polygonOffset in the material).
   const MZ = 0.03, MW = 0.08;
   const solid = lat => strip(B.mark, lat - MW, lat + MW, MZ, UP, null);
