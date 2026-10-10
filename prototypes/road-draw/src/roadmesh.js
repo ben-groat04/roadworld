@@ -27,7 +27,7 @@ class MB {
   }
 }
 const lin = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
-const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: lin('#587a3a'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#b4b2ab'), concDk: lin('#8f8d87'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0') };
+const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: [0.30, 0.44, 0.18], hard: lin('#4b4e53'), joint: lin('#7a7872'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#d2d0c9'), concDk: lin('#aeaca5'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0') };
 const stdMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, ...o });
 // Subtle procedural asphalt grain (near-white so vertex colours still drive the tint); uv = world metres / 4.
 const asphTex = (() => {
@@ -42,7 +42,7 @@ const asphTex = (() => {
 const MAT = {
   asph: stdMat({ roughness: 0.9, map: asphTex }), pave: stdMat(), kerb: stdMat(), verge: stdMat({ roughness: 1 }), soil: stdMat({ roughness: 1 }),
   mark: stdMat({ roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
-  conc: stdMat({ roughness: 0.85 }), cap: stdMat({ roughness: 1 }), tube: stdMat({ roughness: 1 }),
+  conc: stdMat({ roughness: 0.85 }), joint: stdMat({ roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), cap: stdMat({ roughness: 1 }), tube: stdMat({ roughness: 1 }),
 };
 // Per-road material variants: higher road id => pulled slightly closer in depth, so overlaps never z-fight; markings always above every surface.
 const roadMatCache = new Map();
@@ -50,7 +50,7 @@ function roadMats(id) {
   const q = id % 64; let m = roadMatCache.get(q);
   if (!m) {
     const po = (mat, f, u) => { const c = mat.clone(); c.polygonOffset = true; c.polygonOffsetFactor = f; c.polygonOffsetUnits = u; return c; };
-    m = { asph: po(MAT.asph, -q * 0.1, -q), pave: po(MAT.pave, -q * 0.1 - 0.05, -q - 0.5), verge: po(MAT.verge, -q * 0.1, -q), kerb: po(MAT.kerb, -q * 0.1 - 0.05, -q - 0.5), mark: po(MAT.mark, -10 - q * 0.1, -100 - q) };
+    m = { asph: po(MAT.asph, -q * 0.1, -q), pave: po(MAT.pave, -q * 0.1 - 0.05, -q - 0.5), hard: po(MAT.asph, -q * 0.1 - 0.02, -q - 0.2), verge: po(MAT.verge, -q * 0.1, -q), kerb: po(MAT.kerb, -q * 0.1 - 0.05, -q - 0.5), mark: po(MAT.mark, -10 - q * 0.1, -100 - q) };
     roadMatCache.set(q, m);
   }
   return m;
@@ -118,15 +118,32 @@ function buildRoadGroup(r) {
     const bk = tunSeg(k) ? B.tunRoad : B.asph, c0 = cc(k), c1 = cc(k + 1);
     bk.quad(P(k, -cw), P(k + 1, -cw), P(k + 1, cw), P(k, cw), UP, c0 ? [c0, c1, c1, c0] : null);
   }
-  const surf = k => !tunSeg(k);
-  if (!ty.dual) {
-    for (const sg of [1, -1]) {
-      strip(B.pave, sg * cw, sg * hw, PAVE_H, UP, surf);
-      face(B.kerb, sg * cw, 0, PAVE_H, -sg, surf);
-      face(B.kerb, sg * hw, -FORM_DROP - 0.05, PAVE_H, sg, surf);
+  // Junction mouths: where this road's end attaches to another (non-parallel) road, drop pavement/kerb/verge within (other half-width + 3 m) of its centreline.
+  const jn = new Uint8Array(n);
+  const segD = (px, py, o) => { let m = 1e9, hd = 0; const Q = o.samples; for (let i = 0; i + 1 < Q.length; i++) { const ax = Q[i].x, ay = Q[i].y, bx = Q[i + 1].x - ax, by = Q[i + 1].y - ay, l2 = bx * bx + by * by || 1, t = clamp(((px - ax) * bx + (py - ay) * by) / l2, 0, 1), d = Math.hypot(px - ax - bx * t, py - ay - by * t); if (d < m) { m = d; hd = Math.atan2(by, bx); } } return [m, hd]; };
+  for (const o of roads) {
+    if (o === r || !o.samples || o.samples.length < 2) continue;
+    const thr = ROAD_TYPES[o.type].total / 2 + 3;
+    for (const [e, dr] of [[0, 1], [n - 1, -1]]) {
+      const [d0, hd] = segD(S[e].x, S[e].y, o);
+      if (d0 > 2.5 || Math.abs(Math.sin(hd - S[e].h)) < 0.35) continue;
+      for (let i = e; i >= 0 && i < n && segD(S[i].x, S[i].y, o)[0] < thr; i += dr) jn[i] = 1;
     }
-  } else {
-    for (const sg of [1, -1]) { strip(B.verge, sg * cw, sg * hw, -0.03, UP, surf); face(B.soil, sg * hw, -FORM_DROP - 0.05, -0.03, sg, surf); face(B.kerb, sg * cw, -0.03, 0, -sg, surf); }
+  }
+  const surf = k => !tunSeg(k), pav = k => surf(k) && !jn[k] && !jn[k + 1], onGr = k => pav(k) && !S[k].br && !S[k + 1].br;
+  const resid = ty.id === 'residential';
+  for (const sg of [1, -1]) {
+    if (resid) {   // footways + kerbs: residential only
+      strip(B.pave, sg * cw, sg * hw, PAVE_H, UP, pav);
+      face(B.kerb, sg * cw, 0, PAVE_H, -sg, pav);
+      face(B.kerb, sg * hw, -FORM_DROP - 0.05, PAVE_H, sg, pav);
+    } else {       // rural: grass verge (dual/motorway: hard strip first), no kerbs or footways
+      const hs = ty.dual ? (hw - cw) * 0.55 : 0, v0 = cw + hs;
+      if (hs) strip(B.hard, sg * cw, sg * v0, -0.02, UP, surf);
+      strip(B.verge, sg * v0, sg * hw, -0.03, UP, onGr);
+      strip(B.hard, sg * v0, sg * hw, -0.03, UP, k => surf(k) && (S[k].br || S[k + 1].br));   // deck: asphalt right to the parapet
+      face(B.soil, sg * hw, -FORM_DROP - 0.05, -0.03, sg, onGr);
+    }
   }
   // Skirts: vertical earth-coloured faces down the outer edge of the ribbon, hiding any residual sub-cell gap (bridge decks have their own sides).
   for (const sg of [1, -1]) face(B.soil, sg * hw, -2.0, -FORM_DROP - 0.04, sg, k => surf(k) && !S[k].br && !S[k + 1].br);

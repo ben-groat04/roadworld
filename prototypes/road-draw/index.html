@@ -567,6 +567,23 @@ function marchSide(s, hw, sg, hLimit) {
   for (let it = 0; it < 10; it++) { const m = (lo + hi) / 2; if (f(m) >= 0) hi = m; else lo = m; }
   return { kind: 'slope', edge: hw, z0, d1: hi, z1: base(hi), cut };
 }
+// Dual carriageways: the nearest opposite/parallel carriageway of the same dual type on side sg (median gap), else null.
+function findMedian(r, ty, s, sg, hw) {
+  if (!ty.dual) return null;
+  const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, lim = ty.gap + ty.total + 2; let best = null;
+  for (const r2 of roads) {
+    if (r2 === r || r2.type !== r.type || !r2.samples) continue;
+    for (const t of r2.samples) {
+      const dx = t.x - s.x, dy = t.y - s.y; if (Math.abs(dx) > lim || Math.abs(dy) > lim) continue;
+      const D = Math.hypot(dx, dy), lat = dx * nx + dy * ny;
+      if (D > lim || lat < ty.total * 0.8 || Math.abs(D - lat) > 1.5 || Math.abs(Math.sin(t.h - s.h)) > 0.3) continue;
+      if (!best || lat < best.lat) best = { lat, z: t.z - FORM_DROP };
+    }
+  }
+  if (!best) return null;
+  const z0 = s.z - FORM_DROP;
+  return { kind: 'median', edge: hw, z0, d1: best.lat / 2 + 0.3, mid: best.lat / 2, z1: Math.min(z0, best.z), cut: false };
+}
 function crossSections(r) {
   if (r.xs) return r.xs;
   const ty = ROAD_TYPES[r.type], S = r.samples, n = S.length, hw = ty.total / 2, xs = new Array(n);
@@ -574,19 +591,30 @@ function crossSections(r) {
   for (let i = 0; i < n; i++) {
     const s = S[i];
     if (s.bridge || (s.tunnel && !s.tp)) { raw[0].push(null); raw[1].push(null); continue; }
-    for (let q = 0; q < 2; q++) { const m = marchSide(s, hw, q ? -1 : 1, T.wallStart); raw[q].push(m); wall[q][i] = m.kind === 'wall' || !!s.tp; }
+    for (let q = 0; q < 2; q++) {
+      const md = findMedian(r, ty, s, q ? -1 : 1, hw);
+      if (md) { raw[q].push(md); wall[q][i] = false; continue; }   // median between carriageways: flat fill, never a slope/wall trench
+      const m = marchSide(s, hw, q ? -1 : 1, T.wallStart); raw[q].push(m); wall[q][i] = m.kind === 'wall' || !!s.tp;
+    }
+  }
+  // Tunnel approaches: the ~9 samples before each portal are walled both sides (wing walls from roadmesh take over), so no slope strip ends up inside / short of the wings.
+  const near = new Array(n).fill(false), PZ = 9;
+  for (let i = 0; i < n; i++) if (S[i].tunnel) {
+    if (i === 0 || !S[i - 1].tunnel) for (let k = i - 1; k >= Math.max(0, i - PZ) && !S[k].tunnel && !S[k].bridge; k--) near[k] = true;
+    if (i === n - 1 || !S[i + 1].tunnel) for (let k = i + 1; k <= Math.min(n - 1, i + PZ) && !S[k].tunnel && !S[k].bridge; k++) near[k] = true;
   }
   for (let q = 0; q < 2; q++) {
-    const w = wall[q], skip = i => S[i].bridge || (S[i].tunnel && !S[i].tp);
+    const w = wall[q], med = i => raw[q][i] && raw[q][i].kind === 'median', skip = i => S[i].bridge || (S[i].tunnel && !S[i].tp) || med(i);
     for (let i = 0; i < n; i++) if (skip(i)) w[i] = false;
     closeGaps(w, 6); dropShort(w, 4);
-    for (let i = 0; i < n; i++) if (skip(i)) w[i] = false; else if (S[i].tp) w[i] = true;
+    for (let i = 0; i < n; i++) if (skip(i)) w[i] = false; else if (S[i].tp || near[i]) w[i] = true;
   }
   for (let i = 0; i < n; i++) {
     const s = S[i], z0 = s.z - FORM_DROP, none = { kind: 'none', edge: hw, z0, d1: hw, z1: z0, cut: false }, out = {};
     for (let q = 0; q < 2; q++) {
       let m = raw[q][i];
       if (!m) m = { ...none };
+      else if (m.kind === 'median') { /* keep */ }
       else if (wall[q][i] && m.kind !== 'wall') { const sg = q ? -1 : 1, d1 = hw + WALL_DX, z1 = hBase(s.x - Math.sin(s.h) * sg * d1, s.y + Math.cos(s.h) * sg * d1); m = { kind: 'wall', edge: hw, z0, d1, z1, cut: z1 > z0 }; }
       else if (!wall[q][i] && m.kind === 'wall') { m = marchSide(s, hw, q ? -1 : 1, 60); if (m.kind === 'wall') m = { kind: 'slope', edge: hw, z0, d1: hw + 60 * T.batter, z1: m.z1, cut: m.cut }; }
       out[q ? 'R' : 'L'] = m;
@@ -597,30 +625,52 @@ function crossSections(r) {
 }
 
 // ===== Earthwork slope meshes (strip per side, using the terrain material + colour function) =====
+const SLOPE_N = 5, SLOPE_TINT = 0.14;   // slope face rows; crest-to-mid darkening, faded to nothing over the last 2 rows before the toe
 function buildEarthworks(r) {
   const g = new THREE.Group(), S = r.samples, xs = crossSections(r), n = S.length, bt = T.batter;
-  const pos = [], col = [], idx = [], o = [0, 0, 0];
-  for (let q = 0; q < 2; q++) {
-    const sg = q ? -1 : 1, key = q ? 'R' : 'L', base = new Array(n).fill(-1);
-    for (let i = 0; i < n; i++) {
-      const m = xs[i][key]; if (m.kind !== 'slope') continue;
-      const s = S[i], nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, v0 = pos.length / 3;
-      const dExt = m.d1 + 1, zc = m.cut ? m.z1 + 1 / bt : m.z1 - 1 / bt, zExt = Math.min(zc, hBase(s.x + nx * dExt, s.y + ny * dExt) - 0.05);
-      for (const [d, z] of [[m.edge, m.z0], [m.d1, m.z1], [dExt, zExt]]) {
-        const x = s.x + nx * d, y = s.y + ny * d; pos.push(x, z, -y); terrainColour(x, y, o); col.push(o[0], o[1], o[2]);
-      }
-      base[i] = v0;
+  const pos = [], col = [], idx = [], o = [0, 0, 0], terrN = [];
+  const addV = (x, y, z, tint) => { pos.push(x, z, -y); terrainColour(x, y, o); const k = 1 - tint; col.push(o[0] * k, o[1] * k, o[2] * k); return pos.length / 3 - 1; };
+  const tri = (a, b, c) => {   // orient each triangle up
+    const p = new THREE.Vector3(pos[a * 3], pos[a * 3 + 1], pos[a * 3 + 2]), qq = new THREE.Vector3(pos[b * 3], pos[b * 3 + 1], pos[b * 3 + 2]), w = new THREE.Vector3(pos[c * 3], pos[c * 3 + 1], pos[c * 3 + 2]);
+    if (qq.sub(p).cross(w.sub(p)).y >= 0) idx.push(a, b, c); else idx.push(a, c, b);
+  };
+  // End cap: a vertical curtain under a strip's cross-section so the corridor-mask hole never shows the water / apron below. Ground colours, outward = dir.
+  const cap = (v0, R, dir) => {
+    const top = [], bot = [];
+    for (let k = 0; k < R; k++) {
+      const x = pos[(v0 + k) * 3], z = pos[(v0 + k) * 3 + 1], y = -pos[(v0 + k) * 3 + 2];
+      top.push(addV(x, y, z, 0)); bot.push(addV(x, y, z - 3, 0));
     }
-    for (let i = 0; i + 1 < n; i++) {
-      if (base[i] < 0 || base[i + 1] < 0) continue;
-      for (let c = 0; c < 2; c++) {
-        const a = base[i] + c, b = base[i] + c + 1, a2 = base[i + 1] + c, b2 = base[i + 1] + c + 1;
-        for (const t of [[a, a2, b], [b, a2, b2]]) {   // orient each triangle up
-          const [p, qq, w] = t.map(k => new THREE.Vector3(pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]));
-          const nrm = qq.clone().sub(p).cross(w.clone().sub(p));
-          if (nrm.y >= 0) idx.push(t[0], t[1], t[2]); else idx.push(t[0], t[2], t[1]);
-        }
+    for (let k = 0; k + 1 < R; k++) {
+      for (const t of [[top[k], top[k + 1], bot[k]], [bot[k], top[k + 1], bot[k + 1]]]) {
+        const [a, b, c] = t, ux = pos[b * 3] - pos[a * 3], uy = pos[b * 3 + 1] - pos[a * 3 + 1], uz = pos[b * 3 + 2] - pos[a * 3 + 2], vx = pos[c * 3] - pos[a * 3], vy = pos[c * 3 + 1] - pos[a * 3 + 1], vz = pos[c * 3 + 2] - pos[a * 3 + 2];
+        const nx = uy * vz - uz * vy, nz = ux * vy - uy * vx;
+        if (nx * dir[0] + nz * -dir[1] >= 0) idx.push(a, b, c); else idx.push(a, c, b);
       }
+    }
+  };
+  for (let q = 0; q < 2; q++) {
+    const sg = q ? -1 : 1, key = q ? 'R' : 'L', base = new Array(n).fill(null);
+    for (let i = 0; i < n; i++) {
+      const m = xs[i][key]; if (m.kind !== 'slope' && m.kind !== 'median') continue;
+      const s = S[i], nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, v0 = pos.length / 3, rows = [];
+      if (m.kind === 'median') {   // flat grass fill at the lower edge height, short slope from the higher edge
+        rows.push([m.edge, m.z0, 0], [m.mid, m.z1, 0], [m.d1, m.z1, 0]);
+      } else {
+        for (let k = 0; k <= SLOPE_N; k++) { const t = k / SLOPE_N, w = k <= SLOPE_N - 2 ? 1 : k === SLOPE_N - 1 ? 0.5 : 0; rows.push([m.edge + (m.d1 - m.edge) * t, m.z0 + (m.z1 - m.z0) * t, SLOPE_TINT * w]); }
+        const dExt = m.d1 + 1, zc = m.cut ? m.z1 + 1 / bt : m.z1 - 1 / bt;
+        rows.push([dExt, Math.min(zc, hBase(s.x + nx * dExt, s.y + ny * dExt) - 0.05), 0]);
+      }
+      for (const [d, z, tint] of rows) addV(s.x + nx * d, s.y + ny * d, z, tint);
+      terrN.push(v0 + rows.length - 1);
+      base[i] = { v0, R: rows.length, t: [Math.cos(s.h), Math.sin(s.h)] };
+    }
+    for (let i = 0; i < n; i++) {
+      const A = base[i]; if (!A) continue;
+      const B = i + 1 < n ? base[i + 1] : null, P = i > 0 ? base[i - 1] : null;
+      if (!P || P.R !== A.R) cap(A.v0, A.R, [-A.t[0], -A.t[1]]);
+      if (!B || B.R !== A.R) { cap(A.v0, A.R, A.t); continue; }
+      for (let c = 0; c + 1 < A.R; c++) { const a = A.v0 + c, b = a + 1, a2 = B.v0 + c, b2 = a2 + 1; tri(a, a2, b); tri(b, a2, b2); }
     }
   }
   if (!idx.length) return g;
@@ -628,6 +678,11 @@ function buildEarthworks(r) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setIndex(idx); geo.computeVertexNormals();
+  const nrm = geo.attributes.normal;   // overlap row lies on the terrain: shade it with the terrain's own normal so the seam is invisible
+  for (const v of terrN) {
+    const x = pos[v * 3], y = -pos[v * 3 + 2], sx = (hBase(x + CELL, y) - hBase(x - CELL, y)) / (2 * CELL), sy = (hBase(x, y + CELL) - hBase(x, y - CELL)) / (2 * CELL), inv = 1 / Math.sqrt(sx * sx + sy * sy + 1);
+    nrm.setXYZ(v, -sx * inv, inv, sy * inv);
+  }
   const m = new THREE.Mesh(geo, groundMat); m.receiveShadow = true; m.castShadow = true; m.userData.road = r; m.userData.pick = false;
   g.add(m); return g;
 }

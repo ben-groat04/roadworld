@@ -12,4 +12,4 @@ const ROAD_TYPES = {
   4: { id: 'motorway',    name: 'Motorway',           carriageway: 14.95, total: 17.45, lanes: 3, speedKph: 120, minR: 1020, maxGrade: 4, kc: 182, ks: 37, dual: true, gap: 3.0, edge: '#5f7d4a' },
 };
 const T = { snapAngle: 15, snapLen: 8, wallCap: 12, wallStart: 6, batter: 2, kMul: 1, minSpan: 4, water: 14 };
-const SHOULDER = 1.0, FORM_DROP = 0.15, PAVE_H = 0.12, DECK_T = 1.2, TUNNEL_H = 5.5, PARAPET_H = 1.0;
+const SHOULDER = 1.0, FORM_DROP = 0.15, PAVE_H = 0.12, DECK_T = 1.5, TUNNEL_H = 5.5, PARAPET_H = 1.0;
