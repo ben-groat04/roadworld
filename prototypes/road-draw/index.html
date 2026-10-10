@@ -1,0 +1,739 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Road Draw Prototype</title>
+<style>
+  :root { --bg: #0d1117; --panel: #161b22; --text: #e6edf3; --muted: #8b949e; --accent: #ffd866; --err: #ff7b72; --warn: #f5a623; --border: #30363d; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  canvas { display: block; }
+  #plan { cursor: crosshair; }
+  #prof { border-top: 1px solid var(--border); }
+  #hud { position: absolute; left: 12px; top: 12px; background: rgba(13,17,23,0.82); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; max-width: min(560px, calc(100vw - 24px)); pointer-events: none; }
+  .err { color: var(--err); } .warn { color: var(--warn); }
+  #tune { position: absolute; right: 12px; top: 12px; background: rgba(13,17,23,0.88); border: 1px solid var(--border); border-radius: 6px; width: 220px; }
+  #tune-toggle { width: 100%; background: none; border: 0; color: var(--text); padding: 7px 10px; text-align: left; cursor: pointer; font: inherit; }
+  #tune-body { display: none; padding: 0 10px 10px; }
+  #tune.open #tune-body { display: block; }
+  #tune label { display: block; margin-top: 6px; color: var(--muted); }
+  #tune label span { color: var(--text); float: right; }
+  #tune input { width: 100%; accent-color: var(--accent); }
+  #help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -60%); background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 22px; width: min(620px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.5); cursor: pointer; }
+  #help h2 { margin: 0 0 8px; font-size: 17px; }
+  #help table { border-collapse: collapse; width: 100%; }
+  #help td { padding: 3px 6px; vertical-align: top; border-bottom: 1px solid var(--border); }
+  #help td:first-child { white-space: nowrap; color: var(--accent); }
+  #help p { color: var(--muted); margin: 10px 0 0; }
+</style>
+</head>
+<body>
+<canvas id="plan"></canvas>
+<canvas id="prof"></canvas>
+<div id="hud"></div>
+<div id="tune"><button id="tune-toggle">⚙ Tuning</button><div id="tune-body"></div></div>
+<div id="help">
+  <h2>Road Draw prototype</h2>
+  <table>
+    <tr><td>Left click</td><td>Add a point (the clothoid refits through all points). Clicking onto an existing road connects and finishes.</td></tr>
+    <tr><td>Double-click / Enter / right-click</td><td>Finish road</td></tr>
+    <tr><td>Esc / Backspace</td><td>Cancel road / remove last point</td></tr>
+    <tr><td>Hold Shift</td><td>Snapping off (angle, length, guidelines, roads)</td></tr>
+    <tr><td>PgUp / PgDn  or  ] / [</td><td>Raise / lower the next point 1 m (Shift: 5 m). In edit mode: the hovered handle.</td></tr>
+    <tr><td>1 2 3 4</td><td>Residential · B road · Dual carriageway · Motorway (dual types: one stroke places two one-way carriageways)</td></tr>
+    <tr><td>O</td><td>Toggle one-way (single-carriageway types)</td></tr>
+    <tr><td>C</td><td>Colour: plain / curvature / gradient</td></tr>
+    <tr><td>E or Tab</td><td>Toggle draw / edit. Edit: click a road, drag its handles, Del deletes it.</td></tr>
+    <tr><td>Ctrl+Z / Ctrl+Y</td><td>Undo / redo</td></tr>
+    <tr><td>Right/middle drag, wheel</td><td>Pan, zoom</td></tr>
+    <tr><td>H</td><td>Toggle this help</td></tr>
+  </table>
+  <p>Curvature and gradient are advisory (amber). Red means the road would break graphically and the click is refused. Profile panel below: blue fill, orange cut, red where cut/fill passes the wall cap (would need a bridge or tunnel). Click to close.</p>
+</div>
+<script id="geom">
+// ===== Geometry (pure, no DOM). Mirrors sim_core clothoid / clothoid_chain / vertical_profile. =====
+const G = (() => {
+  const PI = Math.PI;
+  const wrap = a => { a = (a + PI) % (2 * PI); if (a <= 0) a += 2 * PI; return a - PI; };
+  const GX = [0.1488743389816312, 0.4333953941292472, 0.6794095682990244, 0.8650633666889845, 0.9739065285171717];
+  const GW = [0.2955242247147529, 0.2692667193099963, 0.2190863625159820, 0.1494513491505806, 0.0666713443086881];
+
+  // int_0^1 t^m (cos, sin)(a/2 t^2 + b t + c) dt, for m = 0, 1, 2 at once.
+  function fres(a, b, c) {
+    const n = Math.min(4096, Math.max(1, Math.ceil((Math.abs(a) + Math.abs(b)) / 0.5)));
+    const h = 1 / n, half = h / 2;
+    let X0 = 0, Y0 = 0, X1 = 0, Y1 = 0, X2 = 0, Y2 = 0;
+    for (let i = 0; i < n; i++) {
+      const mid = (i + 0.5) * h;
+      for (let j = 0; j < 5; j++) for (let sg = -1; sg <= 1; sg += 2) {
+        const t = mid + sg * half * GX[j], ph = (0.5 * a * t + b) * t + c, w = GW[j] * half;
+        const co = Math.cos(ph) * w, si = Math.sin(ph) * w;
+        X0 += co; Y0 += si; X1 += co * t; Y1 += si * t; X2 += co * t * t; Y2 += si * t * t;
+      }
+    }
+    return [X0, Y0, X1, Y1, X2, Y2];
+  }
+
+  const curv = (c, s) => c.k0 + c.dk * s;
+  const head = (c, s) => c.h0 + c.k0 * s + 0.5 * c.dk * s * s;
+  function point(c, s) {
+    if (s === 0) return [c.x0, c.y0];
+    const f = fres(c.dk * s * s, c.k0 * s, c.h0);
+    return [c.x0 + s * f[0], c.y0 + s * f[1]];
+  }
+
+  // G1 Hermite clothoid (Bertolazzi & Frego 2015).
+  function fitG1(x0, y0, t0, x1, y1, t1) {
+    const dx = x1 - x0, dy = y1 - y0, r = Math.hypot(dx, dy);
+    if (!(r > 1e-9)) return null;
+    const phi = Math.atan2(dy, dx), p0 = wrap(t0 - phi), p1 = wrap(t1 - phi), d = p1 - p0;
+    let A = 3 * (p0 + p1);
+    for (let it = 0; it < 50; it++) {
+      const f = fres(2 * A, d - A, p0), g = f[1], dg = f[4] - f[2];
+      if (Math.abs(g) < 1e-14 || dg === 0) break;
+      const st = Math.max(-1, Math.min(1, g / dg));
+      A -= st;
+      if (Math.abs(st) < 1e-15 * Math.max(1, Math.abs(A))) break;
+    }
+    const X = fres(2 * A, d - A, p0)[0];
+    if (!(X > 0)) return null;
+    const L = r / X;
+    return { x0, y0, h0: t0, k0: (d - A) / L, dk: 2 * A / (L * L), L };
+  }
+
+  function solve(A, b, n) {
+    for (let c = 0; c < n; c++) {
+      let p = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(A[r * n + c]) > Math.abs(A[p * n + c])) p = r;
+      if (Math.abs(A[p * n + c]) < 1e-300) return false;
+      if (p !== c) { for (let k = 0; k < n; k++) { const t = A[c * n + k]; A[c * n + k] = A[p * n + k]; A[p * n + k] = t; } const t = b[c]; b[c] = b[p]; b[p] = t; }
+      for (let r = c + 1; r < n; r++) { const f = A[r * n + c] / A[c * n + c]; for (let k = c; k < n; k++) A[r * n + k] -= f * A[c * n + k]; b[r] -= f * b[c]; }
+    }
+    for (let r = n - 1; r >= 0; r--) { let s = b[r]; for (let k = r + 1; k < n; k++) s -= A[r * n + k] * b[k]; b[r] = s / A[r * n + r]; }
+    return true;
+  }
+
+  // G2 chain through points [[x,y],...]. hs/he: pinned headings or null (natural end, k = 0).
+  function fitChain(P, hs = null, he = null) {
+    const n = P.length;
+    if (n < 2) return null;
+    for (let i = 0; i + 1 < n; i++) if (Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]) < 1e-6) return null;
+    const chord = (a, b) => Math.atan2(P[b][1] - P[a][1], P[b][0] - P[a][0]);
+    const h = new Array(n).fill(0);
+    for (let i = 1; i + 1 < n; i++) {
+      const lu = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]), lv = Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]);
+      const hu = chord(i - 1, i), hv = chord(i, i + 1);
+      h[i] = hu + wrap(hv - hu) * lu / (lu + lv);
+    }
+    h[0] = n > 2 ? chord(0, 1) - wrap(h[1] - chord(0, 1)) : chord(0, 1);
+    h[n - 1] = n > 2 ? chord(n - 2, n - 1) + wrap(chord(n - 2, n - 1) - h[n - 2]) : chord(0, 1);
+    if (hs != null) h[0] = hs;
+    if (he != null) h[n - 1] = he;
+    for (let i = 1; i < n; i++) { const c = chord(i - 1, i); h[i] = c + wrap(h[i] - c); }
+    h[0] = chord(0, 1) + wrap(h[0] - chord(0, 1));
+
+    const free = [];
+    for (let i = 0; i < n; i++) if (!(i === 0 && hs != null) && !(i === n - 1 && he != null)) free.push(i);
+    const build = hh => { const sp = []; for (let i = 0; i + 1 < n; i++) { const c = fitG1(P[i][0], P[i][1], hh[i], P[i + 1][0], P[i + 1][1], hh[i + 1]); if (!c) return null; sp.push(c); } return sp; };
+    const resid = hh => {
+      const sp = build(hh); if (!sp) return null;
+      return free.map(i => i === 0 ? sp[0].k0 : i === n - 1 ? curv(sp[n - 2], sp[n - 2].L) : curv(sp[i - 1], sp[i - 1].L) - sp[i].k0);
+    };
+    const n2 = v => v.reduce((a, x) => a + x * x, 0);
+    const h0 = h.slice(), m = free.length;
+    let r = resid(h), ok = !!r, conv = ok && (m === 0 || n2(r) < 1e-20);
+    for (let it = 0; ok && !conv && it < 40; it++) {
+      const J = new Float64Array(m * m), eps = 1e-7;
+      for (let j = 0; j < m; j++) {
+        const hp = h.slice(); hp[free[j]] += eps;
+        const rp = resid(hp); if (!rp) { ok = false; break; }
+        for (let i = 0; i < m; i++) J[i * m + j] = (rp[i] - r[i]) / eps;
+      }
+      if (!ok) break;
+      const step = r.slice();
+      if (!solve(J, step, m)) { ok = false; break; }
+      let t = 1, improved = false; const r0 = n2(r);
+      for (let ls = 0; ls < 20; ls++, t *= 0.5) {
+        const hn = h.slice();
+        for (let j = 0; j < m; j++) hn[free[j]] -= Math.max(-0.5, Math.min(0.5, t * step[j]));
+        const rn = resid(hn);
+        if (rn && n2(rn) < r0) { for (let k = 0; k < n; k++) h[k] = hn[k]; r = rn; improved = true; break; }
+      }
+      if (!improved) break;
+      conv = n2(r) < 1e-20;
+    }
+    let spans = ok ? build(h) : null;
+    if (!spans) spans = build(h0);
+    if (!spans) return null;
+    let kink = 0;
+    for (let i = 1; i < spans.length; i++) kink = Math.max(kink, Math.abs(curv(spans[i - 1], spans[i - 1].L) - spans[i].k0));
+    const L = spans.reduce((a, c) => a + c.L, 0);
+    return { spans, g2: (ok && conv) || kink < 1e-9, kink, L };
+  }
+
+  // Locate span for chain arc length s.
+  function at(ch, s) {
+    let acc = 0;
+    for (let i = 0; i < ch.spans.length; i++) {
+      const c = ch.spans[i];
+      if (s <= acc + c.L || i === ch.spans.length - 1) return [c, Math.max(0, Math.min(c.L, s - acc))];
+      acc += c.L;
+    }
+  }
+  function chainPose(ch, s) { const [c, u] = at(ch, s); const p = point(c, u); return { x: p[0], y: p[1], h: head(c, u), k: curv(c, u) }; }
+
+  // Sample a chain incrementally (cheap: integrates heading with midpoint steps per span).
+  function sample(ch, maxStep = 2) {
+    const out = []; let acc = 0;
+    for (let i = 0; i < ch.spans.length; i++) {
+      const c = ch.spans[i];
+      const n = Math.max(2, Math.ceil(c.L / maxStep), Math.ceil(Math.abs(c.k0 * c.L + 0.5 * c.dk * c.L * c.L) / 0.05));
+      const startJ = i === 0 ? 0 : 1;
+      for (let j = startJ; j <= n; j++) {
+        const u = c.L * j / n, p = point(c, u);
+        out.push({ s: acc + u, x: p[0], y: p[1], h: head(c, u), k: curv(c, u), span: i });
+      }
+      acc += c.L;
+    }
+    return out;
+  }
+
+  // Vertical profile: constant grades between control points, parabolic curves L = K*|dg%| at breaks.
+  function profile(S, Z, kCrest, kSag) {
+    const b = S.map((s, i) => ({ s, z: Z[i], L: 0 }));
+    const gr = (i, j) => (b[j].z - b[i].z) / (b[j].s - b[i].s);
+    for (let i = 1; i + 1 < b.length; i++) {
+      const dg = (gr(i, i + 1) - gr(i - 1, i)) * 100;
+      if (Math.abs(dg) < 1e-9) continue;
+      const K = dg < 0 ? kCrest : kSag;
+      b[i].L = Math.min(K * Math.abs(dg), b[i].s - b[i - 1].s, b[i + 1].s - b[i].s);
+    }
+    return b;
+  }
+  function profZ(b, s) {
+    if (b.length === 1) return b[0].z;
+    const gr = (i, j) => (b[j].z - b[i].z) / (b[j].s - b[i].s);
+    for (let j = 1; j + 1 < b.length; j++) {
+      const v = b[j], hh = v.L / 2;
+      if (hh <= 0 || s < v.s - hh || s > v.s + hh) continue;
+      const g0 = gr(j - 1, j), g1 = gr(j, j + 1), x = s - (v.s - hh);
+      return v.z - g0 * hh + g0 * x + (g1 - g0) * x * x / (2 * v.L);
+    }
+    let i = 0; while (i + 2 < b.length && s > b[i + 1].s) i++;
+    return b[i].z + gr(i, i + 1) * (s - b[i].s);
+  }
+  function profGrade(b, s) {
+    if (b.length < 2) return 0;
+    const gr = (i, j) => (b[j].z - b[i].z) / (b[j].s - b[i].s);
+    for (let j = 1; j + 1 < b.length; j++) {
+      const v = b[j], hh = v.L / 2;
+      if (hh <= 0 || s < v.s - hh || s > v.s + hh) continue;
+      return gr(j - 1, j) + (gr(j, j + 1) - gr(j - 1, j)) * (s - (v.s - hh)) / v.L;
+    }
+    let i = 0; while (i + 2 < b.length && s > b[i + 1].s) i++;
+    return gr(i, i + 1);
+  }
+
+  return { wrap, fres, fitG1, fitChain, point, head, curv, chainPose, sample, profile, profZ, profGrade };
+})();
+</script>
+<script>
+// ===== Config (data-driven; UK values are just the first region pack) =====
+const DRIVING_SIDE = 'left';          // 'left' (UK) or 'right'
+const WORLD = 2048;                    // metres, square
+const ROAD_TYPES = {
+  1: { id: 'residential', name: 'Residential street', carriageway: 10.0, total: 14.3, lanes: 1, speedKph: 50,  minR: 20,   maxGrade: 10, kc: 10,  ks: 9,  dual: false, edge: '#8f8d86' },
+  2: { id: 'b_road',      name: 'B road / main road', carriageway: 6.5,  total: 10.8, lanes: 1, speedKph: 70,  minR: 180,  maxGrade: 8,  kc: 30,  ks: 20, dual: false, edge: '#8f8d86' },
+  3: { id: 'a_road_dual', name: 'A road / dual c\'way', carriageway: 8.8, total: 10.8, lanes: 2, speedKph: 100, minR: 720,  maxGrade: 6,  kc: 100, ks: 26, dual: true, gap: 2.5, edge: '#5f7d4a' },
+  4: { id: 'motorway',    name: 'Motorway',           carriageway: 14.95, total: 17.45, lanes: 3, speedKph: 120, minR: 1020, maxGrade: 4, kc: 182, ks: 37, dual: true, gap: 3.0, edge: '#5f7d4a' },
+};
+const T = { snapAngle: 15, snapLen: 8, wallCap: 12, kMul: 1, minSpan: 4 };
+
+// ===== Terrain =====
+const TN = 513, CELL = WORLD / (TN - 1);
+const TH = new Float32Array(TN * TN);
+(function genTerrain() {
+  let seed = 1337;
+  const hash = (x, y) => { let h = (x * 374761393 + y * 668265263 + seed * 2246822519) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967295; };
+  const sm = t => t * t * (3 - 2 * t);
+  const vnoise = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), xf = sm(x - xi), yf = sm(y - yi);
+    const a = hash(xi, yi), b = hash(xi + 1, yi), c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+    return a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf; };
+  const fbm = (x, y) => { let s = 0, a = 0.5, f = 1; for (let o = 0; o < 5; o++) { s += a * vnoise(x * f, y * f); a *= 0.42; f *= 2.03; } return s / 0.84; };
+  for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) {
+    const x = i * CELL, y = j * CELL;
+    let h = 10 + 150 * Math.pow(fbm(x / 900, y / 900), 1.7);
+    // Sinuous river valley running roughly south-west to north-east.
+    const vx = x - (y * 0.85 + 180 * Math.sin(y / 260));
+    h -= 45 * Math.exp(-(vx - 300) * (vx - 300) / (2 * 140 * 140));
+    // A steep escarpment in the north-west.
+    h += 35 / (1 + Math.exp(-((y - x * 0.4) - 1250) / 25));
+    TH[j * TN + i] = Math.max(2, h);
+  }
+})();
+function terrainH(x, y) {
+  const fx = Math.max(0, Math.min(TN - 1.001, x / CELL)), fy = Math.max(0, Math.min(TN - 1.001, y / CELL));
+  const i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+  const at = (ii, jj) => TH[Math.max(0, Math.min(TN - 1, jj)) * TN + Math.max(0, Math.min(TN - 1, ii))];
+  const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+  const row = jj => cr(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), u);
+  return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v);
+}
+const terrainImg = (function renderTerrain() {
+  const R = 2048, mpp = WORLD / R, cv = document.createElement('canvas'); cv.width = cv.height = R;
+  const g = cv.getContext('2d'), img = g.createImageData(R, R), H = new Float32Array(R * R);
+  for (let py = 0; py < R; py++) for (let px = 0; px < R; px++) H[py * R + px] = terrainH((px + 0.5) * mpp, WORLD - (py + 0.5) * mpp);
+  for (let py = 0; py < R; py++) for (let px = 0; px < R; px++) {
+    const k = py * R + px, h = H[k];
+    const hl = H[py * R + Math.max(0, px - 1)], hr = H[py * R + Math.min(R - 1, px + 1)];
+    const hu = H[Math.max(0, py - 1) * R + px], hd = H[Math.min(R - 1, py + 1) * R + px];
+    const nx = (hl - hr) / (2 * mpp), ny = (hd - hu) / (2 * mpp);
+    const shade = Math.max(0, Math.min(1, 0.55 + (nx * -0.6 + ny * 0.6) * 0.9 / Math.sqrt(1 + nx * nx + ny * ny)));
+    const t = Math.min(1, h / 160);
+    let r = 92 + 90 * t, gg = 120 + 50 * t - 40 * t * t, b = 70 + 60 * t;
+    r *= shade * 1.15; gg *= shade * 1.15; b *= shade * 1.15;
+    const c5 = Math.floor(h / 5), c25 = Math.floor(h / 25);
+    if (px + 1 < R && py + 1 < R) {
+      const hr2 = H[k + 1], hd2 = H[k + R];
+      if (Math.floor(hr2 / 25) !== c25 || Math.floor(hd2 / 25) !== c25) { r *= 0.55; gg *= 0.55; b *= 0.55; }
+      else if (Math.floor(hr2 / 5) !== c5 || Math.floor(hd2 / 5) !== c5) { r *= 0.8; gg *= 0.8; b *= 0.8; }
+    }
+    img.data[k * 4] = r; img.data[k * 4 + 1] = gg; img.data[k * 4 + 2] = b; img.data[k * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  return cv;
+})();
+
+// ===== Roads + commands =====
+let roads = [], nextId = 1;
+const undoStack = [], redoStack = [];
+function rebuild(r) {
+  const ty = ROAD_TYPES[r.type];
+  const ch = G.fitChain(r.pts.map(p => [p.x, p.y]), r.hs, r.he);
+  if (!ch) return false;
+  const S = [0]; ch.spans.forEach(c => S.push(S[S.length - 1] + c.L));
+  r.chain = ch; r.S = S;
+  r.vp = G.profile(S, r.pts.map(p => p.z), ty.kc * T.kMul, ty.ks * T.kMul);
+  r.samples = G.sample(ch, 2);
+  for (const s of r.samples) { s.z = G.profZ(r.vp, s.s); s.g = G.profGrade(r.vp, s.s); s.t = terrainH(s.x, s.y); }
+  return true;
+}
+function exec(cmd) { if (cmd.apply() === false) return false; undoStack.push(cmd); redoStack.length = 0; dirty(); return true; }
+function undo() { const c = undoStack.pop(); if (c) { c.revert(); redoStack.push(c); fixSelection(); dirty(); } }
+function redo() { const c = redoStack.pop(); if (c) { c.apply(); undoStack.push(c); fixSelection(); dirty(); } }
+const AddRoads = list => ({ apply() { roads.push(...list); }, revert() { roads = roads.filter(r => !list.includes(r)); } });
+const DeleteRoad = r => { let idx; return { apply() { idx = roads.indexOf(r); roads.splice(idx, 1); }, revert() { roads.splice(idx, 0, r); } }; };
+const EditPoint = (r, i, before, after) => ({
+  apply() { r.pts[i] = { ...after }; if (!rebuild(r)) { r.pts[i] = { ...before }; rebuild(r); return false; } },
+  revert() { r.pts[i] = { ...before }; rebuild(r); },
+});
+function fixSelection() { if (state.sel && !roads.includes(state.sel)) state.sel = null; if (state.hover && !roads.includes(state.hover)) state.hover = null; }
+
+// ===== View =====
+const plan = document.getElementById('plan'), prof = document.getElementById('prof');
+const pc = plan.getContext('2d'), fc = prof.getContext('2d');
+const view = { cx: WORLD / 2, cy: WORLD / 2, zoom: 0.5 };
+let W = 0, H = 0, PW = 0, PH = 0, dpr = 1;
+function resize() {
+  dpr = window.devicePixelRatio || 1; W = innerWidth; H = Math.round(innerHeight * 0.72); PW = innerWidth; PH = innerHeight - H;
+  for (const [c, w, h] of [[plan, W, H], [prof, PW, PH]]) { c.width = w * dpr; c.height = h * dpr; c.style.width = w + 'px'; c.style.height = h + 'px'; }
+  dirty();
+}
+const toS = (x, y) => [(x - view.cx) * view.zoom + W / 2, H / 2 - (y - view.cy) * view.zoom];
+const toW = (sx, sy) => [(sx - W / 2) / view.zoom + view.cx, (H / 2 - sy) / view.zoom + view.cy];
+
+// ===== State =====
+const state = { mode: 'draw', type: 1, oneWay: false, colour: 0, draw: null, dz: 0, snap: null, mouse: [0, 0], shift: false,
+  hover: null, sel: null, hoverHandle: -1, drag: null, help: true, flash: 0, preview: null };
+const COLOUR_MODES = ['plain', 'curvature', 'gradient'];
+
+// ===== Snapping =====
+function roadEnds() {
+  const out = [];
+  for (const r of roads) {
+    const L = r.chain.L, a = G.chainPose(r.chain, 0), b = G.chainPose(r.chain, L);
+    out.push({ r, s: 0, x: a.x, y: a.y, z: r.vp[0].z, out: a.h + Math.PI });
+    out.push({ r, s: L, x: b.x, y: b.y, z: r.vp[r.vp.length - 1].z, out: b.h });
+  }
+  return out;
+}
+function nearestOnRoad(x, y, maxD, skip) {
+  let best = null;
+  for (const r of roads) {
+    if (r === skip) continue;
+    const S = r.samples;
+    for (let i = 0; i + 1 < S.length; i++) {
+      const a = S[i], b = S[i + 1], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / l2));
+      const px = a.x + dx * t, py = a.y + dy * t, d = Math.hypot(x - px, y - py);
+      if (d < maxD && (!best || d < best.d)) {
+        const sgn = Math.sign(dx * (y - a.y) - dy * (x - a.x)) || 1;
+        best = { r, d, x: px, y: py, s: a.s + (b.s - a.s) * t, z: a.z + (b.z - a.z) * t, h: a.h, sd: sgn * d, i };
+      }
+    }
+  }
+  return best;
+}
+function computeSnap(sx, sy) {
+  const [mx, my] = toW(sx, sy), px = 1 / view.zoom;
+  const d = state.draw, last = d && d.pts.length ? d.pts[d.pts.length - 1] : null;
+  const res = { x: mx, y: my, z: null, kind: 'free', guide: null };
+  if (!state.shift) {
+    // 1. existing road ends
+    let be = null;
+    for (const e of roadEnds()) { const dd = Math.hypot(e.x - mx, e.y - my); if (dd < 14 * px && (!be || dd < be.dd)) be = { ...e, dd }; }
+    if (be && !(last && Math.hypot(be.x - last.x, be.y - last.y) < 0.01)) return { x: be.x, y: be.y, z: be.z, kind: 'end', out: be.out };
+    // 2. onto an existing road (T-junction)
+    const on = nearestOnRoad(mx, my, 10 * px);
+    if (on) return { x: on.x, y: on.y, z: on.z, kind: 'road', road: on.r };
+    // 3. guideline: straight extension of road ends
+    let bg = null;
+    for (const e of roadEnds()) {
+      const ux = Math.cos(e.out), uy = Math.sin(e.out), t = (mx - e.x) * ux + (my - e.y) * uy;
+      if (t <= 1) continue;
+      const qx = e.x + ux * t, qy = e.y + uy * t, dd = Math.hypot(mx - qx, my - qy);
+      if (dd < 9 * px && (!bg || dd < bg.dd)) bg = { dd, x: qx, y: qy, guide: { type: 'line', x0: e.x, y0: e.y, x1: qx, y1: qy } };
+    }
+    if (bg) { res.x = bg.x; res.y = bg.y; res.kind = 'guide'; res.guide = bg.guide; }
+    // 4. guideline: parallel offset from a nearby road
+    if (!bg) {
+      const near = nearestOnRoad(mx, my, 80);
+      if (near) {
+        const tyA = ROAD_TYPES[near.r.type], tyB = ROAD_TYPES[state.type];
+        const base = tyA.total / 2 + (tyB.dual ? tyB.total + tyB.gap / 2 : tyB.total / 2);
+        for (const k of [1, 2, 3]) {
+          const off = base * k + (k - 1) * 0;  // touching kerbs, then whole-road multiples
+          if (Math.abs(Math.abs(near.sd) - off) < 7 * px) {
+            const nx = -Math.sin(near.h), ny = Math.cos(near.h), sg = Math.sign(near.sd);
+            res.x = near.x + nx * off * sg; res.y = near.y + ny * off * sg; res.kind = 'guide';
+            res.guide = { type: 'offset', road: near.r, off: off * sg };
+            break;
+          }
+        }
+      }
+    }
+    // 5. angle + length increments relative to the previous direction
+    if (res.kind === 'free' && last) {
+      let base = 0;
+      if (d.pts.length >= 2) { const p = d.pts[d.pts.length - 2]; base = Math.atan2(last.y - p.y, last.x - p.x); }
+      else if (d.hs != null) base = d.hs;
+      const step = T.snapAngle * Math.PI / 180;
+      const ang = base + Math.round(G.wrap(Math.atan2(my - last.y, mx - last.x) - base) / step) * step;
+      const len = Math.max(T.snapLen, Math.round(Math.hypot(mx - last.x, my - last.y) / T.snapLen) * T.snapLen);
+      res.x = last.x + Math.cos(ang) * len; res.y = last.y + Math.sin(ang) * len; res.kind = 'angle';
+      res.guide = { type: 'line', x0: last.x, y0: last.y, x1: res.x, y1: res.y, faint: true };
+    }
+  }
+  return res;
+}
+
+// ===== Drawing preview + validation =====
+function buildPreview() {
+  const d = state.draw, sn = state.snap;
+  if (!d || !sn) { state.preview = null; return; }
+  const ty = ROAD_TYPES[state.type];
+  const z = sn.z != null ? sn.z : terrainH(sn.x, sn.y) + state.dz;
+  const pts = [...d.pts, { x: sn.x, y: sn.y, z }];
+  const he = sn.kind === 'end' ? sn.out + Math.PI : null;
+  const r = { type: state.type, pts, hs: d.hs, he };
+  const pv = { road: null, errors: [], warns: [], cursorZ: z };
+  if (pts.length >= 2) {
+    for (let i = 0; i + 1 < pts.length; i++) if (Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y) < T.minSpan) { pv.errors.push(`segment shorter than ${T.minSpan} m`); break; }
+    if (!pv.errors.length && rebuild(r)) {
+      pv.road = r;
+      let kmax = 0, gmax = 0;
+      for (const s of r.samples) { kmax = Math.max(kmax, Math.abs(s.k)); gmax = Math.max(gmax, Math.abs(s.g)); }
+      pv.minR = kmax > 1e-9 ? 1 / kmax : Infinity; pv.maxG = gmax * 100;
+      const lastS = r.samples[r.samples.length - 1];
+      pv.endR = Math.abs(lastS.k) > 1e-9 ? 1 / Math.abs(lastS.k) : Infinity;
+      pv.spanLen = r.chain.spans[r.chain.spans.length - 1].L;
+      pv.heading = ((90 - lastS.h * 180 / Math.PI) % 360 + 360) % 360;  // compass bearing
+      const n = pts.length; pv.grade = (pts[n - 1].z - pts[n - 2].z) / pv.spanLen * 100;
+      const halfW = (ty.dual ? ty.gap / 2 + ty.total : ty.total / 2);
+      if (pv.minR < halfW) pv.errors.push(`too tight: radius ${pv.minR.toFixed(1)} m < half-width ${halfW.toFixed(1)} m (edge folds)`);
+      if (pv.minR < ty.minR) pv.warns.push(`radius ${pv.minR.toFixed(0)} m below comfortable ${ty.minR} m for ${ty.name}`);
+      if (pv.maxG > ty.maxGrade) pv.warns.push(`grade ${pv.maxG.toFixed(1)}% above advisory ${ty.maxGrade}%`);
+      let cap = false; for (const s of r.samples) if (Math.abs(s.z - s.t) > T.wallCap) cap = true;
+      if (cap) pv.warns.push(`cut/fill over ${T.wallCap} m wall cap: needs bridge/tunnel`);
+      if (!r.chain.g2) pv.warns.push('G2 solve fell back to G1 (curvature kink)');
+    } else if (!pv.errors.length) pv.errors.push('cannot fit curve');
+  }
+  state.preview = pv;
+}
+
+function startOrAddPoint() {
+  const sn = state.snap; if (!sn) return;
+  const pv = state.preview;
+  if (pv && pv.errors.length) { state.flash = performance.now(); dirty(); return; }
+  const z = sn.z != null ? sn.z : terrainH(sn.x, sn.y) + state.dz;
+  if (!state.draw) {
+    state.draw = { pts: [{ x: sn.x, y: sn.y, z }], hs: sn.kind === 'end' ? sn.out : null, attach: [sn.kind] };
+  } else {
+    state.draw.pts.push({ x: sn.x, y: sn.y, z });
+    state.draw.attach.push(sn.kind);
+    if (sn.kind === 'end' || sn.kind === 'road') { state.draw.he = sn.kind === 'end' ? sn.out + Math.PI : null; finishRoad(); return; }
+  }
+  state.dz = 0;
+  dirty();
+}
+function finishRoad() {
+  const d = state.draw; state.draw = null; state.preview = null; state.dz = 0;
+  if (!d || d.pts.length < 2) { dirty(); return; }
+  const ty = ROAD_TYPES[state.type];
+  const centre = { id: nextId++, type: state.type, oneWay: state.oneWay, pts: d.pts, hs: d.hs, he: d.he ?? null, attach: d.attach };
+  if (!rebuild(centre)) { dirty(); return; }
+  if (!ty.dual) { exec(AddRoads([centre])); return; }
+  // Dual: one stroke places two independent one-way carriageways.
+  const off = ty.gap / 2 + ty.total / 2, sideSign = DRIVING_SIDE === 'left' ? 1 : -1;
+  const offPts = sg => centre.pts.map((p, i) => { const h = G.chainPose(centre.chain, centre.S[i]).h; return { x: p.x - Math.sin(h) * off * sg, y: p.y + Math.cos(h) * off * sg, z: p.z }; });
+  const fwd = { id: nextId++, type: state.type, oneWay: true, pts: offPts(sideSign), hs: d.hs, he: d.he ?? null, attach: d.attach };
+  const back = { id: nextId++, type: state.type, oneWay: true, pts: offPts(-sideSign).reverse(),
+    hs: d.he != null ? d.he + Math.PI : null, he: d.hs != null ? d.hs + Math.PI : null, attach: [...d.attach].reverse() };
+  const made = [fwd, back].filter(rebuild);
+  if (made.length) exec(AddRoads(made));
+}
+
+// ===== Rendering =====
+let needs = true; const dirty = () => { needs = true; };
+function offsetLine(S, d) { return S.map(s => [s.x - Math.sin(s.h) * d, s.y + Math.cos(s.h) * d]); }
+function strokePts(ctx, P, w, col, dash) {
+  if (P.length < 2) return;
+  ctx.beginPath(); for (let i = 0; i < P.length; i++) { const [x, y] = toS(P[i][0], P[i][1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.lineWidth = w; ctx.strokeStyle = col; ctx.setLineDash(dash || []); ctx.stroke(); ctx.setLineDash([]);
+}
+function heatCurv(k, ty) { const R = Math.abs(k) > 1e-9 ? 1 / Math.abs(k) : 1e9; return R < ty.minR * 0.5 ? '#e5484d' : R < ty.minR ? '#f5a623' : R < ty.minR * 2 ? '#e8d44d' : '#3fb950'; }
+function heatGrade(g, ty) { const p = Math.abs(g) * 100; return p > ty.maxGrade * 1.5 ? '#e5484d' : p > ty.maxGrade ? '#f5a623' : p > ty.maxGrade * 0.5 ? '#e8d44d' : '#3fb950'; }
+function drawRoad(r, opt = {}) {
+  const ty = ROAD_TYPES[r.type], S = r.samples, z = view.zoom;
+  const P = S.map(s => [s.x, s.y]);
+  pc.lineJoin = 'round'; pc.lineCap = 'butt';
+  if (opt.highlight) strokePts(pc, P, ty.total * z + 6, opt.highlight);
+  strokePts(pc, P, Math.max(2, ty.total * z), ty.edge);
+  // Carriageway, optionally heat-coloured per sample.
+  if (state.colour === 0 || opt.ghost) strokePts(pc, P, Math.max(1.5, ty.carriageway * z), opt.ghost ? 'rgba(60,62,68,0.85)' : '#3b3d42');
+  else for (let i = 0; i + 1 < S.length; i++) strokePts(pc, [P[i], P[i + 1]], Math.max(1.5, ty.carriageway * z), state.colour === 1 ? heatCurv(S[i].k, ty) : heatGrade(S[i].g, ty));
+  // Bridge / tunnel hint where cut or fill exceeds the wall cap.
+  for (let i = 0; i + 1 < S.length; i++) {
+    const dz = S[i].z - S[i].t;
+    if (Math.abs(dz) > T.wallCap) strokePts(pc, [P[i], P[i + 1]], Math.max(2, ty.total * z) + 4, dz > 0 ? 'rgba(120,180,255,0.55)' : 'rgba(20,20,20,0.6)', dz > 0 ? [] : [4, 4]);
+  }
+  // Markings (only when zoomed in enough to read).
+  if (z > 0.35 && state.colour === 0) {
+    const mw = Math.max(1, 0.15 * z), cw = ty.carriageway;
+    if (!r.oneWay && !ty.dual) strokePts(pc, P, mw, '#f2f2f2', [3 * z, 6 * z]);
+    else if (ty.lanes > 1) for (let l = 1; l < ty.lanes; l++) strokePts(pc, offsetLine(S, -cw / 2 + l * 3.65 + (ty.id === 'motorway' ? 0.7 : 0.5) - 0.0), mw, '#f2f2f2', [3 * z, 6 * z]);
+    strokePts(pc, offsetLine(S, cw / 2 - 0.3), mw, '#f2f2f2'); strokePts(pc, offsetLine(S, -cw / 2 + 0.3), mw, '#f2f2f2');
+  }
+  if (r.oneWay && z > 0.12) {  // chevrons in travel direction
+    for (let s = 20; s < r.chain.L - 5; s += Math.max(30, 60 / z)) {
+      const p = G.chainPose(r.chain, s), [x, y] = toS(p.x, p.y), a = -p.h, l = Math.max(4, 2.5 * z);
+      pc.beginPath(); pc.moveTo(x - Math.cos(a - 0.5) * l, y - Math.sin(a - 0.5) * l); pc.lineTo(x, y); pc.lineTo(x - Math.cos(a + 0.5) * l, y - Math.sin(a + 0.5) * l);
+      pc.strokeStyle = '#ffd866'; pc.lineWidth = 2; pc.stroke();
+    }
+  }
+}
+function drawGuide(gd) {
+  if (!gd) return;
+  if (gd.type === 'line') strokePts(pc, [[gd.x0, gd.y0], [gd.x1, gd.y1]], 1.5, gd.faint ? 'rgba(255,255,255,0.35)' : '#7ee0ff', [6, 5]);
+  else if (gd.type === 'offset') strokePts(pc, offsetLine(gd.road.samples, gd.off), 1.5, '#7ee0ff', [6, 5]);
+}
+function renderPlan() {
+  pc.setTransform(dpr, 0, 0, dpr, 0, 0);
+  pc.fillStyle = getComputedStyle(document.body).getPropertyValue('--bg'); pc.fillRect(0, 0, W, H);
+  const [x0, y0] = toS(0, WORLD); pc.imageSmoothingEnabled = true; pc.drawImage(terrainImg, x0, y0, WORLD * view.zoom, WORLD * view.zoom);
+  for (const r of roads) drawRoad(r, { highlight: r === state.sel ? '#ffd866' : r === state.hover && state.mode === 'edit' ? 'rgba(255,216,102,0.45)' : null });
+  // Junction markers: road ends that attach to other roads.
+  for (const r of roads) [0, r.pts.length - 1].forEach((i, k) => {
+    const kind = r.attach && r.attach[i]; if (kind !== 'road' && kind !== 'end') return;
+    const [x, y] = toS(r.pts[i].x, r.pts[i].y); pc.beginPath(); pc.arc(x, y, 5, 0, 7); pc.strokeStyle = '#fff'; pc.lineWidth = 2; pc.stroke();
+  });
+  if (state.mode === 'draw') {
+    const pv = state.preview;
+    if (pv && pv.road) {
+      const ty = ROAD_TYPES[state.type];
+      if (ty.dual) {
+        const off = ty.gap / 2 + ty.total / 2;
+        for (const sg of [1, -1]) strokePts(pc, offsetLine(pv.road.samples, off * sg), Math.max(2, ty.total * view.zoom), pv.errors.length ? 'rgba(229,72,77,0.6)' : 'rgba(255,255,255,0.25)');
+        strokePts(pc, pv.road.samples.map(s => [s.x, s.y]), 1, 'rgba(255,255,255,0.6)', [4, 4]);
+      } else drawRoad(pv.road, { ghost: true, highlight: pv.errors.length ? 'rgba(229,72,77,0.8)' : null });
+    }
+    if (state.draw) for (const p of state.draw.pts) { const [x, y] = toS(p.x, p.y); pc.fillStyle = '#ffd866'; pc.beginPath(); pc.arc(x, y, 4, 0, 7); pc.fill(); }
+    const sn = state.snap;
+    if (sn) {
+      drawGuide(sn.guide);
+      const [x, y] = toS(sn.x, sn.y);
+      pc.beginPath(); pc.arc(x, y, sn.kind === 'free' ? 3 : 6, 0, 7);
+      pc.strokeStyle = { end: '#3fb950', road: '#3fb950', guide: '#7ee0ff', angle: '#fff', free: '#fff' }[sn.kind]; pc.lineWidth = 2; pc.stroke();
+    }
+  }
+  if (state.mode === 'edit' && state.sel) state.sel.pts.forEach((p, i) => {
+    const [x, y] = toS(p.x, p.y); pc.beginPath(); pc.arc(x, y, i === state.hoverHandle ? 8 : 6, 0, 7);
+    pc.fillStyle = i === state.hoverHandle ? '#ffd866' : '#fff'; pc.fill(); pc.strokeStyle = '#111'; pc.lineWidth = 1.5; pc.stroke();
+  });
+  if (performance.now() - state.flash < 250) { pc.fillStyle = 'rgba(229,72,77,0.15)'; pc.fillRect(0, 0, W, H); }
+  // Scale bar.
+  const nice = [10, 20, 50, 100, 200, 500, 1000].find(m => m * view.zoom > 80) || 1000;
+  pc.fillStyle = 'rgba(0,0,0,0.5)'; pc.fillRect(W - 30 - nice * view.zoom - 10, H - 36, nice * view.zoom + 20, 26);
+  pc.fillStyle = '#fff'; pc.fillRect(W - 30 - nice * view.zoom, H - 20, nice * view.zoom, 3); pc.font = '11px system-ui'; pc.fillText(nice + ' m', W - 30 - nice * view.zoom, H - 24);
+}
+function renderProfile() {
+  fc.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fc.fillStyle = getComputedStyle(document.body).getPropertyValue('--panel'); fc.fillRect(0, 0, PW, PH);
+  const r = (state.mode === 'draw' && state.preview && state.preview.road) || state.sel || state.hover;
+  fc.fillStyle = '#8b949e'; fc.font = '12px system-ui';
+  if (!r) { fc.fillText('Profile: draw a road, or select one in edit mode (E).', 16, 22); return; }
+  const S = r.samples, L = r.chain.L, ml = 52, mr = 16, mt = 22, mb = 24, w = PW - ml - mr, h = PH - mt - mb;
+  let lo = Infinity, hi = -Infinity; for (const s of S) { lo = Math.min(lo, s.z, s.t); hi = Math.max(hi, s.z, s.t); }
+  const pad = Math.max(5, (hi - lo) * 0.15); lo -= pad; hi += pad;
+  const X = s => ml + s / L * w, Y = z => mt + (hi - z) / (hi - lo) * h;
+  // Grid.
+  fc.strokeStyle = 'rgba(255,255,255,0.07)'; fc.lineWidth = 1; fc.fillStyle = '#8b949e';
+  const zs = [1, 2, 5, 10, 20, 50].find(v => (hi - lo) / v < 8); for (let z = Math.ceil(lo / zs) * zs; z < hi; z += zs) { fc.beginPath(); fc.moveTo(ml, Y(z)); fc.lineTo(ml + w, Y(z)); fc.stroke(); fc.fillText(z + ' m', 8, Y(z) + 4); }
+  const ss = [10, 20, 50, 100, 200, 500, 1000].find(v => L / v < 10); for (let s = 0; s <= L; s += ss) fc.fillText(s + '', X(s) - 6, PH - 6);
+  // Terrain.
+  fc.beginPath(); fc.moveTo(X(0), mt + h); S.forEach(s => fc.lineTo(X(s.s), Y(s.t))); fc.lineTo(X(L), mt + h); fc.fillStyle = '#3a3f2e'; fc.fill();
+  // Cut / fill.
+  for (let i = 0; i + 1 < S.length; i++) {
+    const a = S[i], b = S[i + 1], dz = (a.z + b.z) / 2 - (a.t + b.t) / 2;
+    fc.beginPath(); fc.moveTo(X(a.s), Y(a.z)); fc.lineTo(X(b.s), Y(b.z)); fc.lineTo(X(b.s), Y(b.t)); fc.lineTo(X(a.s), Y(a.t));
+    fc.fillStyle = Math.abs(dz) > T.wallCap ? 'rgba(229,72,77,0.55)' : dz > 0 ? 'rgba(126,224,255,0.35)' : 'rgba(245,166,35,0.4)'; fc.fill();
+  }
+  fc.beginPath(); S.forEach((s, i) => i ? fc.lineTo(X(s.s), Y(s.t)) : fc.moveTo(X(s.s), Y(s.t))); fc.strokeStyle = '#9aa57a'; fc.lineWidth = 1.5; fc.stroke();
+  // Road.
+  fc.beginPath(); S.forEach((s, i) => i ? fc.lineTo(X(s.s), Y(s.z)) : fc.moveTo(X(s.s), Y(s.z))); fc.strokeStyle = '#fff'; fc.lineWidth = 2.5; fc.stroke();
+  // Vertical curve extents, control points, grade labels.
+  r.vp.forEach((b, i) => {
+    if (b.L > 0) { fc.fillStyle = 'rgba(255,216,102,0.18)'; fc.fillRect(X(b.s - b.L / 2), mt, X(b.s + b.L / 2) - X(b.s - b.L / 2), h); }
+    fc.fillStyle = '#ffd866'; fc.beginPath(); fc.arc(X(b.s), Y(b.z), 3.5, 0, 7); fc.fill();
+    if (i + 1 < r.vp.length) {
+      const n = r.vp[i + 1], g = (n.z - b.z) / (n.s - b.s) * 100, ty = ROAD_TYPES[r.type];
+      fc.fillStyle = Math.abs(g) > ty.maxGrade ? '#f5a623' : '#e6edf3'; fc.font = '12px system-ui';
+      fc.fillText((g >= 0 ? '+' : '') + g.toFixed(1) + '%', X((b.s + n.s) / 2) - 16, Y((b.z + n.z) / 2) - 8);
+    }
+  });
+  fc.fillStyle = '#8b949e'; fc.fillText(`Profile · ${L.toFixed(0)} m · blue = fill, orange = cut, red = over ${T.wallCap} m wall cap (bridge/tunnel) · yellow bands = vertical curves`, ml, 15);
+}
+function renderHud() {
+  const ty = ROAD_TYPES[state.type], pv = state.preview;
+  let html = `<b>${state.mode === 'draw' ? 'DRAW' : 'EDIT'}</b> · ${ty.name}${state.oneWay && !ty.dual ? ' · one-way' : ''} · colour: ${COLOUR_MODES[state.colour]}${state.shift ? ' · <span class="warn">snap off</span>' : ''}`;
+  if (state.mode === 'draw' && state.snap) {
+    const z = pv ? pv.cursorZ : null;
+    html += `<br>cursor z ${z != null ? z.toFixed(1) : '-'} m${state.dz ? ` (${state.dz > 0 ? '+' : ''}${state.dz} m)` : ''} · snap: ${state.snap.kind}`;
+  }
+  if (pv && pv.road) {
+    const f = R => R === Infinity ? '∞' : R.toFixed(0);
+    html += `<br>span ${pv.spanLen.toFixed(1)} m · bearing ${pv.heading.toFixed(0)}° · R at cursor ${f(pv.endR)} m · min R ${f(pv.minR)} m`;
+    html += `<br>grade ${pv.grade.toFixed(1)}% · max ${pv.maxG.toFixed(1)}% · ${pv.road.chain.g2 ? 'G2 ✓' : 'G1'} · total ${pv.road.chain.L.toFixed(0)} m`;
+  }
+  if (pv) { for (const e of pv.errors) html += `<br><span class="err">✕ ${e}</span>`; for (const w of pv.warns) html += `<br><span class="warn">⚠ ${w}</span>`; }
+  if (state.mode === 'edit' && state.sel) html += `<br>selected road #${state.sel.id} · ${state.sel.chain.L.toFixed(0)} m · drag handles, PgUp/PgDn height, Del delete`;
+  document.getElementById('hud').innerHTML = html;
+}
+function frame() { if (needs) { needs = false; renderPlan(); renderProfile(); renderHud(); } requestAnimationFrame(frame); }
+
+// ===== Input =====
+let down = null;
+plan.addEventListener('contextmenu', e => e.preventDefault());
+plan.addEventListener('mousedown', e => {
+  down = { x: e.offsetX, y: e.offsetY, b: e.button, cx: view.cx, cy: view.cy, moved: false };
+  if (e.button === 0 && state.mode === 'edit' && state.sel && state.hoverHandle >= 0) {
+    const i = state.hoverHandle, p = state.sel.pts[i];
+    state.drag = { r: state.sel, i, before: { ...p }, dzT: p.z - terrainH(p.x, p.y) };
+  }
+});
+addEventListener('mousemove', e => {
+  const rect = plan.getBoundingClientRect(), sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+  state.mouse = [sx, sy]; state.shift = e.shiftKey;
+  if (down) {
+    if (Math.hypot(sx - down.x, sy - down.y) > 4) down.moved = true;
+    if (down.b === 1 || down.b === 2) { view.cx = down.cx - (sx - down.x) / view.zoom; view.cy = down.cy + (sy - down.y) / view.zoom; dirty(); return; }
+    if (state.drag) {
+      const [x, y] = toW(sx, sy), d = state.drag, prev = { ...d.r.pts[d.i] };
+      d.r.pts[d.i] = { x, y, z: terrainH(x, y) + d.dzT };
+      if (!rebuild(d.r)) { d.r.pts[d.i] = prev; rebuild(d.r); }
+      dirty(); return;
+    }
+  }
+  if (sy > H) return;
+  if (state.mode === 'draw') { state.snap = computeSnap(sx, sy); buildPreview(); }
+  else {
+    const [mx, my] = toW(sx, sy);
+    state.hoverHandle = -1;
+    if (state.sel) state.sel.pts.forEach((p, i) => { const [hx, hy] = toS(p.x, p.y); if (Math.hypot(hx - sx, hy - sy) < 9) state.hoverHandle = i; });
+    const on = nearestOnRoad(mx, my, 12 / view.zoom); state.hover = on ? on.r : null;
+  }
+  dirty();
+});
+addEventListener('mouseup', e => {
+  if (!down) return;
+  const wasClick = !down.moved, b = down.b; down = null;
+  if (state.drag) {
+    const d = state.drag; state.drag = null;
+    const after = { ...d.r.pts[d.i] };
+    if (wasClick) { d.r.pts[d.i] = d.before; rebuild(d.r); }
+    else { d.r.pts[d.i] = d.before; rebuild(d.r); exec(EditPoint(d.r, d.i, d.before, after)); }
+    dirty(); return;
+  }
+  if (!wasClick || e.target !== plan) return;
+  if (state.mode === 'draw') {
+    if (b === 0) startOrAddPoint();
+    else if (b === 2) { if (state.draw && state.draw.pts.length >= 2) finishRoad(); else { state.draw = null; state.preview = null; } dirty(); }
+  } else if (b === 0) { state.sel = state.hover; dirty(); }
+});
+plan.addEventListener('dblclick', () => { if (state.mode === 'draw' && state.draw && state.draw.pts.length >= 2) finishRoad(); });
+plan.addEventListener('wheel', e => {
+  e.preventDefault();
+  const [wx, wy] = toW(e.offsetX, e.offsetY);
+  view.zoom = Math.max(0.08, Math.min(12, view.zoom * Math.exp(-e.deltaY * 0.0015)));
+  const [nx, ny] = toW(e.offsetX, e.offsetY); view.cx += wx - nx; view.cy += wy - ny;
+  if (state.mode === 'draw') { state.snap = computeSnap(e.offsetX, e.offsetY); buildPreview(); }
+  dirty();
+}, { passive: false });
+function adjustHeight(delta) {
+  if (state.mode === 'draw') { state.dz += delta; buildPreview(); }
+  else if (state.sel) {
+    const i = state.hoverHandle >= 0 ? state.hoverHandle : -1; if (i < 0) return;
+    const p = state.sel.pts[i]; exec(EditPoint(state.sel, i, { ...p }, { ...p, z: p.z + delta }));
+  }
+  dirty();
+}
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  state.shift = e.shiftKey;
+  const k = e.key;
+  if ((e.ctrlKey || e.metaKey) && (k === 'z' || k === 'Z')) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if ((e.ctrlKey || e.metaKey) && (k === 'y' || k === 'Y')) { e.preventDefault(); redo(); return; }
+  if (k >= '1' && k <= '4') { state.type = +k; buildPreview(); }
+  else if (k === 'o' || k === 'O') state.oneWay = !state.oneWay;
+  else if (k === 'c' || k === 'C') state.colour = (state.colour + 1) % 3;
+  else if (k === 'h' || k === 'H' || k === '?') { state.help = !state.help; document.getElementById('help').style.display = state.help ? 'block' : 'none'; }
+  else if (k === 'e' || k === 'E' || k === 'Tab') { e.preventDefault(); state.mode = state.mode === 'draw' ? 'edit' : 'draw'; state.draw = null; state.preview = null; state.snap = null; state.hoverHandle = -1; }
+  else if (k === 'Escape') { if (state.draw) { state.draw = null; state.preview = null; } else state.sel = null; }
+  else if (k === 'Enter') { if (state.draw) finishRoad(); }
+  else if (k === 'Backspace') { e.preventDefault(); if (state.draw) { state.draw.pts.pop(); state.draw.attach.pop(); if (!state.draw.pts.length) state.draw = null; buildPreview(); } }
+  else if (k === 'Delete') { if (state.sel) { exec(DeleteRoad(state.sel)); state.sel = null; } }
+  else if (k === 'PageUp' || k === ']') { e.preventDefault(); adjustHeight(e.shiftKey ? 5 : 1); }
+  else if (k === 'PageDown' || k === '[') { e.preventDefault(); adjustHeight(e.shiftKey ? -5 : -1); }
+  else if (k === 'Shift' && state.mode === 'draw') { state.snap = computeSnap(...state.mouse); buildPreview(); }
+  dirty();
+});
+addEventListener('keyup', e => { if (e.key === 'Shift') { state.shift = false; if (state.mode === 'draw' && state.snap) { state.snap = computeSnap(...state.mouse); buildPreview(); } dirty(); } });
+addEventListener('resize', resize);
+
+// ===== Tuning panel =====
+const TUNE = [['snapAngle', 'Snap angle °', 5, 45, 5], ['snapLen', 'Snap length m', 1, 50, 1], ['wallCap', 'Wall cap m', 3, 30, 1], ['kMul', 'Vert. curve K ×', 0.25, 2, 0.05], ['minSpan', 'Min segment m', 1, 20, 1]];
+document.getElementById('tune-body').innerHTML = TUNE.map(([k, l, a, b, s]) => `<label>${l} <span id="v-${k}">${T[k]}</span><input type="range" min="${a}" max="${b}" step="${s}" value="${T[k]}" data-k="${k}"></label>`).join('');
+document.querySelectorAll('#tune-body input').forEach(inp => inp.addEventListener('input', () => {
+  const k = inp.dataset.k; T[k] = +inp.value; document.getElementById('v-' + k).textContent = T[k];
+  if (k === 'kMul' || k === 'wallCap') roads.forEach(rebuild);
+  buildPreview(); dirty();
+}));
+document.getElementById('tune-toggle').addEventListener('click', () => document.getElementById('tune').classList.toggle('open'));
+document.getElementById('help').addEventListener('click', () => { state.help = false; document.getElementById('help').style.display = 'none'; });
+
+resize(); view.zoom = Math.max(W, H) / WORLD * 0.9; requestAnimationFrame(frame);
+window.__proto = { state, roads: () => roads, view, toS, T };  // for automated screenshots
+</script>
+</body>
+</html>
