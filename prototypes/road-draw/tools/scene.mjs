@@ -279,6 +279,7 @@ for (const name of names.sort((a, b) => (a === 'interchange') - (b === 'intercha
   await page.screenshot({ path: resolve(outDir, name + '.png') });
 }
 
+if (optVal('--eval') && SCENARIO === 'interchange') { const fx = ['interchange.json', 'sample.json'].map(f => resolve(HERE, '..', 'fixtures', f)).find(existsSync); await page.evaluate(j => window.__inspect.load(j, 'fixture'), readFileSync(fx, 'utf8')); }
 if (optVal('--eval')) { const src = readFileSync(resolve(optVal('--eval')), 'utf8'); console.log(JSON.stringify(await page.evaluate(`(async () => { const P = window.__proto; ${src}
 })()`))); await browser.close(); process.exit(0); }   // debugging: --eval file.js runs the file body in the page (P = window.__proto; use `return`) after the scene is drawn and prints the JSON result
 if (CAM) {   // custom camera: the target is moved along the view ray onto the ground so the terrain-following camera loop does not shift the view

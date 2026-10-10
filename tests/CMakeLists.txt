@@ -23,6 +23,7 @@ add_executable(sim_core_tests
   test_export_scene.cpp
   test_render_mesh.cpp
   test_street_lights.cpp
+  test_structure_mesh.cpp
   test_test_layouts.cpp
 )
 target_link_libraries(sim_core_tests PRIVATE sim_core scene_tools)

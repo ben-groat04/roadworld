@@ -738,6 +738,8 @@ namespace {
 
 using Tri = std::array<u32, 3>;
 
+double area2p(Vec2 a, Vec2 b, Vec2 c) { return (b - a).cross(c - a); }
+
 // Splits every edge longer than max_len (consistently for both triangles sharing it) until none is.
 void refine(std::vector<Vec2>& pts, std::vector<Tri>& tris, double max_len) {
     for (int pass = 0; pass < 12; ++pass) {
@@ -792,6 +794,47 @@ void refine(std::vector<Vec2>& pts, std::vector<Tri>& tris, double max_len) {
         }
         tris = std::move(next);
         if (!any) break;
+    }
+}
+
+double incircle(Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
+    const double adx = a.x - d.x, ady = a.y - d.y, bdx = b.x - d.x, bdy = b.y - d.y, cdx = c.x - d.x, cdy = c.y - d.y;
+    return (adx * adx + ady * ady) * (bdx * cdy - cdx * bdy) + (bdx * bdx + bdy * bdy) * (cdx * ady - adx * cdy) +
+           (cdx * cdx + cdy * cdy) * (adx * bdy - bdx * ady);
+}
+
+// Lawson flips toward a Delaunay triangulation: turns the fans of slivers that ear clipping makes into
+// well shaped triangles (boundary edges are never shared, so the outline is untouched).
+void flip_delaunay(const std::vector<Vec2>& pts, std::vector<Tri>& tris) {
+    for (int pass = 0; pass < 30; ++pass) {
+        std::map<std::pair<u32, u32>, std::vector<std::size_t>> edges;
+        for (std::size_t t = 0; t < tris.size(); ++t)
+            for (std::size_t k = 0; k < 3; ++k) {
+                const u32 a = tris[t][k], b = tris[t][(k + 1) % 3];
+                edges[{std::min(a, b), std::max(a, b)}].push_back(t);
+            }
+        std::set<std::size_t> dirty;
+        bool changed = false;
+        for (const auto& [key, ts] : edges) {
+            if (ts.size() != 2 || dirty.count(ts[0]) || dirty.count(ts[1])) continue;
+            u32 a = key.first, b = key.second, c = 0, d = 0;
+            for (u32 v : tris[ts[0]])
+                if (v != a && v != b) c = v;
+            for (u32 v : tris[ts[1]])
+                if (v != a && v != b) d = v;
+            if ((pts[a] - pts[b]).length() < 1e-9) continue;
+            if (area2p(pts[a], pts[b], pts[c]) < 0) std::swap(a, b);
+            if (!(area2p(pts[a], pts[b], pts[c]) > 1e-9) || !(area2p(pts[b], pts[a], pts[d]) > 1e-9)) continue;
+            if (!(incircle(pts[a], pts[b], pts[c], pts[d]) > 1e-9)) continue;
+            // The new diagonal c-d must lie inside the quad a d b c.
+            if (!(area2p(pts[a], pts[d], pts[c]) > 1e-7 && area2p(pts[d], pts[b], pts[c]) > 1e-7)) continue;
+            tris[ts[0]] = {a, d, c};
+            tris[ts[1]] = {d, b, c};
+            dirty.insert(ts[0]);
+            dirty.insert(ts[1]);
+            changed = true;
+        }
+        if (!changed) break;
     }
 }
 
@@ -873,7 +916,7 @@ std::vector<Vec2> simplify_ring(const std::vector<Vec2>& ring, std::vector<char>
     return out.size() >= 3 ? out : ring;
 }
 
-double junction_edge_length(const RenderMeshParams& P) { return std::clamp(60 * P.chord_tolerance + 2.5, 2.5, 25.0); }
+double junction_edge_length(const RenderMeshParams& P) { return std::clamp(100 * P.chord_tolerance + 4.0, 4.0, 30.0); }
 
 // ---------------------------------------------------------------- junction meshes
 
@@ -1125,7 +1168,9 @@ WorldMeshSet build_junction_mesh(const RoadGraph& graph, const RegionPack& regio
         }
         std::vector<Tri> tris;
         if (!triangulate_polygons(pts, idx, tris)) ok = false;
+        flip_delaunay(pts, tris);
         refine(pts, tris, maxlen);
+        flip_delaunay(pts, tris);
         std::vector<u32> vmap(pts.size(), 0xFFFFFFFFu);
         const auto vert = [&](u32 i) {
             if (vmap[i] == 0xFFFFFFFFu) {
@@ -1318,7 +1363,9 @@ void add_raised_polygon(WorldMeshSet& out, const PolygonSet& poly, const std::st
     }
     std::vector<Tri> tris;
     triangulate_polygons(pts, idx, tris);
+    flip_delaunay(pts, tris);
     refine(pts, tris, junction_edge_length(P));
+    flip_delaunay(pts, tris);
     WorldMesh& top = out[top_surface];
     std::vector<u32> vmap(pts.size(), 0xFFFFFFFFu);
     const auto vert = [&](u32 i) {

@@ -115,3 +115,5 @@ Files: `Public/CPRoadMeshActor.h`, `Private/CPRoadMeshActor.cpp` (Unreal side, u
 Large-world note: all component locations and tile origins are `double` (`FVector` is double precision in UE 5); vertex arrays are `float` relative to the tile origin, so nothing precision-critical is converted to float except tile-local values below 100 m. Assigning `FVector(float,float,float)` to the double vectors compiles silently.
 
 Standalone re-check of the UE-free part (needs a sim_core build; throwaway CMake project outside the repo that adds `Private/CPRoadMeshBuild.cpp` plus a main to a copy of the repo CMake with `/GR- /EHs-c-`; see `unreal/tools/README.md`).
+
+New-wrapper rule: every new `Private/SimCore/Wrap_<name>.cpp` must copy the FULL pragma list from `Wrap_region_pack.cpp` (including `4530 4577`).

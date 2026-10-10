@@ -22,6 +22,7 @@ add_library(sim_core
   src/triangulate.cpp
   src/render_mesh.cpp
   src/street_lights.cpp
+  src/structure_mesh.cpp
   src/test_layouts.cpp
 )
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/clipper2 ${CMAKE_BINARY_DIR}/clipper2)

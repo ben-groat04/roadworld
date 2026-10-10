@@ -361,11 +361,28 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
         PathsD inner = to_paths(cw);
         for (const Ring& g : junction.gore) inner.push_back(to_path(g));
         inner = Union(inner, FillRule::NonZero, 3);
-        const PathsD outer = InflatePaths(inner, delta, JoinType::Miter, EndType::Polygon, 2.0, 3);
-        PathsD caps;
-        for (int i = 0; i < 3; ++i) caps.push_back(to_path(end_cap(A(i), tr[static_cast<std::size_t>(i)], delta)));
-        const PathsD cut = Union(inner, caps, FillRule::NonZero, 3);
-        junction.pavements = from_paths(Difference(outer, cut, FillRule::NonZero, 3));
+        // Each arm's own strip is offset by that arm's own pavement width (half width minus kerb
+        // offset): an arm without pavement (dual carriageway, motorway) gets none, and an arm with
+        // pavement gets its full cross-section at the trim line. Each arm's cap only cuts its own band.
+        PathsD bands;
+        for (int i = 0; i < 3; ++i) {
+            const JunctionArm& a = A(i);
+            const double di = std::max(a.half_width_left - a.kerb_left, a.half_width_right - a.kerb_right);
+            if (di <= 1e-3) continue;
+            PathsD grown = InflatePaths(PathsD{to_path(arm_strip(a, 0, tr[static_cast<std::size_t>(i)]))}, di,
+                                        JoinType::Miter, EndType::Polygon, 2.0, 3);
+            const PathsD own_cap{to_path(end_cap(a, tr[static_cast<std::size_t>(i)], di))};
+            grown = Difference(grown, own_cap, FillRule::NonZero, 3);
+            bands.insert(bands.end(), grown.begin(), grown.end());
+        }
+        if (!bands.empty()) {
+            PathsD result = Difference(Union(bands, FillRule::NonZero, 3), inner, FillRule::NonZero, 3);
+            // Drop the millimetre slivers the boolean ops leave along the trim lines.
+            junction.pavements = from_paths(result);
+            junction.pavements.erase(std::remove_if(junction.pavements.begin(), junction.pavements.end(),
+                                                    [](const Ring& r) { return std::fabs(area(r)) < 0.02; }),
+                                     junction.pavements.end());
+        }
     }
 }
 

@@ -16,7 +16,7 @@
   ],
   "cameras": [
     { "name": "Screenshot 2026-10-10 180326", "photo": "Screenshot 2026-10-10 180326.png",
-      "pos": [-50.5, -60.1, 2.5], "target": [10, 15, 2.0], "fov_deg": 100,
+      "pos": [-48.5, -63.2, 2.5], "target": [2.3, -31, 4.4], "fov_deg": 100,
       "notes": "A40 NE-bound entry carriageway, left lane, about 60 m before the ring edge" }
   ]
 }

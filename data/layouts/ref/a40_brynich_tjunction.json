@@ -17,8 +17,8 @@
   },
   "cameras": [
     { "name": "Screenshot 2026-10-10 180248", "photo": "Screenshot 2026-10-10 180248.png",
-      "pos": [-1.7, -25, 2.5], "target": [0, 30, 1.8], "fov_deg": 90,
-      "notes": "minor road, left lane, about 25 m back from the A40 edge, looking north" },
+      "pos": [-1.7, -45, 2.5], "target": [0, 30, 1.8], "fov_deg": 90,
+      "notes": "minor road, left lane, about 25 m back from the A40 edge, looking north (about 45 m back)" },
     { "name": "Screenshot 2026-10-10 180306", "photo": "Screenshot 2026-10-10 180306.png",
       "pos": [-35, 7.7, 2.5], "target": [10, -2, 1.5], "fov_deg": 90,
       "notes": "A40 eastbound, left lane, about 35 m before the minor road, looking east-south-east" }

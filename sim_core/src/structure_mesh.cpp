@@ -674,7 +674,7 @@ std::vector<double> deck_breaks(const Env& v) {
     return out;
 }
 
-void emit_parapets(Env& v, const std::vector<Frame>& F, int tag, const char* /*unused*/) {
+void emit_parapets(Env& v, const std::vector<Frame>& F, int tag) {
     const StructureParams& P = v.P;
     const double s0 = F.front().s, s1 = F.back().s;
     for (const int sg : {1, -1}) {
@@ -927,7 +927,7 @@ void emit_abutment(Env& v, const Frame& fe, bool at_end, double deck_bottom, int
         ws.tag = tag * 4 + (at_end ? 2 : 0) + (sg > 0 ? 1 : 0);
         emit_stepped_wall(v.sink, std::move(st), ws);
     }
-    if (water) {}  // abutments on water are not flagged separately
+    (void)water;  // abutments on water are not flagged separately
 }
 
 void build_bridge(Env& v, const StructureSpan& span, int tag) {
@@ -973,7 +973,7 @@ void build_bridge(Env& v, const StructureSpan& span, int tag) {
         v.sink.begin(ElementKind::Block, structure_surface::concrete, v.id, StructureKind::Bridge, s0, s1, true, tag);
         emit_prism(v.sink, F, D, zt, zb);
         v.sink.end();
-        emit_parapets(v, F, tag, nullptr);
+        emit_parapets(v, F, tag);
         v.out.bridges.push_back(info);
         return;
     }
@@ -988,7 +988,7 @@ void build_bridge(Env& v, const StructureSpan& span, int tag) {
     v.sink.begin(ElementKind::Deck, structure_surface::concrete, v.id, StructureKind::Bridge, s0, s1, true, tag);
     emit_prism(v.sink, F, D, zt, zb);
     v.sink.end();
-    emit_parapets(v, F, tag, nullptr);
+    emit_parapets(v, F, tag);
 
     const PierPlan plan = plan_piers(v, s0, s1);
     info.span_too_long = plan.too_long;
@@ -1314,7 +1314,7 @@ void build_wall_run(const StructureWallRun& run, const std::vector<WPt>& rs, con
     const std::size_t m = rs.size();
     if (m < 2) return;
     const int sg = run.side == 'L' ? 1 : -1;
-    const double T = std::max(run.hi - run.lo, 0.1) > 0.1 ? run.hi - run.lo : P.wall_thickness;
+    const double T = run.hi - run.lo > 0.1 ? run.hi - run.lo : P.wall_thickness;
     std::vector<double> cum(m, 0.0);
     for (std::size_t i = 1; i < m; ++i) cum[i] = cum[i - 1] + std::hypot(rs[i].x - rs[i - 1].x, rs[i].y - rs[i - 1].y);
     const double tot = cum.back();

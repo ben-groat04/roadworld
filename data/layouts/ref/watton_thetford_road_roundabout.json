@@ -16,7 +16,7 @@
   ],
   "cameras": [
     { "name": "Screenshot 2026-10-10 175143", "photo": "Screenshot 2026-10-10 175143.png",
-      "pos": [-29.6, 45.7, 2.5], "target": [-10, 15, 1.5], "fov_deg": 90,
+      "pos": [-29.6, 45.7, 2.5], "target": [-16, 15, 1.5], "fov_deg": 90,
       "notes": "A1075 Thetford Road, southbound entry, left lane, about 40 m before the ring edge" }
   ]
 }

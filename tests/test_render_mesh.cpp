@@ -171,6 +171,7 @@ int check_seams(const RoadGraph& g, const RegionPack& r, const JunctionSet& js, 
                         const double t = l2 > 0 ? std::clamp(((a.p.x - p.x) * dx + (a.p.y - p.y) * dy + (a.p.z - p.z) * dz) / l2, 0.0, 1.0) : 0.0;
                         seg = std::min(seg, std::sqrt(std::pow(p.x + dx * t - a.p.x, 2) + std::pow(p.y + dy * t - a.p.y, 2) + std::pow(p.z + dz * t - a.p.z, 2)));
                     }
+                    if (seg >= 1e-3) { MESSAGE("A vertex lat " << lat(a) << " z " << a.p.z << " hl " << arm.half_width_left << " hr " << arm.half_width_right << " kl " << arm.kerb_left << " kr " << arm.kerb_right); for (const SeamVert& s : sorted) MESSAGE("   B lat " << lat(s) << " z " << s.p.z); }
                     CHECK(seg < 1e-3);
                     ++matched;
                     continue;
@@ -596,5 +597,28 @@ TEST_CASE("render mesh: highways have no kerbs") {
         INFO(type);
         CHECK(set.count("kerb") == 0);
         CHECK(set.count("asphalt") == 1);
+    }
+}
+
+TEST_CASE("zz debug merge pavements") {
+    std::string err;
+    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE(sc);
+    const JunctionSet js = tools::scene_junctions(*sc);
+    for (const auto& [n, j] : js.junctions) {
+        if (j.cls != NodeClass::Merge && j.cls != NodeClass::Diverge) continue;
+        MESSAGE("node " << n.value << " cls " << static_cast<int>(j.cls) << " arms " << j.arms.size() << " pav rings " << j.pavements.size());
+        for (std::size_t i = 0; i < j.arms.size(); ++i) {
+            const JunctionArm& arm = j.arms[i];
+            const ArmPoint c = arm_point(arm, j.trims[i], 0);
+            const Vec2 dir{std::cos(c.heading_out), std::sin(c.heading_out)}, left{-dir.y, dir.x};
+            double lo = 1e9, hi = -1e9;
+            for (const auto& r : j.pavements)
+                for (const Vec2& p : r) {
+                    const Vec2 d = p - c.pos.xy();
+                    if (std::abs(d.dot(dir)) < 2e-3) { lo = std::min(lo, d.dot(left)); hi = std::max(hi, d.dot(left)); }
+                }
+            MESSAGE("  arm " << i << " trim " << j.trims[i] << " kl " << arm.kerb_left << " kr " << arm.kerb_right << " hl " << arm.half_width_left << " hr " << arm.half_width_right << " pav lateral range on trim [" << lo << ", " << hi << "]");
+        }
     }
 }
