@@ -5,8 +5,9 @@
 // Trims: the pair arms are trimmed at the gore (nose) point, where their facing kerb lines cross
 // (a*cot(t) + b/sin(t), the corner formula's kerb-intersection term, finite for t > 0) plus a short
 // gore length, so the gore triangle sits inside the junction. The odd arm O is trimmed at the taper
-// length for the main carriageway design speed. All trims are clamped to
-// min(kArmSampleLength, edge_length / 2), so a 75-150 m taper is only covered up to 40 m here.
+// length for the main carriageway design speed. Arms carry the full edge
+// centreline, so trims are clamped only to edge_length / 2 (a 75-150 m taper and a shallow
+// slip's long gore both fit on long enough edges).
 #include <algorithm>
 #include <cmath>
 #include <tuple>
@@ -163,7 +164,7 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
 
     // ---- trims
     auto clampt = [&](int i, double t) {
-        return std::clamp(t, 0.0, std::min(kArmSampleLength, A(i).edge_length / 2));
+        return std::clamp(t, 0.0, A(i).edge_length / 2);
     };
     double theta = std::fabs(wrap_angle(A(a2).heading_out - A(a1).heading_out));
     theta = std::clamp(theta, 0.05, kPi - 0.05);

@@ -78,9 +78,9 @@ struct JunctionArm {
     int road_class = 0;
     double corner_radius = 0;   // m, region-pack default fillet radius of this arm's road type (0 = n/a)
     double edge_length = 0;     // m, bounds the usable trim
-    // Centreline from the node outward (s measured from the node, heading = heading_out(s)),
-    // sampled for at most kArmSampleLength. Trim lines and connector ends are read from it
-    // via arm_point().
+    // Full edge centreline from the node outward (s measured from the node, heading =
+    // heading_out(s)), 0..edge_length. Trim lines, connector ends and merge tapers are read
+    // from it via arm_point().
     std::vector<EdgeSample> centreline;
 
     int inbound_count() const;   // number of inbound lanes
@@ -88,10 +88,10 @@ struct JunctionArm {
     bool one_way() const { return inbound_count() == 0 || outbound_count() == 0; }
 };
 
-inline constexpr double kArmSampleLength = 40.0;  // m of centreline stored per arm; max useful trim
+inline constexpr double kArmSampleLength = 40.0;  // m; max trim of a normal junction (merge/diverge trims may reach edge_length / 2)
 
 // Point on the arm at arc length s from the node and lateral offset (+ left of heading_out),
-// plus the local outward heading. s is clamped to the stored centreline.
+// plus the local outward heading. s is clamped to the arm centreline (0..edge_length).
 struct ArmPoint {
     Vec3 pos;
     double heading_out = 0;
@@ -282,8 +282,8 @@ void generate_geometry(Junction& junction, const RoadGraph& graph, const RegionP
                        const JunctionOverrides& overrides);
 
 // [C] Taper length (m) of a merge/diverge from the main carriageway design speed (m/s). Parametric
-// table in junction_merge.cpp (should move to the region pack). The junction itself covers at most
-// kArmSampleLength of it (trims are clamped to the stored arm centreline and half the edge length).
+// table in junction_merge.cpp (should move to the region pack). The odd arm's trim is the full taper,
+// clamped only to half the edge length.
 double merge_taper_length(double design_speed_ms);
 
 // [C] For cls Merge/Diverge only: sets trims, connectors (lane add/drop and taper), corners,

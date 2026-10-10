@@ -162,9 +162,44 @@ TEST_CASE("merge: slip joins the nearside lane of a 2-lane one-way carriageway")
     REQUIRE(j.cls == NodeClass::Merge);
     check_slip(j, DrivingSide::Left, true);
     const int oi = odd_arm(j);
-    // taper (75 m for the 70 km/h main road) clamped to the 40 m stored arm
-    CHECK(j.trims[static_cast<std::size_t>(oi)] == doctest::Approx(40));
+    // full 75 m taper for the 70 km/h main road (100 m edges: half = 50 m clamps it)
+    CHECK(j.trims[static_cast<std::size_t>(oi)] == doctest::Approx(50));
     for (double t : j.trims) CHECK(t > 0);
+}
+
+TEST_CASE("merge: a 75 m and a 150 m taper are emitted in full on long edges") {
+    for (const char* type : {"b_road", "motorway"}) {
+        if (!pack(DrivingSide::Left)->road_type(type)) continue;
+        Net n;
+        n.road(180, 400, type, true);
+        n.road(155, 400, "residential", true);
+        n.road(0, 400, type, false);
+        const Junction& j = n.junction();
+        REQUIRE(j.cls == NodeClass::Merge);
+        const double speed = n.region->road_type(type)->design_speed;
+        const double taper = merge_taper_length(speed);
+        CHECK(taper >= 75);
+        CHECK(j.trims[static_cast<std::size_t>(odd_arm(j))] == doctest::Approx(taper));
+        const JunctionArm& O = j.arms[static_cast<std::size_t>(odd_arm(j))];
+        CHECK(arm_point(O, taper, 0).pos.xy().length() == doctest::Approx(taper));  // centreline reaches the taper end
+    }
+}
+
+TEST_CASE("merge/diverge: a 10 degree slip gets a nose and a gore") {
+    for (bool merge : {true, false}) {
+        Net n;
+        n.build(merge, 10, 400);
+        const Junction& j = n.junction();
+        REQUIRE(j.cls == (merge ? NodeClass::Merge : NodeClass::Diverge));
+        REQUIRE(j.gore.size() == 1);
+        CHECK(area(j.gore[0]) > 1.0);
+        CHECK(simple(j.gore[0]));
+        for (double t : j.trims) CHECK(t > 0);
+        // the nose is well beyond the old 40 m stub
+        double far = 0;
+        for (Vec2 p : j.gore[0]) far = std::max(far, p.length());
+        CHECK(far > 40);
+    }
 }
 
 TEST_CASE("merge: trim of the odd arm follows the taper, clamped to half the edge") {

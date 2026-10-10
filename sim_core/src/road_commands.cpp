@@ -57,6 +57,12 @@ public:
             if (std::abs(is[i] - s_) < 0.5) continue;  // drop a point that would sit on the split
             (is[i] < s_ ? left : right).interior.push_back(original_.interior[i]);
         }
+        left.structure.clear();
+        right.structure.clear();
+        for (const StructureSpan& sp : original_.structure) {
+            if (sp.s0 < s_) left.structure.push_back({sp.s0, std::min(sp.s1, s_), sp.kind});
+            if (sp.s1 > s_) right.structure.push_back({std::max(sp.s0, s_) - s_, sp.s1 - s_, sp.kind});
+        }
         left.heading_b = h;
         right.heading_a = h;
 
@@ -260,8 +266,45 @@ private:
     Vec3 to_, from_;
 };
 
+class SetStructureSpan : public RoadCommand {
+public:
+    SetStructureSpan(EdgeId id, double s0, double s1, StructureKind kind)
+        : id_(id), s0_(s0), s1_(s1), kind_(kind) {}
+    bool apply(RoadGraph& g) override {
+        const Edge* e = g.edge(id_);
+        if (!e || !(s0_ >= 0 && s1_ > s0_ && s1_ <= e->horizontal.length() + 1e-9)) return false;
+        before_ = *e;
+        Edge changed = *e;
+        std::vector<StructureSpan> out;
+        for (const StructureSpan& sp : e->structure) {
+            if (sp.s0 < s0_) out.push_back({sp.s0, std::min(sp.s1, s0_), sp.kind});
+            if (sp.s1 > s1_) out.push_back({std::max(sp.s0, s1_), sp.s1, sp.kind});
+        }
+        if (kind_ != StructureKind::Ground) out.push_back({s0_, s1_, kind_});
+        std::sort(out.begin(), out.end(), [](const StructureSpan& a, const StructureSpan& b) { return a.s0 < b.s0; });
+        changed.structure = std::move(out);
+        g.erase_edge(id_);
+        g.insert_edge(changed);
+        return true;
+    }
+    void revert(RoadGraph& g) override {
+        g.erase_edge(id_);
+        g.insert_edge(before_);
+    }
+    std::string name() const override { return "set structure"; }
+
+private:
+    EdgeId id_;
+    double s0_, s1_;
+    StructureKind kind_;
+    Edge before_;
+};
+
 }  // namespace
 
+RoadCommandPtr make_set_structure_span(EdgeId id, double s0, double s1, StructureKind kind) {
+    return std::make_unique<SetStructureSpan>(id, s0, s1, kind);
+}
 RoadCommandPtr make_draw_road(DrawRoadSpec spec) { return std::make_unique<DrawRoad>(std::move(spec)); }
 RoadCommandPtr make_delete_edge(EdgeId id) { return std::make_unique<DeleteEdge>(id); }
 RoadCommandPtr make_move_interior_point(EdgeId id, std::size_t index, Vec3 to) {

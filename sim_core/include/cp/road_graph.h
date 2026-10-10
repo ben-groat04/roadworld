@@ -27,6 +27,16 @@ struct Node {
     Vec3 pos;
 };
 
+enum class StructureKind { Ground, Bridge, Tunnel };
+
+// Arc-length range [s0, s1] of an edge on a structure. Spans are sorted, non-overlapping;
+// stretches not covered are ground.
+struct StructureSpan {
+    double s0 = 0, s1 = 0;
+    StructureKind kind = StructureKind::Bridge;
+    friend bool operator==(const StructureSpan&, const StructureSpan&) = default;
+};
+
 struct Edge {
     EdgeId id;
     NodeId a, b;
@@ -39,6 +49,8 @@ struct Edge {
     // Fitted geometry, stored so it stays stable; refit only on edit.
     ClothoidChain horizontal;
     VerticalProfile vertical;
+
+    std::vector<StructureSpan> structure;  // bridge/tunnel ranges along s
 };
 
 class RoadGraph {

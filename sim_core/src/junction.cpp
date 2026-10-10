@@ -66,14 +66,6 @@ JunctionArm make_arm(const RoadGraph& graph, const Edge& e, bool at_a, const Reg
         arm.centreline.push_back(o);
     }
     if (!at_a) std::reverse(arm.centreline.begin(), arm.centreline.end());
-    std::size_t keep = arm.centreline.size();
-    for (std::size_t i = 0; i < arm.centreline.size(); ++i) {
-        if (arm.centreline[i].s >= kArmSampleLength) {
-            keep = i + 1;
-            break;
-        }
-    }
-    arm.centreline.resize(keep);
     if (!arm.centreline.empty()) arm.heading_out = arm.centreline.front().heading;
 
     const RoadType* type = region.road_type(e.road_type);

@@ -5,7 +5,7 @@
 ## 1. Data flow
 ```
 RoadGraph + RegionPack + JunctionOverrides
-  -> collect_arms        arms CCW by heading_out: lanes, widths, kerb offsets, centreline stub   [junction.cpp, real]
+  -> collect_arms        arms CCW by heading_out: lanes, widths, kerb offsets, centreline   [junction.cpp, real]
   -> classify_arms       End | Joint | Junction | Merge | Diverge                                [real]
   -> major_arm_indices, resolve_corner_radii                                                     [real]
   Junction:          compute_trims (B) -> generate_connectors (A) -> generate_geometry (B)
@@ -15,7 +15,7 @@ RoadGraph + RegionPack + JunctionOverrides
 Lane graph first, geometry second: A reads only `arms`, `trims`, overrides (never B's polygons), and B never reads connectors. The one coupling is `trims`, via `compute_trims`. `build_junctions(..., only)` rebuilds just the dirty nodes. Everything is derived and never saved; the saved state is `JunctionOverrides`.
 
 ## 2. Frames and ordering (shared conventions)
-- Each arm is in its own outward frame: s = 0 at the node, `heading_out` away from it, lateral + = left of `heading_out`. `arm_point(arm, s, lateral)` reads the stored centreline stub (<= 40 m).
+- Each arm is in its own outward frame: s = 0 at the node, `heading_out` away from it, lateral + = left of `heading_out`. `arm_point(arm, s, lateral)` reads the arm's full edge centreline (0..edge_length); only normal-junction trims are capped at 40 m (`kArmSampleLength`), merge/diverge trims at edge_length / 2.
 - Arms sort CCW by `heading_out`. Corner k is between arms[k] and arms[k+1], keyed `(node, edge_l = arms[k+1].edge, edge_r = arms[k].edge)`.
 - `LaneRef` lists only connecting lanes (lane type `connects_at_junctions` with a travel direction), so pavements, parking and shoulders are excluded. `lane_from`/`lane_to` index `arm.lanes`; override keys use the stable `slot`.
 - Polygons are `std::vector<std::vector<Vec2>>`: outer rings CCW, holes CW.

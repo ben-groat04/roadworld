@@ -31,5 +31,8 @@ RoadCommandPtr make_delete_edge(EdgeId id);
 // index 0..interior.size()-1 moves an interior point; use make_move_node for ends.
 RoadCommandPtr make_move_interior_point(EdgeId id, std::size_t index, Vec3 to);
 RoadCommandPtr make_move_node(NodeId id, Vec3 to);
+// Marks [s0, s1] of the edge as Ground (clears), Bridge or Tunnel, overwriting overlapping
+// parts of existing spans. Fails if the range is empty or outside the edge.
+RoadCommandPtr make_set_structure_span(EdgeId id, double s0, double s1, StructureKind kind);
 
 }  // namespace cp
