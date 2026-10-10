@@ -547,18 +547,22 @@ float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453) -
 float vnz(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hsh(i), hsh(i + vec2(1, 0)), f.x), mix(hsh(i + vec2(0, 1)), hsh(i + vec2(1, 1)), f.x), f.y); }`)
       .replace('#include <color_fragment>', `
 vec2 wq = vec2(vW.x, -vW.z); float hb = vW.y - vDelta;
-float gr = smoothstep(0.1, 0.45, abs(vDelta));
+float gr = smoothstep(0.2, 1.5, abs(vDelta));
 vec3 gcol = mix(vec3(0.27, 0.43, 0.17), vec3(0.5, 0.47, 0.26), clamp((hb - 5.0) / 150.0, 0.0, 1.0));
 float slp = length(gNormal.xz) / max(gNormal.y, 0.05);
 float rt = clamp((slp - 0.55) / 0.4, 0.0, 1.0); rt = rt * rt * (3.0 - 2.0 * rt) * (1.0 - 0.75 * gr);
 gcol = mix(gcol, vec3(0.47, 0.45, 0.42), rt);
 gcol = mix(gcol, vec3(0.36, 0.33, 0.24), clamp((uWater + 1.2 - hb) / 3.0, 0.0, 0.8) * (1.0 - gr));
-gcol = mix(gcol, vec3(0.30, 0.50, 0.16), gr * 0.55);
+gcol = mix(gcol, vec3(0.30, 0.50, 0.16), gr * 0.3);
 float kn = 1.0 + 0.1 * (vnz(wq / 4.0) + 0.6 * vnz(wq / 1.3));
 diffuseColor.rgb = gcol * gcol * kn;`)
       .replace('void main() {', `void main() {
-  vec2 gw = vec2(vW.x, -vW.z); float ge = max(uSp, G_RES);
-  vec3 gNormal = normalize(vec3(-(Hg(gw + vec2(ge, 0.0)) - Hg(gw - vec2(ge, 0.0))), 2.0 * ge, Hg(gw + vec2(0.0, ge)) - Hg(gw - vec2(0.0, ge))));`)
+  vec2 gw = vec2(vW.x, -vW.z); float ge = max(uSp, 1.5);   // wide 3x3 Sobel-weighted kernel on bilinear height: smooth normals
+  float gdx = 0.0, gdy = 0.0;
+  for (int a = -1; a <= 1; a++) { float wgt = a == 0 ? 2.0 : 1.0; float o = float(a) * ge;
+    gdx += wgt * (Hg(gw + vec2(ge, o)) - Hg(gw + vec2(-ge, o)));
+    gdy += wgt * (Hg(gw + vec2(o, ge)) - Hg(gw + vec2(o, -ge))); }
+  vec3 gNormal = normalize(vec3(-gdx / 4.0, 2.0 * ge, gdy / 4.0));`);
       .replace('#include <normal_fragment_begin>', `vec3 normal = normalize((viewMatrix * vec4(gNormal, 0.0)).xyz); vec3 nonPerturbedNormal = normal;`);
   };
   return m;
