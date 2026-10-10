@@ -50,6 +50,17 @@ std::string json_number(double v, int decimals, bool* finite = nullptr);
 // JSON string literal with quotes, backslashes and control characters escaped.
 std::string json_string(const std::string& s);
 
+// Inputs of export.json as written by export_mesh. The *_json members are already-rendered JSON fragments:
+// nodes = comma-separated [x,y,z] triples, cameras / files = comma-separated objects, structures = one object.
+struct MeshExportJson {
+    std::string fixture, region, driving_side;
+    double origin_x = 0, origin_y = 0, marking_lift = 0;
+    double lo[3] = {0, 0, 0}, hi[3] = {0, 0, 0};  // bounds already shifted by the origin offset (x, y)
+    std::string nodes_json, structures_json, cameras_json, files_json;
+};
+// The complete export.json document (what prototypes/mesh-view reads).
+std::string mesh_export_json(const MeshExportJson& m);
+
 // Builds junctions for the scene (all nodes) with its overrides, including the roundabout post-pass
 // (whose group-level result is returned through `roundabouts` when given).
 JunctionSet scene_junctions(const Scene& scene, RoundaboutResult* roundabouts = nullptr);

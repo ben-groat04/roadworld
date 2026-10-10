@@ -1386,35 +1386,3 @@ TEST_CASE("markings: marks of different edges never overlap in random junctions"
 TEST_CASE("markings: MarkingParams::for_mesh_tolerance carries the shared tolerance") {
     CHECK(MarkingParams::for_mesh_tolerance(0.25).chord_tolerance == 0.25);
 }
-
-TEST_CASE("markings: debug overlap bbox" * doctest::skip()) {
-    std::string err;
-    auto sc = cp::tools::build_scene("interchange", CP_DATA_DIR, err);
-    REQUIRE(sc);
-    const JunctionSet js = cp::tools::scene_junctions(*sc);
-    const MarkingSet s = generate_markings(sc->graph, *sc->region, uk_rules(), js).merged();
-    for (std::size_t i = 0; i < s.marks.size(); ++i)
-        for (std::size_t k = i + 1; k < s.marks.size(); ++k)
-            if (s.marks[i].category != MarkingCategory::Arrow && marks_overlap(s, s.marks[i], s.marks[k])) {
-                for (std::size_t q : {i, k}) {
-                    double x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-                    for (const Vec3& p : s.points(s.marks[q])) x0 = std::min(x0, p.x), x1 = std::max(x1, p.x), y0 = std::min(y0, p.y), y1 = std::max(y1, p.y);
-                    int selfx = 0;
-                    const auto pp = s.points(s.marks[q]);
-                    for (std::size_t a = 0; a < pp.size(); ++a)
-                        for (std::size_t c = a + 2; c < pp.size(); ++c)
-                            if (!(a == 0 && c + 1 == pp.size()) && seg_cross(pp[a].xy(), pp[(a + 1) % pp.size()].xy(), pp[c].xy(), pp[(c + 1) % pp.size()].xy())) ++selfx;
-                    if (q == k) {
-                        const auto pa = s.points(s.marks[i]), pb = s.points(s.marks[k]);
-                        for (std::size_t u = 0; u < pa.size(); ++u)
-                            for (std::size_t w = 0; w < pb.size(); ++w)
-                                if (seg_cross(pa[u].xy(), pa[(u + 1) % pa.size()].xy(), pb[w].xy(), pb[(w + 1) % pb.size()].xy()))
-                                    MESSAGE("cross seg ", u, " vs ", w, " A ", pa[u].x, ",", pa[u].y, "->", pa[(u + 1) % pa.size()].x, ",", pa[(u + 1) % pa.size()].y, " B ", pb[w].x, ",", pb[w].y, "->", pb[(w + 1) % pb.size()].x, ",", pb[(w + 1) % pb.size()].y);
-                        for (const Vec3& p : pa) if (strictly_inside(p.xy(), pb)) MESSAGE("A vertex inside B ", p.x, ",", p.y);
-                        for (const Vec3& p : pb) if (strictly_inside(p.xy(), pa)) MESSAGE("B vertex inside A ", p.x, ",", p.y);
-                    }
-                    MESSAGE("mark ", q, " n=", s.marks[q].count, " strip=", s.marks[q].strip, " selfcross=", selfx, " bbox x ", x0, "..", x1, " y ", y0, "..", y1);
-                }
-                return;
-            }
-}

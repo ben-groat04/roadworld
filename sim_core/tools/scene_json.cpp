@@ -300,4 +300,14 @@ std::string export_scene_json(const Scene& sc, const JunctionSet& js, int* expor
     return w.out;
 }
 
+std::string mesh_export_json(const MeshExportJson& m) {
+    const auto num = [](double v) { return json_number(v, 3); };
+    return "{\n  \"fixture\": " + json_string(m.fixture) + ",\n  \"region\": " + json_string(m.region) +
+           ",\n  \"driving_side\": " + json_string(m.driving_side) + ",\n  \"origin_offset\": [" + num(m.origin_x) + ", " +
+           num(m.origin_y) + ", 0],\n  \"marking_lift_m\": " + num(m.marking_lift) + ",\n  \"bounds_min\": [" + num(m.lo[0]) +
+           ", " + num(m.lo[1]) + ", " + num(m.lo[2]) + "],\n  \"bounds_max\": [" + num(m.hi[0]) + ", " + num(m.hi[1]) + ", " +
+           num(m.hi[2]) + "],\n  \"nodes\": [" + m.nodes_json + "],\n  \"structures\": " + m.structures_json +
+           ",\n  \"cameras\": [\n" + m.cameras_json + "\n  ],\n  \"files\": [\n" + m.files_json + "\n  ]\n}\n";
+}
+
 }  // namespace cp::tools

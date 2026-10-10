@@ -226,16 +226,21 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "export_mesh: cannot write %s\n", jp.string().c_str());
         return 1;
     }
-    const std::string side = region->driving_side == cp::DrivingSide::Left ? "left" : "right";
-    std::fprintf(f,
-                 "{\n  \"fixture\": %s,\n  \"region\": %s,\n  \"driving_side\": %s,\n"
-                 "  \"origin_offset\": [%s, %s, 0],\n  \"marking_lift_m\": %s,\n"
-                 "  \"bounds_min\": [%s, %s, %s],\n  \"bounds_max\": [%s, %s, %s],\n"
-                 "  \"nodes\": [%s],\n  \"cameras\": [\n%s\n  ],\n  \"files\": [\n%s\n  ]\n}\n",
-                 cp::tools::json_string(name).c_str(), cp::tools::json_string(region->id).c_str(),
-                 cp::tools::json_string(side).c_str(), num(ox).c_str(), num(oy).c_str(), num(kMarkingLift).c_str(),
-                 num(lo[0] - ox).c_str(), num(lo[1] - oy).c_str(), num(lo[2]).c_str(), num(hi[0] - ox).c_str(),
-                 num(hi[1] - oy).c_str(), num(hi[2]).c_str(), nodes_json.c_str(), structures_json.c_str(), cameras_json.c_str(), files_json.c_str());
+    cp::tools::MeshExportJson mj;
+    mj.fixture = name;
+    mj.region = region->id;
+    mj.driving_side = region->driving_side == cp::DrivingSide::Left ? "left" : "right";
+    mj.origin_x = ox;
+    mj.origin_y = oy;
+    mj.marking_lift = kMarkingLift;
+    mj.lo[0] = lo[0] - ox, mj.lo[1] = lo[1] - oy, mj.lo[2] = lo[2];
+    mj.hi[0] = hi[0] - ox, mj.hi[1] = hi[1] - oy, mj.hi[2] = hi[2];
+    mj.nodes_json = nodes_json;
+    mj.structures_json = structures_json;
+    mj.cameras_json = cameras_json;
+    mj.files_json = files_json;
+    const std::string doc = cp::tools::mesh_export_json(mj);
+    std::fwrite(doc.data(), 1, doc.size(), f);
     std::fclose(f);
     return 0;
 }

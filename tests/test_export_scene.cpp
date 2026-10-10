@@ -6,6 +6,7 @@
 #include <string>
 
 #include "doctest/doctest.h"
+#include "nlohmann/json.hpp"
 #include "scene_fixture.h"
 
 using namespace cp;
@@ -194,4 +195,39 @@ TEST_CASE("JSON helpers: non-finite numbers, escapes and locale independence") {
         break;
     }
     std::setlocale(LC_NUMERIC, old.c_str());
+}
+
+TEST_CASE("export_mesh: export.json is valid JSON with every slot in the right place") {
+    MeshExportJson m;
+    m.fixture = "demo \"x\"";
+    m.region = "uk";
+    m.driving_side = "left";
+    m.origin_x = 100;
+    m.origin_y = -50;
+    m.marking_lift = 0.004;
+    m.lo[0] = -10, m.lo[1] = -20, m.lo[2] = 0;
+    m.hi[0] = 10, m.hi[1] = 20, m.hi[2] = 5;
+    m.nodes_json = "[0.000, 1.000, 2.000], [3.000, 4.000, 5.000]";
+    m.structures_json = "{\n    \"bridges\": [],\n    \"tunnels\": [],\n    \"instances\": []\n  }";
+    m.cameras_json = "    {\"name\": \"a\", \"pos\": [1, 2, 3], \"target\": [0, 0, 0], \"fov_deg\": 50, \"aspect\": 1.5, \"photo\": \"\"}";
+    m.files_json = "    {\"file\": \"a.obj\", \"kind\": \"surface\", \"id\": \"road\", \"triangles\": 12},\n"
+                   "    {\"file\": \"b.obj\", \"kind\": \"marking\", \"id\": \"white\", \"triangles\": 4}";
+    const nlohmann::json j = nlohmann::json::parse(mesh_export_json(m));  // throws (fails the test) if malformed
+    CHECK(j["fixture"] == "demo \"x\"");
+    CHECK(j["driving_side"] == "left");
+    CHECK(j["origin_offset"].size() == 3);
+    CHECK(j["bounds_max"][1] == doctest::Approx(20));
+    CHECK(j["nodes"].size() == 2);
+    CHECK(j["structures"].is_object());
+    CHECK(j["structures"].contains("bridges"));
+    REQUIRE(j["cameras"].size() == 1);
+    CHECK(j["cameras"][0]["name"] == "a");
+    REQUIRE(j["files"].size() == 2);
+    CHECK(j["files"][1]["file"] == "b.obj");
+    CHECK(j["files"][0]["triangles"] == 12);
+
+    // Empty lists still parse (a fixture without cameras).
+    m.cameras_json.clear();
+    const nlohmann::json e = nlohmann::json::parse(mesh_export_json(m));
+    CHECK(e["cameras"].empty());
 }

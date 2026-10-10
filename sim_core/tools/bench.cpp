@@ -1264,19 +1264,15 @@ void update_caches(Net& net, Caches& c, const Tools& t, const cp::RoadGraph& bef
             stale_candidates.insert(ed->b);
         }
     }
-    // erase_node() drops a node from dirty_nodes(), so edges whose BOTH ends were removed (a new street between two
-    // split nodes, undone) are not reachable from any dirty node: follow removed nodes through the old adjacency.
-    for (std::vector<cp::NodeId> work(stale_candidates.begin(), stale_candidates.end()); !work.empty();) {
-        const cp::NodeId id = work.back();
-        work.pop_back();
-        if (g.node(id)) continue;
-        for (cp::EdgeId e : before.edges_at(id)) {
-            if (!de_set.insert(e).second) continue;
-            if (const cp::Edge* ed = before.edge(e)) {
-                add_edge_tiles(tiles, *ed);
-                if (stale_candidates.insert(ed->a).second) work.push_back(ed->a);
-                if (stale_candidates.insert(ed->b).second) work.push_back(ed->b);
-            }
+    // dirty_edges() keeps erased edge ids, so edges whose BOTH ends were removed (a new street between two split
+    // nodes, undone) are still found: take their geometry and end nodes from the old graph.
+    for (cp::EdgeId e : g.dirty_edges()) {
+        de_set.insert(e);
+        if (const cp::Edge* ed = g.edge(e)) add_edge_tiles(tiles, *ed);
+        if (const cp::Edge* ed = before.edge(e)) {
+            add_edge_tiles(tiles, *ed);
+            stale_candidates.insert(ed->a);
+            stale_candidates.insert(ed->b);
         }
     }
     for (int ring = 0; ring < g_dirty_ring; ++ring) {  // experiment: widen the dirty set by whole hops
