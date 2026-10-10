@@ -3,7 +3,7 @@
 const canvas = document.getElementById('view'), profCv = document.getElementById('prof'), fc = profCv.getContext('2d');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.92;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.shadowMap.autoUpdate = false;   // shadows re-rendered only when shadowDirty (see updateShadow)
 const SKY = 0xb9d3e6;   // horizon / fog colour (hazy morning)
 const scene = new THREE.Scene(); scene.background = new THREE.Color(SKY); scene.fog = new THREE.Fog(SKY, 1800, 7500);
 // Sky dome: vertical gradient, follows the camera, ignores fog and depth.
@@ -25,15 +25,15 @@ const w3 = (x, y, z) => [x, z, -y];
 const state = { mode: 'draw', type: 1, oneWay: false, colour: 0, draw: null, dz: 0, snap: null, mouse: [0, 0], shift: false,
   hover: null, sel: null, hoverHandle: -1, drag: null, help: true, profile: true, flash: 0, preview: null, pick: null };
 const COLOUR_MODES = ['plain', 'curvature', 'gradient'];
-let needsUI = true, needsRender = true, overlayDirty = true, mouseDirty = false, mouseIn = false;
-function dirty() { needsUI = true; needsRender = true; overlayDirty = true; }
+let needsUI = true, needsRender = true, overlayDirty = true, mouseDirty = false, mouseIn = false, shadowDirty = true;
+function dirty() { needsUI = true; needsRender = true; overlayDirty = true; shadowDirty = true; }
 
 // ===== View =====
 let VW = 1, VH = 1, PROF_H = 190;
 function resize() {
   PROF_H = state.profile ? Math.min(220, Math.round(innerHeight * 0.28)) : 0;
   VW = innerWidth; VH = Math.max(100, innerHeight - PROF_H);
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const dpr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(3.7e6 / (VW * VH))));   // cap 1.5 and ~1440p of pixels
   renderer.setPixelRatio(dpr); renderer.setSize(VW, VH); camera.aspect = VW / VH; camera.updateProjectionMatrix();
   profCv.style.display = state.profile ? 'block' : 'none';
   profCv.width = VW * dpr; profCv.height = PROF_H * dpr; profCv.style.width = VW + 'px'; profCv.style.height = PROF_H + 'px';
@@ -79,13 +79,42 @@ function updateCamera(dt) {
   if (moved || Math.abs(dy) > 1e-4) { needsRender = true; mouseDirty = true; overlayDirty = true; }
   camera.near = Math.max(0.5, dist / 250); camera.far = Math.max(8000, dist * 6); camera.updateProjectionMatrix();
 }
-function updateShadow() {
-  const tg = controls.target, dist = camera.position.distanceTo(tg), half = clamp(dist * 0.95, 80, 1500), ld = half * 2 + 500;
-  sun.target.position.copy(tg); sun.position.copy(tg).addScaledVector(SUN_DIR, ld);
-  const c = sun.shadow.camera; c.left = -half; c.right = half; c.top = half; c.bottom = -half; c.near = 10; c.far = ld * 2 + 400; c.updateProjectionMatrix();
-  sun.shadow.normalBias = half * 2 / 2048 * 1.5;
+// Shadow frustum: one 2048 map fitted around the target. Refit (and re-render the map) only when the target leaves the fitted
+// area, the zoom changes a lot, or geometry changed (dirty()); pure orbiting reuses the map.
+let shCx = 0, shCy = 0, shCz = 0, shHalf = 0;
+function updateShadow(force) {
+  const tg = controls.target, dist = camera.position.distanceTo(tg), want = clamp(dist * 0.95, 80, 1500);
+  if (force || shadowDirty || !shHalf || want > shHalf * 0.95 || want < shHalf * 0.5 || Math.hypot(tg.x - shCx, tg.z - shCz) > shHalf * 0.2) {
+    shadowDirty = false; shHalf = Math.min(1600, want * 1.25); shCx = tg.x; shCy = tg.y; shCz = tg.z;
+    const half = shHalf, ld = half * 2 + 500;
+    sun.target.position.set(shCx, shCy, shCz); sun.position.set(shCx, shCy, shCz).addScaledVector(SUN_DIR, ld);
+    sun.target.updateMatrixWorld();
+    const c = sun.shadow.camera; c.left = -half; c.right = half; c.top = half; c.bottom = -half; c.near = 10; c.far = ld * 2 + 400; c.updateProjectionMatrix();
+    sun.shadow.normalBias = half * 2 / 2048 * 1.5;
+    renderer.shadowMap.needsUpdate = true;
+  }
   // Atmosphere: fog scales with camera height / distance; dome follows the camera.
   const hgt = Math.max(camera.position.y, 20), fn = Math.max(300, dist * 1.5 + hgt * 2);
   scene.fog.near = fn; scene.fog.far = fn * 4.5 + 3000;
   skyDome.position.copy(camera.position); skyDome.scale.setScalar(Math.max(camera.far * 0.9, 1000));
 }
+// ===== Frame stats / HUD readout (F) =====
+const perfEl = document.createElement('div');
+perfEl.style.cssText = 'position:absolute;right:12px;top:12px;display:none;background:rgba(13,17,23,0.82);color:#9fd;font:12px/1.4 ui-monospace,Consolas,monospace;padding:6px 9px;border-radius:6px;pointer-events:none;white-space:pre;z-index:5';
+document.body.appendChild(perfEl);
+const perfS = { on: false, n: 0, ms: 0, t0: 0 };
+function togglePerf() { perfS.on = !perfS.on; perfEl.style.display = perfS.on ? 'block' : 'none'; needsRender = true; }
+function drawScene(force) {
+  const t = performance.now();
+  scaleOverlay(); updateShadow(force);
+  renderer.render(scene, camera);
+  if (perfS.on) {
+    perfS.n++; perfS.ms += performance.now() - t;
+    if (t - perfS.t0 > 500) {
+      const inf = renderer.info.render, ft = perfS.t0 ? (t - perfS.t0) / perfS.n : 0;
+      perfEl.textContent = `${ft.toFixed(1)} ms/frame (${ft ? (1000 / ft).toFixed(0) : '-'} fps while active)\nJS render ${(perfS.ms / perfS.n).toFixed(2)} ms\ncalls ${inf.calls}  tris ${(inf.triangles / 1000).toFixed(0)}k\npx ${renderer.domElement.width}x${renderer.domElement.height}`;
+      perfS.n = 0; perfS.ms = 0; perfS.t0 = t;
+    }
+  }
+}
+window.__perf = { step: now => tick(now), info: renderer.info };

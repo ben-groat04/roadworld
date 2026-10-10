@@ -333,6 +333,7 @@ addEventListener('keydown', e => {
   else if (kl === 'o') state.oneWay = !state.oneWay;
   else if (kl === 'c') state.colour = (state.colour + 1) % 3;
   else if (kl === 'p') toggleProfile();
+  else if (kl === 'f') togglePerf();
   else if (kl === 'h' || k === '?') { state.help = !state.help; document.getElementById('help').style.display = state.help ? 'block' : 'none'; }
   else if (k === 'Tab') { e.preventDefault(); state.mode = state.mode === 'draw' ? 'edit' : 'draw'; state.draw = null; state.preview = null; state.snap = null; state.hoverHandle = -1; mouseDirty = true; }
   else if (k === 'Escape') { if (state.draw) { state.draw = null; state.preview = null; } else state.sel = null; }

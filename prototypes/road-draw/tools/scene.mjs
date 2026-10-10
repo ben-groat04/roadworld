@@ -135,6 +135,17 @@ if (CHECK_MODE) {
   await page.waitForTimeout(300);
   const consoleErrs = [...new Set(errors)];
   results.push({ name: 'no_console_errors', pass: consoleErrs.length === 0, msg: consoleErrs.length ? consoleErrs.join(' | ') : '0 errors' });
+  // perf: CPU-side frame cost over 120 frames with the camera orbiting its target (GPU timing is meaningless under swiftshader)
+  { const pf = await page.evaluate(() => {
+      const P = window.__proto, pf = window.__perf, c = P.camera, tg = P.controls.target; let now = performance.now();
+      const step = () => { const rx = c.position.x - tg.x, rz = c.position.z - tg.z, a = 0.02, co = Math.cos(a), si = Math.sin(a);
+        c.position.x = tg.x + rx * co - rz * si; c.position.z = tg.z + rx * si + rz * co; P.controls.update(); now += 16.7; pf.step(now); };
+      for (let i = 0; i < 10; i++) step();
+      let calls = 0, tris = 0, maxCalls = 0; const t0 = performance.now();
+      for (let i = 0; i < 120; i++) { step(); const r = pf.info.render; calls = r.calls; tris = r.triangles; maxCalls = Math.max(maxCalls, calls); }
+      return { ms: (performance.now() - t0) / 120, calls: maxCalls, tris };
+    });
+    results.push({ name: 'perf', pass: pf.calls <= 300, msg: `draw calls ${pf.calls} (max 300), triangles ${pf.tris}, JS ${pf.ms.toFixed(2)} ms/frame over 120 orbit frames` }); }
   let bad = 0;
   for (const r of results) { if (!r.pass) bad++; console.log(`${r.pass ? 'PASS' : 'FAIL'} ${r.name.padEnd(24)} ${r.msg}`); }
   await browser.close();
@@ -298,5 +309,18 @@ function CHECKS_IN_PAGE() {
         if (why) { bad++; if (!w) w = { x: s.x, y: s.y, road: r.id, what: why, v: 0 }; }
       } }); }
     done('median_only_for_pairs', w, bad, n, `${n} median sections, all between opposite-direction same-type pairs`, ''); }
+  // 8: crossing_heights_match: wherever two centrelines cross or touch in plan, surface z differs by < 0.05 m (shared junction height) or >= 5.3 m (clears headroom)
+  { let n = 0, bad = 0, w = null;
+    const segX = (a, b, c, d) => { const rx = b.x - a.x, ry = b.y - a.y, sx = d.x - c.x, sy = d.y - c.y, den = rx * sy - ry * sx; if (Math.abs(den) < 1e-9) return null;
+      const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / den, u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / den, e = 1e-3;
+      return t < -e || t > 1 + e || u < -e || u > 1 + e ? null : { t, u }; };
+    for (let i = 0; i < roads.length; i++) for (let j = i + 1; j < roads.length; j++) {
+      const A = roads[i].samples, B = roads[j].samples;
+      for (let p = 0; p + 1 < A.length; p++) for (let q = 0; q + 1 < B.length; q++) {
+        const h = segX(A[p], A[p + 1], B[q], B[q + 1]); if (!h) continue;
+        const za = A[p].z + (A[p + 1].z - A[p].z) * h.t, zb = B[q].z + (B[q + 1].z - B[q].z) * h.u, dz = Math.abs(za - zb); n++;
+        if (dz >= 0.05 && dz < 5.3) { bad++; if (!w || dz > w.v) w = { x: A[p].x + (A[p + 1].x - A[p].x) * h.t, y: A[p].y + (A[p + 1].y - A[p].y) * h.t, road: roads[i].id, what: 'dz vs road#' + roads[j].id, v: dz }; }
+      } }
+    done('crossing_heights_match', w, bad, n, `${n} plan crossings, all dz < 0.05 m or >= 5.3 m`); }
   return results;
 }
