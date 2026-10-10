@@ -3,6 +3,7 @@
 // Derived data (lanes, junction geometry, markings) is built elsewhere from this.
 // std::map keeps iteration order deterministic.
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -10,6 +11,7 @@
 
 #include "cp/clothoid_chain.h"
 #include "cp/ids.h"
+#include "cp/region_pack.h"
 #include "cp/vec.h"
 #include "cp/vertical_profile.h"
 
@@ -41,7 +43,14 @@ struct Edge {
 
 class RoadGraph {
 public:
-    VerticalCurveParams curve_params;  // TODO: per road type from the region pack
+    // Fallback vertical curve parameters, used when no region pack is set or the edge's
+    // road type is not in it. With a pack, K crest/sag come from the edge's road type.
+    VerticalCurveParams curve_params;
+
+    // Sets the region pack and refits every edge so vertical curves pick up its K values.
+    void set_region(std::shared_ptr<const RegionPack> region);
+    const RegionPack* region() const { return region_.get(); }
+    VerticalCurveParams curve_params_for(const Edge& e) const;
 
     const Node* node(NodeId id) const;
     const Edge* edge(EdgeId id) const;
@@ -64,6 +73,7 @@ public:
     void clear_dirty() { dirty_nodes_.clear(); }
 
 private:
+    std::shared_ptr<const RegionPack> region_;
     std::map<NodeId, Node> nodes_;
     std::map<EdgeId, Edge> edges_;
     std::map<NodeId, std::set<EdgeId>> adjacency_;

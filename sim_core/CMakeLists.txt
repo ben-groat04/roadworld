@@ -6,10 +6,17 @@ add_library(sim_core
   src/vertical_profile.cpp
   src/road_graph.cpp
   src/road_commands.cpp
+  src/region_pack.cpp
+  src/lanes.cpp
+  src/edge_sampling.cpp
 )
 target_include_directories(sim_core PUBLIC include)
+# Vendored MIT header; SYSTEM keeps its warnings out of our -Wconversion build.
+target_include_directories(sim_core SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
 if(MSVC)
   target_compile_options(sim_core PRIVATE /W4 /permissive-)
 else()
-  target_compile_options(sim_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+  # Exceptions stay off so the library can be linked into Unreal modules (CI-enforced:
+  # any throw/try/catch in sim_core fails to compile). Callers still see them if enabled.
+  target_compile_options(sim_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion -fno-exceptions)
 endif()

@@ -37,6 +37,26 @@ void RoadGraph::erase_node(NodeId id) {
     dirty_nodes_.erase(id);
 }
 
+void RoadGraph::set_region(std::shared_ptr<const RegionPack> region) {
+    region_ = std::move(region);
+    for (auto& [id, e] : edges_) {
+        refit(e);
+        dirty_nodes_.insert(e.a);
+        dirty_nodes_.insert(e.b);
+    }
+}
+
+VerticalCurveParams RoadGraph::curve_params_for(const Edge& e) const {
+    VerticalCurveParams p = curve_params;
+    if (region_) {
+        if (const RoadType* rt = region_->road_type(e.road_type)) {
+            p.k_crest = rt->vertical_k_crest;
+            p.k_sag = rt->vertical_k_sag;
+        }
+    }
+    return p;
+}
+
 bool RoadGraph::refit(Edge& e) const {
     const Node* na = node(e.a);
     const Node* nb = node(e.b);
@@ -54,7 +74,7 @@ bool RoadGraph::refit(Edge& e) const {
     std::vector<double> s{0};
     for (const auto& span : chain->spans) s.push_back(s.back() + span.length);
     e.horizontal = std::move(*chain);
-    e.vertical = VerticalProfile::build(s, zs, curve_params);
+    e.vertical = VerticalProfile::build(s, zs, curve_params_for(e));
     return true;
 }
 
