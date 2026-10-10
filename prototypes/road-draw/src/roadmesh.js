@@ -1,4 +1,4 @@
-// roadmesh.js: materials, mesh helpers and buildRoadGroup (surface, markings, skirts, walls, bridges, tunnels).
+// roadmesh.js: materials, mesh helpers and buildRoadGroup (surface, markings, edge lip, retaining walls, bridges, tunnel portals).
 // ===== Mesh builder: flat-shaded quads in world coords; each quad is wound to face a hint direction =====
 class MB {
   constructor(col) { this.p = []; this.n = []; this.c = []; this.i = []; this.def = col; }
@@ -59,7 +59,8 @@ const HEAT = { '#e5484d': lin('#e5484d'), '#f5a623': lin('#f5a623'), '#e8d44d': 
 function heatCurv(k, ty) { const R = Math.abs(k) > 1e-9 ? 1 / Math.abs(k) : 1e9; return R < ty.minR * 0.5 ? '#e5484d' : R < ty.minR ? '#f5a623' : R < ty.minR * 2 ? '#e8d44d' : '#3fb950'; }
 function heatGrade(g, ty) { const p = Math.abs(g) * 100; return p > ty.maxGrade * 1.5 ? '#e5484d' : p > ty.maxGrade ? '#f5a623' : p > ty.maxGrade * 0.5 ? '#e8d44d' : '#3fb950'; }
 const UP = [0, 0, 1], DOWN = [0, 0, -1];
-const TCUT = 8.0, TFILL = 4.8;   // wall block thickness (cut: behind the wall line; fill: under the road edge)
+const gAt = (x, y) => typeof groundAt === 'function' ? groundAt(x, y) : hBase(x, y);   // graded ground height (contract from earthworks.js)
+const hB = (x, y) => hBase(x, y);
 
 // Interpolated pose on a road at arc length s.
 function poseAt(r, s) {
@@ -119,35 +120,22 @@ function buildRoadGroup(r) {
     const bk = tunSeg(k) ? B.tunRoad : B.asph, c0 = cc(k), c1 = cc(k + 1);
     bk.quad(P(k, -cw), P(k + 1, -cw), P(k + 1, cw), P(k, cw), UP, c0 ? [c0, c1, c1, c0] : null);
   }
-  // Junction mouths: where this road's end attaches to another (non-parallel) road, drop pavement/kerb/verge within (other half-width + 3 m) of its centreline.
-  const jn = new Uint8Array(n);
-  const segD = (px, py, o) => { let m = 1e9, hd = 0; const Q = o.samples; for (let i = 0; i + 1 < Q.length; i++) { const ax = Q[i].x, ay = Q[i].y, bx = Q[i + 1].x - ax, by = Q[i + 1].y - ay, l2 = bx * bx + by * by || 1, t = clamp(((px - ax) * bx + (py - ay) * by) / l2, 0, 1), d = Math.hypot(px - ax - bx * t, py - ay - by * t); if (d < m) { m = d; hd = Math.atan2(by, bx); } } return [m, hd]; };
-  for (const o of roads) {
-    if (o === r || !o.samples || o.samples.length < 2) continue;
-    const thr = ROAD_TYPES[o.type].total / 2 + 3;
-    for (const [e, dr] of [[0, 1], [n - 1, -1]]) {
-      const [d0, hd] = segD(S[e].x, S[e].y, o);
-      if (d0 > 2.5 || Math.abs(Math.sin(hd - S[e].h)) < 0.35) continue;
-      for (let i = e; i >= 0 && i < n && segD(S[i].x, S[i].y, o)[0] < thr; i += dr) jn[i] = 1;
-    }
-  }
-  const surf = k => !tunSeg(k), pav = k => surf(k) && !jn[k] && !jn[k + 1], onGr = k => pav(k) && !S[k].br && !S[k + 1].br;
+  const surf = k => !tunSeg(k), pav = k => surf(k), onGr = k => pav(k) && !S[k].br && !S[k + 1].br;
   const resid = ty.id === 'residential';
   for (const sg of [1, -1]) {
     if (resid) {   // footways + kerbs: residential only
       strip(B.pave, sg * cw, sg * hw, PAVE_H, UP, pav);
       face(B.kerb, sg * cw, 0, PAVE_H, -sg, pav);
-      face(B.kerb, sg * hw, -FORM_DROP - 0.05, PAVE_H, sg, pav);
+      face(B.kerb, sg * hw, -0.43, PAVE_H, sg, pav);
     } else {       // rural: grass verge (dual/motorway: hard strip first), no kerbs or footways
       const hs = ty.dual ? (hw - cw) * 0.55 : 0, v0 = cw + hs;
       if (hs) strip(B.hard, sg * cw, sg * v0, -0.02, UP, surf);
       strip(B.verge, sg * v0, sg * hw, -0.03, UP, onGr);
       strip(B.hard, sg * v0, sg * hw, -0.03, UP, k => surf(k) && (S[k].br || S[k + 1].br));   // deck: asphalt right to the parapet
-      face(B.soil, sg * hw, -FORM_DROP - 0.05, -0.03, sg, onGr);
     }
   }
-  // Skirts: vertical earth-coloured faces down the outer edge of the ribbon, hiding any residual sub-cell gap (bridge decks have their own sides).
-  for (const sg of [1, -1]) face(B.soil, sg * hw, -2.0, -FORM_DROP - 0.04, sg, k => surf(k) && !S[k].br && !S[k + 1].br);
+  // Edge lip: 0.4 m downturned verge-coloured face so the ground (0.15 m below the footprint) never shows a gap.
+  if (!resid) for (const sg of [1, -1]) face(B.verge, sg * hw, -0.43, -0.03, sg, onGr);
   // Markings (thin white ribbons just above the surface; polygonOffset in the material).
   const MZ = 0.03, MW = 0.08;
   const solid = lat => strip(B.mark, lat - MW, lat + MW, MZ, UP, null);
@@ -166,11 +154,11 @@ function buildRoadGroup(r) {
   // Runs of flags.
   const runs = f => { const out = []; let i = 0; while (i < n) { if (!f(S[i])) { i++; continue; } let j = i; while (j + 1 < n && f(S[j + 1])) j++; out.push([i, j]); i = j + 1; } return out; };
   // Bridges: deck slab (1 sample past each end), parapets, piers, abutments.
-  const groundMin = (pose, a0, a1, l0, l1) => { // lowest ground (graded or base) under an oriented footprint
+  const groundMin = (pose, a0, a1, l0, l1, f = hB) => { // lowest ground (graded or base) under an oriented footprint
     let m = 1e9;
     for (let i = 0; i <= 2; i++) for (let j = 0; j <= 4; j++) {
       const al = a0 + (a1 - a0) * i / 2, la = l0 + (l1 - l0) * j / 4, c = Math.cos(pose.h), sn = Math.sin(pose.h);
-      const x = pose.x + c * al - sn * la, y = pose.y + sn * al + c * la; m = Math.min(m, hBase(x, y));
+      const x = pose.x + c * al - sn * la, y = pose.y + sn * al + c * la; m = Math.min(m, f(x, y));
     }
     return m;
   };
@@ -201,134 +189,108 @@ function buildRoadGroup(r) {
     // Closed abutments at both ends: bearing wall + ballast wall + short wing walls following the embankment slope.
     for (const [k, dr] of [[a2, -1], [b2, 1]]) {
       const p = S[k], zr = p.z + zo, A = (x, y) => dr > 0 ? [x, y] : [-y, -x];
-      const gnd = Math.min(groundMin(p, ...A(-1.4, 0.6), -hw, hw), groundMin(p, ...A(0.6, 6), -hw - 0.5, hw + 0.5)), zbA = Math.min(gnd, zr - DECK_T - 0.5) - 1.0;
+      const gnd = Math.min(groundMin(p, ...A(-1.4, 0.6), -hw, hw, gAt), groundMin(p, ...A(0.6, 6), -hw - 0.5, hw + 0.5, gAt), groundMin(p, ...A(-1.4, 0.6), -hw, hw)), zbA = Math.min(gnd, zr - DECK_T - 0.5) - 1.0;
       obox(p, ...A(-1.4, 0.0), -hw, hw, zbA, zr - DECK_T, CB.abutment.c);                  // front (bearing) wall under the deck end
       obox(p, ...A(0.0, 0.5), -hw, hw, zbA, zr - 0.03, CB.abutment.c, CB.abutment.d);           // ballast wall up to road level
       for (const sg of [1, -1]) {                                                  // wing walls, top sloping 1:2 down into the fill
         const l0 = sg > 0 ? hw - 0.1 : -hw - 0.4, l1 = sg > 0 ? hw + 0.4 : -hw + 0.1;
-        sbox(p, dr * 0.5, dr * 6.5, l0, l1, zbA, zr + 0.2, zr - 2.8, CB.abutment.c, CB.abutment.d);
+        const le = latPt(p, (l0 + l1) / 2, 0), fe = fwd(p.h), gE = gAt(le[0] + fe[0] * dr * 6.5, le[1] + fe[1] * dr * 6.5);   // tie the wing top into the graded embankment
+        sbox(p, dr * 0.5, dr * 6.5, l0, l1, zbA, zr + 0.2, clamp(gE + 0.1, zbA + 0.5, zr + 0.2), CB.abutment.c, CB.abutment.d);
         sbox(p, dr * -1.4, dr * 0.5, l0, l1, zbA, zr + 0.2, zr + 0.2, CB.abutment.c, CB.abutment.d);
       }
     }
   }
-  // ===== Retaining walls, tunnel portals (headwall + wing walls + dark lining) =====
-  const NONE = { kind: 'none', edge: wallLineOf(ty), z0: 0, z1: 0, d1: 0, z1c: 0, cut: false };
-  const XS = typeof crossSections === 'function' ? crossSections(r) : null;
-  const sec = (k, sg) => {
-    if (S[k].tu || S[k].br) return NONE;
-    if (XS && XS[k]) { const s = XS[k][sg > 0 ? 'L' : 'R']; if (s) return s; }
-    const f = S[k][sg > 0 ? 'wL' : 'wR'], e = sg > 0 ? S[k].eL : S[k].eR, z0 = S[k].z - FORM_DROP;
-    const z1 = e === undefined ? z0 : e;
-    return f ? { kind: 'wall', edge: wallLineOf(ty), z0, z1, d1: 0, cut: z1 > z0 } : { kind: 'slope', edge: wallLineOf(ty), z0, z1, d1: 0, cut: z1 > z0 };
-  };
-  const CAP_T = 0.25, WALL_T = 0.4;
+  // ===== Retaining walls (from wallRuns) and tunnel portals (headwall + wing walls + dark lining) =====
+  const WALL_T = 1.0, CAP_H = 0.5, CAP_O = 0.1, TAPER_L = 3.0;
   const hdir = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l, 0]; };
   // Wall + coping along a station list: {a:[x,y] inner face point, u:[x,y] outward unit, zb, zt (top of coping)}.
-  const wallStations = (st, ret, WB = CB.wall) => {
+  const wallStations = (st, WB = CB.wall) => {
     if (st.length < 2) return;
     let acc = 0, nextJ = 8;
     const W3 = (q, off, z) => [q.a[0] + q.u[0] * off, q.a[1] + q.u[1] * off, z];
+    const cph = q => Math.min(CAP_H, Math.max(0.05, (q.zt - q.zb) * 0.4)), wt = q => q.zt - cph(q);
     for (let i = 0; i + 1 < st.length; i++) {
       const p = st[i], q = st[i + 1], hi = [p.u[0], p.u[1], 0], lo = [-p.u[0], -p.u[1], 0];
-      const wt = z => z - CAP_T;
       const sl = Math.hypot(q.a[0] - p.a[0], q.a[1] - p.a[1]);
-      while (nextJ <= acc + sl) {   // vertical construction joint every ~8 m on the visible face
-        const t = (nextJ - acc) / (sl || 1), jt = { a: [p.a[0] + (q.a[0] - p.a[0]) * t, p.a[1] + (q.a[1] - p.a[1]) * t], u: p.u }, d = [(q.a[0] - p.a[0]) / (sl || 1) * 0.04, (q.a[1] - p.a[1]) / (sl || 1) * 0.04];
-        const zb = p.zb + (q.zb - p.zb) * t, zt = wt(p.zt + (q.zt - p.zt) * t), o = -0.012, V = (sx, z) => [jt.a[0] + p.u[0] * o + d[0] * sx, jt.a[1] + p.u[1] * o + d[1] * sx, z];
-        WB.j.quad(V(-1, zb), V(1, zb), V(1, zt), V(-1, zt), lo); nextJ += 8;
+      while (nextJ <= acc + sl) {   // vertical construction joint every 8 m on the visible face
+        const t = (nextJ - acc) / (sl || 1), d = [(q.a[0] - p.a[0]) / (sl || 1) * 0.04, (q.a[1] - p.a[1]) / (sl || 1) * 0.04];
+        const jq = { zb: p.zb + (q.zb - p.zb) * t, zt: p.zt + (q.zt - p.zt) * t }, zt = wt(jq), o = -0.012;
+        const V = (sx, z) => [p.a[0] + (q.a[0] - p.a[0]) * t + p.u[0] * o + d[0] * sx, p.a[1] + (q.a[1] - p.a[1]) * t + p.u[1] * o + d[1] * sx, z];
+        if (zt > jq.zb + 0.05) WB.j.quad(V(-1, jq.zb), V(1, jq.zb), V(1, zt), V(-1, zt), lo);
+        nextJ += 8;
       }
       acc += sl;
-      WB.c.quad(W3(p, 0, p.zb), W3(q, 0, q.zb), W3(q, 0, wt(q.zt)), W3(p, 0, wt(p.zt)), lo);
-      WB.c.quad(W3(p, WALL_T, p.zb), W3(q, WALL_T, q.zb), W3(q, WALL_T, wt(q.zt)), W3(p, WALL_T, wt(p.zt)), hi);
-      const c0 = -0.05, c1 = 0.45;
+      WB.c.quad(W3(p, 0, p.zb), W3(q, 0, q.zb), W3(q, 0, wt(q)), W3(p, 0, wt(p)), lo);
+      WB.c.quad(W3(p, WALL_T, p.zb), W3(q, WALL_T, q.zb), W3(q, WALL_T, wt(q)), W3(p, WALL_T, wt(p)), hi);
+      const c0 = -CAP_O, c1 = WALL_T + CAP_O;
       WB.d.quad(W3(p, c0, p.zt), W3(q, c0, q.zt), W3(q, c1, q.zt), W3(p, c1, p.zt), UP);
-      WB.d.quad(W3(p, c0, wt(p.zt)), W3(q, c0, wt(q.zt)), W3(q, c1, wt(q.zt)), W3(p, c1, wt(p.zt)), DOWN);
-      WB.d.quad(W3(p, c0, wt(p.zt)), W3(q, c0, wt(q.zt)), W3(q, c0, q.zt), W3(p, c0, p.zt), lo);
-      WB.d.quad(W3(p, c1, wt(p.zt)), W3(q, c1, wt(q.zt)), W3(q, c1, q.zt), W3(p, c1, p.zt), hi);
+      WB.d.quad(W3(p, c0, wt(p)), W3(q, c0, wt(q)), W3(q, c1, wt(q)), W3(p, c1, wt(p)), DOWN);
+      WB.d.quad(W3(p, c0, wt(p)), W3(q, c0, wt(q)), W3(q, c0, q.zt), W3(p, c0, p.zt), lo);
+      WB.d.quad(W3(p, c1, wt(p)), W3(q, c1, wt(q)), W3(q, c1, q.zt), W3(p, c1, p.zt), hi);
     }
-    for (const [i, sgn] of [[0, -1], [st.length - 1, 1]]) {
-      const p = st[i], d = hdir(st[Math.max(0, i - 1)].a, st[Math.min(st.length - 1, i + 1)].a).map(v => v * sgn), wt = p.zt - CAP_T;
-      WB.c.quad(W3(p, 0, p.zb), W3(p, WALL_T, p.zb), W3(p, WALL_T, wt), W3(p, 0, wt), d);
-      WB.d.quad(W3(p, -0.05, wt), W3(p, 0.45, wt), W3(p, 0.45, p.zt), W3(p, -0.05, p.zt), d);
-      if (ret) {   // short return wall running back into the slope
-        const R = (o, t, z) => [p.a[0] + p.u[0] * o + d[0] * t, p.a[1] + p.u[1] * o + d[1] * t, z], o0 = WALL_T, o1 = 2.4, zt2 = p.zt + 0.05;
-        WB.c.quad(R(o0, 0, p.zb), R(o1, 0, p.zb), R(o1, 0, wt), R(o0, 0, wt), neg(d));
-        WB.c.quad(R(o0, 0.4, p.zb), R(o1, 0.4, p.zb), R(o1, 0.4, wt), R(o0, 0.4, wt), d);
-        WB.c.quad(R(o1, 0, p.zb), R(o1, 0.4, p.zb), R(o1, 0.4, wt), R(o1, 0, wt), p.u.concat(0));
-        WB.d.quad(R(o0, -0.05, zt2), R(o1, -0.05, zt2), R(o1, 0.45, zt2), R(o0, 0.45, zt2), UP);
-        WB.d.quad(R(o0, -0.05, wt), R(o1, -0.05, wt), R(o1, -0.05, zt2), R(o0, -0.05, zt2), neg(d));
-        WB.d.quad(R(o0, 0.45, wt), R(o1, 0.45, wt), R(o1, 0.45, zt2), R(o0, 0.45, zt2), d);
-        WB.d.quad(R(o1, -0.05, wt), R(o1, 0.45, wt), R(o1, 0.45, zt2), R(o1, -0.05, zt2), p.u.concat(0));
-      }
+    for (const [i, sgn] of [[0, -1], [st.length - 1, 1]]) {   // end faces
+      const p = st[i], d = hdir(st[Math.max(0, i - 1)].a, st[Math.min(st.length - 1, i + 1)].a).map(v => v * sgn);
+      WB.c.quad(W3(p, 0, p.zb), W3(p, WALL_T, p.zb), W3(p, WALL_T, wt(p)), W3(p, 0, wt(p)), d);
+      WB.d.quad(W3(p, -CAP_O, wt(p)), W3(p, WALL_T + CAP_O, wt(p)), W3(p, WALL_T + CAP_O, p.zt), W3(p, -CAP_O, p.zt), d);
     }
   };
-  const smooth = (arr, rad = 2) => { const o = arr.slice(); for (let i = 0; i < arr.length; i++) { let s = 0, c = 0; for (let j = Math.max(0, i - rad); j <= Math.min(arr.length - 1, i + rad); j++) { s += arr[j]; c++; } o[i] = s / c; } return o; };
-  const stationAt = (k, sg, edge, zb, zt) => { const ln = lnorm(S[k].h), c = latPt(S[k], sg * edge, 0); return { a: [c[0], c[1]], u: [ln[0] * sg, ln[1] * sg], zb, zt }; };
-
-  // Portals: tunnel run [a,b] -> plane at S[a] (interior towards +index) and S[b] (interior towards -index).
-  const portals = [];
-  for (const [a, b] of runs(s => s.tu)) { portals.push({ p: a, dir: 1 }); portals.push({ p: b, dir: -1 }); }
-  const blocked = new Uint8Array(n), WING_ANG = Math.PI / 6;
-  const Wd = ty.total / 2 + 6, Wf = Wd - 0.45, OW = (ty.total + 1) / 2;
-  for (const pt of portals) {
-    const edge = wallLineOf(ty), Lneed = (Wf - edge) / Math.tan(WING_ANG);
-    let N = 1; while (N < n && Math.abs(S[pt.p].s - S[clamp(pt.p - pt.dir * N, 0, n - 1)].s) < Lneed && pt.p - pt.dir * N > 0 && pt.p - pt.dir * N < n - 1) N++;
-    pt.ws = clamp(pt.p - pt.dir * N, 0, n - 1);
-    for (let j = 0; j < N; j++) { const k = pt.p - pt.dir * j; if (k >= 0 && k < n) blocked[k] = 1; }
-  }
-  const wallTop = { 1: new Float32Array(n).fill(NaN), '-1': new Float32Array(n).fill(NaN) }, wallBot = { 1: new Float32Array(n).fill(NaN), '-1': new Float32Array(n).fill(NaN) };
-  const TAPER = 4;
-  for (const sg of [1, -1]) {
-    for (const [a, b] of runs(s => true)) {
-      // contiguous wall runs on this side
-      let k = a;
-      while (k <= b) {
-        const isW = j => !blocked[j] && sec(j, sg).kind === 'wall';
-        if (!isW(k)) { k++; continue; }
-        let e = k; while (e + 1 <= b && isW(e + 1)) e++;
-        if (e - k >= 1) {
-          const m = e - k + 1, Z0 = [], Z1 = [], ED = [];
-          for (let j = k; j <= e; j++) { const s = sec(j, sg); Z0.push(s.z0 + zo); Z1.push(s.z1); ED.push(s.edge); }
-          const z1s = smooth(Z1), z0s = smooth(Z0, 1), edS = smooth(ED, 2);
-          let top = [], bot = [];
-          for (let i = 0; i < m; i++) {
-            const cut = z1s[i] > z0s[i];
-            top.push(cut ? Math.max(z0s[i], z1s[i]) + 0.3 : z0s[i] + FORM_DROP + 1.0);
-            bot.push(Math.min(z0s[i], z1s[i]) - 1.0);
-          }
-          top = smooth(top, 2); bot = smooth(bot, 2);
-          const ent = []; for (let i = 0; i < m; i++) ent.push({ k: k + i, edge: edS[i], zb: bot[i], zt: top[i] });
-          const ext = (from, dir, endE) => {
-            const out = [];
-            for (let j = 1; j <= TAPER; j++) {
-              const kk = from + dir * j; if (kk < 0 || kk >= n || blocked[kk] || S[kk].br || S[kk].tu) break;
-              const s = sec(kk, sg), t = j / TAPER, z0 = s.z0 + zo;
-              out.push({ k: kk, edge: s.kind === 'none' ? endE.edge : (endE.edge * (1 - t) + s.edge * t), zb: endE.zb * (1 - t) + (z0 - 1.0) * t, zt: Math.max(endE.zb + 1.0, endE.zt * (1 - t) + (z0 - 0.02) * t) });
-            }
-            return out;
-          };
-          const pre = ext(k, -1, ent[0]).reverse(), post = ext(e, 1, ent[m - 1]);
-          const all = pre.concat(ent, post);
-          for (const q of all) { wallTop[sg][q.k] = q.zt; wallBot[sg][q.k] = q.zb; }
-          wallStations(all.map(q => stationAt(q.k, sg, q.edge, q.zb, q.zt)), true);
-        }
-        k = e + 1;
-      }
-      break;
+  const resampleRun = (pts, step = 1.5) => {
+    const out = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], m = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+      for (let j = 0; j < m; j++) { const t = j / m; out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, zTop: a.zTop + (b.zTop - a.zTop) * t, zBot: a.zBot + (b.zBot - a.zBot) * t, h: a.h }); }
     }
+    out.push({ ...pts[pts.length - 1] });
+    return out;
+  };
+
+  // Portals: flagged stations (fallback: tunnel run ends); dir = direction of increasing index that points into the tunnel.
+  const portals = [];
+  { const flagged = S.some(s => s.portal);
+    if (flagged) {
+      for (let k = 0; k < n; k++) if (S[k].portal) {
+        const nx = k + 1 < n && S[k + 1].tu, pv = k > 0 && S[k - 1].tu;
+        portals.push({ p: k, dir: nx && !pv ? 1 : pv && !nx ? -1 : (k < n / 2 ? 1 : -1) });
+      }
+    } else for (const [a, b] of runs(s => s.tu)) { portals.push({ p: a, dir: 1 }); portals.push({ p: b, dir: -1 }); }
+  }
+  const edgeW = hw + 0.2, Wd = hw + 6, Wf = Wd - 0.45, OW = (ty.total + 1) / 2, WING_ANG = Math.PI / 6;
+  const wingLen = (Wf - edgeW) / Math.tan(WING_ANG);
+  const WR = typeof wallRuns === 'function' ? (wallRuns(r) || []) : [];
+  const nearPortal = (x, y) => portals.some(pt => Math.hypot(x - S[pt.p].x, y - S[pt.p].y) < wingLen + 6);
+  for (const run of WR) {
+    if (!run.pts || run.pts.length < 2) continue;
+    const sg = run.side === 'L' ? 1 : -1;
+    // drop wall that would lie inside a portal's wing-wall zone (the wing walls continue it flush)
+    let pts = run.pts.filter(q => !portals.some(pt => Math.hypot(q.x - S[pt.p].x, q.y - S[pt.p].y) < wingLen * 0.97));
+    if (pts.length < 2) continue;
+    const rs = resampleRun(pts);
+    const m = rs.length, cum = [0]; for (let i = 1; i < m; i++) cum.push(cum[i - 1] + Math.hypot(rs[i].x - rs[i - 1].x, rs[i].y - rs[i - 1].y));
+    const tot = cum[m - 1], tapA = !nearPortal(rs[0].x, rs[0].y), tapB = !nearPortal(rs[m - 1].x, rs[m - 1].y), st = [];
+    for (let i = 0; i < m; i++) {
+      const q = rs[i], a = rs[Math.max(0, i - 1)], b = rs[Math.min(m - 1, i + 1)], t = hdir([a.x, a.y], [b.x, b.y]);
+      let u = [-t[1] * sg, t[0] * sg];
+      if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
+      let zt = q.zTop; const zb = q.zBot;
+      const tp = d => { const g = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), tgt = Math.min(q.zTop, Math.max(g, zb + 0.4)); return tgt + (q.zTop - tgt) * clamp(d / TAPER_L, 0, 1); };
+      if (tapA) zt = Math.min(zt, tp(cum[i]));
+      if (tapB) zt = Math.min(zt, tp(tot - cum[i]));
+      st.push({ a: [q.x, q.y], u, zb, zt: Math.max(zb + 0.05, Math.min(q.zTop, zt)) });
+    }
+    wallStations(st);
   }
   // Tunnel portals.
-  const OPEN_H = TUNNEL_H, LIN = 15, REC = 0.5, HEAD_T = 2.0;
+  const OPEN_H = TUNNEL_H, LIN = 15, REC = 0.5, HEAD_T = 2.0, CAP_P = 0.5;
   for (const pt of portals) {
-    const { p, dir, ws } = pt, P0 = S[p], zr = P0.z + zo, c = Math.cos(P0.h), sn = Math.sin(P0.h);
+    const { p, dir } = pt, P0 = S[p], zr = P0.z + zo, c = Math.cos(P0.h), sn = Math.sin(P0.h);
     const alOf = (al, la) => [P0.x + c * al * dir - sn * la, P0.y + sn * al * dir + c * la];
-    // headwall height: cover the natural ground across the full width (at the face and just behind it)
-    let gmax = -1e9; for (const al of [0, HEAD_T, 4]) for (let la = -Wd; la <= Wd + 1e-6; la += 1) { const q = alOf(al, la); gmax = Math.max(gmax, hBase(q[0], q[1])); }
-    const H = Math.max(8, gmax - zr + 0.6), zt = zr + H, zb = zr - 2.5;
+    // headwall height: cover natural ground across the full width (at the face and just behind it) + 1 m
+    let gmax = -1e9; for (const al of [0, HEAD_T, 4]) for (let la = -Wd; la <= Wd + 1e-6; la += 1) { const q = alOf(al, la); gmax = Math.max(gmax, hB(q[0], q[1])); }
+    const zt = Math.max(zr + TUNNEL_H + 1.5, gmax + 1.0), zb = zr - 2.5;
     const ob = (a0, a1, l0, l1, z0, z1, bk) => obox(P0, Math.min(a0 * dir, a1 * dir), Math.max(a0 * dir, a1 * dir), l0, l1, z0, z1, bk);
-    ob(0, HEAD_T, OW, Wd, zb, zt - CAP_T, CB.portal.c); ob(0, HEAD_T, -Wd, -OW, zb, zt - CAP_T, CB.portal.c);
-    ob(0, HEAD_T, -OW, OW, zr + OPEN_H, zt - CAP_T, CB.portal.c);
-    ob(-0.15, HEAD_T + 0.15, -Wd - 0.15, Wd + 0.15, zt - CAP_T, zt, CB.portal.d);
+    ob(0, HEAD_T, OW, Wd, zb, zt - CAP_P, CB.portal.c); ob(0, HEAD_T, -Wd, -OW, zb, zt - CAP_P, CB.portal.c);
+    ob(0, HEAD_T, -OW, OW, zr + OPEN_H, zt - CAP_P, CB.portal.c);
+    ob(-CAP_O, HEAD_T + CAP_O, -Wd - CAP_O, Wd + CAP_O, zt - CAP_P, zt, CB.portal.d);
     // lining: stations by arc length, near-black, recessed
     const poses = []; for (let d = REC; d <= REC + LIN + 1e-6; d += 2) poses.push(poseAt(r, P0.s + dir * Math.min(d, REC + LIN)));
     const LW = OW - 0.02, ZR = TUNNEL_H - 0.02;
@@ -341,20 +303,23 @@ function buildRoadGroup(r) {
     }
     const pe = poses[poses.length - 1];
     B.tube.quad(latPt(pe, -LW, pe.z + zo - 0.02), latPt(pe, LW, pe.z + zo - 0.02), latPt(pe, LW, pe.z + zo + ZR), latPt(pe, -LW, pe.z + zo + ZR), fwd(pe.h).map(v => -v * dir));
-    // wing walls: continue the approach cutting walls, splaying out to the headwall edges, tops sloping down from the headwall top
-    const sApp = S[ws].s, Lw = Math.abs(P0.s - sApp), NS = Math.max(2, Math.ceil(Lw / 1.5));
+    // wing walls: symmetric 30 deg splay from the approach wall line out to the headwall edges; start flush with the approach wall (wallRuns) if present
+    const sApp = clamp(P0.s - dir * wingLen, S[0].s, S[n - 1].s), Lw = Math.abs(P0.s - sApp), NS = Math.max(2, Math.ceil(Lw / 1.5));
     for (const sg of [1, -1]) {
-      const s0 = sec(ws, sg), edge0 = s0.kind === 'none' ? wallLineOf(ty) : s0.edge;
-      let topA = wallTop[sg][ws], botA = wallBot[sg][ws];
-      if (!(topA === topA)) { topA = s0.kind === 'wall' ? Math.max(s0.z0, s0.z1) + 0.3 + zo : s0.z0 + zo + 0.5; botA = Math.min(s0.z0, s0.z1) + zo - 1.0; }
+      const pa = poseAt(r, sApp); let topA = pa.z + zo + 1.0, botA = pa.z + zo - 1.5, edge0 = edgeW, best = 3;
+      for (const run of WR) if (run.side === (sg > 0 ? 'L' : 'R')) for (const q of run.pts) {
+        const d = Math.hypot(q.x - pa.x, q.y - pa.y);
+        if (d < best) { best = d; topA = q.zTop; botA = q.zBot; edge0 = Math.abs((q.x - pa.x) * -Math.sin(pa.h) + (q.y - pa.y) * Math.cos(pa.h)); }
+      }
+      if (best >= 3) { const g = gAt(...latPt(pa, sg * (edgeW + 2), 0).slice(0, 2)); topA = Math.max(topA, Math.min(g, topA + 3)); }
       const tg = Lw > 0.1 ? (Wf - edge0) / Lw : Math.tan(WING_ANG), ca = 1 / Math.hypot(1, tg), sa = tg * ca;
       const st = [];
       for (let i = 0; i <= NS; i++) {
         const t = i / NS, ps = poseAt(r, sApp + (P0.s - sApp) * t), lat = edge0 + (Wf - edge0) * t, ln = lnorm(ps.h), f = fwd(ps.h), cp = latPt(ps, sg * lat, 0);
         const u = [(-dir * sa) * f[0] + ca * sg * ln[0], (-dir * sa) * f[1] + ca * sg * ln[1]], ul = Math.hypot(u[0], u[1]);
-        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: Math.min(botA, ps.z + zo - 1.5) * (1 - t) + (zb) * t, zt: topA * (1 - t) + zt * t });
+        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: botA * (1 - t) + zb * t, zt: topA * (1 - t) + zt * t });
       }
-      wallStations(st, false, CB.portal);
+      wallStations(st, CB.portal);
     }
   }
   const add = (bk, mat, shadow, pick, kind = 'surface') => { const m = bk.mesh(mat, shadow); if (m) { m.userData.road = r; m.userData.pick = pick; m.userData.kind = kind; g.add(m); } };
@@ -362,7 +327,6 @@ function buildRoadGroup(r) {
   add(B.pave, RM.pave, false, true); add(B.verge, RM.verge, false, true); add(B.soil, MAT.soil, false, false); add(B.kerb, RM.kerb, false, false);
   add(B.mark, RM.mark, false, false); add(B.hard, RM.hard, false, true); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false, 'lining');
   for (const k of Object.keys(CB)) { add(CB[k].j, MAT.joint, false, false, k); add(CB[k].c, MAT.conc, true, false, k); add(CB[k].d, MAT.conc, true, false, k); }
-  if (typeof buildEarthworks === 'function') { const eg = buildEarthworks(r); if (eg) g.add(eg); }
   return g;
 }
 
