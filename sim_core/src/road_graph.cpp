@@ -1,5 +1,6 @@
 #include "cp/road_graph.h"
 
+#include <algorithm>
 #include <cassert>
 
 namespace cp {
