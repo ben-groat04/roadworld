@@ -334,10 +334,14 @@ function classify(r, ty) {
     const s = S[i]; s.br = s.bridge = br[i]; s.tu = s.tunnel = tu[i];   // shared contract: br/tu (existing mesh code) and bridge/tunnel aliases
     s.wL = cL[i] ? 1 : fL[i] ? 2 : 0; s.wR = cR[i] ? 1 : fR[i] ? 2 : 0;
   }
-  // Portal approach: first 2 tunnel samples at each end of a tunnel run are graded to formation with walls on both sides (no batter).
+  // Portal approach: the first 2 tunnel samples at each end of a tunnel run are graded to formation with walls on both sides (no batter),
+  // and the grading is pushed on through the ~10 m lining plus one grid cell, so the ground step (up to ~12 m over one 4 m cell) sits behind the lining and never pokes into it.
+  const PORTAL_GRADE = 2 + Math.ceil(10 / 2) + 3;
   for (let i = 0; i < n; i++) S[i].tp = false;
-  for (let i = 0; i < n; i++) if (tu[i] && ((i < 2 || !tu[i - 1] || (i > 1 && !tu[i - 2])) || (i + 2 >= n || !tu[i + 1] || !tu[i + 2]))) {
-    const s = S[i]; s.tp = true; if (!s.wL) s.wL = 1; if (!s.wR) s.wR = 1;
+  for (let i = 0; i < n; i++) if (tu[i]) {
+    let d0 = 0; while (i - d0 - 1 >= 0 && tu[i - d0 - 1]) d0++;
+    let d1 = 0; while (i + d1 + 1 < n && tu[i + d1 + 1]) d1++;
+    if (d0 < PORTAL_GRADE || d1 < PORTAL_GRADE) { const s = S[i]; s.tp = true; if (!s.wL) s.wL = 1; if (!s.wR) s.wR = 1; }
   }
 }
 function rebuild(r) {
@@ -698,6 +702,15 @@ function buildRoadGroup(r) {
     const pa = pa0, pb = pb0;
     const hwH = (k, a0, a1) => { let m = 0; const p = S[k]; for (const al of [a0, a1]) for (const la of [-W, -ow, 0, ow, W]) { const x = p.x + Math.cos(p.h) * al - Math.sin(p.h) * la, y = p.y + Math.sin(p.h) * al + Math.cos(p.h) * la; m = Math.max(m, hBase(x, y)); } return Math.max(7.0, m - p.z + 1.0); };
     lining(pa, 1, a); lining(pb, -1, b);
+    // Earth fill over the graded portal zone (between the cutting walls, above the lining roof) so the graded trench is not open to the sky.
+    const wlE = wallLineOf(ty);
+    for (const [k0, dir] of [[pa, 1], [pb, -1]]) {
+      let k1 = k0; while (k1 + dir >= 0 && k1 + dir < n && S[k1 + dir].tp && S[k1 + dir].tu) k1 += dir;
+      if (k1 === k0) continue;
+      const lo = Math.min(k0, k1), hi = Math.max(k0, k1), tops = {};
+      for (let k = lo; k <= hi; k++) { let m = 1e9; for (const la of [-wlE, 0, wlE]) { const c = latPt(S[k], la, 0); m = Math.min(m, hBase(c[0], c[1])); } tops[k] = Math.max(S[k].z + zo + TUNNEL_H + 0.3, m - 0.1); }
+      extrude(lo, hi, -wlE, wlE, k => S[k].z + zo + TUNNEL_H, k => tops[k], { top: B.soil, side: B.soil, noL0: true, noL1: true });
+    }
     for (const [k, a0, a1] of [[pa, -DEPTH, 0], [pb, 0, DEPTH]]) {
       const z0 = S[k].z + zo - 0.6, zt = S[k].z + zo + hwH(k, a0, a1);
       obox(k, a0, a1, ow, W, z0, zt, B.conc);
