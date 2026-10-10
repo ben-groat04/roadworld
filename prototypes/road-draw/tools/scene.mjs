@@ -43,6 +43,10 @@ const MOTORWAY = [[900, 1800, 79.3], [720, 1800, 79.3], [540, 1800, 79.3]];
 // 8. tight_curve_fill: residential U-turn (radius ~45 m) on gentle ground (~100 m, relief ~4 m) with the deck held at 110.5 m: fill ~8-12 m all round the bend,
 //    so slopes from the two sides of the bend overlap on the inside. [x, y, z]
 const TIGHT = { c: [1700, 880], R: 45, z: 110.5 };
+// 9. tunnel_curve: residential road, CURVED (about 22 deg of bend inside the bore) and on a ~5% gradient (z a straight ramp 25.6 -> 35.0), through a spur: 74 m tunnel, portals found automatically.
+const TUNNEL_CURVE = [[1657.5, 1516.4, 25.6], [1703.1, 1513, 27.9], [1748.1, 1520.4, 30.3], [1790.2, 1538.1, 32.6], [1826.9, 1565.2, 35]];
+// 10. tunnel_short: straight, flat (z 92) 100 m tunnel under a thin ridge with open road beyond both portals: you can see daylight through it from the entry.
+const TUNNEL_SHORT = [[1166.2, 920.9, 91.8], [1296.6, 994, 92], [1427, 1067, 92.1]];
 // Camera views. target = [x, y] (terrain target), dist = camera distance from target (m), elev = degrees looking down,
 // look = compass-style heading the camera LOOKS toward, degrees (0 = +x east, 90 = +y north), or 'dyn:<name>' computed at runtime.
 // Registered below after the scene is drawn (some depend on measured geometry).
@@ -57,6 +61,10 @@ const VIEWS = {
   dual_curve: () => ({ target: info.dualMid, dist: 90, elev: 22, look: info.dualHeading + 35 }),
   motorway: () => ({ target: [720, 1800], dist: 100, elev: 18, look: 60 }),
   tight_curve_fill: () => ({ target: [1668, 880], dist: 110, elev: 24, look: 160 }),
+  tunnel_inside: () => ({ cam: info.portal.insideCam }),   // cam = { pos: [x, y, z], at: [x, y, z] }: scripted camera (no terrain following), inside the bore
+  tunnel_curve_front: () => ({ target: info.tunnelCurve.xy, dist: TUNNEL_FRONT_DIST, elev: 8, look: info.tunnelCurve.heading }),
+  tunnel_curve_inside: () => ({ cam: info.tunnelCurve.insideCam }),
+  tunnel_short_through: () => ({ cam: info.tunnelShort.throughCam }),
   interchange: () => ({ target: [loaded.cx, loaded.cy], dist: Math.max(100, loaded.extent * 0.9), elev: 35, look: 90 }),   // sim_core scene (fixtures/interchange.json, else fixtures/sample.json); replaces the canonical scene, keep last
   overview: () => ({ target: [850, 850], dist: 2700, elev: 50, look: 100 }),
 };
@@ -99,7 +107,7 @@ if (await page.evaluate(() => window.__proto.state.profile)) await page.keyboard
 await page.evaluate(() => { for (const id of ['hud', 'tune']) { const e = document.getElementById(id); if (e) e.style.display = 'none'; } });
 
 // Draw the scene in the page. Returns derived geometry used by the views.
-const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY, TIGHT }) => {
+const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY, TIGHT, TUNNEL_CURVE, TUNNEL_SHORT }) => {
   const P = window.__proto, h = P.hAt;
   const deg = r => r * 180 / Math.PI;
   // Unit vectors at (x,y): u = uphill (fall line), t = contour tangent (u rotated +90 deg).
@@ -135,7 +143,8 @@ const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOT
   // 5
   { const [r] = draw('tunnel', 1, TUNNEL); const S = r ? r.samples : [], i = S.findIndex(s => s.tunnel);
     const k = i > 0 ? i : 0, s = S[k] || { x: TUNNEL[1][0], y: TUNNEL[1][1], h: Math.PI / 2 };
-    out.portal = { xy: [s.x, s.y], heading: deg(s.h), found: i > 0 }; }
+    const j = S.length - 1 - [...S].reverse().findIndex(q => q.tunnel), at = (q, up) => [S[q].x, S[q].y, S[q].z + up];
+    out.portal = { xy: [s.x, s.y], heading: deg(s.h), found: i > 0, insideCam: { pos: at(Math.min(k + 6, j), 1.7), at: at(Math.min(k + 30, j), 1.5) } }; }
   // 6
   { const pts = [], a0 = DUAL.a0 * Math.PI / 180, a1 = DUAL.a1 * Math.PI / 180;
     for (let k = 0; k < DUAL.n; k++) { const a = a0 + (a1 - a0) * k / (DUAL.n - 1); pts.push([DUAL.cc[0] + DUAL.R * Math.cos(a), DUAL.cc[1] + DUAL.R * Math.sin(a)]); }
@@ -149,10 +158,14 @@ const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOT
     for (const a of [-135, -180, -225]) pts.push([c[0] + R * Math.cos(a * Math.PI / 180), c[1] + R * Math.sin(a * Math.PI / 180), z]);
     pts.push([c[0] + 20, c[1] + R, z], [c[0] + 60, c[1] + R, z]); pts.splice(2, 0, [c[0], c[1] - R, z]); pts.splice(6, 0, [c[0], c[1] + R, z]);
     draw('tight_curve_fill', 1, pts); }
+  // 9, 10: further tunnels (curved + gradient; short straight)
+  { const ext = (name, pts) => { const [r] = draw(name, 1, pts), S = r ? r.samples : [], i = S.findIndex(q => q.tunnel), j = S.length - 1 - [...S].reverse().findIndex(q => q.tunnel), at = (k, up) => [S[k].x, S[k].y, S[k].z + up];
+      return { found: i > 0, heading: deg(S[Math.max(i, 0)].h), xy: [S[Math.max(i, 0)].x, S[Math.max(i, 0)].y], nTu: j - i + 1, insideCam: { pos: at(Math.min(i + 6, j), 1.7), at: at(Math.min(i + 30, j), 1.5) }, throughCam: { pos: at(Math.max(0, i - 17), 1.7), at: at(Math.min(S.length - 1, j + 12), 1.5) } }; };
+    out.tunnelCurve = ext('tunnel_curve', TUNNEL_CURVE); out.tunnelShort = ext('tunnel_short', TUNNEL_SHORT); }
   P.flushGrade();
   out.stats = stats; out.roadCount = P.roads().length;
   return out;
-}, { CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY, TIGHT });
+}, { CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY, TIGHT, TUNNEL_CURVE, TUNNEL_SHORT });
 
 if (CHECK_MODE) {
   const results = await page.evaluate(CHECKS_IN_PAGE);
@@ -160,7 +173,9 @@ if (CHECK_MODE) {
   { const bad = [];
     for (const name of Object.keys(VIEWS)) {
       if (name === 'interchange') continue;
-      const v = VIEWS[name](), r = await page.evaluate(({ v, name }) => {
+      const v = VIEWS[name]();
+      if (v.cam) continue;   // scripted cameras inside a bore: the world is not visible from there
+      const r = await page.evaluate(({ v, name }) => {
         const P = window.__proto, az = Math.atan2(-Math.cos(v.look * Math.PI / 180), Math.sin(v.look * Math.PI / 180)), W = 2048;
         P.setView(v.target[0], v.target[1], v.dist, az, (90 - v.elev) * Math.PI / 180); P.renderNow();
         const scene = P.scene, cam = P.camera, THREE = P.THREE, cv = document.getElementById('view'), gl = cv.getContext('webgl2');
@@ -253,7 +268,9 @@ for (const name of names.sort((a, b) => (a === 'interchange') - (b === 'intercha
   }
   const v = VIEWS[name]();
   await page.evaluate(({ v }) => {
-    const P = window.__proto, az = Math.atan2(-Math.cos(v.look * Math.PI / 180), Math.sin(v.look * Math.PI / 180));
+    const P = window.__proto;
+    if (v.cam) { P.freeCam(v.cam.pos, v.cam.at); P.renderNow(); return; }   // scripted camera (inside a bore)
+    const az = Math.atan2(-Math.cos(v.look * Math.PI / 180), Math.sin(v.look * Math.PI / 180));
     P.setView(v.target[0], v.target[1], v.dist, az, (90 - v.elev) * Math.PI / 180);
     P.renderNow();
   }, { v });
@@ -450,6 +467,12 @@ function CHECKS_IN_PAGE() {
       } }
     done('crossing_heights_match', w, bad, n, `${n} plan crossings, all dz < 0.05 m or >= 5.3 m`); }
 
+  // onOpening(x, y, z): the point lies on a tunnel portal's opening edge (in the portal plane, on the lining's inner arch): the headwall soffit, which by definition has air below it
+  const onOpening = (x, y, z) => { const vs = P.tunnelVolumes ? P.tunnelVolumes() : [];
+    for (const v of vs) for (const [p, sg] of [[v.st[0], 1], [v.st[v.st.length - 1], -1]]) { const nx = Math.cos(p.h) * sg, ny = Math.sin(p.h) * sg, dx = x - p.x, dy = y - p.y;
+      if (Math.abs(dx * nx + dy * ny) > 0.03) continue; const la = Math.abs(-dx * Math.sin(p.h) + dy * Math.cos(p.h)), rel = z - p.z - (v.road.id % 64) * 0.0025;   // 3 cm: the face columns are keyed at 5 cm   // roadmesh lifts each road by zo = (id % 64) * 2.5 mm
+      if (la <= v.prof.W + 0.03 && rel >= v.prof.Hs - 0.03 && Math.abs(rel - P.tunnelRoof(v.prof, Math.min(la, v.prof.W))) < 0.03) return true; }
+    return false; };
   // no_floating_faces (wall / portal / abutment meshes):
   //  top: no vertex outside the road footprint (+0.9 m) higher than max(groundAt, road z) + 0.6 m (parapet allowance)
   //  bottom: the lowest vertex of every plan column (same x,y) is at most 0.3 m above groundAt (the face meets the ground)
@@ -465,7 +488,7 @@ function CHECKS_IN_PAGE() {
         const ex = z - (Math.max(groundAt(x, y), s.z) + 0.6);
         if (ex > 0.02) { bad++; w = track(w, { x, y, road: r.id, what: kd + ' vertex above surface by', v: ex }); }
       }
-      for (const c of cols.values()) { nBot++; const ex = c.z - groundAt(c.x, c.y) - 0.3; if (ex > 0.001) { badBot++; wBot = track(wBot, { x: c.x, y: c.y, road: m.userData.road.id, what: kd + ' bottom floats above ground by', v: ex + 0.3 }); } }
+      for (const c of cols.values()) { if (kd === 'portal' && onOpening(c.x, c.y, c.z)) continue; nBot++; const ex = c.z - groundAt(c.x, c.y) - 0.3; /* tunnel opening edges are the soffit of the headwall, not a foundation */ if (ex > 0.001) { badBot++; wBot = track(wBot, { x: c.x, y: c.y, road: m.userData.road.id, what: kd + ' bottom floats above ground by', v: ex + 0.3 }); } }
     }
     done('no_floating_faces', w, bad, n, `${n} outer vertices within surface + 0.6 m`);
     const sel = results[results.length - 1];
@@ -525,5 +548,90 @@ function CHECKS_IN_PAGE() {
             if (d < lim && Math.abs(dz) < 1.0) hit = true; }
           if (hit) { bad++; w = track(w, { x, y, road: r.id, what: ly + ' triangle on road#' + r2.id + ' carriageway, depth', v: 0 }); break; } } } }
     done('no_footway_on_crossing', w, bad, n, `${n} footway/kerb/marking triangles, none lie on another road's carriageway`); }
+  // ===== tunnels: bore clear (terrain discard) / step at the portal plane / lining closed =====
+  // Volumes come from the same data the terrain shader reads (earthworks.js packTunnels); P.tunnelDiscard is the JS mirror of the shader's inBore() on that very table.
+  const vols = P.tunnelVolumes ? P.tunnelVolumes() : [], TUN = P.TUN;
+  const planesOf = v => { const S = v.st, a = S[0], b = S[S.length - 1];   // portal planes: station, unit normal into the tunnel, unit lateral
+    return [{ p: a, nx: Math.cos(a.h), ny: Math.sin(a.h) }, { p: b, nx: -Math.cos(b.h), ny: -Math.sin(b.h) }].map(q => ({ ...q, lx: -Math.sin(q.p.h), ly: Math.cos(q.p.h) })); };
+  const tFrame = (q, al, la) => [q.p.x + q.nx * al + q.lx * la, q.p.y + q.ny * al + q.ly * la];
+  if (!vols.length) results.push({ name: 'tunnel_bore_clear', pass: false, msg: 'no tunnels in the scene' }, { name: 'tunnel_step_at_portal', pass: false, msg: 'no tunnels' }, { name: 'tunnel_lining_closed', pass: false, msg: 'no tunnels' });
+  else {
+    // ---- tunnel_bore_clear ----
+    { let n = 0, bad = 0, w = null, nGround = 0, nDisc = 0; const off = TUN.lining + TUN.margin;
+      for (const v of vols) { const pr = v.prof, W = pr.W, S = v.st;
+        // (a) the discard volume is complete: points inside the inner clear profile (every station, between stations, curved bends) are discarded; points just outside the outer profile / in front of the plane are not
+        for (let k = 0; k + 1 < S.length; k++) for (const f of [0.03, 0.25, 0.5, 0.75, 0.97]) { const a = S[k], b = S[k + 1], x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f, z = a.z + (b.z - a.z) * f, h = Math.atan2(b.y - a.y, b.x - a.x), lx = -Math.sin(h), ly = Math.cos(h);
+          for (const q of [0, W * 0.5, W - 0.05, -(W - 0.05)]) for (const rel of [0.05, P.tunnelRoof(pr, Math.abs(q)) - 0.05]) { n++; if (!P.tunnelDiscard(x + lx * q, y + ly * q, z + rel)) { bad++; w = track(w, { x, y, road: v.road.id, what: 'point inside the bore not discarded (q ' + q.toFixed(1) + ', rel ' + rel.toFixed(1) + ') ', v: 0 }); } }
+          for (const [q, rel, what] of [[0, P.tunnelRoof(pr, 0, off) + 0.3, 'above the crown'], [W + off + 0.3, 2, 'beside the bore']]) { n++; if (P.tunnelDiscard(x + lx * q, y + ly * q, z + rel)) { bad++; w = track(w, { x, y, road: v.road.id, what: 'discard reaches ' + what, v: 0 }); } } }
+        // (b) ground samples: every terrain point whose height lies inside the bore volume is discarded, none is left standing in the clear profile or lining
+        for (const q of planesOf(v)) {
+          for (let al = -3; al <= 3; al += 0.25) for (let la = -(W + off + 1); la <= W + off + 1; la += 0.25) { const [x, y] = tFrame(q, al, la), g = P.groundAt(x, y), rel = g - q.p.z, roofO = P.tunnelRoof(pr, Math.min(Math.abs(la), W + off), off);
+            const inside = al > 0.1 && Math.abs(la) <= W + off - 0.1 && rel >= -TUN.floorDepth + 0.3 && rel <= roofO - 0.3; n++;
+            if (inside) { nGround++; if (P.tunnelDiscard(x, y, g)) nDisc++; else { bad++; w = track(w, { x, y, road: v.road.id, what: 'ground inside the bore volume left undiscarded, al ' + al.toFixed(2), v: 0 }); } }
+            else if (al < -0.05 && Math.abs(la) <= W && P.tunnelDiscard(x, y, g)) { bad++; w = track(w, { x, y, road: v.road.id, what: 'discard reaches in front of the portal plane, al ' + al.toFixed(2), v: 0 }); } } } }
+      // (c) render probe: terrain fragments painted magenta; camera 30 m before each entry portal at eye height, looking along the road into the opening. No magenta inside the opening
+      // (the far portal's own opening is masked: terrain legitimately shows through it). Control: with the discard switched off the same view must show many magenta pixels.
+      const cam = P.camera, tg = P.controls.target, save = { p: cam.position.clone(), t: tg.clone() }, gl = document.getElementById('view').getContext('webgl2'), THREE = P.THREE;
+      const probeOne = (v, off) => { const S = v.road.samples, a = v.a, b = v.b, ia = Math.max(0, a - 15), pr = v.prof, rp = S[ia], rp1 = S[a], pe = S[a + Math.min(8, b - a)];
+        P.freeCam([rp.x, rp.y, rp.z + 1.6], [pe.x, pe.y, pe.z + 2.2]); P.tunRender({ probe: true, off }); P.renderNow(); cam.updateMatrixWorld();
+        const W2 = gl.drawingBufferWidth, H2 = gl.drawingBufferHeight, px = new Uint8Array(W2 * H2 * 4); gl.readPixels(0, 0, W2, H2, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        const outline = (q) => { const pts = []; const prof = [[-pr.W, 0.12], [-pr.W, pr.Hs]]; for (let j = 1; j < TUN.archN; j++) { const l = -pr.W + 2 * pr.W * j / TUN.archN; prof.push([l, P.tunnelRoof(pr, Math.abs(l))]); } prof.push([pr.W, pr.Hs], [pr.W, 0.12]);
+          for (const [l, hh] of prof) { const [x, y] = tFrame(q, 0, l), vv = new THREE.Vector3(x, q.p.z + hh, -y).project(cam); pts.push([(vv.x * 0.5 + 0.5) * W2, (vv.y * 0.5 + 0.5) * H2]); } return pts; };
+        const inside = (pts, x, y) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) if ((pts[i][1] > y) !== (pts[j][1] > y) && x < (pts[j][0] - pts[i][0]) * (y - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0]) c = !c; return c; };
+        const near = outline(planesOf(v)[0]), far = outline(planesOf(v)[1]);
+        let xs = near.map(p => p[0]), ys = near.map(p => p[1]); const x0 = Math.max(0, Math.floor(Math.min(...xs))), x1 = Math.min(W2 - 1, Math.ceil(Math.max(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys))), y1 = Math.min(H2 - 1, Math.ceil(Math.max(...ys)));
+        const eroded = (x, y) => inside(near, x, y) && [[3, 0], [-3, 0], [0, 3], [0, -3]].every(d => inside(near, x + d[0], y + d[1])) && !(far.length && [[0, 0], [4, 0], [-4, 0], [0, 4], [0, -4]].some(d => inside(far, x + d[0], y + d[1])));
+        let tested = 0, mag = 0; for (let y = y0; y <= y1; y += 2) for (let x = x0; x <= x1; x += 2) { if (!eroded(x, y)) continue; tested++; const i = (y * W2 + x) * 4; if (px[i] > 240 && px[i + 1] < 16 && px[i + 2] > 240) mag++; }
+        return { tested, mag }; };
+      let probeMsg = []; let ctl = null;
+      for (const v of vols) { const r1 = probeOne(v, false); if (r1.tested < 50) { bad++; w = { x: v.st[0].x, y: v.st[0].y, road: v.road.id, what: 'render probe: opening not visible (' + r1.tested + ' px tested)', v: 0 }; } else { n += r1.tested; if (r1.mag) { bad++; w = track(w, { x: v.st[0].x, y: v.st[0].y, road: v.road.id, what: 'terrain-coloured pixels inside the opening: ' + r1.mag + '/' + r1.tested, v: 0 }); } }
+        probeMsg.push(r1.tested + 'px'); if (!ctl) ctl = probeOne(v, true); }
+      P.tunRender({ probe: false, off: false }); P.endFreeCam(); cam.position.copy(save.p); tg.copy(save.t); cam.lookAt(tg); P.renderNow();
+      if (ctl && ctl.mag < 100) { bad++; w = { x: 0, y: 0, road: 0, what: 'probe control failed: with the discard off only ' + ctl.mag + ' magenta pixels', v: 0 }; }
+      done('tunnel_bore_clear', w, bad, n, `${vols.length} tunnels: ${nGround} ground samples inside bore volumes all discarded (${nDisc}), volume gap-free along curves, none above the crown / in front of the plane; render probe 0 terrain pixels in the openings (${probeMsg.join(', ')} tested; control with discard off: ${ctl ? ctl.mag : '?'} magenta)`); }
+    // ---- tunnel_step_at_portal ----
+    { let n = 0, bad = 0, w = null, maxAl = 0; const NAT = TUN.planeC + Math.SQRT2 * P.GRID_RES + 0.05;   // natural by here: graded texels stop planeC past the plane, a triangle spans at most one texel diagonal
+      for (const v of vols) { const hw = RT[v.road.type].total / 2;
+        for (const q of planesOf(v)) {
+          for (let la = -(hw + 1.5); la <= hw + 1.5 + 1e-9; la += 0.25) { for (let al = NAT; al <= TUN.headT + 1e-9; al += 0.25) { const [x, y] = tFrame(q, al, la); n++; const d = Math.abs(P.groundAt(x, y) - terrainH(x, y)); maxAl = Math.max(maxAl, al);
+              if (d > 0.3) { bad++; w = track(w, { x, y, road: v.road.id, what: 'ground not back at natural ' + al.toFixed(2) + ' m behind the portal plane, off by', v: d }); } }
+            if (Math.abs(la) <= hw) for (let al = -4; al <= 0; al += 0.25) { const [x, y] = tFrame(q, al, la), g = P.groundAt(x, y); n++; const nb = nearStation(x, y), d = g - ((nb ? nb[0].samples[nb[1]].z : q.p.z) - 0.15);   // in front of the plane: formation, no ramp
+              if (Math.abs(d) > 0.15 && !(otherRoadNear(x, y, v.road, 6))) { bad++; w = track(w, { x, y, road: v.road.id, what: 'ground off formation in front of the portal plane (al ' + al.toFixed(2) + '), by', v: Math.abs(d) }); } } } } }
+      done('tunnel_step_at_portal', w, bad, n, `${vols.length * 2} portal planes: ground in front is at formation, back at natural ground by ${NAT.toFixed(2)} m behind the plane (planeC ${TUN.planeC} + one 0.5 m texel diagonal) and ${TUN.headT} m headwall hides the ramp`); }
+    // ---- tunnel_lining_closed ----
+    { let n = 0, bad = 0, w = null, nEdge = 0, nTri = 0;
+      const key = (x, y, z) => Math.round(x * 1000) + ',' + Math.round(y * 1000) + ',' + Math.round(z * 1000);
+      const idx3 = pts => { const m = new Map(); for (const p of pts) { const k = Math.floor(p[0] / 0.01) + ',' + Math.floor(p[1] / 0.01) + ',' + Math.floor(p[2] / 0.01); let l = m.get(k); if (!l) m.set(k, l = []); l.push(p); } return m; };
+      const has = (m, p, tol = 2e-3) => { const cx = Math.floor(p[0] / 0.01), cy = Math.floor(p[1] / 0.01), cz = Math.floor(p[2] / 0.01);
+        for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) { const l = m.get((cx + a) + ',' + (cy + b) + ',' + (cz + c)); if (l) for (const q of l) if (Math.abs(q[0] - p[0]) < tol && Math.abs(q[1] - p[1]) < tol && Math.abs(q[2] - p[2]) < tol) return true; } return false; };
+      const vertsOf = ms => { const out = []; for (const m of ms) { const pos = m.geometry.attributes.position.array; for (let i = 0; i < pos.length; i += 3) out.push([pos[i], pos[i + 1], pos[i + 2]]); } return out; };
+      const byRoad = new Map(); for (const v of vols) { if (!byRoad.has(v.road)) byRoad.set(v.road, []); byRoad.get(v.road).push(v); }
+      for (const [road, vs] of byRoad) {
+        const lin = [], por = [], rest = []; for (const m of meshes) { if (m.userData.road !== road) continue; if (m.userData.kind === 'lining' && !m.userData.layer) lin.push(m); else if (m.userData.kind === 'portal') por.push(m); else if (m.userData.kind !== 'lining' || m.userData.layer === 'road') rest.push(m); }
+        if (!lin.length) { bad++; w = { x: vs[0].st[0].x, y: vs[0].st[0].y, road: road.id, what: 'tunnel has no lining mesh', v: 0 }; continue; }
+        const linI = idx3(vertsOf(lin)), porI = idx3(vertsOf(por)), restI = idx3(vertsOf(rest)), pls = vs.flatMap(planesOf), S = road.samples, Hs = vs[0].prof.Hs;
+        // facing: every lining triangle faces the tunnel air (geometric normal from the winding AND the stored vertex normal), so nothing is a backface seen from inside
+        for (const m of lin) { const pos = m.geometry.attributes.position.array, nor = m.geometry.attributes.normal.array, idx = m.geometry.index.array;
+          for (let t = 0; t < idx.length; t += 3) { const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+            const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2], vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+            let gx = uy * vz - uz * vy, gy = uz * vx - ux * vz, gz = ux * vy - uy * vx; const gl = Math.hypot(gx, gy, gz) || 1; gx /= gl; gy /= gl; gz /= gl;
+            const cx = (pos[a] + pos[b] + pos[c]) / 3, cy = (pos[a + 1] + pos[b + 1] + pos[c + 1]) / 3, cz = (pos[a + 2] + pos[b + 2] + pos[c + 2]) / 3;
+            let bi = 0, bd = 1e18; S.forEach((s, i) => { if (!isTu(s)) return; const d = (s.x - cx) ** 2 + (s.y + cz) ** 2; if (d < bd) { bd = d; bi = i; } });
+            const ax = S[bi].x, ay = S[bi].z + Hs * 0.5, az = -S[bi].y; n++; nTri++;
+            if (gx * (ax - cx) + gy * (ay - cy) + gz * (az - cz) <= 0 || gx * nor[a] + gy * nor[a + 1] + gz * nor[a + 2] < 0.99) { bad++; w = track(w, { x: cx, y: -cz, road: road.id, what: 'lining triangle faces away from the bore', v: 0 }); } } }
+        // closure: boundary edges (used by one triangle) lie only on a portal plane or on the road edge line, and every vertex there matches the neighbouring surface exactly
+        const ec = new Map(), addE = (p0, p1) => { const k0 = key(...p0), k1 = key(...p1), kk = k0 < k1 ? k0 + '|' + k1 : k1 + '|' + k0, e = ec.get(kk); if (e) e.c++; else ec.set(kk, { c: 1, p0, p1 }); };
+        for (const m of lin) { const pos = m.geometry.attributes.position.array, idx = m.geometry.index.array, P3 = i => [pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]];
+          for (let t = 0; t < idx.length; t += 3) for (const [i, j] of [[0, 1], [1, 2], [2, 0]]) addE(P3(idx[t + i]), P3(idx[t + j])); }
+        for (const e of ec.values()) { if (e.c !== 1) continue; nEdge++;
+          const pl = p => pls.find(q => Math.abs((p[0] - q.p.x) * q.nx + (-p[2] - q.p.y) * q.ny) < 2e-3);
+          if (pl(e.p0) && pl(e.p1)) { for (const p of [e.p0, e.p1]) { n++; const q = pl(p), rel = p[1] - q.p.z - (road.id % 64) * 0.0025, ok = rel >= Hs - 2e-3 ? has(porI, p) : (has(porI, p) || has(restI, p)); if (!ok) { bad++; w = track(w, { x: p[0], y: -p[2], road: road.id, what: 'lining ring vertex has no matching headwall / approach vertex (gap)', v: 0 }); } } continue; }
+          let ok = true; for (const p of [e.p0, e.p1]) { n++; if (!has(restI, p)) ok = false; }
+          if (!ok) { bad++; w = track(w, { x: e.p0[0], y: -e.p0[2], road: road.id, what: 'open lining edge (neither on a portal plane nor on the road surface)', v: 0 }); } }
+        // and the other way round: every headwall vertex on the opening (in the plane, from the springline over the arch) is a lining vertex
+        for (const q of pls) for (const m of por) { const pos = m.geometry.attributes.position.array, pr = vs[0].prof; for (let i = 0; i < pos.length; i += 3) { const dx = pos[i] - q.p.x, dy = -pos[i + 2] - q.p.y, al = dx * q.nx + dy * q.ny, la = dx * q.lx + dy * q.ly, rel = pos[i + 1] - q.p.z - (road.id % 64) * 0.0025;
+            if (Math.abs(al) < 2e-3 && Math.abs(la) <= pr.W + 2e-3 && rel >= pr.Hs - 2e-3 && rel <= pr.Hc + 2e-3) { n++; if (!has(linI, [pos[i], pos[i + 1], pos[i + 2]])) { bad++; w = track(w, { x: pos[i], y: -pos[i + 2], road: road.id, what: 'headwall opening vertex has no lining vertex (sliver)', v: 0 }); } } } } }
+      done('tunnel_lining_closed', w, bad, n, `${vols.length} tunnels: ${nTri} lining triangles all face the bore (winding + normals); ${nEdge} boundary edges all on a portal plane (vertex-matched to the headwall opening / approach) or on the road edge line`); }
+  }
   return results;
 }

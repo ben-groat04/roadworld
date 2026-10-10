@@ -1,4 +1,5 @@
 // Junction geometry (part B): corner fillets, carriageway/pavement polygons, crossings.
+#include <algorithm>
 #include <cmath>
 #include <memory>
 

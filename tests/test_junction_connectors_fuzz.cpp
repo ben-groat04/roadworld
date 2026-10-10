@@ -1,6 +1,7 @@
 // Part A property tests: random 3-5 arm junctions (fixed seed), both driving sides, mixed road
 // types and one-way arms. Checks coverage, endpoint/tangent geometry, determinism, overrides
 // surviving a rebuild, and dirty-node (only={node}) equality with the full build.
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <random>

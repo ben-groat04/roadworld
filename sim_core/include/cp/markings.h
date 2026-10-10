@@ -291,6 +291,10 @@ struct MarkingParams {
     // (junction node, arm edge) pairs that get a stop line instead of a give-way line (data says
     // where stop lines exist only when the player or a signal rule asks for them; v0 has no signals).
     std::set<std::pair<NodeId, EdgeId>> stop_arms;
+    // Crossings the player has placed at junction arms (node, arm edge). Zebras are never automatic: with
+    // the default (empty) no crossing marking is generated. The crossing position comes from
+    // Junction::crossings for that arm.
+    std::set<std::pair<NodeId, EdgeId>> crossing_arms;
     // Optional roundabout priority data (build_roundabout().give_way). When use_roundabout_give_way is
     // false every non-ring approach arm with inbound lanes of a Roundabout junction gets an entry line.
     bool use_roundabout_give_way = false;

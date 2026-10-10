@@ -1063,7 +1063,7 @@ std::vector<ArmLayout> compute_arm_layout(const RoadGraph& g, const RegionPack& 
             line_gap = L.stop ? rules.stop_line.line_gap_m : L.entry ? rules.roundabout_entry.line_gap_m : rules.give_way.line_gap_m;
             L.clear = std::max(L.clear, L.line_s1 + line_gap);
         }
-        if (rules.zebra.enabled && !ring && cond_matches(rules.zebra.when, L.ctx)) {
+        if (rules.zebra.enabled && !ring && params.crossing_arms.count({j.node, arm.edge})) {
             const CrossingSpot* first = nullptr;
             for (const CrossingSpot& cs : j.crossings)
                 if (cs.arm == static_cast<int>(i)) {

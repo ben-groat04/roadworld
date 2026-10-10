@@ -372,7 +372,7 @@ function buildRoadGroup(r) {
   // ===== Tunnels: lined bore (walls + arched roof, closed, inward-facing), interior road with baked daylight falloff, lamp strips, and a flat headwall with coping at each portal =====
   // The terrain has a real hole here: terrain.js discards every fragment inside the bore volume (earthworks.js tunnelVolumes -> packTunnels), so the opening is genuinely open.
   // Interior light is baked into vertex colours (no sun inside): daylight decays with depth from each portal, plus a dim ambient floor; emissive strips are the lamps.
-  const TP = tunnelProfile(ty), TW = TP.W, KH = TUN.kerbH, HT = TUN.headT;
+  const TP = tunnelProfile(ty), TW = TP.W, KH = resid ? TUN.kerbH : 0, HT = TUN.headT;
   const BRIGHT_FLOOR = 0.1;   // dim ambient inside, as a fraction of the albedo
   const bright = s => { let b = BRIGHT_FLOOR; for (const iv of tunIvs) if (s >= iv[0] - 1e-6 && s <= iv[1] + 1e-6) { const d = Math.min(s - iv[0], iv[1] - s); b = Math.max(b, BRIGHT_FLOOR + (1 - BRIGHT_FLOOR) * Math.exp(-d / 11)); } return Math.min(1, b); };
   const tint = (col, s, k = 1) => { const b = bright(s) * k; return [col[0] * b, col[1] * b, col[2] * b]; };
@@ -380,6 +380,7 @@ function buildRoadGroup(r) {
   const prof = [[-cw, 0], [-cw, KH], [-TW, KH], [-TW, TP.Hs]];   // inner clear profile (lateral, height above road), left to right: kerb, walkway, wall, arch, wall, walkway, kerb
   for (let j = 1; j < TUN.archN; j++) { const q = -TW + 2 * TW * j / TUN.archN; prof.push([q, tunRoof(TP, q)]); }
   prof.push([TW, TP.Hs], [TW, KH], [cw, KH], [cw, 0]);
+  for (let i = prof.length - 1; i > 0; i--) if (prof[i][0] === prof[i - 1][0] && prof[i][1] === prof[i - 1][1]) prof.splice(i, 1);   // no zero-height kerb on roads without footways
   const inward = (a, b) => { const mq = (a[0] + b[0]) / 2, mh = (a[1] + b[1]) / 2; let nq = -(b[1] - a[1]), nh = b[0] - a[0]; if (nq * (0 - mq) + nh * (TP.Hs * 0.5 - mh) < 0) { nq = -nq; nh = -nh; } return [nq, nh]; };   // 2D normal of an edge, pointing into the tunnel air
   for (const iv of tunnelRuns(r)) {
     for (let k = iv.a; k < iv.b; k++) {
@@ -410,7 +411,7 @@ function buildRoadGroup(r) {
   // Headwall + coping per portal. Plane = the portal station; HT m thick behind it. The opening is the lining's inner profile (same arch breakpoints, so no sliver between lining and headwall);
   // the stubs beside the opening are as thick as the approach walls and flush with them (the last wall panel is lifted to the stub top, see wallEnd).
   for (const pt of portals) {
-    const { p, dir } = pt, P0 = S[p], zr = P0.z + zo, c = Math.cos(P0.h), sn = Math.sin(P0.h), Wh = hw + WALL_T, zb = zr - 2.5, CO = 0.12, CH = 0.3;
+    const { p, dir } = pt, P0 = S[p], zr = P0.z + zo, c = Math.cos(P0.h), sn = Math.sin(P0.h), Wh = hw + WALL_T, zb = zr - 2.5, CO = 0, CH = 0.4;   // coping: a darker 0.4 m band along the top, flush with the faces (no overhang: nothing hangs in the air)
     const V = (al, la, z) => [P0.x + c * al * dir - sn * la, P0.y + sn * al * dir + c * la, z];
     const front = fwd(P0.h).map(v => -v * dir), back = front.map(v => -v), lnP = lnorm(P0.h);
     const brk = [-Wh]; for (let j = 0; j <= TUN.archN; j++) brk.push(-TW + 2 * TW * j / TUN.archN); brk.push(Wh);
@@ -423,8 +424,6 @@ function buildRoadGroup(r) {
       CB.portal.d.quad(V(-CO, l0, t0 - CH), V(-CO, l1, t1 - CH), V(-CO, l1, t1), V(-CO, l0, t0), front);   // coping: front fascia, top, back fascia, soffits
       CB.portal.d.quad(V(-CO, l0, t0), V(-CO, l1, t1), V(HT + CO, l1, t1), V(HT + CO, l0, t0), UP);
       CB.portal.d.quad(V(HT + CO, l0, t0 - CH), V(HT + CO, l1, t1 - CH), V(HT + CO, l1, t1), V(HT + CO, l0, t0), back);
-      CB.portal.d.quad(V(-CO, l0, t0 - CH), V(-CO, l1, t1 - CH), V(0, l1, t1 - CH), V(0, l0, t0 - CH), DOWN);
-      CB.portal.d.quad(V(HT, l0, t0 - CH), V(HT, l1, t1 - CH), V(HT + CO, l1, t1 - CH), V(HT + CO, l0, t0 - CH), DOWN);
     }
     for (const sg of [1, -1]) {   // closed side ends
       const e = sg * Wh, t = tops[sg > 0 ? brk.length - 1 : 0];

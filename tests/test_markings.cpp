@@ -304,15 +304,8 @@ TEST_CASE("markings: straight residential road") {
     const JunctionSet js = n.junctions();
     const MarkingSet s = all_marks(n, js);
     check_well_formed(s);
-    // Centre line: 100 m with a 2/4 module.
-    const auto centre = of(s, MarkingCategory::CentreLine);
-    CHECK(centre.size() == 17);
-    for (const Marking* m : centre) {
-        CHECK(s.style_id(*m) == "centre_low");
-        CHECK(s.colour_id(*m) == "white");
-        CHECK(m->strip);
-        for (const Vec3& p : s.points(*m)) CHECK(std::fabs(p.y) <= 0.05 + 1e-9);
-    }
+    // A 6 m parked residential street has no centre line along its length (marking_rules.json choice).
+    CHECK(of(s, MarkingCategory::CentreLine).empty());
     CHECK(of(s, MarkingCategory::LaneLine).empty());
     CHECK(of(s, MarkingCategory::EdgeLine).empty());  // kerbs, no hard shoulder
     // Parking: one bay line per side and 17 dividers per lane (16 bays of 6 m in 100 m).
@@ -356,7 +349,7 @@ TEST_CASE("markings: lane-count change gives each edge its own lines") {
     REQUIRE(n.polar(0, 80, "b_road", true));
     // Second edge continues to the east as a different type.
     DrawRoadSpec spec;
-    spec.road_type = "residential";
+    spec.road_type = "b_road";
     RoadEnd a, b;
     a.pos = {80, 0, 0};
     a.existing_node = n.g.edges().begin()->second.b;
@@ -457,7 +450,7 @@ TEST_CASE("markings: T junction give-way line, warning lines, trims") {
 
     SUBCASE("centre line switches to the warning style on approach") {
         // Residential (30 mph): 5 marks of a 6 m module = 30 m. B road (40 mph): 7 marks = 42 m.
-        auto check = [&](EdgeId e, double zone) {
+        auto check = [&](EdgeId e, double zone, bool expect_plain) {
             const int arm_i = arm_of_edge(*j, e);
             const ArmFrame f = frame_of(*j, arm_i);
             int warning = 0, centre = 0;
@@ -473,10 +466,11 @@ TEST_CASE("markings: T junction give-way line, warning lines, trims") {
                 if (d > zone + 8.0) CHECK_FALSE(is_warning);
             }
             CHECK(warning >= 4);
-            CHECK(centre >= 3);
+            if (expect_plain) CHECK(centre >= 3);
+            else CHECK(centre == 0);
         };
-        check(t.minor, 30.0);
-        check(t.major_e, 42.0);
+        check(t.minor, 30.0, false);
+        check(t.major_e, 42.0, true);
     }
 
     SUBCASE("marks never cross a junction trim, overlap, or leave the carriageway") {
@@ -496,12 +490,24 @@ TEST_CASE("markings: T junction give-way line, warning lines, trims") {
         CHECK(count_overlaps(s) == 0);
     }
 
-    SUBCASE("zebra stripes at the junction crossings") {
-        const auto z = of(s, MarkingCategory::Zebra);
+    SUBCASE("zebras are never automatic; a placed crossing marks only its own arm") {
+        CHECK(of(s, MarkingCategory::Zebra).empty());
+        MarkingParams p;
+        p.crossing_arms.insert({t.n.centre, t.minor});
+        const MarkingSet s2 = all_marks(t.n, js, p);
+        check_well_formed(s2);
+        const auto z = of(s2, MarkingCategory::Zebra);
         CHECK(z.size() > 10);
-        std::set<EdgeId> arms_with_zebra;
-        for (const Marking* m : z) arms_with_zebra.insert(m->edge);
-        CHECK(arms_with_zebra.size() == 3);  // every arm here is 40 mph or less
+        double zmin = 1e9;
+        for (const Marking* m : z) {
+            CHECK(m->edge == t.minor);
+            for (const Vec3& v : s2.points(*m)) zmin = std::min(zmin, fr.rel(v).x);
+        }
+        double gw_max = -1e9;
+        for (const Marking* m : of(s2, MarkingCategory::GiveWayLine))
+            for (const Vec3& v : s2.points(*m)) gw_max = std::max(gw_max, fr.rel(v).x);
+        CHECK(zmin >= gw_max + 0.99);
+        CHECK(count_overlaps(s2) == 0);
     }
 }
 
@@ -663,6 +669,7 @@ TEST_CASE("markings: interchange fixture generates cleanly") {
     CHECK(counts["lane_line"] > 0);
     CHECK(counts["edge_line"] > 0);
     CHECK(counts["roundabout_entry"] > 0);
+    CHECK(counts["zebra"] == 0);
     CHECK(counts["hatching"] > 0);
     CHECK(counts["give_way_line"] > 0);
     CHECK(count_overlaps(s) == 0);
@@ -705,4 +712,18 @@ TEST_CASE("markings: fuzz over random junctions") {
         }
     }
     CHECK(built > 20);
+}
+
+TEST_CASE("markings: B road keeps its centre line") {
+    Net n;
+    REQUIRE(n.polar(0, 100, "b_road"));
+    const JunctionSet js = n.junctions();
+    const MarkingSet s = all_marks(n, js);
+    check_well_formed(s);
+    const auto centre = of(s, MarkingCategory::CentreLine);
+    CHECK(centre.size() == 17);  // 100 m, 2 m mark / 4 m gap (40 mph)
+    for (const Marking* m : centre) {
+        CHECK(s.style_id(*m) == "centre_low");
+        for (const Vec3& p : s.points(*m)) CHECK(std::fabs(p.y) <= 0.05 + 1e-9);
+    }
 }
