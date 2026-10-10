@@ -2,6 +2,8 @@
 
 VS Code can be your editor, but Unreal C++ needs Microsoft's **MSVC compiler**, which only comes from the Visual Studio Installer. Checked against Epic's UE 5.8 release notes and the Visual Studio setup page (10 Oct 2026).
 
+> **Have MSYS2?** That's enough to build and test `sim_core` today (`pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja`, then the CMake commands below from the UCRT64 shell). **Unreal will not build with MinGW/gcc**, so the Visual Studio install below is still required for the plugin. Keep MSYS2 off the PATH used by Unreal's build tools, because a stray MinGW `gcc`/`ld` on PATH is a classic source of confusing UBT errors.
+
 ## 1. Install Visual Studio 2026 Community (recommended) or 2022 17.14+
 
 Download the Visual Studio Installer from visualstudio.microsoft.com. Community edition is free. Install these:

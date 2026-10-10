@@ -3,6 +3,7 @@ add_library(sim_core
   src/command.cpp
   src/clothoid.cpp
   src/clothoid_chain.cpp
+  src/vertical_profile.cpp
 )
 target_include_directories(sim_core PUBLIC include)
 if(MSVC)
