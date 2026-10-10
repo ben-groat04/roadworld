@@ -89,7 +89,7 @@ requestAnimationFrame(frame);
 // Scripting hook for automated screenshots.
 window.__proto = {
   THREE, state, T, scene, camera, controls, roads: () => roads, hAt, terrainH, setView, project, pick, setTune, undo, redo, flushGrade, regradeAll,
-  undoCount: () => undoStack.length, TG, TH, ROAD_TYPES, groundAt, GH, GRID_RES, wallRuns,
+  undoCount: () => undoStack.length, TG, TH, ROAD_TYPES, groundAt, GH, GRID_RES, wallRuns, hBase,
   drawRoad(type, pts, oneWay = false) {
     state.type = type; state.oneWay = oneWay; state.mode = 'draw';
     state.draw = { pts: pts.map(p => ({ x: p[0], y: p[1], z: p[2] != null ? p[2] : hAt(p[0], p[1]) })), hs: null, attach: pts.map(() => 'free') };
