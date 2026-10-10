@@ -162,11 +162,11 @@ console.log(`wrote ${names.length} view(s) to ${outDir} in ${secs}s: ${names.joi
 if (errors.length) { console.error(errors.length + ' error(s):\n' + [...new Set(errors)].join('\n')); process.exit(1); }
 
 // ============================== numeric invariant checks (run inside the page; must be self-contained) ==============================
-// No tags exist on meshes in src/, so kinds are INFERRED (see report): road-level mesh = child of a road's Group, earthwork = one level deeper,
-// 'structure' (walls, piers, deck, abutments, parapets) = road-level mesh with castShadow, everything else road-level = surface-ish.
+// Meshes carry userData.kind (roadmesh.js / terrain.js): surface | wall | pier | deck | abutment | parapet | portal | lining | terrain | water | skirt.
+// Earthwork meshes (earthworks.js) are untagged: any untagged mesh inside a road group is 'earthwork'. 'structure' = wall/pier/deck/abutment/parapet/portal.
 // Terrain and water are not raycast (513x513 mesh): they are analytic (terrain = P.hAt, which matches the linear mesh; masked per the corridor mask).
 function CHECKS_IN_PAGE() {
-  const P = window.__proto, THREE = P.THREE, T = P.T, hAt = P.hAt, WORLD = 2048, DECK_T = 1.5;
+  const P = window.__proto, THREE = P.THREE, T = P.T, hAt = P.hAt, RT = P.ROAD_TYPES, WORLD = 2048, DECK_T = 1.5;
   P.renderNow();   // builds road meshes, cross-sections and the corridor mask
   const results = [];
   const fmt = (x, y) => `(${x.toFixed(1)},${y.toFixed(1)})`;
@@ -176,16 +176,14 @@ function CHECKS_IN_PAGE() {
   if (!roadGroup) return [{ name: 'setup', pass: false, msg: 'no road group in scene' }];
 
   // ---- corridor mask (replicates the terrain shader's eroded discard test with nearest taps) ----
-  const terrain = P.scene.children.find(o => o.isMesh && o.geometry.attributes.position.count === 513 * 513);
-  const sh = { uniforms: {}, vertexShader: '#include <common>\n#include <begin_vertex>', fragmentShader: '#include <common>\nvoid main() {' };
-  terrain.material.onBeforeCompile(sh);
-  const mc = sh.uniforms.uMask.value.image, md = mc.getContext('2d').getImageData(0, 0, WORLD, WORLD).data;
+  const mc = P.maskCanvas, md = mc.getContext('2d').getImageData(0, 0, WORLD, WORLD).data;
   const mv = (x, y) => { const i = Math.min(WORLD - 1, Math.max(0, Math.floor(x))), j = Math.min(WORLD - 1, Math.max(0, Math.floor(y))); return md[(j * WORLD + i) * 4] / 255; };
   const masked = (x, y) => Math.min(mv(x, y), mv(x + 1, y + 1), mv(x - 1, y + 1), mv(x + 1, y - 1), mv(x - 1, y - 1)) > 0.55;
 
   // ---- spatial grid over every road mesh triangle (three coords: X = x, Z = -y) ----
   const CS = 4, grid = new Map(), tris = [];   // tris: [ax,ay,az,bx,by,bz,cx,cy,cz,kind,roadId]
-  const kindOf = o => (o.parent.parent === roadGroup ? (o.castShadow ? 'structure' : 'surface') : 'earthwork');
+  const STRUCT = new Set(['wall', 'pier', 'deck', 'abutment', 'parapet', 'portal']);
+  const kindOf = o => { const k = o.userData.kind; return !k ? 'earthwork' : STRUCT.has(k) ? 'structure' : 'surface'; };
   const meshes = []; roadGroup.traverse(o => { if (o.isMesh) meshes.push(o); });
   for (const m of meshes) {
     const k = kindOf(m), rid = m.userData.road ? m.userData.road.id : -1, pos = m.geometry.attributes.position.array, idx = m.geometry.index.array;
@@ -211,13 +209,12 @@ function CHECKS_IN_PAGE() {
     return out;
   };
   const latPt = (s, lat) => [s.x - Math.sin(s.h) * lat, s.y + Math.cos(s.h) * lat];
-  const TY = { 1: 10.0, 2: 6.5, 3: 8.8, 4: 14.95 };   // carriageway widths (ROAD_TYPES is not exposed): used only for lateral offsets
   const inTunnel = s => s.tunnel;   // under the lining / mountain: a ray from above legitimately hits roof or ground
 
   // 1 + 2: points every 2 m (samples) at lateral 0, +-half carriageway.
   { let n = 0, bad1 = 0, bad2 = 0, w1 = null, w2 = null;
     for (const r of roads) {
-      const cw = TY[r.type] / 2;
+      const cw = RT[r.type].carriageway / 2;
       for (const s of r.samples) {
         if (inTunnel(s)) continue;
         for (const lat of [0, cw, -cw]) {
@@ -241,14 +238,14 @@ function CHECKS_IN_PAGE() {
 
   // 3: wall height cap (from cross-sections: wall height = |ground - formation| at the wall face)
   { let n = 0, bad = 0, w = null, mx = 0;
-    for (const r of roads) { const xs = r.xs; if (!xs) continue;
+    for (const r of roads) { const xs = P.crossSections(r); if (!xs) continue;
       r.samples.forEach((s, i) => { for (const k of ['L', 'R']) { const m = xs[i][k]; if (m.kind !== 'wall') continue; n++; const hgt = Math.abs(m.z1 - m.z0); mx = Math.max(mx, hgt);
         if (hgt > T.wallCap + 0.5) { bad++; const [x, y] = latPt(s, k === 'L' ? m.d1 : -m.d1); if (!w || hgt > w.v) w = { x, y, road: r.id, what: k, v: hgt }; } } }); }
     done('wall_height_cap', w, bad, n, `${n} wall sections, max height ${mx.toFixed(2)} m <= ${T.wallCap + 0.5}`); }
 
   // 4: slope meets ground (daylight z vs base terrain) and outer overlap row below terrain
   { let n = 0, bad = 0, w = null, miss = 0, wo = 0, bad2 = 0, w2 = null;
-    for (const r of roads) { const xs = r.xs; if (!xs) continue;
+    for (const r of roads) { const xs = P.crossSections(r); if (!xs) continue;
       r.samples.forEach((s, i) => { for (const k of ['L', 'R']) { const m = xs[i][k]; if (m.kind !== 'slope' || m.d1 - m.edge < 0.05) continue;
         const sg = k === 'L' ? 1 : -1, [x, y] = latPt(s, sg * m.d1), e = upHits(x, -y).filter(h => h.kind === 'earthwork' && h.rid === r.id);
         if (!e.length) { miss++; continue; }
@@ -287,12 +284,12 @@ function CHECKS_IN_PAGE() {
     done('water_below_ground', w, bad, n, `${n} water fragments (1 m grid), none over ground > water+0.2`); }
 
   // 7: median fill only between same-type, opposite-direction, near-parallel dual pairs; vertices within gap+carriageway+3 m of the pair
-  { const GAP = { 3: 2.5, 4: 3.0 }; let n = 0, bad = 0, w = null;
-    for (const r of roads) { const xs = r.xs; if (!xs) continue;
+  { let n = 0, bad = 0, w = null;
+    for (const r of roads) { const xs = P.crossSections(r); if (!xs) continue;
       r.samples.forEach((s, i) => { for (const k of ['L', 'R']) { const m = xs[i][k]; if (m.kind !== 'median') continue; n++;
-        const sg = k === 'L' ? 1 : -1, nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, lim = (GAP[r.type] || 0) + (TY[r.type] || 0) + 3;
+        const sg = k === 'L' ? 1 : -1, nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, lim = (RT[r.type].dual ? RT[r.type].gap : 0) + (RT[r.type] ? RT[r.type].carriageway : 0) + 3;
         let why = null, partner = null;
-        if (!GAP[r.type]) why = 'median on non-dual road';
+        if (!RT[r.type].dual) why = 'median on non-dual road';
         else { let bd = 1e18; for (const r2 of roads) { if (r2 === r || r2.type !== r.type) continue;
           for (const t of r2.samples) { const dx = t.x - s.x, dy = t.y - s.y, d = Math.hypot(dx, dy); if (d > lim + 4) continue; const lat = dx * nx + dy * ny; if (lat > 0 && Math.abs(d - lat) < 2 && d < bd) { bd = d; partner = { t, r2 }; } } }
           if (!partner) why = 'no paired road'; else if (Math.cos(partner.t.h - s.h) > -0.7) why = 'partner not opposite-direction near-parallel'; }
