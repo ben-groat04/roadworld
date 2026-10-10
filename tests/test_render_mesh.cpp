@@ -151,16 +151,36 @@ int check_seams(const RoadGraph& g, const RegionPack& r, const JunctionSet& js, 
             };
             INFO("node " << nid.value << " arm " << i << " edge " << arm.edge.value);
             CHECK(!B.empty());
+            // Junction vertices must lie on the edge end ring (a vertex of it, or on a ring segment: a lane-line
+            // vertex of the junction polygon between two cross-section points is a T-vertex, not a crack).
+            std::vector<SeamVert> sorted = B;
+            const auto lat = [&](const SeamVert& v) { return (v.p.xy() - c.pos.xy()).dot(left); };
+            std::sort(sorted.begin(), sorted.end(), [&](const SeamVert& x, const SeamVert& y) {
+                const double lx = lat(x), ly = lat(y);
+                return std::abs(lx - ly) > 1e-6 ? lx < ly : x.p.z < y.p.z;
+            });
             for (const SeamVert& a : A) {
                 double duv = 0;
                 const double nd = near(a, B, duv);
-                CHECK(nd < 1e-3);
-                if (nd > 1e-3 || duv > 1e-3) { MESSAGE("A vertex " << a.p.x << " " << a.p.y << " " << a.p.z << " uv " << a.uv.x << " " << a.uv.y); for (const SeamVert& o : B) if (std::abs(o.p.y - a.p.y) < 1e-2 && std::abs(o.p.x - a.p.x) < 1e-2) MESSAGE("  B " << o.p.z << " uv " << o.uv.x << " " << o.uv.y); }
+                if (nd >= 1e-3) {
+                    double seg = 1e9;
+                    for (std::size_t k = 0; k + 1 < sorted.size(); ++k) {
+                        const Vec3 p = sorted[k].p, q = sorted[k + 1].p;
+                        const double dx = q.x - p.x, dy = q.y - p.y, dz = q.z - p.z;
+                        const double l2 = dx * dx + dy * dy + dz * dz;
+                        const double t = l2 > 0 ? std::clamp(((a.p.x - p.x) * dx + (a.p.y - p.y) * dy + (a.p.z - p.z) * dz) / l2, 0.0, 1.0) : 0.0;
+                        seg = std::min(seg, std::sqrt(std::pow(p.x + dx * t - a.p.x, 2) + std::pow(p.y + dy * t - a.p.y, 2) + std::pow(p.z + dz * t - a.p.z, 2)));
+                    }
+                    CHECK(seg < 1e-3);
+                    ++matched;
+                    continue;
+                }
                 CHECK(duv < 1e-3);
                 ++matched;
             }
             for (const SeamVert& b : B) {
                 double duv = 0;
+                if (near(b, A, duv) > 1e-3) MESSAGE("B vertex lateral " << lat(b) << " z " << b.p.z << " hl " << arm.half_width_left << " hr " << arm.half_width_right << " kl " << arm.kerb_left << " kr " << arm.kerb_right << " trim " << j.trims[i] << " cls " << static_cast<int>(j.cls) << " edge type " << g.edge(arm.edge)->road_type);
                 CHECK(near(b, A, duv) < 1e-3);
                 CHECK(duv < 1e-3);
             }

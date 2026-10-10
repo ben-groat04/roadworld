@@ -665,6 +665,10 @@ TEST_CASE("markings: interchange fixture generates cleanly") {
     CHECK(counts["roundabout_entry"] > 0);
     CHECK(counts["hatching"] > 0);
     CHECK(counts["give_way_line"] > 0);
+    CHECK(count_overlaps(s) == 0);
+    int slip_edges = 0;
+    for (const Marking& m : s.marks) slip_edges += m.category == MarkingCategory::EdgeLine && m.node.valid();
+    CHECK(slip_edges > 0);
     // Triangulation covers every mark.
     for (const Marking& m : s.marks) REQUIRE(!triangulate_marking(s, m).empty());
 }
