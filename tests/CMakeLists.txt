@@ -5,6 +5,7 @@ add_executable(sim_core_tests
   test_clothoid.cpp
   test_clothoid_chain.cpp
   test_vertical_profile.cpp
+  test_road_graph.cpp
 )
 target_link_libraries(sim_core_tests PRIVATE sim_core)
 target_include_directories(sim_core_tests PRIVATE ${PROJECT_SOURCE_DIR}/third_party)

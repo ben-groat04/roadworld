@@ -4,6 +4,8 @@ add_library(sim_core
   src/clothoid.cpp
   src/clothoid_chain.cpp
   src/vertical_profile.cpp
+  src/road_graph.cpp
+  src/road_commands.cpp
 )
 target_include_directories(sim_core PUBLIC include)
 if(MSVC)
