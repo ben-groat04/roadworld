@@ -358,5 +358,21 @@ function CHECKS_IN_PAGE() {
     const sel = results[results.length - 1];
     if (badBot) { sel.pass = false; sel.msg = (bad ? sel.msg + ' ; ' : '') + `${badBot}/${nBot} columns: worst ${wBot.what} at ${fmt(wBot.x, wBot.y)} road#${wBot.road} ${wBot.v.toFixed(3)}m`; }
     else sel.msg += `; ${nBot} face columns meet ground within 0.3 m`; }
+  // ground_hidden_by_walls: along every wall run, the graded ground must not poke through the wall. Samples at lateral offsets from just
+  // inside the road face (-0.3) to just outside the outer face (hi+0.3), every 0.1 m: (a) ground between the faces (lo..hi) <= wall top - 0.3;
+  // (b) ground just outside either face <= wall top; (c) outside the outer face the ground is natural again (within 0.25 m of terrainH): no ramp left outside.
+  { let n = 0, bad = 0, w = null; const hwOf = r => RT[r.type].total / 2;
+    for (const r of roads) for (const run of wallRuns(r)) {
+      const sg = run.side === 'L' ? 1 : -1, lo = run.lo != null ? run.lo : 0, hi = run.hi != null ? run.hi : 1.0, hw = hwOf(r);
+      for (const p of run.pts) {
+        const top = p.top != null ? p.top : p.zTop, ux = -Math.sin(p.h) * sg, uy = Math.cos(p.h) * sg;
+        for (let e = lo - 0.3; e <= hi + 0.3 + 1e-9; e += 0.1) {
+          const x = p.x + ux * e, y = p.y + uy * e, g = groundAt(x, y); n++;
+          const inside = e >= lo - 1e-9 && e <= hi + 1e-9, lim = inside ? top - 0.3 : top;
+          if (g > lim + 1e-6) { bad++; w = track(w, { x, y, road: r.id, what: run.side + (run.cut ? ' cut' : ' fill') + ' wall ground above ' + (inside ? 'top-0.3' : 'top') + ' at e=' + e.toFixed(1) + ' by', v: g - lim }); }
+          else if (e > hi + 0.1 && Math.abs(g - terrainH(x, y)) > 0.25) { bad++; w = track(w, { x, y, road: r.id, what: run.side + ' wall ramp outside outer face, off natural at e=' + e.toFixed(1) + ' by', v: Math.abs(g - terrainH(x, y)) }); }
+        }
+      } }
+    done('ground_hidden_by_walls', w, bad, n, n ? `${n} ground samples across wall faces, all hidden or natural` : 'WARNING no wall runs'); if (!n) results[results.length - 1].pass = false; }
   return results;
 }
