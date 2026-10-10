@@ -334,6 +334,11 @@ function classify(r, ty) {
     const s = S[i]; s.br = s.bridge = br[i]; s.tu = s.tunnel = tu[i];   // shared contract: br/tu (existing mesh code) and bridge/tunnel aliases
     s.wL = cL[i] ? 1 : fL[i] ? 2 : 0; s.wR = cR[i] ? 1 : fR[i] ? 2 : 0;
   }
+  // Portal approach: first 2 tunnel samples at each end of a tunnel run are graded to formation with walls on both sides (no batter).
+  for (let i = 0; i < n; i++) S[i].tp = false;
+  for (let i = 0; i < n; i++) if (tu[i] && ((i < 2 || !tu[i - 1] || (i > 1 && !tu[i - 2])) || (i + 2 >= n || !tu[i + 1] || !tu[i + 2]))) {
+    const s = S[i]; s.tp = true; if (!s.wL) s.wL = 1; if (!s.wR) s.wR = 1;
+  }
 }
 function rebuild(r) {
   const ty = ROAD_TYPES[r.type];
@@ -379,7 +384,7 @@ function applyRoad(r, rg) {
   const edge2 = edgeOf(ty) * edgeOf(ty), edge = edgeOf(ty), wl2 = wallLineOf(ty) * wallLineOf(ty);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const idx = j * TN + i; if (!(BD[idx] < reach2)) continue;
-    const sm = sampAt(idx); if (sm.br || sm.tu) continue;
+    const sm = sampAt(idx); if (sm.br || (sm.tu && !sm.tp)) continue;
     const wall = BL[idx] > 0 ? sm.wL : sm.wR, form = formAt(idx), old = TG[idx]; let h = old;
     if (wall) { if (BD[idx] <= wl2) h = form; else continue; }   // walled side: formation up to the wall line, natural beyond (no batter)
     else if (BD[idx] <= edge2) h = form;                  // formation (incl. one extra cell so every triangle under the ribbon is fully under it)
@@ -669,7 +674,7 @@ function buildRoadGroup(r) {
       const bots = new Float32Array(n), tops = new Float32Array(n);
       for (let k = a; k <= b; k++) {
         const c = latPt(S[k], sg * edge, 0), nat = hBase(c[0], c[1]), form = S[k].z + zo - FORM_DROP;
-        bots[k] = Math.min(form, nat) - 0.5; tops[k] = Math.max(form + 0.1, nat + 0.3);
+        bots[k] = Math.min(form, nat) - 1.0; tops[k] = Math.max(S[k].z + zo + 0.6, nat + 0.3);
       }
       const L = sg > 0 ? [edge, edge + 0.4] : [-edge - 0.4, -edge];
       extrude(a, b, L[0], L[1], k => bots[k], k => tops[k], { noTop: true });
@@ -677,7 +682,7 @@ function buildRoadGroup(r) {
   }
   // Tunnels: portal headwalls with a recessed opening, plus a short dark lining so the portal is not see-through.
   for (const [a, b] of runs(s => s.tu)) {
-    const pa0 = Math.max(0, a - 2), pb0 = Math.min(n - 1, b + 2), ow = hw + 0.5, W = ty.total / 2 + 3, HW_H = 7.0, DEPTH = 1.2;
+    const pa0 = Math.min(n - 1, a + 1), pb0 = Math.max(0, b - 1), ow = hw + 0.5, W = ty.total / 2 + 3, DEPTH = 1.2;
     const lining = (k0, dir, lim) => { // from the portal sample inwards (dir +1 / -1) for ~10 m, closed by a back wall
       let k1 = k0; while (k1 + dir >= pa0 && k1 + dir <= pb0 && Math.abs(S[k1].s - S[k0].s) < 10) k1 += dir;
       if (k1 === k0) return;
@@ -689,11 +694,12 @@ function buildRoadGroup(r) {
       }
       if (k1 !== (dir > 0 ? pb0 : pa0)) B.tube.quad(P(k1, -ow, -0.6), P(k1, ow, -0.6), P(k1, ow, TUNNEL_H), P(k1, -ow, TUNNEL_H), fwd(S[k1].h).map(v => -v * dir));
     };
-    // Portal sits 2 samples outside the flagged run: the terrain is only graded up to there and ramps up into the hill just after.
-    const pa = Math.max(0, a - 2), pb = Math.min(n - 1, b + 2);
+    // Portal sits on the last graded approach sample (2nd flagged sample from each end); the ground step lies behind the headwall.
+    const pa = pa0, pb = pb0;
+    const hwH = (k, a0, a1) => { let m = 0; const p = S[k]; for (const al of [a0, a1]) for (const la of [-W, -ow, 0, ow, W]) { const x = p.x + Math.cos(p.h) * al - Math.sin(p.h) * la, y = p.y + Math.sin(p.h) * al + Math.cos(p.h) * la; m = Math.max(m, hBase(x, y)); } return Math.max(7.0, m - p.z + 1.0); };
     lining(pa, 1, a); lining(pb, -1, b);
     for (const [k, a0, a1] of [[pa, -DEPTH, 0], [pb, 0, DEPTH]]) {
-      const z0 = S[k].z + zo - 0.6, zt = S[k].z + zo + HW_H;
+      const z0 = S[k].z + zo - 0.6, zt = S[k].z + zo + hwH(k, a0, a1);
       obox(k, a0, a1, ow, W, z0, zt, B.conc);
       obox(k, a0, a1, -W, -ow, z0, zt, B.conc);
       obox(k, a0, a1, -ow, ow, S[k].z + zo + TUNNEL_H, zt, B.conc);
