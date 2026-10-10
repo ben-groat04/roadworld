@@ -25,7 +25,7 @@ catch { ({ chromium } = require(resolve(here, '..', 'road-draw', 'node_modules',
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
 const inDir = opt('--in'), outDir = opt('--out');
-if (!inDir || !outDir) { console.error('usage: node render.mjs --in <export dir> --out <png dir> [--views file] [--only a,b] [--tex dir]'); process.exit(2); }
+if (!inDir || !outDir) { console.error('usage: node render.mjs --in <export dir> --out <png dir> [--views file] [--only a,b] [--tex dir] [--joints-red]'); process.exit(2); }
 const exportDir = resolve(inDir);
 const texDir = resolve(opt('--tex', join(here, '..', '..', 'unreal', 'CityPainter', 'SourceArt', 'Textures', 'PolyHaven')));
 const repoRoot = resolve(here, '..', '..');
@@ -84,7 +84,7 @@ page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') er
 page.on('pageerror', e => errors.push('pageerror: ' + e.message));
 let code = 0;
 try {
-  await page.goto(`http://127.0.0.1:${port}/viewer.html`);
+  await page.goto(`http://127.0.0.1:${port}/viewer.html${args.includes('--joints-red') ? '?joints=red' : ''}`);
   await page.waitForFunction('window.__ready === true', null, { timeout: 180000 });
   console.log((await page.evaluate('window.__info.report')).join('\n'));
   for (const v of views) {

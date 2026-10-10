@@ -44,7 +44,8 @@ inline constexpr const char* concrete = "structural_concrete";  // deck, piers, 
 inline constexpr const char* parapet = "parapet";
 inline constexpr const char* lining = "tunnel_lining";
 inline constexpr const char* wall = "wall_facing";
-inline constexpr const char* coping = "coping";
+inline constexpr const char* coping = "coping";          // thin cap of walls and headwalls (own material slot)
+inline constexpr const char* joint = "wall_joint";       // panel-joint pilasters of retaining walls (own slot so a viewer can highlight them)
 }  // namespace structure_surface
 
 // ------------------------------------------------------------------ inputs
@@ -177,7 +178,11 @@ struct StructureParams {
     double depth_range = 64.0;         // m, vertex colour R = 255 at this distance from a portal
 
     // ---- retaining walls and coping ----
-    double wall_thickness = 1.5;       // m (region grading.wall_thickness)
+    double wall_thickness = 1.5;       // m, lateral band the grading reserves for a wall (region grading.wall_thickness); the visible wall is wall_face_thickness
+    double wall_face_thickness = 0.4;  // m, the wall itself; any rest of the band behind a cut wall is a hidden backing up to the ground (NEEDS region-pack field)
+    bool wall_allow_short_panels = false;  // true: panels are halved where the step limit is exceeded (default: every panel is wall_panel long, the last may be shorter)
+    double wall_joint_width = 0.12;    // m along the wall, pilaster at each panel boundary (NEEDS region-pack field)
+    double wall_joint_proud = 0.04;    // m the pilaster stands out of the face
     double wall_panel = 4.0;           // m, nominal panel length (region)
     double wall_quant = 0.25;          // m, panel tops are multiples of this
     double wall_max_step = 0.5;        // m, largest step between neighbouring panels (multiple of wall_quant)
@@ -188,7 +193,7 @@ struct StructureParams {
     double wall_foot_smooth = 4.0;     // m, half-window of the foot smoothing
     double wall_taper = 4.0;           // m, free ends blend down to the ground over this length
     double coping_thickness = 0.15;
-    double coping_overhang = 0.04;
+    double coping_overhang = 0.05;     // m each side of the face (NEEDS region-pack field value 0.05; the pack still says 0.04)
 };
 
 // Defaults with the values the region pack already has (grading.wall_thickness,
@@ -212,6 +217,7 @@ enum class ElementKind {
     HeadwallCoping,
     RetainingWall,
     WallCoping,
+    WallJoint,      // pilasters at the panel boundaries of a retaining wall (surface "wall_joint")
 };
 
 struct StructureElement {

@@ -522,7 +522,9 @@ struct WStation {
     Vec2 u;         // outward unit normal (the wall occupies a + u * [0, T])
     double zb = 0;  // foot
     double zt = 0;  // top of coping
-    bool dup = false;  // second station of a step: same place, the next panel's level
+    bool dup = false;    // second station of a step: same place, the next panel's level
+    bool joint = false;  // a panel boundary without a step: a vertical joint is drawn here (dup stations always get one)
+    double zback = 0;    // top of the hidden backing behind a thin face (the ground just behind the wall)
 };
 
 // Prototype wallStations: drop stations where the offset (outer) face folds back against the inner line.
@@ -552,11 +554,17 @@ std::vector<WStation> fold_filter(const std::vector<WStation>& st0, double T) {
 }
 
 struct WallSpec {
-    double T = 1.5;
+    double T = 1.5;          // lateral range of the solid (grading's wall band): the face plus any hidden backing
+    double face_t = 0.4;     // thickness of the visible wall (clamped to T)
+    bool face_inner = true;  // visible face at the inner side (cut walls, wing walls); false: at the outer side (fill walls)
+    bool backing = true;     // fill the rest of the band behind an inner face up to `zback` (hides the pit of a wide band)
+    bool joints = false;     // vertical joint pilasters at panel boundaries
+    double joint_w = 0.12, joint_proud = 0.04;
     double coping_t = 0.15;
-    double overhang = 0.04;
+    double overhang = 0.05;
     const char* body_surface = structure_surface::wall;
     const char* coping_surface = structure_surface::coping;
+    const char* joint_surface = structure_surface::joint;
     ElementKind body_kind = ElementKind::RetainingWall;
     ElementKind coping_kind = ElementKind::WallCoping;
     EdgeId edge;
@@ -590,33 +598,44 @@ void emit_stepped_wall(Sink& sink, std::vector<WStation> st, const WallSpec& w) 
     const auto in_pt = [&](const WStation& s, double z, double off) {  // lateral offset `off` from the inner face
         return Vec3{s.a.x + s.u.x * off, s.a.y + s.u.y * off, z};
     };
-    // ---- body
-    sink.begin(w.body_kind, w.body_surface, w.edge, w.sk, w.s0, w.s1, true, w.tag);
-    for (const auto& [i0, i1] : panels) {
-        if (i1 <= i0) continue;
-        const double zt = st[i0].zt - w.coping_t;
+    // ---- body: the visible face wall (thickness F) at the inner or the outer side of the band
+    const double F = std::clamp(w.face_t, 0.05, w.T);
+    const double f0 = w.face_inner ? 0.0 : w.T - F, f1 = f0 + F;
+    // One closed prism per panel between lateral offsets o0 and o1; `top(i)` is the top at station i.
+    const auto panel_prism = [&](std::size_t i0, std::size_t i1, double o0, double o1, const auto& top) {
         for (std::size_t i = i0; i < i1; ++i) {
             const WStation &p = st[i], &q = st[i + 1];
+            const double tp = top(i), tq = top(i + 1);
             const Vec3 hin = Vec3{-(p.u.x + q.u.x), -(p.u.y + q.u.y), 0}, hout = hin * -1.0;
-            sink.quad(vx(in_pt(p, p.zb, 0), cum[i], p.zb), vx(in_pt(q, q.zb, 0), cum[i + 1], q.zb),
-                      vx(in_pt(q, zt, 0), cum[i + 1], zt), vx(in_pt(p, zt, 0), cum[i], zt), hin);
-            sink.quad(vx(in_pt(p, p.zb, w.T), cum[i], p.zb), vx(in_pt(q, q.zb, w.T), cum[i + 1], q.zb),
-                      vx(in_pt(q, zt, w.T), cum[i + 1], zt), vx(in_pt(p, zt, w.T), cum[i], zt), hout);
-            sink.quad(vx(in_pt(p, zt, 0), cum[i], 0), vx(in_pt(q, zt, 0), cum[i + 1], 0), vx(in_pt(q, zt, w.T), cum[i + 1], w.T),
-                      vx(in_pt(p, zt, w.T), cum[i], w.T), kUp);
-            sink.quad(vx(in_pt(p, p.zb, 0), cum[i], 0), vx(in_pt(q, q.zb, 0), cum[i + 1], 0), vx(in_pt(q, q.zb, w.T), cum[i + 1], w.T),
-                      vx(in_pt(p, p.zb, w.T), cum[i], w.T), kDown);
+            sink.quad(vx(in_pt(p, p.zb, o0), cum[i], p.zb), vx(in_pt(q, q.zb, o0), cum[i + 1], q.zb),
+                      vx(in_pt(q, tq, o0), cum[i + 1], tq), vx(in_pt(p, tp, o0), cum[i], tp), hin);
+            sink.quad(vx(in_pt(p, p.zb, o1), cum[i], p.zb), vx(in_pt(q, q.zb, o1), cum[i + 1], q.zb),
+                      vx(in_pt(q, tq, o1), cum[i + 1], tq), vx(in_pt(p, tp, o1), cum[i], tp), hout);
+            sink.quad(vx(in_pt(p, tp, o0), cum[i], o0), vx(in_pt(q, tq, o0), cum[i + 1], o0), vx(in_pt(q, tq, o1), cum[i + 1], o1),
+                      vx(in_pt(p, tp, o1), cum[i], o1), kUp);
+            sink.quad(vx(in_pt(p, p.zb, o0), cum[i], o0), vx(in_pt(q, q.zb, o0), cum[i + 1], o0), vx(in_pt(q, q.zb, o1), cum[i + 1], o1),
+                      vx(in_pt(p, p.zb, o1), cum[i], o1), kDown);
         }
         for (const std::size_t i : {i0, i1}) {
             const WStation& s = st[i];
             const Vec2 t = i == i0 ? tangent2(i0, i0 + 1) : tangent2(i1 - 1, i1);
             const double sgn = i == i0 ? -1.0 : 1.0;
-            sink.quad(vx(in_pt(s, s.zb, 0), 0, s.zb), vx(in_pt(s, s.zb, w.T), w.T, s.zb), vx(in_pt(s, zt, w.T), w.T, zt),
-                      vx(in_pt(s, zt, 0), 0, zt), Vec3{t.x * sgn, t.y * sgn, 0});
+            const double ti = top(i);
+            sink.quad(vx(in_pt(s, s.zb, o0), o0, s.zb), vx(in_pt(s, s.zb, o1), o1, s.zb), vx(in_pt(s, ti, o1), o1, ti),
+                      vx(in_pt(s, ti, o0), o0, ti), Vec3{t.x * sgn, t.y * sgn, 0});
         }
+    };
+    sink.begin(w.body_kind, w.body_surface, w.edge, w.sk, w.s0, w.s1, true, w.tag);
+    for (const auto& [i0, i1] : panels) {
+        if (i1 <= i0) continue;
+        const double zt = st[i0].zt - w.coping_t;
+        panel_prism(i0, i1, f0, f1, [&](std::size_t) { return zt; });
+        // Backing: the rest of a wide band behind an inner face, up to the ground behind it.
+        if (w.backing && w.face_inner && w.T - F > 0.05)
+            panel_prism(i0, i1, f1, w.T, [&](std::size_t i) { return std::clamp(st[i].zback, st[i].zb + 0.05, zt); });
     }
     sink.end();
-    // ---- coping: a slab on each panel, overhanging the faces by `overhang` (and the free ends)
+    // ---- coping: a thin slab on each panel, overhanging the face by `overhang` (and the free ends)
     sink.begin(w.coping_kind, w.coping_surface, w.edge, w.sk, w.s0, w.s1, true, w.tag);
     for (std::size_t pi = 0; pi < panels.size(); ++pi) {
         const auto [i0, i1] = panels[pi];
@@ -632,7 +651,7 @@ void emit_stepped_wall(Sink& sink, std::vector<WStation> st, const WallSpec& w) 
             }
             return p;
         };
-        const double lo = -w.overhang, hi = w.T + w.overhang;
+        const double lo = f0 - w.overhang, hi = f1 + w.overhang;
         for (std::size_t i = i0; i < i1; ++i) {
             const WStation &p = st[i], &q = st[i + 1];
             const Vec3 hin = Vec3{-(p.u.x + q.u.x), -(p.u.y + q.u.y), 0}, hout = hin * -1.0;
@@ -653,6 +672,21 @@ void emit_stepped_wall(Sink& sink, std::vector<WStation> st, const WallSpec& w) 
         }
     }
     sink.end();
+    // ---- joints: a slim pilaster proud of the visible face at every panel boundary (own surface, own element)
+    if (w.joints) {
+        sink.begin(ElementKind::WallJoint, w.joint_surface, w.edge, w.sk, w.s0, w.s1, true, w.tag);
+        for (std::size_t i = 1; i + 1 < n; ++i) {
+            if (!(st[i].dup || st[i].joint)) continue;
+            const WStation& s = st[i];
+            // top: the lower of the two panels meeting here (a dup station is the higher panel's first station)
+            const double zt = (s.dup ? std::min(st[i - 1].zt, s.zt) : s.zt) - w.coping_t;
+            const Vec2 t = tangent2(i - 1, i + 1);
+            const BoxFrame bf{s.a, t, s.u};
+            const double o0 = w.face_inner ? -w.joint_proud : f1, o1 = w.face_inner ? 0.0 : f1 + w.joint_proud;
+            emit_box(sink, bf, -w.joint_w * 0.5, w.joint_w * 0.5, o0, o1, s.zb, zt);
+        }
+        sink.end();
+    }
 }
 
 // ---------------------------------------------------------------- bridges
@@ -922,6 +956,8 @@ void emit_abutment(Env& v, const Frame& fe, bool at_end, double deck_bottom, int
                 w.zb = pn.foot;
                 w.zt = pn.top;
                 w.dup = dup;
+                const Vec3 pb = lp(f, d_in + sg * (T + 0.25), 0);  // ground just behind the band
+                w.zback = v.ground.height(pb.x, pb.y) - 0.15;
                 return w;
             };
             if (k == 0 || panels[k].top != panels[k - 1].top) st.push_back(mkst(fa, panels[k], k > 0));
@@ -929,6 +965,7 @@ void emit_abutment(Env& v, const Frame& fe, bool at_end, double deck_bottom, int
         }
         WallSpec ws;
         ws.T = T;
+        ws.face_t = P.wall_face_thickness;
         ws.coping_t = P.coping_thickness;
         ws.overhang = P.coping_overhang;
         ws.body_surface = structure_surface::concrete;
@@ -1216,19 +1253,25 @@ struct WPt {
     double x, y, top, zTop, zBot, h;
 };
 
+// Uniform arc-length resampling: station k lies exactly k * step along the run (the last one at the end), so that
+// panel boundaries at multiples of the panel length fall on stations.
 std::vector<WPt> resample_run(const std::vector<StructureWallPoint>& pts, double step) {
     std::vector<WPt> out;
-    for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
-        const StructureWallPoint &a = pts[i], &b = pts[i + 1];
-        const int m = std::max(1, static_cast<int>(std::ceil(std::hypot(b.x - a.x, b.y - a.y) / step)));
-        for (int j = 0; j < m; ++j) {
-            const double t = static_cast<double>(j) / m;
-            out.push_back({a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.top + (b.top - a.top) * t, a.zTop + (b.zTop - a.zTop) * t,
-                           a.zBot + (b.zBot - a.zBot) * t, a.h});
-        }
-    }
-    const StructureWallPoint& l = pts.back();
-    out.push_back({l.x, l.y, l.top, l.zTop, l.zBot, l.h});
+    std::vector<double> arc(pts.size(), 0.0);
+    for (std::size_t i = 1; i < pts.size(); ++i) arc[i] = arc[i - 1] + std::hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    const double total = arc.back();
+    const auto at = [&](double t) {
+        std::size_t j = 1;
+        while (j + 1 < pts.size() && arc[j] < t) ++j;
+        const StructureWallPoint &a = pts[j - 1], &b = pts[j];
+        const double l = arc[j] - arc[j - 1];
+        const double f = l > 1e-12 ? std::clamp((t - arc[j - 1]) / l, 0.0, 1.0) : 0.0;
+        return WPt{a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.top + (b.top - a.top) * f, a.zTop + (b.zTop - a.zTop) * f,
+                   a.zBot + (b.zBot - a.zBot) * f, a.h};
+    };
+    const int n = std::max(1, static_cast<int>(std::ceil((total - 1e-4) / step)));
+    for (int k = 0; k < n; ++k) out.push_back(at(k * step));
+    out.push_back(at(total));
     return out;
 }
 
@@ -1265,18 +1308,18 @@ PanelPlan plan_panels(const std::vector<double>& need, const std::vector<double>
     const double tot = cum.back();
     const double q = P.wall_quant;
     const double max_step = std::max(q, std::ceil(P.wall_max_step / q - 1e-9) * q);
-    const int np0 = std::max(1, static_cast<int>(std::lround(tot / P.wall_panel)));
+    // Panels of exactly wall_panel; the last is the remainder (a remainder shorter than wall_min_panel joins the one before).
     plan.bnd.push_back(0);
-    for (int p = 1; p < np0; ++p) {
+    for (int k = 1; k * P.wall_panel < tot - P.wall_min_panel + 1e-6; ++k) {
         std::size_t idx = plan.bnd.back();
-        while (idx + 1 < m && cum[idx] < tot * p / np0 - 1e-9) ++idx;
+        while (idx + 1 < m && cum[idx] < k * P.wall_panel - 1e-6) ++idx;
         if (idx > plan.bnd.back() && idx < m - 1) plan.bnd.push_back(idx);
     }
     plan.bnd.push_back(m - 1);
     const double step_len = tot / static_cast<double>(std::max<std::size_t>(1, m - 1));
     const std::size_t min_idx = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(P.wall_min_panel / std::max(step_len, 1e-6))));
     std::vector<double> pl = panel_levels(plan.bnd, need, q);
-    for (int pass = 0; pass < 6; ++pass) {
+    for (int pass = 0; pass < (P.wall_allow_short_panels ? 6 : 0); ++pass) {
         const std::size_t np = pl.size();
         std::vector<bool> split(np, false);
         bool any = false;
@@ -1320,7 +1363,7 @@ void build_wall_run(const StructureWallRun& run, const std::vector<WPt>& rs, con
     if (tot < P.wall_min_run) return;
 
     std::vector<Vec2> u(m);
-    std::vector<double> zb(m), top_raw(m), g_hi(m);
+    std::vector<double> zb(m), top_raw(m), g_hi(m), zback(m);
     for (std::size_t i = 0; i < m; ++i) {
         const WPt& q = rs[i];
         const WPt &a = rs[i > 0 ? i - 1 : 0], &b = rs[i + 1 < m ? i + 1 : m - 1];
@@ -1343,6 +1386,7 @@ void build_wall_run(const StructureWallRun& run, const std::vector<WPt>& rs, con
         }
         top_raw[i] = t;
         g_hi[i] = std::max(gi, go);
+        zback[i] = ground.height(q.x + un.x * (T + 0.25), q.y + un.y * (T + 0.25)) - 0.15;
     }
     // Smooth buried foot: moving minimum then moving average.
     {
@@ -1410,18 +1454,27 @@ void build_wall_run(const StructureWallRun& run, const std::vector<WPt>& rs, con
     for (std::size_t p = 0; p < plan.level.size(); ++p) {
         for (std::size_t i = plan.bnd[p]; i <= plan.bnd[p + 1]; ++i) {
             const bool first = i == plan.bnd[p];
-            if (first && p > 0 && plan.level[p] == plan.level[p - 1]) continue;  // no step: panels merge
+            if (first && p > 0 && plan.level[p] == plan.level[p - 1]) {  // no step: panels merge, the boundary keeps a joint
+                if (!st.empty()) st.back().joint = true;
+                continue;
+            }
             WStation w;
             w.a = {rs[i].x, rs[i].y};
             w.u = u[i];
             w.zb = zb[i];
             w.zt = plan.level[p];
+            w.zback = zback[i];
             w.dup = first && p > 0;
             st.push_back(w);
         }
     }
     WallSpec ws;
     ws.T = T;
+    ws.face_t = P.wall_face_thickness;
+    ws.face_inner = run.cut;  // a cut wall shows its road-side face; a fill wall its outer face
+    ws.joints = true;
+    ws.joint_w = P.wall_joint_width;
+    ws.joint_proud = P.wall_joint_proud;
     ws.coping_t = P.coping_thickness;
     ws.overhang = P.coping_overhang;
     ws.tag = tag;
@@ -1528,7 +1581,8 @@ StructureMeshes build_retaining_walls(const std::vector<StructureWallRun>& runs,
         if (!cur.empty()) segs.push_back(std::move(cur));
         for (const auto& seg : segs) {
             if (seg.size() < 2) continue;
-            const std::vector<WPt> rs = resample_run(seg, std::max(params.wall_station_step, 0.25));
+            const int per_panel = std::max(1, static_cast<int>(std::lround(params.wall_panel / std::max(params.wall_station_step, 0.25))));
+            const std::vector<WPt> rs = resample_run(seg, params.wall_panel / per_panel);
             build_wall_run(run, rs, ground, params, context, out, sink, tag * 2 + (sg > 0 ? 0 : 1));
             ++tag;
         }

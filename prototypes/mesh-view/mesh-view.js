@@ -8,7 +8,10 @@ const S2T = (x, y, z) => [x, z, -y];
 
 // surface class -> texture slot (see unreal/.../PolyHaven/manifest.json). Unlisted classes get a plain grey.
 const SLOT = { asphalt: 'asphalt_new', paving: 'pavement', kerb: 'kerb_concrete', island: 'pavement', grass: 'grass',
-  structural_concrete: 'structural_concrete', parapet: 'structural_concrete', tunnel_lining: 'structural_concrete', coping: 'kerb_concrete', wall_facing: 'wall_brick' };
+  structural_concrete: 'structural_concrete', parapet: 'structural_concrete', tunnel_lining: 'structural_concrete', coping: 'structural_concrete', wall_joint: 'structural_concrete', wall_facing: 'wall_brick' };
+// Per-surface tint on the shared slot, so that coping and panel joints read as their own materials. ?joints=red paints the joints
+// red to see the panel layout of retaining walls.
+const TINT = { coping: 0xf0ead8, wall_joint: new URLSearchParams(location.search).get('joints') === 'red' ? 0xff2020 : 0x8a8478 };
 const MARK_COLOURS = { white: 0xe8e6de, yellow: 0xe3b81a };
 
 function parseObj(text) {
@@ -110,7 +113,11 @@ for (const f of exportInfo.files) {
     });
   } else {
     const slot = SLOT[f.id];
-    if (slot) { mat = mats[slot] ??= await slotMaterial(man, slot); if (slot === 'grass') mat.color.setHex(0xc8e2a8); }
+    if (slot) {
+      mat = mats[slot] ??= await slotMaterial(man, slot);
+      if (slot === 'grass') mat.color.setHex(0xc8e2a8);
+      if (TINT[f.id] !== undefined) { mat = mats[f.id] ??= mat.clone(); mat.color.setHex(TINT[f.id]); }
+    }
     else mat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.9 });
   }
   const m = new THREE.Mesh(geo, mat);

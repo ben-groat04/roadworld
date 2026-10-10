@@ -1,0 +1,4 @@
+[
+ {"name":"s2_bridge_short_gap_street","width":1600,"height":900,"pos":[-20,-24,1.8],"target":[0,0,-0.5],"fov":62,"near":0.2,"shadow":80,"shadowCentre":[0,0,0],"exposure":1.05},
+ {"name":"s2_bridge_short_gap_aerial","width":1600,"height":900,"pos":[-38,-42,26],"target":[0,0,0],"fov":45,"near":0.5,"shadow":70,"shadowCentre":[0,0,0],"exposure":1.05}
+]

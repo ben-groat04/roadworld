@@ -617,21 +617,25 @@ TEST_CASE("walls: level panels, hysteresis, maximum step, coping") {
         prev = z;
         if (x > 32.5 && x < 35) CHECK(z >= 2.5 - 1e-9);                            // single low panel: held
         if (x > 70.5 && x < 74) CHECK(z >= 5.5 - 1e-9);                            // rises immediately
-        if (x > 135 && x < 154) CHECK(z == doctest::Approx(1.5));                  // sustained lower need: stepped down
+        if (x > 146 && x < 154) CHECK(z == doctest::Approx(1.5));                  // sustained lower need: stepped down 0.5 m per panel
     }
     // Free end tapers below the full-height level.
     CHECK(lv.front().second <= lv[20].second);
     std::set<double> levels;
     for (const auto& [x, z] : lv) levels.insert(z);
     CHECK(levels.size() >= 6);
-    // Coping: 15 cm slab with a 4 cm overhang over the 1.5 m wall.
+    // Coping: a thin cap (15 cm, 5 cm overhang each side) on a 0.4 m wall, standing in the band the grading reserves (1.5 m).
     const Box3 bw = box_of(element_points(s, *of_kind(s, ElementKind::RetainingWall)[0]));
     const Box3 bc = box_of(element_points(s, *of_kind(s, ElementKind::WallCoping)[0]));
-    CHECK(bc.hi.y - bc.lo.y == doctest::Approx(1.5 + 2 * P.coping_overhang).epsilon(0.001));
+    CHECK(bc.hi.y - bc.lo.y == doctest::Approx(P.wall_face_thickness + 2 * P.coping_overhang).epsilon(0.001));
+    CHECK(bc.hi.y - bc.lo.y < 0.6);
+    // The wall is the face (0.4 m) plus a backing for the rest of the band (1.1 m), whose top is below the coping.
     CHECK(bw.hi.y - bw.lo.y == doctest::Approx(1.5).epsilon(0.001));
+    CHECK(s.meshes.at(structure_surface::coping).positions.size() > 0);
+    CHECK(std::string(structure_surface::coping) != structure_surface::wall);
 }
 
-TEST_CASE("walls: steep ground shortens panels, stays within the step limit") {
+TEST_CASE("walls: steep ground stays within the step limit") {
     // A 3 m cliff over 2 m of wall: panels split locally; steps never exceed the limit.
     const FnGround ground([](double x, double) { return x < 50 ? 1.0 : (x < 52 ? 1.0 + 1.5 * (x - 50) : 4.0); });
     const StructureParams P;
@@ -680,6 +684,172 @@ TEST_CASE("walls: fold-safe on a tight curve") {
     const StructureMeshes s2 = build_retaining_walls({arc}, ground);
     check_valid(s2);
     CHECK(tri_count(s2) > 100);
+}
+
+namespace {
+
+// x of the centre of each joint pilaster (clusters of vertices of the WallJoint element), sorted.
+std::vector<double> joint_centres_x(const StructureMeshes& s) {
+    std::vector<double> xs;
+    for (const StructureElement* el : of_kind(s, ElementKind::WallJoint))
+        for (const Vec3& p : element_points(s, *el)) xs.push_back(p.x);
+    std::sort(xs.begin(), xs.end());
+    std::vector<double> out;
+    std::size_t i = 0;
+    while (i < xs.size()) {
+        std::size_t j = i;
+        while (j + 1 < xs.size() && xs[j + 1] - xs[j] < 0.5) ++j;
+        out.push_back(0.5 * (xs[i] + xs[j]));
+        i = j + 1;
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("walls: panels are exactly the rule long with a joint at every boundary, steps stay within the rule") {
+    const StructureParams P;
+    // Ground rising 0.1 m per metre: every panel steps up by 0.4 m (< 0.5 max step), the tops follow in 0.25 m quanta.
+    const FnGround ground([](double x, double) { return 0.1 * x; });
+    {
+        const StructureMeshes s = build_retaining_walls({straight_run(0, 158, 0)}, ground, P);
+        check_valid(s);
+        REQUIRE(s.meshes.count(structure_surface::joint));
+        const std::vector<double> jx = joint_centres_x(s);
+        // Boundaries at 4, 8, ... 156; the last panel (156..158) is the shorter remainder.
+        REQUIRE(jx.size() == 39);
+        for (std::size_t k = 0; k < jx.size(); ++k) CHECK(jx[k] == doctest::Approx(4.0 * static_cast<double>(k + 1)).epsilon(1e-6).scale(1.0));
+        // Steps: every change of the coping level happens at a panel boundary and is within the maximum step.
+        const auto lv = coping_levels(s);
+        REQUIRE(lv.size() > 100);
+        int steps = 0;
+        for (std::size_t i = 1; i < lv.size(); ++i) {
+            const double dz = lv[i].second - lv[i - 1].second;
+            if (std::abs(dz) > 1e-9) {
+                ++steps;
+                CHECK(std::abs(dz) <= P.wall_max_step + 1e-9);
+                const double r = std::fmod(lv[i].first, P.wall_panel);
+                CHECK(std::min(r, P.wall_panel - r) < 0.01);
+            }
+        }
+        CHECK(steps >= 20);
+    }
+    {  // a remainder shorter than the minimum panel joins the last full panel
+        const StructureMeshes s = build_retaining_walls({straight_run(0, 160.5, 0)}, ground, P);
+        const std::vector<double> jx = joint_centres_x(s);
+        REQUIRE(jx.size() == 39);
+        CHECK(jx.back() == doctest::Approx(156.0).epsilon(1e-6).scale(1.0));
+    }
+    {  // flat ground: no steps at all, the joints are still there
+        const FnGround flat([](double, double) { return 1.0; });
+        const StructureMeshes s = build_retaining_walls({straight_run(0, 80, 0)}, flat, P);
+        const auto lv = coping_levels(s);
+        std::set<double> levels;
+        for (const auto& [x, z] : lv)
+            if (x > 8 && x < 72) levels.insert(z);
+        CHECK(levels.size() == 1);
+        CHECK(joint_centres_x(s).size() == 19);
+        const Box3 bc = box_of(element_points(s, *of_kind(s, ElementKind::WallCoping)[0]));
+        const Box3 bw = box_of(element_points(s, *of_kind(s, ElementKind::RetainingWall)[0]));
+        CHECK(bc.hi.z - bw.hi.z == doctest::Approx(P.coping_thickness).epsilon(1e-6).scale(1.0));  // a thin coping on top of the wall
+    }
+    {  // joints are pilasters that stand proud of the visible face and are their own surface
+        const FnGround flat([](double, double) { return 1.0; });
+        const StructureMeshes s = build_retaining_walls({straight_run(0, 80, 0)}, flat, P);
+        const Box3 bj = box_of(element_points(s, *of_kind(s, ElementKind::WallJoint)[0]));
+        CHECK(bj.lo.y == doctest::Approx(-P.wall_joint_proud).epsilon(1e-6).scale(1.0));  // the face is at y = 0, the road side
+        CHECK(bj.hi.y == doctest::Approx(0.0).epsilon(1e-6).scale(1.0));
+        CHECK(std::string(structure_surface::joint) != structure_surface::wall);
+    }
+    {  // the step-halving variant stays within the limit too (opt-in)
+        StructureParams Ps = P;
+        Ps.wall_allow_short_panels = true;
+        const FnGround cliff([](double x, double) { return x < 50 ? 1.0 : (x < 52 ? 1.0 + 1.5 * (x - 50) : 4.0); });
+        const StructureMeshes s = build_retaining_walls({straight_run(0, 100, 0)}, cliff, Ps);
+        check_valid(s);
+        const auto lv = coping_levels(s);
+        for (std::size_t i = 1; i < lv.size(); ++i) CHECK(std::abs(lv[i].second - lv[i - 1].second) <= Ps.wall_max_step + 1e-9);
+    }
+}
+
+TEST_CASE("walls: fill walls show the outer face, the wall face never sits inside the road cross-section") {
+    const StructureParams P;
+    const FnGround ground([](double, double) { return 1.0; });
+    // A fill wall (visible face at the outer side of the band) and a cut wall (inner side), left of the road direction.
+    StructureWallRun fill = straight_run(0, 40, 6.0);
+    fill.cut = false;
+    const StructureMeshes sf = build_retaining_walls({fill}, ground, P);
+    const Box3 bf = box_of(element_points(sf, *of_kind(sf, ElementKind::RetainingWall)[0]));
+    CHECK(bf.lo.y >= 6.0 + (1.5 - P.wall_face_thickness) - 1e-6);  // face and body sit at the outer end of the band
+    CHECK(bf.hi.y == doctest::Approx(6.0 + 1.5).epsilon(1e-6).scale(1.0));
+    const Box3 bj = box_of(element_points(sf, *of_kind(sf, ElementKind::WallJoint)[0]));
+    CHECK(bj.hi.y == doctest::Approx(6.0 + 1.5 + P.wall_joint_proud).epsilon(1e-6).scale(1.0));
+    const StructureMeshes sc = build_retaining_walls({straight_run(0, 40, 6.0)}, ground, P);
+    const Box3 bc = box_of(element_points(sc, *of_kind(sc, ElementKind::RetainingWall)[0]));
+    CHECK(bc.lo.y >= 6.0 - 1e-6);  // never inside the road cross-section (the run line is its edge)
+    // The run line the grading produces is the edge of the road type's full cross-section, which already holds
+    // the verge lane: wall line - carriageway edge >= the 1.5 m verge rule for the rural types.
+    World w;
+    for (const char* type : {"a_road_rural", "b_road_rural"}) {
+        const RoadType* rt = w.region->road_type(type);
+        REQUIRE(rt);
+        const EdgeId e = w.road({0, 0, 0}, {100, 0, 0}, type);
+        const Edge* ed = w.g.edge(e);
+        const std::vector<Lane> lanes = instantiate_lanes(*ed, *rt, w.region->driving_side);
+        double cw = 0, all = 0;
+        for (const Lane& l : lanes) {
+            all = std::max(all, l.offset + l.width / 2);
+            const LaneType* lt = w.region->lane_type(l.lane_type);
+            if (lt && lt->profile != "verge") cw = std::max(cw, l.offset + l.width / 2);
+        }
+        CHECK(all - cw >= 1.5 - 1e-9);
+    }
+}
+
+TEST_CASE("bridge: a short span is a closed solid block with both parapets attached to its edges, and the wing coping is thin") {
+    World w;
+    const EdgeId br = w.road({0, -50, 5}, {0, 50, 5}, "b_road");
+    w.span(br, 44, 56, StructureKind::Bridge);
+    // A ditch under the block: the block's sides must run down to the ditch floor on both sides.
+    const FnGround ditch([](double, double y) { return std::abs(y) < 6 ? -4.0 : 0.0; });
+    const StructureMeshes s = build_edge_structures(w.g, *w.region, br, ditch);
+    check_valid(s);
+    REQUIRE(s.bridges.size() == 1);
+    REQUIRE(s.bridges[0].solid_block);
+    const auto blocks = of_kind(s, ElementKind::Block);
+    REQUIRE(blocks.size() == 1);
+    CHECK(blocks[0]->closed);
+    CHECK(signed_volume(s, *blocks[0]) > 0);
+    const Box3 bb = box_of(element_points(s, *blocks[0]));
+    CHECK(bb.lo.z <= -4.0 - 1.0 + 1e-6);  // below the ditch floor
+    const auto parapets = of_kind(s, ElementKind::Parapet);
+    REQUIRE(parapets.size() == 2);
+    double lo_x = 1e9, hi_x = -1e9;
+    for (const StructureElement* el : parapets) {
+        const Box3 bp = box_of(element_points(s, *el));
+        // attached: the parapet's outer face is the block's side, it overlaps the block top, spans the block lengthwise
+        const bool left = 0.5 * (bp.lo.x + bp.hi.x) < 0;
+        CHECK((left ? bp.lo.x : bp.hi.x) == doctest::Approx(left ? bb.lo.x : bb.hi.x).epsilon(1e-6).scale(1.0));
+        CHECK(bp.lo.z < bb.hi.z);
+        CHECK(bp.hi.z > bb.hi.z + 0.9);
+        CHECK(bp.lo.y == doctest::Approx(bb.lo.y).epsilon(1e-6).scale(1.0));
+        CHECK(bp.hi.y == doctest::Approx(bb.hi.y).epsilon(1e-6).scale(1.0));
+        lo_x = std::min(lo_x, bp.lo.x);
+        hi_x = std::max(hi_x, bp.hi.x);
+    }
+    CHECK(lo_x == doctest::Approx(-hi_x).epsilon(1e-6).scale(1.0));  // symmetric about the centreline
+    // Wing coping (real bridge over a road): a cap barely wider than the 0.4 m wing face.
+    Bridged b(uk());
+    const StructureMeshes deep = build_edge_structures(b.w.g, *b.w.region, b.e, kFlat0);
+    int caps = 0;
+    for (const StructureElement* el : of_kind(deep, ElementKind::WingWall)) {
+        if (el->surface != structure_surface::coping) continue;
+        ++caps;
+        const Box3 bx = box_of(element_points(deep, *el));
+        CHECK(bx.hi.x - bx.lo.x < 0.6);
+        CHECK(bx.hi.z - bx.lo.z < 0.2);
+    }
+    CHECK(caps == 4);
 }
 
 TEST_CASE("walls: portal wall level is reported and the exclusion zone drops walls") {

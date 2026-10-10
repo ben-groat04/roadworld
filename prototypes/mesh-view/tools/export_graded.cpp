@@ -40,6 +40,8 @@ GroundFn make_terrain(const std::string& n) {
     if (n == "ridge") return [](double x, double) { return 10.0 * std::exp(-(x / 45.0) * (x / 45.0)); };
     // steep side-hill rising to the north: walls on both sides of a contour road
     if (n == "sidehill") return [](double, double y) { return 0.85 * y + 2.0; };
+    // steep side-hill whose contour wanders along the road (+-1.2 m over 25 m): the wall top follows it in visible 4 m panel steps
+    if (n == "sidehill_wavy") return [](double x, double y) { return 0.85 * y + 2.0 + 1.2 * std::sin(x / 25.0); };
     // moderate side-hill rising to the north: two stacked roads
     if (n == "terrace") return [](double, double y) { return 0.45 * y + 2.0; };
     // shallow ditch (~12 m wide, 5 m deep) along y = 0 crossing a north-south road
@@ -93,7 +95,7 @@ int main(int argc, char** argv) {
         else name = a;
     }
     if ((name.empty() == layout_file.empty()) || out_dir.empty()) {
-        std::fprintf(stderr, "usage: export_graded [--data d] --terrain flat|hill|ridge|sidehill|terrace|ditch [--step m] [--margin m] --out <export_mesh dir> (--layout f | fixture)\n");
+        std::fprintf(stderr, "usage: export_graded [--data d] --terrain flat|hill|ridge|sidehill|sidehill_wavy|terrace|ditch [--step m] [--margin m] --out <export_mesh dir> (--layout f | fixture)\n");
         return 2;
     }
     const GroundFn natural = make_terrain(terrain);
