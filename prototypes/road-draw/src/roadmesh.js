@@ -180,7 +180,8 @@ function buildRoadGroup(r) {
   };
   for (const [a, b] of runs(s => s.br)) {
     if (b <= a) continue;
-    const a2 = Math.max(0, a - 1), b2 = Math.min(n - 1, b + 1), zD = k => S[k].z + zo;
+    let a2 = Math.max(0, a - 1), b2 = Math.min(n - 1, b + 1); while (S[b2].s - S[a2].s < 24 && (a2 > 0 || b2 < n - 1)) { if (a2 > 0) a2--; if (S[b2].s - S[a2].s >= 24) break; if (b2 < n - 1) b2++; }   // short flagged runs get a sensible >=24 m span, deck+abutments at both ends
+    const zD = k => S[k].z + zo;
     // Deck: 0.5 m fascia over the full width, 1.0 m slab body inset 0.7 m each side (reads as a slab, not a wall).
     extrude(a2, b2, -hw, hw, k => zD(k) - 0.5, k => zD(k) - 0.03, { side: CB.deck.c, noTop: true, bottom: true });
     extrude(a2, b2, -hw + 0.7, hw - 0.7, k => zD(k) - DECK_T, k => zD(k) - 0.5, { side: CB.deck.c, noTop: true, bottom: true, noL0: false });
@@ -211,8 +212,18 @@ function buildRoadGroup(r) {
   const WALL_T = 1.5, CAP_H = 0.5, CAP_O = 0.1, TAPER_L = 4.0;
   const hdir = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l, 0]; };
   // Wall + coping along a station list: {a:[x,y] inner face point, u:[x,y] outward unit, zb, zt (top of coping)}.
-  const wallStations = (st, WB = CB.wall) => {
+  const wallStations = (st0, WB = CB.wall) => {
+    // drop stations where the offset (outer) face folds back relative to the inner line (inside of tight curves), or the line reverses
+    const st = []; for (const q of st0) {
+      const pr = st[st.length - 1]; if (!pr) { st.push(q); continue; }
+      const dA = [q.a[0] - pr.a[0], q.a[1] - pr.a[1]], dB = [q.a[0] + q.u[0] * WALL_T - pr.a[0] - pr.u[0] * WALL_T, q.a[1] + q.u[1] * WALL_T - pr.a[1] - pr.u[1] * WALL_T];
+      const la = Math.hypot(...dA), lb = Math.hypot(...dB);
+      if (la < 1e-6 || lb < 0.25 * la || dA[0] * dB[0] + dA[1] * dB[1] < 0.3 * la * lb) continue;
+      if (st.length > 1) { const pp = st[st.length - 2], dP = [pr.a[0] - pp.a[0], pr.a[1] - pp.a[1]]; if (dP[0] * dA[0] + dP[1] * dA[1] < 0) continue; }
+      st.push(q);
+    }
     if (st.length < 2) return;
+    { let L = 0; for (let i = 1; i < st.length; i++) L += Math.hypot(st[i].a[0] - st[i - 1].a[0], st[i].a[1] - st[i - 1].a[1]); if (L < 6 && WB === CB.wall) return; }
     let acc = 0, nextJ = 3;
     const W3 = (q, off, z) => [q.a[0] + q.u[0] * off, q.a[1] + q.u[1] * off, z];
     const cph = q => Math.min(CAP_H, Math.max(0.05, (q.zt - q.zb) * 0.4)), wt = q => q.zt - cph(q);
