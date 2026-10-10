@@ -65,7 +65,7 @@ def project_dir():
 
 
 def load_class(path):
-    """Load a UClass by script path, e.g. '/Script/CityPainterSim.CPRoadNetworkActor'. None if missing."""
+    """Load a UClass by script path, e.g. '/Script/CityPainterSim.CPRoadMeshActor'. None if missing."""
     try:
         return unreal.load_class(None, path)  # VERIFY: unreal.load_class exists in 5.8 (it does in 5.0-5.5).
     except Exception:

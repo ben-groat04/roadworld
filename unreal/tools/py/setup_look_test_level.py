@@ -8,8 +8,8 @@ Exponential Height Fog (volumetric), Volumetric Cloud, unbound Post Process Volu
 limits, a 2 km floor plane at z=-10 cm to catch shadows, a Player Start, and one road actor at the origin.
 
 Script argument (Run-EditorPython.ps1 -ScriptArgs ...): default places CPRoadMeshActor (the sim_core interchange with
-real meshes + markings, built in the editor viewport by OnConstruction). `old` places the original
-CPRoadNetworkActor instead (flat ribbon smoke test), `both` places both. After placing, the script assigns
+real meshes + markings, built in the editor viewport by OnConstruction). the former `old` / `both` arguments
+(CPRoadNetworkActor, removed) now fail with a clear message. After placing, the script assigns
 /Game/Materials/Surfaces/<slot>/MI_<slot> (made by import_textures.py) to the actor's SurfaceMaterials when those
 assets exist, and creates simple marking materials /Game/Materials/Markings/MI_marking_<colour> with a pixel depth
 offset (the actor falls back to the same paths and to engine materials by itself, so this is belt and braces).
@@ -299,10 +299,9 @@ def main():
     cp.log("engine %s" % unreal.SystemLibrary.get_engine_version())
 
     args = cp.script_args()
-    want_old = "old" in args or "both" in args
-    want_new = "old" not in args  # default and "both"
-    mesh_cls = cp.require_class("/Script/CityPainterSim.CPRoadMeshActor") if want_new else None
-    old_cls = cp.require_class("/Script/CityPainterSim.CPRoadNetworkActor") if want_old else None
+    if "old" in args or "both" in args:
+        raise cp.ScriptError("the 'old' / 'both' arguments were removed together with CPRoadNetworkActor; run without arguments")
+    mesh_cls = cp.require_class("/Script/CityPainterSim.CPRoadMeshActor")
 
     les, created = open_or_create_level()
     cp.log("level %s; World Partition: %s" % ("CREATED" if created else "opened", world_partition_state()))
@@ -319,9 +318,6 @@ def main():
     configure_post_process(ensure(eas, unreal.PostProcessVolume, "CP_PostProcess"))
     ensure_floor(eas)
     ensure(eas, unreal.PlayerStart, "CP_PlayerStart", (-3000.0, 0.0, 200.0), (0, 0, 0))
-    if old_cls is not None:
-        road = ensure(eas, old_cls, "CP_RoadNetwork", (0.0, 0.0, 0.0))
-        road.set_actor_location(unreal.Vector(0.0, 0.0, 0.0), False, False)
     if mesh_cls is not None:
         road = ensure(eas, mesh_cls, "CP_RoadMesh", (0.0, 0.0, 0.0))
         road.set_actor_location(unreal.Vector(0.0, 0.0, 0.0), False, False)

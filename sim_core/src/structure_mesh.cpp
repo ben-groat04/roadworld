@@ -1020,18 +1020,6 @@ void build_bridge(Env& v, const StructureSpan& span, int tag) {
 
 // ---------------------------------------------------------------- tunnels
 
-double portal_stub_top(const Env& v, const Frame& f, int dir, int sg, double hw) {
-    const StructureParams& P = v.P;
-    double g = -kInf;
-    for (double al = 0; al <= P.headwall_thickness + 1e-6; al += 1.0)
-        for (double e = 0; e <= P.wall_thickness + 1e-6; e += 0.5) {
-            const double la = sg * (hw + e);
-            const double x = f.p.x + std::cos(f.h) * al * dir - std::sin(f.h) * la, y = f.p.y + std::sin(f.h) * al * dir + std::cos(f.h) * la;
-            g = std::max({g, v.ground.height(x, y), v.ground.natural_height(x, y)});
-        }
-    return g + 0.3;
-}
-
 void build_tunnel(Env& v, const StructureSpan& span, int tag) {
     const StructureParams& P = v.P;
     const double s0 = std::max(span.s0, v.trim_a), s1 = std::min(span.s1, v.len - v.trim_b);
@@ -1290,7 +1278,7 @@ PanelPlan plan_panels(const std::vector<double>& need, const std::vector<double>
         if (idx > plan.bnd.back() && idx < m - 1) plan.bnd.push_back(idx);
     }
     plan.bnd.push_back(m - 1);
-    const double step_len = tot / std::max<std::size_t>(1, m - 1);
+    const double step_len = tot / static_cast<double>(std::max<std::size_t>(1, m - 1));
     const std::size_t min_idx = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(P.wall_min_panel / std::max(step_len, 1e-6))));
     std::vector<double> pl = panel_levels(plan.bnd, need, q);
     for (int pass = 0; pass < 6; ++pass) {

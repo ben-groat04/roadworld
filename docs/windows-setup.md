@@ -33,4 +33,4 @@ Expect about 30–50 GB. After installing, open `Engine/Config/Windows/Windows_S
 3. Create a blank **C++** project from the UE 5.8 launcher and confirm it compiles and opens. That proves the toolchain before we add our plugin.
 
 ## 4. Open the Unreal project (skeleton)
-Once step 3 passes, follow `unreal/README.md`: generate project files for `unreal/CityPainter/CityPainter.uproject`, build **Development Editor / Win64** in Visual Studio, then place `CPRoadNetworkActor` in a level. The plugin compiles `sim_core` directly from the repo, so keep the whole repo checked out (do not copy `unreal/` elsewhere).
+Once step 3 passes, follow `unreal/README.md`: generate project files for `unreal/CityPainter/CityPainter.uproject`, build **Development Editor / Win64** in Visual Studio, then place `CPRoadMeshActor` in a level (or run `unreal/tools/First-Run.ps1`). The plugin compiles `sim_core` directly from the repo, so keep the whole repo checked out (do not copy `unreal/` elsewhere).

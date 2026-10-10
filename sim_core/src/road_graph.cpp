@@ -35,7 +35,9 @@ void RoadGraph::erase_node(NodeId id) {
     assert(adjacency_[id].empty());
     nodes_.erase(id);
     adjacency_.erase(id);
-    dirty_nodes_.erase(id);
+    // Stays in the dirty set: consumers must see the node is gone so they can clear whatever they built
+    // for it (node(id) is null). The edges that used to end here were reported by erase_edge.
+    dirty_nodes_.insert(id);
 }
 
 void RoadGraph::set_region(std::shared_ptr<const RegionPack> region) {
@@ -44,6 +46,7 @@ void RoadGraph::set_region(std::shared_ptr<const RegionPack> region) {
         refit(e);
         dirty_nodes_.insert(e.a);
         dirty_nodes_.insert(e.b);
+        dirty_edges_.insert(id);
     }
 }
 
@@ -89,6 +92,7 @@ EdgeId RoadGraph::insert_edge(Edge e) {
     adjacency_[e.b].insert(e.id);
     dirty_nodes_.insert(e.a);
     dirty_nodes_.insert(e.b);
+    dirty_edges_.insert(e.id);
     const EdgeId id = e.id;
     edges_[id] = std::move(e);
     return id;
@@ -101,6 +105,7 @@ void RoadGraph::erase_edge(EdgeId id) {
     adjacency_[it->second.b].erase(id);
     dirty_nodes_.insert(it->second.a);
     dirty_nodes_.insert(it->second.b);
+    dirty_edges_.insert(id);  // stays reported after removal; edge(id) is then null
     edges_.erase(it);
 }
 
@@ -112,6 +117,7 @@ void RoadGraph::move_node(NodeId id, Vec3 pos) {
         refit(e);
         dirty_nodes_.insert(e.a);
         dirty_nodes_.insert(e.b);
+        dirty_edges_.insert(eid);
     }
 }
 

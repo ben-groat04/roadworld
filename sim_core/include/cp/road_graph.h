@@ -81,8 +81,17 @@ public:
     // Refit horizontal + vertical geometry from control points.
     bool refit(Edge& e) const;
 
+    // Everything changed since the last clear_dirty(), including REMOVED objects: a removed node or edge
+    // stays in the set (node(id) / edge(id) return null) so incremental consumers can clear what they
+    // built for it. Nodes: inserted, moved, removed, or an end of any inserted / erased / refitted edge.
     const std::set<NodeId>& dirty_nodes() const { return dirty_nodes_; }
-    void clear_dirty() { dirty_nodes_.clear(); }
+    // Edges inserted, erased (removed ids stay) or refitted. Consumers should still also treat the edges
+    // at dirty nodes as dirty.
+    const std::set<EdgeId>& dirty_edges() const { return dirty_edges_; }
+    void clear_dirty() {
+        dirty_nodes_.clear();
+        dirty_edges_.clear();
+    }
 
 private:
     std::shared_ptr<const RegionPack> region_;
@@ -92,6 +101,7 @@ private:
     IdAllocator<NodeTag> node_ids_;
     IdAllocator<EdgeTag> edge_ids_;
     std::set<NodeId> dirty_nodes_;
+    std::set<EdgeId> dirty_edges_;
 };
 
 // Sample the edge's 3D centreline at arc length s.

@@ -18,10 +18,12 @@ add_executable(sim_core_tests
   test_junction_connectors_fuzz.cpp
   test_junction_merge.cpp
   test_junction_roundabout.cpp
+  test_junction_round3.cpp
   test_layout_io.cpp
   test_markings.cpp
   test_export_scene.cpp
   test_render_mesh.cpp
+  test_edit_loop.cpp
   test_street_lights.cpp
   test_structure_mesh.cpp
   test_test_layouts.cpp

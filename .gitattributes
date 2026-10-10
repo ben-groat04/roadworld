@@ -10,3 +10,6 @@ unreal/**/*.tif filter=lfs diff=lfs merge=lfs -text
 unreal/**/*.wav filter=lfs diff=lfs merge=lfs -text
 unreal/CityPainter/SourceArt/**/*.jpg filter=lfs diff=lfs merge=lfs -text
 unreal/CityPainter/SourceArt/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+
+# Progress renders via Git LFS
+docs/progress/**/*.png filter=lfs diff=lfs merge=lfs -text

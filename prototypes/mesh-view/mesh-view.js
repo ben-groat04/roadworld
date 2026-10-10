@@ -7,7 +7,8 @@ import { Sky } from 'three/addons/objects/Sky.js';
 const S2T = (x, y, z) => [x, z, -y];
 
 // surface class -> texture slot (see unreal/.../PolyHaven/manifest.json). Unlisted classes get a plain grey.
-const SLOT = { asphalt: 'asphalt_new', paving: 'pavement', kerb: 'kerb_concrete', island: 'pavement', grass: 'grass' };
+const SLOT = { asphalt: 'asphalt_new', paving: 'pavement', kerb: 'kerb_concrete', island: 'pavement', grass: 'grass',
+  structural_concrete: 'structural_concrete', parapet: 'structural_concrete', tunnel_lining: 'structural_concrete', coping: 'kerb_concrete', wall_facing: 'wall_brick' };
 const MARK_COLOURS = { white: 0xe8e6de, yellow: 0xe3b81a };
 
 function parseObj(text) {
@@ -57,16 +58,17 @@ const camera = new THREE.PerspectiveCamera(50, W / H, 0.2, 6000);
 
 // Sky + image-based ambient from it.
 const sky = new Sky(); sky.scale.setScalar(20000); scene.add(sky);
-const sunDir = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 38), THREE.MathUtils.degToRad(215)); // mid-afternoon, from the south-west-ish
+const sunDir0 = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(90 - 38), THREE.MathUtils.degToRad(215)); // mid-afternoon, from the south-west-ish
 {
   const u = sky.material.uniforms;
   u.turbidity.value = 3; u.rayleigh.value = 1.2; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8;
-  u.sunPosition.value.copy(sunDir);
+  u.sunPosition.value.copy(sunDir0);
   const pm = new THREE.PMREMGenerator(renderer);
   const envScene = new THREE.Scene(); envScene.add(sky.clone());
   scene.environment = pm.fromScene(envScene, 0, 1, 20000).texture;
   scene.environmentIntensity = 0.55;
 }
+const sunDir = sunDir0.clone(); // per-view override: view.sun = [compass azimuth deg (0 = north, 90 = east), elevation deg]
 scene.fog = new THREE.Fog(0xb9c7d6, 600, 4500);
 const sun = new THREE.DirectionalLight(0xfff1dc, 3.2);
 sun.castShadow = true;
@@ -108,7 +110,7 @@ for (const f of exportInfo.files) {
     });
   } else {
     const slot = SLOT[f.id];
-    if (slot) mat = mats[slot] ??= await slotMaterial(man, slot);
+    if (slot) { mat = mats[slot] ??= await slotMaterial(man, slot); if (slot === 'grass') mat.color.setHex(0xc8e2a8); }
     else mat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.9 });
   }
   const m = new THREE.Mesh(geo, mat);
@@ -116,7 +118,7 @@ for (const f of exportInfo.files) {
   group.add(m);
   report.push(f.file + ' -> ' + (f.kind === 'marking' ? 'marking ' + f.id : (SLOT[f.id] || 'grey')));
 }
-// Ground: grass plane just below the lowest road geometry.
+// Ground: grass plane just below the lowest road geometry (also under export_graded terrain, so the horizon is never empty).
 {
   const zmin = exportInfo.bounds_min[2];
   const gm = await slotMaterial(man, 'grass');
@@ -129,6 +131,7 @@ for (const f of exportInfo.files) {
 }
 
 // view: { name, pos:[x,y,z], target:[x,y,z] in sim metres (original sim frame), fov (vertical, deg) or hfov (horizontal, deg),
+//         sun: [compass azimuth deg, elevation deg] (default: from the WNW, 38 deg),
 //         width, height (pixels; default 1600x900), near, shadow (radius, m), exposure }
 window.setView = (v) => {
   const P = a => new THREE.Vector3(...S2T(a[0] - off[0], a[1] - off[1], a[2] - off[2]));
@@ -141,6 +144,8 @@ window.setView = (v) => {
     const h = ray.intersectObjects(surf, false)[0];
     return [a[0], a[1], (h ? h.point.y : 0) + a[2] + off[2]];
   };
+  if (v.sun) { const az = THREE.MathUtils.degToRad(v.sun[0]), el = THREE.MathUtils.degToRad(v.sun[1]); sunDir.set(Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az)); } else sunDir.copy(sunDir0);
+  sky.material.uniforms.sunPosition.value.copy(sunDir);
   const pos = P(lift(v.pos)), tgt = P(lift(v.target));
   W = v.width ?? 1600; H = v.height ?? 900; renderer.setSize(W, H);
   camera.fov = v.hfov ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(v.hfov) / 2) * H / W)) : (v.fov ?? 50);

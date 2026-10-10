@@ -4,9 +4,9 @@ Skeleton only. Written without Unreal installed, so the first compile is the rea
 
 ## Layout
 - `CityPainter/CityPainter.uproject` – project, one game module `CityPainter` (empty), enables `CityPainterSim` and `ProceduralMeshComponent`.
-- `CityPainter/Plugins/CityPainterSim/` – runtime plugin. Its module compiles `sim_core/src/*.cpp` straight from the repo (tiny wrapper files in `Private/SimCore/`; include path `sim_core/include`). `ACPRoadNetworkActor` owns a `cp::RoadGraph` + `cp::CommandStack`, draws debug lines and a ribbon mesh. `ACPRoadMeshActor` (new) builds the sim_core `interchange` test layout and shows real cambered carriageways, kerbs, pavements, junction surfaces, roundabout islands and road markings (one ProceduralMesh per 256 m tile, one section per surface class; markings in their own components). It builds in the editor viewport (`OnConstruction`), has `RebuildAll` / `UndoLast` / `RedoLast` buttons and a `LogCPRoadMesh` category; its sim-facing logic is UE-free in `Private/CPRoadMeshBuild.{h,cpp}`. Materials: `SurfaceMaterials` / `MarkingMaterials` maps, else `/Game/Materials/Surfaces/<slot>/MI_<slot>` (asphalt->asphalt_new, paving->pavement, kerb->kerb_concrete, grass and island->grass), else the engine default.
+- `CityPainter/Plugins/CityPainterSim/` – runtime plugin. Its module compiles `sim_core/src/*.cpp` straight from the repo (tiny wrapper files in `Private/SimCore/`; include path `sim_core/include`). `ACPRoadMeshActor` builds the sim_core `interchange` test layout and shows real cambered carriageways, kerbs, pavements, junction surfaces, roundabout islands and road markings (one ProceduralMesh per 256 m tile, one section per surface class; markings in their own components). It builds in the editor viewport (`OnConstruction`), has `RebuildAll` / `UndoLast` / `RedoLast` buttons and a `LogCPRoadMesh` category; its sim-facing logic is UE-free in `Private/CPRoadMeshBuild.{h,cpp}`. Materials: `SurfaceMaterials` / `MarkingMaterials` maps, else `/Game/Materials/Surfaces/<slot>/MI_<slot>` (asphalt->asphalt_new, paving->pavement, kerb->kerb_concrete, grass and island->grass), else the engine default.
 - `tools/` – PowerShell build and headless-editor scripts (`tools/README.md`).
-- `CPCoords.h` is the only place sim coordinates are converted. Sim: metres, x east, y north, z up, right-handed. Unreal: cm, left-handed. Mapping is an X/Y swap: `UE.X = sim.y*100` (north), `UE.Y = sim.x*100` (east), `UE.Z = sim.z*100`. Heading: `yaw = 90 - degrees(heading)`.
+- `Private/CPRoadMeshBuild.h` (frame rule) and `.cpp` (`SimToUE`) are the only place sim coordinates are converted. Sim: metres, x east, y north, z up, right-handed. Unreal: cm, left-handed. Mapping is an X/Y swap: `UE.X = sim.y*100` (north), `UE.Y = sim.x*100` (east), `UE.Z = sim.z*100`. Heading: `yaw = 90 - degrees(heading)`.
 - If you add or move `sim_core` files, add a matching `Wrap_<name>.cpp` in `Private/SimCore/`.
 
 ## First run (scripted, from "engine just finished installing")
@@ -28,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File unreal\tools\Run-EditorPytho
 powershell -NoProfile -ExecutionPolicy Bypass -File unreal\tools\Run-EditorPython.ps1 -Script py\setup_look_test_level.py                  # 4. create /Game/Maps/RoadTest
 powershell -NoProfile -ExecutionPolicy Bypass -File unreal\tools\Run-EditorPython.ps1 -Script py\screenshot_views.py -Render -ScriptArgs pie # 5. screenshots -> unreal\CityPainter\Saved\Screenshots\look\
 ```
-Step 4 places `CPRoadMeshActor` by default (script arg `old` = the original smoke-test actor, `both` = both) and step 5 shows six interchange views (aerial, roundabout oblique and approach, T-junction, slip merge, kerb close-up); neither needs `pie` any more because both actors build in `OnConstruction`. Run `import_textures.py` before step 4 if you want the Poly Haven materials assigned.
+Step 4 places `CPRoadMeshActor` and step 5 shows six interchange views (aerial, roundabout oblique and approach, T-junction, slip merge, kerb close-up); neither needs `pie` because the actor builds in `OnConstruction`. (The `old` / `both` script args were removed with `CPRoadNetworkActor` and now fail with a message.) Run `import_textures.py` before step 4 if you want the Poly Haven materials assigned.
 
 **Still needs a human:**
 - Accept the prerequisites installer (VS components, UE prerequisites, .NET) the first time the engine or the project asks.
@@ -38,7 +38,7 @@ Step 4 places `CPRoadMeshActor` by default (script arg `old` = the original smok
 - Look-test downloads that cannot be scripted: the **NVIDIA DLSS plugin for UE 5.8** (NVIDIA developer site, Super Resolution; Ray Reconstruction separately), the **AMD FSR plugin** if comparing, any Fab trees / house kit assets for look-test items 11-12, and a recent NVIDIA driver. The 12-item test list is `docs/unreal-photorealism.md` s3.
 - Judging the screenshots (realism) is a human or cold-read-agent task; the scripts only produce files.
 
-Manual fallback for the road: open the map, press Play. You should see cyan debug lines along two two-way curved roads and an orange line along one one-way road, with a grey ribbon mesh 7 m wide. The Output Log shows `CPRoadNetwork: 3 edges, N verts`. Undo/redo: call `UndoLast` / `RedoLast` (BlueprintCallable). If the ribbon is invisible from above the winding is flipped (see `RebuildVisuals`).
+Manual fallback for the road: open the map; `CPRoadMeshActor` builds the interchange in the editor viewport (press `Rebuild All` in the Details panel if nothing shows). The Output Log (`LogCPRoadMesh`) prints the build statistics. Undo/redo: `UndoLast` / `RedoLast`. If the roads are invisible from above the winding is flipped (see `unreal/tools/KNOWN_RISKS.md` H14).
 
 ## If it does not compile
 See `tools/KNOWN_RISKS.md` first (error message -> exact edit). Original notes:

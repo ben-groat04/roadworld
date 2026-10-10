@@ -6,9 +6,10 @@
 // (the sim_core headers are included in the .cpp, never here), so they compile outside Unreal; see
 // unreal/tools/README.md ("Standalone check of CPRoadMeshBuild").
 //
-// FRAME AND WINDING RULE (single place; CPCoords.h is the same mapping for single points)
+// FRAME AND WINDING RULE (the single place in the plugin where sim -> UE coordinates are defined)
 //   sim (metres, x east, y north, z up, right-handed)  ->  UE (centimetres, X north, Y east, Z up, left-handed)
 //     UE.X = sim.y * 100,  UE.Y = sim.x * 100,  UE.Z = sim.z * 100
+//   Heading: sim heading h (radians CCW from +x east) -> UE yaw degrees = 90 - degrees(h).
 //   Directions (normals, tangents) use the same swap without the scale: (nx, ny, nz) -> (ny, nx, nz).
 //   The swap is a reflection (determinant -1). Seen from above, the map looks identical in both frames (north up,
 //   east right), so a triangle that is counter-clockwise from its front face in sim_core is still counter-clockwise

@@ -23,13 +23,13 @@ Quick lookup: `findstr /s /n /c:"CppCompileWarningSettings" <UE>\Engine\Source\P
 ## B. C++ exceptions / `<filesystem>` (most likely first C++ errors)
 
 `CityPainterSim.Build.cs` sets `bEnableExceptions = false`. `region_pack.h` includes `<filesystem>`, which is pulled into most
-`Wrap_*.cpp` and `CPRoadNetworkActor.cpp`. Update: every `Wrap_*.cpp` (and `CPRoadMeshBuild.cpp`) now carries `4530 4577` in its pragma list (checked by compiling each wrapper standalone with `/EHs-c- /GR- /W4`: clean). Still missing it at the time of writing, owned by other agents: `Wrap_grading.cpp`, `Wrap_layout_io.cpp`, `Wrap_street_lights.cpp` (they pull `<chrono>`: `C4530` at `chrono(2387)`). Add `4530 4577` to their pragma lists if the build reports it.
+`Wrap_*.cpp`. Update: every `Wrap_*.cpp` (and `CPRoadMeshBuild.cpp`) now carries `4530 4577` in its pragma list (checked by compiling each wrapper standalone with `/EHs-c- /GR- /W4`: clean). Still missing it at the time of writing, owned by other agents: `Wrap_grading.cpp`, `Wrap_layout_io.cpp`, `Wrap_street_lights.cpp` (they pull `<chrono>`: `C4530` at `chrono(2387)`). Add `4530 4577` to their pragma lists if the build reports it.
 
 | Message | Edit |
 |---|---|
 | `C4577: 'noexcept' used with no exception handling mode specified` (in `filesystem`, `xlocale`, ...) | Preferred, one-line, covers every file: in `CityPainterSim.Build.cs` set `bEnableExceptions = true;` (and update the comment above it). sim_core compiles fine with exceptions on. |
 | `C4530: C++ exception handler used, but unwind semantics are not enabled` | Same fix (`bEnableExceptions = true`). |
-| Either of the two above, but you want exceptions off | Add `AdditionalCompilerArguments = "/wd4577 /wd4530";` to Build.cs (property exists on ModuleRules in 5.x; if not, add `#pragma warning(disable: 4577 4530)` at the top of every `Wrap_*.cpp` and `CPRoadNetworkActor.cpp`, before any include). |
+| Either of the two above, but you want exceptions off | Add `AdditionalCompilerArguments = "/wd4577 /wd4530";` to Build.cs (property exists on ModuleRules in 5.x; if not, add `#pragma warning(disable: 4577 4530)` at the top of every `Wrap_*.cpp`, before any include). |
 | `error C2... 'throw'/'try' used with /EHs-c-` or STL `_HAS_EXCEPTIONS` complaints from `<filesystem>` | `bEnableExceptions = true`. |
 | `C4541: 'typeid'/'dynamic_cast' used on polymorphic type with /GR-` (nlohmann/json, Clipper2) | Add `bUseRTTI = true;` to Build.cs. |
 
@@ -44,7 +44,7 @@ Quick lookup: `findstr /s /n /c:"CppCompileWarningSettings" <UE>\Engine\Source\P
 | `C5105 macro expansion producing 'defined'` in Windows SDK headers | New SDK + conforming preprocessor. Add `/wd5105` through `AdditionalCompilerArguments`. |
 | `C4702 unreachable code`, `C4100 unreferenced parameter`, `C4189` | Warning, not error, unless `bWarningsAsErrors`; disable via the wrapper pragma if they are errors. |
 
-## D. UE macros colliding with sim_core / third-party names (only in TUs that include UE headers: `CPRoadNetworkActor.cpp`)
+## D. UE macros colliding with sim_core / third-party names (only in TUs that include UE headers: `CPRoadMeshActor.cpp`, which includes no sim_core header)
 
 | Message | Edit |
 |---|---|
@@ -56,10 +56,7 @@ Quick lookup: `findstr /s /n /c:"CppCompileWarningSettings" <UE>\Engine\Source\P
 
 | Message | Edit |
 |---|---|
-| `Unrecognized type 'X'` / `Missing '*' in ...` in `CPRoadNetworkActor.h` | A non-UObject type in a UPROPERTY/UFUNCTION. `FCPSimState` is intentionally NOT exposed; check no UPROPERTY mentions it. |
-| `... must include "CPRoadNetworkActor.generated.h" as the last include` | Move the `.generated.h` include to the last line of includes. |
 | `Expected a ... forward declaration` for `TObjectPtr<UProceduralMeshComponent>` | Include `ProceduralMeshComponent.h` in the cpp; header keeps the forward declaration `class UProceduralMeshComponent;`. |
-| `GENERATED_BODY ... destructor / FVTableHelper` errors, or `C2027 use of undefined type 'FCPSimState'` in generated code | The header declares `ACPRoadNetworkActor(FVTableHelper&)` and an out-of-line destructor so `TUniquePtr<FCPSimState>` is never instantiated against the incomplete type. If the generated code still instantiates it, change `Sim` to a raw `FCPSimState*` with manual `delete` in the destructor (plugin edit; ask the coordinator). |
 
 ## F. Linker
 
@@ -78,9 +75,9 @@ Quick lookup: `findstr /s /n /c:"CppCompileWarningSettings" <UE>\Engine\Source\P
 | `Missing modules ... rebuild?` then exit | Binaries are stale or absent: run `Build-Editor.ps1`; the unattended editor cannot rebuild. |
 | `AttributeError: module 'unreal' has no attribute X` | The 5.8 name differs; the line is marked `# VERIFY` in the script. Find the class with `dir(unreal)` in the editor's Python console (Output Log -> Cmd -> Python) and edit that one line. |
 | `new_level_from_template` missing or template not found | Script falls back to a basic level and warns. To get World Partition: in the editor, File > New Level > Open World, save as `/Game/Maps/RoadTest`, then re-run the setup script (it reuses the level). |
-| `CPRoadNetworkActor not found` in setup/report | Module did not load: look at the "Module / plugin / load problems" section of the runner output. Usually the build failed or `Plugins/CityPainterSim` binaries are stale. |
+| `CPRoadMeshActor not found` in setup/report | Module did not load: look at the "Module / plugin / load problems" section of the runner output. Usually the build failed or `Plugins/CityPainterSim` binaries are stale. |
 | Screenshot run: no file appears | Not a rendering run (`-Render` forgotten), `-RenderOffscreen` unsupported (remove from `Run-EditorPython.ps1`, a window will show), or `take_high_res_screenshot` ignores absolute paths (look in `Saved\Screenshots\WindowsEditor\`). |
-| Road is not visible in the editor viewport screenshot (only floor/sky) | FIXED in code for both actors: `ACPRoadNetworkActor` and `ACPRoadMeshActor` now build in `OnConstruction` in editor worlds (see section H for the new actor). Original note: `ACPRoadNetworkActor` built its smoke-test roads only in `BeginPlay`. Either run `screenshot_views.py` with arg `pie` (Play-In-Editor), or call `RunSmokeTest()` + `RebuildVisuals()` from `OnConstruction`/`PostActorCreated` when `GetWorld()->IsEditorWorld()` (and keep `bRunSmokeTest` as the gate). |
+| Road is not visible in the editor viewport screenshot (only floor/sky) | `ACPRoadMeshActor` builds in `OnConstruction` in editor worlds (section H); if nothing shows press `Rebuild All`, or run `screenshot_views.py` with arg `pie` (Play-In-Editor). The old `ACPRoadNetworkActor` was removed. |
 | Editor hangs in a modal dialog under `-unattended` | Read the last lines of the log; usual causes are "unsaved/untitled level" and "Perforce/source control". `-nosourcecontrol` is already passed. |
 | Very long first start | Normal: thousands of shaders compile on first launch with the DX12 SM6 + Lumen + RT baseline (10-30+ min, longer on a slow disk). The default `-nullrhi` mode skips most shader compiles, so it does NOT warm the shader cache: the first `-Render` run (screenshots) pays for it, so give that step a long timeout (First-Run uses 120 min). `report_environment.py` under nullrhi still warms engine startup, plugin load and some DDC content. |
 

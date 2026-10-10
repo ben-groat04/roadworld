@@ -20,9 +20,9 @@ Windows PowerShell 5.1. Run from the repo root as `powershell -NoProfile -Execut
 | `First-Run.ps1` | Orchestrates all steps below with a resumable state file; see the top of this file. |
 | `Run-EditorPython.ps1` | Runs `py\<script>.py` in an unattended editor and summarises the log (`LogPython` lines, tracebacks, module-load failures, crash markers, the script's `CP_PY_RESULT` marker). `-Render` for screenshot runs, default is `-nullrhi`. `-GraphicsAdapter <n>` adds `-graphicsadapter=n` (pick the RTX 4060 over the integrated GPU), `-LocalDdcPath` as for the build, default timeout 60 min. `-ScriptArgs a,b` reaches the script via `cp.script_args()`. |
 | `BuildLogParser.ps1` | Parser used by Build-Editor (dot-source it). |
-| `py\setup_look_test_level.py` | Creates/updates `/Game/Maps/RoadTest` (Open World template if available) with sky, sun, fog, clouds, post-process, floor, player start and one `CPRoadMeshActor` (`-ScriptArgs old` = the old `CPRoadNetworkActor`, `both` = both); assigns `MI_<slot>` surface materials and creates `/Game/Materials/Markings/MI_marking_<colour>`. Idempotent. |
-| `py\screenshot_views.py` | Six interchange views (aerial, roundabout oblique + approach, T-junction, slip merge, kerb close-up; `-ScriptArgs old` = the three old smoke-test views) into `Saved\Screenshots\look\`. Needs `-Render`. |
-| `py\report_environment.py` | Logs engine version, RHI/GPU (from the log), Lumen/VSM/Nanite cvars, plugin probes, and whether `CPRoadNetworkActor` loaded. |
+| `py\setup_look_test_level.py` | Creates/updates `/Game/Maps/RoadTest` (Open World template if available) with sky, sun, fog, clouds, post-process, floor, player start and one `CPRoadMeshActor`; assigns `MI_<slot>` surface materials and creates `/Game/Materials/Markings/MI_marking_<colour>`. Idempotent. |
+| `py\screenshot_views.py` | Six interchange views (aerial, roundabout oblique + approach, T-junction, slip merge, kerb close-up) into `Saved\Screenshots\look\`. Needs `-Render`. |
+| `py\report_environment.py` | Logs engine version, RHI/GPU (from the log), Lumen/VSM/Nanite cvars, plugin probes, and whether `CPRoadMeshActor` loaded. |
 | `KNOWN_RISKS.md` | Predicted first-build errors mapped to exact edits. Read it when a build fails. |
 
 ## Tests (no engine needed)

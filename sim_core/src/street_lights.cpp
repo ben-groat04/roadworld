@@ -934,11 +934,29 @@ void rebuild_dirty_street_lights(StreetLightResult& cache, const RoadGraph& grap
     erase_if_missing(cache.junctions, live_nodes);
     erase_if_missing(cache.roundabouts, live_groups);
 
+    // The dirty set is widened by one hop: a junction's trims depend on the neighbouring junctions (short
+    // edges share their length) and nearby junctions can merge, so the lights of the edges one hop out from
+    // a dirty node or edge (and their junction corners) can change without those nodes being dirty
+    // themselves. Removed nodes are skipped (no edges); their former neighbours are dirty via erase_edge.
+    std::set<NodeId> dirty_set(dirty_nodes.begin(), dirty_nodes.end());
+    for (EdgeId id : dirty_edges)
+        if (const Edge* e = graph.edge(id)) {
+            dirty_set.insert(e->a);
+            dirty_set.insert(e->b);
+        }
+    std::set<NodeId> widened = dirty_set;
+    for (NodeId n : dirty_set)
+        for (EdgeId id : graph.edges_at(n))
+            if (const Edge* e = graph.edge(id)) {
+                widened.insert(e->a);
+                widened.insert(e->b);
+            }
+
     std::set<EdgeId> edges(orphaned.begin(), orphaned.end());
-    std::set<NodeId> nodes(dirty_nodes.begin(), dirty_nodes.end());
+    std::set<NodeId> nodes(widened.begin(), widened.end());
     for (EdgeId id : dirty_edges)
         if (live_edges.count(id)) edges.insert(id);
-    for (NodeId n : dirty_nodes)
+    for (NodeId n : widened)
         for (EdgeId id : graph.edges_at(n)) edges.insert(id);
 
     // A dirty edge changes the pattern phase of every edge of its run, and a dual edge changes which

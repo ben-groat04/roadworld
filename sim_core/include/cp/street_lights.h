@@ -131,10 +131,14 @@ StreetLightResult generate_street_lights(const RoadGraph& graph, const RegionPac
                                          const std::vector<EdgeId>& only_edges = {},
                                          const std::vector<NodeId>& only_nodes = {});
 
-// Dirty rebuild into an existing result: regenerates the dirty edges, the edges at dirty nodes, runs that
+// Dirty rebuild into an existing result. The dirty nodes/edges are first widened by one hop (the neighbouring
+// nodes of dirty nodes and of the ends of dirty edges), then it regenerates the dirty edges, the edges at those
+// nodes, runs that
 // share a joint with them, median partners of dirty dual edges and the junction / roundabout entries of the
 // dirty nodes (and of the end nodes of dirty edges); drops entries for edges, junctions and groups that no
-// longer exist. The result equals a full rebuild.
+// longer exist (pass removed ids: RoadGraph::dirty_nodes()/dirty_edges() include them). The result equals a full
+// rebuild for planar networks; lights also depend on junction polygons spatially near an edge, which the hop
+// widening does not cover.
 void rebuild_dirty_street_lights(StreetLightResult& cache, const RoadGraph& graph, const RegionPack& region,
                                  const JunctionSet& junctions, const std::vector<RoundaboutLayout>* roundabouts,
                                  const std::vector<NodeId>& dirty_nodes, const std::vector<EdgeId>& dirty_edges,

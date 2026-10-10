@@ -107,13 +107,13 @@ def main():
         cp.log("%-36s : %s" % (label, "LOADED" if ok else "not loaded"))
 
     cp.log("--- City Painter ---")
-    cls = cp.load_class("/Script/CityPainterSim.CPRoadNetworkActor")
+    cls = cp.load_class("/Script/CityPainterSim.CPRoadMeshActor")
     module_ok = cls is not None
-    cp.log("CityPainterSim module loaded / CPRoadNetworkActor class: %s" % ("YES" if module_ok else "NO"))
-    cp.log("python attribute unreal.CPRoadNetworkActor: %s" % ("present" if hasattr(unreal, "CPRoadNetworkActor") else "absent"))
+    cp.log("CityPainterSim module loaded / CPRoadMeshActor class: %s" % ("YES" if module_ok else "NO"))
+    cp.log("python attribute unreal.CPRoadMeshActor: %s" % ("present" if hasattr(unreal, "CPRoadMeshActor") else "absent"))
     if not module_ok:
         raise cp.ScriptError(
-            "CPRoadNetworkActor not found: CityPainterSim did not load. Check the editor log for LogPluginManager / "
+            "CPRoadMeshActor not found: CityPainterSim did not load. Check the editor log for LogPluginManager / "
             "LogModuleManager errors, and that Build-Editor.ps1 succeeded."
         )
 

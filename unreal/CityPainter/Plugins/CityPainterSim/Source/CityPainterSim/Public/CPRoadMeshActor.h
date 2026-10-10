@@ -26,7 +26,7 @@ enum class ECPTestLayout : uint8
  * mesh section per surface class) and one per tile for markings (one section per colour id).
  *
  * All sim-facing logic is in Private/CPRoadMeshBuild.{h,cpp} (no Unreal types); this class only copies its plain
- * arrays into TArrays. Coordinates: see CPRoadMeshBuild.h (sim -> UE swap, winding flip) and CPCoords.h.
+ * arrays into TArrays. Coordinates: see CPRoadMeshBuild.h (sim -> UE swap, winding flip; the single coordinate mapping).
  * The geometry is built in the editor viewport (OnConstruction, only when a sim-affecting setting changed), in
  * BeginPlay for game worlds, and from RebuildAll().
  */

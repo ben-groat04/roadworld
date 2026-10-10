@@ -300,8 +300,40 @@ private:
     Edge before_;
 };
 
+// Changes the edge's road type. Fails (graph unchanged) if the edge is missing, the graph has no region
+// pack, the type is not in the pack, or the edge already has that type. Refits the edge (the vertical K
+// values come from the type); the edge and both end nodes are marked dirty.
+class ChangeRoadType : public RoadCommand {
+public:
+    ChangeRoadType(EdgeId id, std::string type) : id_(id), type_(std::move(type)) {}
+    bool apply(RoadGraph& g) override {
+        const Edge* e = g.edge(id_);
+        if (!e || !g.region() || !g.region()->road_type(type_) || e->road_type == type_) return false;
+        before_ = *e;
+        Edge changed = *e;
+        changed.road_type = type_;
+        if (!g.refit(changed)) return false;
+        g.erase_edge(id_);
+        g.insert_edge(changed);
+        return true;
+    }
+    void revert(RoadGraph& g) override {
+        g.erase_edge(id_);
+        g.insert_edge(before_);
+    }
+    std::string name() const override { return "change road type"; }
+
+private:
+    EdgeId id_;
+    std::string type_;
+    Edge before_;
+};
+
 }  // namespace
 
+RoadCommandPtr make_change_road_type(EdgeId id, std::string road_type) {
+    return std::make_unique<ChangeRoadType>(id, std::move(road_type));
+}
 RoadCommandPtr make_set_structure_span(EdgeId id, double s0, double s1, StructureKind kind) {
     return std::make_unique<SetStructureSpan>(id, s0, s1, kind);
 }
