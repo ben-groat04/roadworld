@@ -101,6 +101,7 @@ Living plan for a photorealistic, sandbox city builder with a "city painter" foc
 ### Scenery and props
 
 - **v1 scenery: trees and hedges, grass and ground cover.** Street furniture and signs were not selected for v1 and can be added later. Street lights and road markings are part of the road types, and parked cars come from the traffic sim.
+- **Unreal look work goes beyond v0 (decided 10 Oct 2026).** Vegetation (grass and ground cover on verges and earthwork slopes, hedges, trees) and road-attached hard features such as traffic islands (kerbed islands, splitters, refuges) go into the Unreal look test and the Unreal build from the start, because they make earthworks read as real. Full street furniture such as signs stays out for now, and houses, vehicles and people remain out. The owner supplies private real-world reference photos (kept locally in docs/reference/gsv/, never committed) as a capability bar for reviews, not as something to copy.
 - **Planning note:** vegetation is likely to dominate frame cost on an RTX 3060 class GPU, so instancing and LOD for it belong in the early performance test.
 
 ### Traffic
@@ -136,7 +137,7 @@ Vertical slice first: one small map with hand-drawn roads, a few junctions, parc
 **v0: the full road painter test.** The first playable build, and the main test of the road, terrain and junction tools before anything lives on them.
 
 - **In v0:** every road and terrain feature planned for v1 except junction control: clothoid road drawing with snapping and guidelines, all four road types, one-way roads, roundabouts, slip roads, junction geometry, pavements, crossings, parking lanes, road markings, street lights, terrain sculpting, cuttings and embankments, retaining walls, bridges and tunnels, water, undo and redo, and debug overlays (lane graph, junction connectors, curvature and gradient, cut and fill).
-- **Not in v0:** cars, pedestrians and other agents (including parked cars), junction control (signals and priority rules, which come with cars), vegetation (comes with buildings), saves and loading (later), parcels, zoning, buildings and the systems that depend on them.
+- **Not in v0:** cars, pedestrians and other agents (including parked cars), junction control (signals and priority rules, which come with cars), vegetation (comes with buildings), saves and loading (later), parcels, zoning, buildings and the systems that depend on them. Vegetation and traffic islands are nonetheless built in the Unreal look test and Unreal build from the start (see Scenery and props).
 
 **v0 passes** when a junction-heavy network on hilly terrain runs at the target frame rate and drawing and editing roads feels good. The final criteria will come from the person. **v0 build order:** terrain and roads together from the start, not roads on flat ground first.
 
@@ -219,3 +220,4 @@ Sorted by when they are needed. Licences and current feature status are unverifi
 - Round 28: the 3D prototype showed that grading the terrain grid produces jagged cuttings and portals. Decision: roads own their earthwork meshes, with an invisible corridor mask on the terrain. The prototype was split into src/ modules so parallel agents can each work on one file.
 
 - Round 29: roundabouts are an explicit one-way road type (a region-pack ring type); the ring is ordinary editable edges with a junction at every ring node, found by road type and never recognised by shape; the tool is only a preset that draws it (radius limit from the region pack, 100 m in the UK pack); an unbuildable roundabout shows a visible warning; full-circle U-turns allowed; roundabout traffic policies parked for later. Decided 10 Oct 2026.
+- Round 30: Unreal photoreal work is not limited to v0. Vegetation (verge and slope grass, hedges, trees) and road-attached features such as traffic islands come into the Unreal look test and build from the start; signs and other full street furniture stay out for now. The person supplies private real-world reference photos (docs/reference/gsv/, not committed) as the capability bar for reviews.
