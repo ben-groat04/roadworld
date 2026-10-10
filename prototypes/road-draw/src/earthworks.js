@@ -93,12 +93,13 @@ function baseIJ(i, j) {
 // baseSampler(x, y) -> base height. Writes nx*ny graded heights to out (row-major, texel (i,j) at x0+i*res, y0+j*res).
 function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
   const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick - res;   // wall band: texels with e <= wallThick-res take the inside (formation) value, so the one-texel ramp to natural lies inside the solid
-  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), cutE = new Float32Array(N), fillE = new Float32Array(N);
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rcM = new Float32Array(N), rcE = new Float32Array(N), rfM = new Float32Array(N), rfE = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
   for (const rd of roadsData) {
     const bb = rd.bbox; if (bb && (bb.x1 < x0 || bb.x0 > tx1 || bb.y1 < y0 || bb.y0 > ty1)) continue;
     const S = rd.samples, hw = rd.hw, R = rd.reach, R2 = R * R;
+    rqD.fill(9); rcM.fill(1e9); rfM.fill(-1e9);   // per road: nearest-station formation; across roads: lowest wins
     for (let k = 0; k + 1 < S.length; k++) {
       const A = S[k], B = S[k + 1];
       if ((A.br || A.tu) && (B.br || B.tu)) continue;   // bridge / tunnel stations are not graded; a segment with one structure end is graded up to the abutment / portal
@@ -113,19 +114,24 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
           let t = (rx * dx + ry * dy) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
           const ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey; if (d2 > R2) continue;
           const dd = Math.sqrt(d2), zf = A.z + t * dz - fd, o = j * nx + i;
-          if (dd <= hw) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }   // union of footprints: lowest formation wins (never pokes through any road)
+          if (dd <= hw) { const q = dd / hw; if (q < rqD[o]) { rqD[o] = q; rqZ[o] = zf; } continue; }   // union of footprints: lowest formation wins (never pokes through any road)
           const e = dd - hw, E = t < 0.5 ? A : B, wall = (dx * ry - dy * rx) > 0 ? E.wL : E.wR;   // cross > 0: texel on the left
-          if (wall) { if (e <= half) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; } continue; }   // formation up to the wall; the wall mesh hides the step
+          if (wall) { if (e <= half) { const q = dd / hw; if (q < rqD[o]) { rqD[o] = q; rqZ[o] = zf; } } continue; }   // formation up to the wall; the wall mesh hides the step
           const b = base[o];
-          if (b > zf) { const v = zf + e / bt; if (v < b && v < cutM[o]) { cutM[o] = v; cutE[o] = e; } }
-          else { const v = zf - e / bt; if (v > b && v > fillM[o]) { fillM[o] = v; fillE[o] = e; } }
+          if (b > zf) { const v = zf + e / bt; if (v < b && v < rcM[o]) { rcM[o] = v; rcE[o] = e; } }
+          else { const v = zf - e / bt; if (v > b && v > rfM[o]) { rfM[o] = v; rfE[o] = e; } }
         }
       }
+    }
+    for (let o = 0; o < N; o++) {
+      if (rqD[o] < 9) { fpD[o] = 0; if (rqZ[o] < fpZ[o]) fpZ[o] = rqZ[o]; continue; }   // covered by this road: its own slope values do not apply
+      if (rcM[o] < cutM[o]) { cutM[o] = rcM[o]; cutE[o] = rcE[o]; }
+      if (rfM[o] > fillM[o]) { fillM[o] = rfM[o]; fillE[o] = rfE[o]; }
     }
   }
   for (let o = 0; o < N; o++) {
     let g;
-    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const hc = cutM[o] < g, hf = fillM[o] > g; if (hc && hf) g = cutE[o] <= fillE[o] ? cutM[o] : fillM[o]; else if (hc) g = cutM[o]; else if (hf) g = fillM[o]; }   // never cross the base to the wrong side: take the nearer of a cut and a fill slope
+    if (fpD[o] < 9) { g = fpZ[o]; if (cutM[o] < g) g = cutM[o]; if (fillM[o] > -1e8 && fillM[o] < g) g = fillM[o]; } else { g = base[o]; const hc = cutM[o] < g, hf = fillM[o] > g; if (hc && hf) g = cutE[o] <= fillE[o] ? cutM[o] : fillM[o]; else if (hc) g = cutM[o]; else if (hf) g = fillM[o]; }   // never cross the base to the wrong side: take the nearer of a cut and a fill slope
     out[o] = g;
   }
 }

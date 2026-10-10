@@ -195,9 +195,9 @@ function buildRoadGroup(r) {
       obox(p, ...A(0.0, 0.5), -hw, hw, zbA, zr - 0.03, CB.abutment.c, CB.abutment.d);           // ballast wall up to road level
       for (const sg of [1, -1]) {                                                  // wing walls, top sloping 1:2 down into the fill
         const l0 = sg > 0 ? hw - 0.1 : -hw - 0.4, l1 = sg > 0 ? hw + 0.4 : -hw + 0.1;
-        const le = latPt(p, (l0 + l1) / 2, 0), fe = fwd(p.h), gE = gAt(le[0] + fe[0] * dr * 6.5, le[1] + fe[1] * dr * 6.5);   // tie the wing top into the graded embankment
-        sbox(p, dr * 0.5, dr * 6.5, l0, l1, zbA, zr + 0.2, clamp(gE + 0.1, zbA + 0.5, zr + 0.2), CB.abutment.c, CB.abutment.d);
-        sbox(p, dr * -1.4, dr * 0.5, l0, l1, zbA, zr + 0.2, zr + 0.2, CB.abutment.c, CB.abutment.d);
+        const fe = fwd(p.h), gEs = [l0, l1].map(l => { const le = latPt(p, l, 0); return gAt(le[0] + fe[0] * dr * 6.5, le[1] + fe[1] * dr * 6.5); }), gE = Math.min(...gEs), zw = zr - 0.03;   // tie the wing top into the graded embankment
+        sbox(p, dr * 0.5, dr * 6.5, l0, l1, zbA, zw, clamp(gE + 0.1, zbA + 0.5, zw), CB.abutment.c, CB.abutment.d);
+        sbox(p, dr * -1.4, dr * 0.5, l0, l1, zbA, zw, zw, CB.abutment.c, CB.abutment.d);
       }
     }
   }
@@ -287,14 +287,21 @@ function buildRoadGroup(r) {
     const { p, dir } = pt, P0 = S[p], zr = P0.z + zo, c = Math.cos(P0.h), sn = Math.sin(P0.h);
     const alOf = (al, la) => [P0.x + c * al * dir - sn * la, P0.y + sn * al * dir + c * la];
     // headwall height: cover natural ground across the full width (at the face and just behind it) + 1 m
-    let gmax = -1e9; for (const al of [0, HEAD_T, 4]) for (let la = -Wd; la <= Wd + 1e-6; la += 1) { const q = alOf(al, la); gmax = Math.max(gmax, hB(q[0], q[1])); }
-    const zt = Math.max(zr + TUNNEL_H + 1.5, gmax + 1.0);
     let gmn = 1e9; for (const al of [0, HEAD_T]) for (let la = -Wd; la <= Wd + 1e-6; la += 1) { const q = alOf(al, la); gmn = Math.min(gmn, hB(q[0], q[1]), gAt(q[0], q[1])); }
     const zb = Math.min(zr - 2.5, gmn - 1.0);
     const ob = (a0, a1, l0, l1, z0, z1, bk) => obox(P0, Math.min(a0 * dir, a1 * dir), Math.max(a0 * dir, a1 * dir), l0, l1, z0, z1, bk);
-    ob(0, HEAD_T, OW, Wd, zb, zt - CAP_P, CB.portal.c); ob(0, HEAD_T, -Wd, -OW, zb, zt - CAP_P, CB.portal.c);
-    ob(0, HEAD_T, -OW, OW, zr + OPEN_H, zt - CAP_P, CB.portal.c);
-    ob(-CAP_O, HEAD_T + CAP_O, -Wd - CAP_O, Wd + CAP_O, zt - CAP_P, zt, CB.portal.d);
+    // headwall in 0.5 m lateral strips: each strip's top follows the graded ground (+0.15 m), or the lintel height over the opening
+    const NSTR = Math.ceil(2 * Wd / 0.5), SW = 2 * Wd / NSTR, ztEdge = [0, 0];
+    const sl = (al0, al1, l0, l1, z0, t0, t1, bk, topB) => dir > 0 ? sbox(P0, al0, al1, l0, l1, z0, t0, t1, bk, topB) : sbox(P0, -al1, -al0, l0, l1, z0, t1, t0, bk, topB);   // sloping-top prism, alongs measured into the tunnel
+    for (let i = 0; i < NSTR; i++) {
+      const l0 = -Wd + i * SW, l1 = l0 + SW, inOpen = l0 >= -OW - 1e-6 && l1 <= OW + 1e-6, lo = inOpen ? zr + OPEN_H + 0.5 : zr + 0.2;
+      const tp = al => { let g = -1e9; for (const la of [l0, l1]) { const q = alOf(al, la); g = Math.max(g, gAt(q[0], q[1])); } return Math.max(g + 0.15, lo); };
+      const tF = tp(-CAP_O), tB = tp(HEAD_T + CAP_O), at = al => tF + (tB - tF) * (al + CAP_O) / (HEAD_T + 2 * CAP_O);
+      if (i === 0) ztEdge[1] = Math.max(tF, tB); if (i === NSTR - 1) ztEdge[0] = Math.max(tF, tB);
+      const lc0 = i === 0 ? l0 - CAP_O : l0, lc1 = i === NSTR - 1 ? l1 + CAP_O : l1;
+      sl(0, HEAD_T, l0, l1, inOpen ? zr + OPEN_H : zb, at(0) - CAP_P, at(HEAD_T) - CAP_P, CB.portal.c);
+      sl(-CAP_O, HEAD_T + CAP_O, lc0, lc1, Math.min(tF, tB) - CAP_P - 0.0, tF, tB, CB.portal.d);
+    }
     // lining: stations by arc length, near-black, recessed
     const poses = []; for (let d = REC; d <= REC + LIN + 1e-6; d += 2) poses.push(poseAt(r, P0.s + dir * Math.min(d, REC + LIN)));
     const LW = OW - 0.02, ZR = TUNNEL_H - 0.02;
@@ -321,7 +328,7 @@ function buildRoadGroup(r) {
       for (let i = 0; i <= NS; i++) {
         const t = i / NS, ps = poseAt(r, sApp + (P0.s - sApp) * t), lat = edge0 + (Wf - edge0) * t, ln = lnorm(ps.h), f = fwd(ps.h), cp = latPt(ps, sg * lat, 0);
         const u = [(-dir * sa) * f[0] + ca * sg * ln[0], (-dir * sa) * f[1] + ca * sg * ln[1]], ul = Math.hypot(u[0], u[1]);
-        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: Math.min(botA * (1 - t) + zb * t, hB(cp[0], cp[1]) - 1, gAt(cp[0], cp[1]) - 1), zt: topA * (1 - t) + zt * t });
+        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: Math.min(botA * (1 - t) + zb * t, hB(cp[0], cp[1]) - 1, gAt(cp[0], cp[1]) - 1), zt: topA * (1 - t) + (sg > 0 ? ztEdge[0] : ztEdge[1]) * t });
       }
       wallStations(st, CB.portal);
     }
