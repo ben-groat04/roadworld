@@ -122,7 +122,12 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
       const dd = rqD[o]; if (dd > 1e8) continue; const zf = rqZ[o];
       if (dd <= hw) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }   // union of footprints: lowest formation wins (never pokes through any road)
       const e = dd - hw;
-      if (rqW[o]) { if (e <= half) { const zw = rqW[o] === 1 ? Math.min(zf, base[o]) : zf; fpD[o] = 0; if (zw < fpZ[o]) fpZ[o] = zw; } continue; }   // cut wall: never above the natural ground   // formation up to the wall; the wall mesh hides the step
+      if (rqW[o]) {   // formation up to the wall; the wall mesh hides the step
+      if (e <= params.wallThick) { const b = base[o]; let zw = zf;
+        if (rqW[o] === 1) zw = e <= half ? Math.min(zf, b) : Math.min(b, Math.max(zf, b - 0.1));   // cut wall: never above natural; the outermost ring sits just under natural so the ramp outside is ~natural
+        else if (e > half) continue;
+        fpD[o] = 0; if (zw < fpZ[o]) fpZ[o] = zw; }
+      continue; }   // formation up to the wall; the wall mesh hides the step
       const b = base[o];
       if (b > zf) { const v = zf + e / bt; if (v < b) { if (v < cutM[o]) { cutM[o] = v; cutE[o] = e; } } }
       else { const v = zf - e / bt; if (v > b) { if (v > fillM[o]) { fillM[o] = v; fillE[o] = e; } } }

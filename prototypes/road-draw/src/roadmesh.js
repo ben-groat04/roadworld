@@ -223,19 +223,19 @@ function buildRoadGroup(r) {
       acc += sl;
       WB.c.quad(W3(p, 0, p.zb), W3(q, 0, q.zb), W3(q, 0, wt(q)), W3(p, 0, wt(p)), lo);
       WB.c.quad(W3(p, WALL_T, p.zb), W3(q, WALL_T, q.zb), W3(q, WALL_T, wt(q)), W3(p, WALL_T, wt(p)), hi);
-      const c0 = -CAP_O, c1 = WALL_T + CAP_O;
-      WB.d.quad(W3(p, c0, p.zt), W3(q, c0, q.zt), W3(q, c1, q.zt), W3(p, c1, p.zt), UP);
-      WB.d.quad(W3(p, c0, wt(p)), W3(q, c0, wt(q)), W3(q, c1, wt(q)), W3(p, c1, wt(p)), DOWN);
-      WB.d.quad(W3(p, c0, wt(p)), W3(q, c0, wt(q)), W3(q, c0, q.zt), W3(p, c0, p.zt), lo);
-      WB.d.quad(W3(p, c1, wt(p)), W3(q, c1, wt(q)), W3(q, c1, q.zt), W3(p, c1, p.zt), hi);
+      const c0 = 0, c1 = WALL_T;   // cap flush with the body (same mesh, so every column reaches the foot)
+      WB.c.quad(W3(p, c0, p.zt), W3(q, c0, q.zt), W3(q, c1, q.zt), W3(p, c1, p.zt), UP);
+      WB.c.quad(W3(p, c0, wt(p)), W3(q, c0, wt(q)), W3(q, c1, wt(q)), W3(p, c1, wt(p)), DOWN);
+      WB.c.quad(W3(p, c0, wt(p)), W3(q, c0, wt(q)), W3(q, c0, q.zt), W3(p, c0, p.zt), lo);
+      WB.c.quad(W3(p, c1, wt(p)), W3(q, c1, wt(q)), W3(q, c1, q.zt), W3(p, c1, p.zt), hi);
     }
     for (const [i, sgn] of [[0, -1], [st.length - 1, 1]]) {   // end faces
       const p = st[i], d = hdir(st[Math.max(0, i - 1)].a, st[Math.min(st.length - 1, i + 1)].a).map(v => v * sgn);
       WB.c.quad(W3(p, 0, p.zb), W3(p, WALL_T, p.zb), W3(p, WALL_T, wt(p)), W3(p, 0, wt(p)), d);
-      WB.d.quad(W3(p, -CAP_O, wt(p)), W3(p, WALL_T + CAP_O, wt(p)), W3(p, WALL_T + CAP_O, p.zt), W3(p, -CAP_O, p.zt), d);
+      WB.c.quad(W3(p, 0, wt(p)), W3(p, WALL_T, wt(p)), W3(p, WALL_T, p.zt), W3(p, 0, p.zt), d);
     }
   };
-  const resampleRun = (pts, step = 1.5) => {
+  const resampleRun = (pts, step = 0.5) => {
     const out = [];
     for (let i = 0; i + 1 < pts.length; i++) {
       const a = pts[i], b = pts[i + 1], m = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
@@ -259,11 +259,15 @@ function buildRoadGroup(r) {
   const wingLen = (Wf - edgeW) / Math.tan(WING_ANG);
   const WR = typeof wallRuns === 'function' ? (wallRuns(r) || []) : [];
   const nearPortal = (x, y) => portals.some(pt => Math.hypot(x - S[pt.p].x, y - S[pt.p].y) < wingLen + 6);
+  const brZone = []; for (const [a, b] of runs(s => s.br)) if (b > a) brZone.push({ a: Math.max(0, a - 1), b: Math.min(n - 1, b + 1) });
+  const inBridgeZone = (x, y) => brZone.some(z => { for (let k = z.a; k <= z.b; k++) { const d = Math.hypot(x - S[k].x, y - S[k].y); if (d < hw + 3 && (k > z.a && k < z.b)) return true; if ((k === z.a || k === z.b) && d < 8) return true; } return false; });   // over the span, or within 8 m of an abutment
   for (const run of WR) {
     if (!run.pts || run.pts.length < 2) continue;
     const sg = run.side === 'L' ? 1 : -1;
     // drop wall that would lie inside a portal's wing-wall zone (the wing walls continue it flush)
-    let pts = run.pts.filter(q => !portals.some(pt => Math.hypot(q.x - S[pt.p].x, q.y - S[pt.p].y) < wingLen * 0.97));
+    const keep = q => !portals.some(pt => Math.hypot(q.x - S[pt.p].x, q.y - S[pt.p].y) < wingLen * 0.97) && !inBridgeZone(q.x, q.y);   // portal wing zone / bridge span + abutment zone
+    const segs = []; { let cur = []; for (const q of run.pts) { if (keep(q)) cur.push(q); else { if (cur.length) segs.push(cur); cur = []; } } if (cur.length) segs.push(cur); }
+    for (const pts of segs) {
     if (pts.length < 2) continue;
     const rs = resampleRun(pts);
     const m = rs.length, cum = [0]; for (let i = 1; i < m; i++) cum.push(cum[i - 1] + Math.hypot(rs[i].x - rs[i - 1].x, rs[i].y - rs[i - 1].y));
@@ -276,7 +280,7 @@ function buildRoadGroup(r) {
       const q = rs[i], a = rs[Math.max(0, i - 1)], b = rs[Math.min(m - 1, i + 1)], t = hdir([a.x, a.y], [b.x, b.y]);
       let u = [-t[1] * sg, t[0] * sg];
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
-      const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go) - 1.0, top = q.top;
+      const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go, hB(q.x, q.y), hB(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)) - 1.0, top = q.top;
       let zt = top;
       const tp = d => { const tgt = Math.min(top, gSm[i] - 0.1); return tgt + (top - tgt) * clamp(d / TAPER_L, 0, 1); };   // ends sink into the graded ground
       if (tapA) zt = Math.min(zt, tp(cum[i]));
@@ -284,6 +288,7 @@ function buildRoadGroup(r) {
       st.push({ a: [q.x, q.y], u, zb, zt: Math.max(zb + 0.05, Math.min(top, zt)) });
     }
     wallStations(st);
+    }
   }
   // Tunnel portals.
   const OPEN_H = TUNNEL_H, LIN = 15, REC = 0.5, HEAD_T = 2.0, CAP_P = 0.5;
