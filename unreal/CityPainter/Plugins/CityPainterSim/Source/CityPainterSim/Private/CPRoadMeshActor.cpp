@@ -12,6 +12,7 @@
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "MaterialDomain.h"
 #include "Misc/Paths.h"
 #include "ProceduralMeshComponent.h"
 

@@ -153,3 +153,5 @@ New-wrapper rule: every new `Private/SimCore/Wrap_<name>.cpp` must copy the FULL
 ## I. API spot-check against 5.8.3 headers (ProceduralMeshComponent.h, IPluginManager.h, StringConv.h)
 
 Verified matching our calls: `CreateMeshSection(int32, TArray<FVector>, TArray<int32>, TArray<FVector>, TArray<FVector2D>, TArray<FColor>, TArray<FProcMeshTangent>, bool)` (8-arg inline overload exists, still double `FVector`/`FVector2D`, so rows H1/H2 should not trigger); `FProcMeshTangent(FVector,bool)`, `(float,float,float)` ctors; `bUseAsyncCooking` and `bUseComplexAsSimpleCollision` are public members (H6 will not trigger); `IPluginManager::FindPlugin(FStringView)` exists; `FTCHARToUTF8::Get()/Length()` exist. Not checked: DefaultEngine.ini cvars.
+
+`MD_Surface` needs `#include "MaterialDomain.h"` in 5.8: hit on the first compile, fixed 10 Oct 2026. (Added to `CPRoadMeshActor.cpp`; section I has no table, so this is a plain line.)
