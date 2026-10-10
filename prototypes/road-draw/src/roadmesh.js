@@ -201,7 +201,7 @@ function buildRoadGroup(r) {
     }
   }
   // ===== Retaining walls (from wallRuns) and tunnel portals (headwall + wing walls + dark lining) =====
-  const WALL_T = 1.0, CAP_H = 0.5, CAP_O = 0.1, TAPER_L = 3.0;
+  const WALL_T = 1.5, CAP_H = 0.5, CAP_O = 0.1, TAPER_L = 3.0;
   const hdir = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l, 0]; };
   // Wall + coping along a station list: {a:[x,y] inner face point, u:[x,y] outward unit, zb, zt (top of coping)}.
   const wallStations = (st, WB = CB.wall) => {
@@ -238,7 +238,7 @@ function buildRoadGroup(r) {
     const out = [];
     for (let i = 0; i + 1 < pts.length; i++) {
       const a = pts[i], b = pts[i + 1], m = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
-      for (let j = 0; j < m; j++) { const t = j / m; out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, zTop: a.zTop + (b.zTop - a.zTop) * t, zBot: a.zBot + (b.zBot - a.zBot) * t, h: a.h }); }
+      for (let j = 0; j < m; j++) { const t = j / m; out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, top: a.top + (b.top - a.top) * t, zTop: a.zTop + (b.zTop - a.zTop) * t, zBot: a.zBot + (b.zBot - a.zBot) * t, h: a.h }); }
     }
     out.push({ ...pts[pts.length - 1] });
     return out;
@@ -271,11 +271,12 @@ function buildRoadGroup(r) {
       const q = rs[i], a = rs[Math.max(0, i - 1)], b = rs[Math.min(m - 1, i + 1)], t = hdir([a.x, a.y], [b.x, b.y]);
       let u = [-t[1] * sg, t[0] * sg];
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
-      let zt = q.zTop; const zb = q.zBot;
-      const tp = d => { const g = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), tgt = Math.min(q.zTop, Math.max(g, zb + 0.4)); return tgt + (q.zTop - tgt) * clamp(d / TAPER_L, 0, 1); };
+      const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go) - 1.0, top = q.top;
+      let zt = top;
+      const tp = d => { const tgt = Math.min(top, Math.max(gi, go) - 0.1); return tgt + (top - tgt) * clamp(d / TAPER_L, 0, 1); };   // ends sink into the graded ground
       if (tapA) zt = Math.min(zt, tp(cum[i]));
       if (tapB) zt = Math.min(zt, tp(tot - cum[i]));
-      st.push({ a: [q.x, q.y], u, zb, zt: Math.max(zb + 0.05, Math.min(q.zTop, zt)) });
+      st.push({ a: [q.x, q.y], u, zb, zt: Math.max(zb + 0.05, Math.min(top, zt)) });
     }
     wallStations(st);
   }

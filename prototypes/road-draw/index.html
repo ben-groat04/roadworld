@@ -626,7 +626,7 @@ let roads = [], nextId = 1;
 const undoStack = [], redoStack = [];
 let pend = [];   // input.js resets this on failed edits (kept for compat)
 const wallLineOf = ty => ty.total / 2;   // retaining wall face: the road's outer edge (wall mesh is 1.0 m thick, outside it)
-const WALL_THICK = 1.0, PZ = 9;
+const WALL_THICK = 1.5, PZ = 9;   // wall solid spans lateral [hw, hw+WALL_THICK] from the centreline (= wall line hw+0.25, +-0.75..1.25 about it)
 function closeGaps(a, maxGap) { // fill false runs shorter than maxGap that sit between true samples
   let i = 0; const n = a.length;
   while (i < n) { if (a[i]) { i++; continue; } let j = i; while (j < n && !a[j]) j++; if (i > 0 && j < n && j - i < maxGap) for (let k = i; k < j; k++) a[k] = true; i = j; }
@@ -713,7 +713,7 @@ function baseIJ(i, j) {
 // roadsData: [{ hw, reach, bbox:{x0,y0,x1,y1}, samples:[{x,y,z,h,br,tu,wL,wR}] }]; params: { formDrop, batter, wallThick }.
 // baseSampler(x, y) -> base height. Writes nx*ny graded heights to out (row-major, texel (i,j) at x0+i*res, y0+j*res).
 function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
-  const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick / 2;
+  const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick - res;   // wall band: texels with e <= wallThick-res take the inside (formation) value, so the one-texel ramp to natural lies inside the solid
   const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
@@ -791,10 +791,10 @@ function wallRuns(r) {
     for (let i = 0; i < S.length; i++) {
       const s = S[i];
       if (!(side === 'L' ? s.wL : s.wR) || s.br || s.tu) { cur = null; continue; }
-      const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, x = s.x + nx * hw, y = s.y + ny * hw, zf = s.z - FORM_DROP, out = hBase(s.x + nx * (hw + WALL_THICK / 2), s.y + ny * (hw + WALL_THICK / 2));
+      const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, x = s.x + nx * hw, y = s.y + ny * hw, zf = s.z - FORM_DROP, out = hBase(s.x + nx * (hw + WALL_THICK), s.y + ny * (hw + WALL_THICK));
       const cut = out > zf;
-      if (!cur || cur.cut !== cut) { cur = { side, cut, pts: [] }; runs.push(cur); }
-      cur.pts.push({ x, y, zTop: cut ? out : zf, zBot: cut ? zf : out, h: s.h });
+      if (!cur || cur.cut !== cut) { cur = { side, cut, lo: 0, hi: WALL_THICK, pts: [] }; runs.push(cur); }
+      cur.pts.push({ x, y, zTop: cut ? out : zf, zBot: cut ? zf : out, top: cut ? out + 0.3 : s.z + 1.0, h: s.h });
     }
   }
   return runs;
@@ -1010,7 +1010,7 @@ function buildRoadGroup(r) {
     }
   }
   // ===== Retaining walls (from wallRuns) and tunnel portals (headwall + wing walls + dark lining) =====
-  const WALL_T = 1.0, CAP_H = 0.5, CAP_O = 0.1, TAPER_L = 3.0;
+  const WALL_T = 1.5, CAP_H = 0.5, CAP_O = 0.1, TAPER_L = 3.0;
   const hdir = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l, 0]; };
   // Wall + coping along a station list: {a:[x,y] inner face point, u:[x,y] outward unit, zb, zt (top of coping)}.
   const wallStations = (st, WB = CB.wall) => {
@@ -1047,7 +1047,7 @@ function buildRoadGroup(r) {
     const out = [];
     for (let i = 0; i + 1 < pts.length; i++) {
       const a = pts[i], b = pts[i + 1], m = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
-      for (let j = 0; j < m; j++) { const t = j / m; out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, zTop: a.zTop + (b.zTop - a.zTop) * t, zBot: a.zBot + (b.zBot - a.zBot) * t, h: a.h }); }
+      for (let j = 0; j < m; j++) { const t = j / m; out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, top: a.top + (b.top - a.top) * t, zTop: a.zTop + (b.zTop - a.zTop) * t, zBot: a.zBot + (b.zBot - a.zBot) * t, h: a.h }); }
     }
     out.push({ ...pts[pts.length - 1] });
     return out;
@@ -1080,11 +1080,12 @@ function buildRoadGroup(r) {
       const q = rs[i], a = rs[Math.max(0, i - 1)], b = rs[Math.min(m - 1, i + 1)], t = hdir([a.x, a.y], [b.x, b.y]);
       let u = [-t[1] * sg, t[0] * sg];
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
-      let zt = q.zTop; const zb = q.zBot;
-      const tp = d => { const g = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), tgt = Math.min(q.zTop, Math.max(g, zb + 0.4)); return tgt + (q.zTop - tgt) * clamp(d / TAPER_L, 0, 1); };
+      const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go) - 1.0, top = q.top;
+      let zt = top;
+      const tp = d => { const tgt = Math.min(top, Math.max(gi, go) - 0.1); return tgt + (top - tgt) * clamp(d / TAPER_L, 0, 1); };   // ends sink into the graded ground
       if (tapA) zt = Math.min(zt, tp(cum[i]));
       if (tapB) zt = Math.min(zt, tp(tot - cum[i]));
-      st.push({ a: [q.x, q.y], u, zb, zt: Math.max(zb + 0.05, Math.min(q.zTop, zt)) });
+      st.push({ a: [q.x, q.y], u, zb, zt: Math.max(zb + 0.05, Math.min(top, zt)) });
     }
     wallStations(st);
   }

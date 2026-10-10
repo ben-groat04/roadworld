@@ -5,7 +5,7 @@ let roads = [], nextId = 1;
 const undoStack = [], redoStack = [];
 let pend = [];   // input.js resets this on failed edits (kept for compat)
 const wallLineOf = ty => ty.total / 2;   // retaining wall face: the road's outer edge (wall mesh is 1.0 m thick, outside it)
-const WALL_THICK = 1.0, PZ = 9;
+const WALL_THICK = 1.5, PZ = 9;   // wall solid spans lateral [hw, hw+WALL_THICK] from the centreline (= wall line hw+0.25, +-0.75..1.25 about it)
 function closeGaps(a, maxGap) { // fill false runs shorter than maxGap that sit between true samples
   let i = 0; const n = a.length;
   while (i < n) { if (a[i]) { i++; continue; } let j = i; while (j < n && !a[j]) j++; if (i > 0 && j < n && j - i < maxGap) for (let k = i; k < j; k++) a[k] = true; i = j; }
@@ -92,7 +92,7 @@ function baseIJ(i, j) {
 // roadsData: [{ hw, reach, bbox:{x0,y0,x1,y1}, samples:[{x,y,z,h,br,tu,wL,wR}] }]; params: { formDrop, batter, wallThick }.
 // baseSampler(x, y) -> base height. Writes nx*ny graded heights to out (row-major, texel (i,j) at x0+i*res, y0+j*res).
 function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
-  const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick / 2;
+  const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick - res;   // wall band: texels with e <= wallThick-res take the inside (formation) value, so the one-texel ramp to natural lies inside the solid
   const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
@@ -170,10 +170,10 @@ function wallRuns(r) {
     for (let i = 0; i < S.length; i++) {
       const s = S[i];
       if (!(side === 'L' ? s.wL : s.wR) || s.br || s.tu) { cur = null; continue; }
-      const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, x = s.x + nx * hw, y = s.y + ny * hw, zf = s.z - FORM_DROP, out = hBase(s.x + nx * (hw + WALL_THICK / 2), s.y + ny * (hw + WALL_THICK / 2));
+      const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, x = s.x + nx * hw, y = s.y + ny * hw, zf = s.z - FORM_DROP, out = hBase(s.x + nx * (hw + WALL_THICK), s.y + ny * (hw + WALL_THICK));
       const cut = out > zf;
-      if (!cur || cur.cut !== cut) { cur = { side, cut, pts: [] }; runs.push(cur); }
-      cur.pts.push({ x, y, zTop: cut ? out : zf, zBot: cut ? zf : out, h: s.h });
+      if (!cur || cur.cut !== cut) { cur = { side, cut, lo: 0, hi: WALL_THICK, pts: [] }; runs.push(cur); }
+      cur.pts.push({ x, y, zTop: cut ? out : zf, zBot: cut ? zf : out, top: cut ? out + 0.3 : s.z + 1.0, h: s.h });
     }
   }
   return runs;
