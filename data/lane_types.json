@@ -1,0 +1,13 @@
+{
+  "_comment": "Core lane types, shared by all regions. Extensible: bus and cycle lanes are added later as new records. Widths come from road types, not here.",
+  "version": 1,
+  "lane_types": [
+    { "id": "driving",           "users": ["car"],        "may_park": false, "connects_at_junctions": true,  "surface": "asphalt" },
+    { "id": "parking",           "users": ["car"],        "may_park": true,  "connects_at_junctions": false, "surface": "asphalt" },
+    { "id": "hard_shoulder",     "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "asphalt" },
+    { "id": "hard_strip",        "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "asphalt" },
+    { "id": "kerb",              "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "kerb" },
+    { "id": "pavement",          "users": ["pedestrian"], "may_park": false, "connects_at_junctions": true,  "surface": "paving" },
+    { "id": "verge",             "users": [],             "may_park": false, "connects_at_junctions": false, "surface": "grass" }
+  ]
+}

@@ -1,0 +1,104 @@
+{
+  "_comment": "Cross-sections run from the centre outwards to the nearside for ONE direction of travel; two-way types mirror it. Dual types are drawn as one stroke and placed as two one-way carriageways median_gap_m apart. Speeds are stored in the region's display unit (mph); the core converts to m/s.",
+  "_sources": {
+    "vertical_k": "DMRB CD 109 Table 3.1 (desirable min crest K / sag K by design speed). Recalled values, not yet checked against the current CD 109; starting points only, tuned by eye.",
+    "min_radius": "DMRB CD 109 desirable minimum horizontal radius by design speed; residential uses a Manual for Streets-style tighter value. Advisory only.",
+    "widths": "Typical UK practice; tuned by eye."
+  },
+  "version": 1,
+  "road_types": [
+    {
+      "id": "residential",
+      "name": "Residential street",
+      "two_way": true,
+      "speed_limit": 30,
+      "design_speed_kph": 50,
+      "half": [
+        { "lane": "driving",  "width_m": 3.0 },
+        { "lane": "parking",  "width_m": 2.0 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "pavement", "width_m": 2.0 }
+      ],
+      "one_way_variant": [
+        { "lane": "pavement", "width_m": 2.0 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "parking",  "width_m": 2.0 },
+        { "lane": "driving",  "width_m": 3.25, "dir": "forward" },
+        { "lane": "parking",  "width_m": 2.0 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "pavement", "width_m": 2.0 }
+      ],
+      "vertical_k": { "crest": 10, "sag": 9 },
+      "min_radius_m": 20,
+      "advisory_max_grade_pct": 10,
+      "markings": "urban_single",
+      "street_lights": { "spacing_m": 35, "style": "residential_column_6m", "sides": "staggered" }
+    },
+    {
+      "id": "b_road",
+      "name": "B road / main road",
+      "two_way": true,
+      "speed_limit": 40,
+      "design_speed_kph": 70,
+      "half": [
+        { "lane": "driving",  "width_m": 3.25 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "pavement", "width_m": 2.0 }
+      ],
+      "one_way_variant": [
+        { "lane": "pavement", "width_m": 2.0 },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "driving",  "width_m": 3.25, "dir": "forward" },
+        { "lane": "driving",  "width_m": 3.25, "dir": "forward" },
+        { "lane": "kerb",     "width_m": 0.15 },
+        { "lane": "pavement", "width_m": 2.0 }
+      ],
+      "vertical_k": { "crest": 30, "sag": 20 },
+      "min_radius_m": 180,
+      "advisory_max_grade_pct": 8,
+      "markings": "rural_single",
+      "street_lights": { "spacing_m": 40, "style": "column_10m", "sides": "single" }
+    },
+    {
+      "id": "a_road_dual",
+      "name": "A road / dual carriageway",
+      "dual": true,
+      "speed_limit": 70,
+      "design_speed_kph": 100,
+      "median_gap_m": 2.5,
+      "carriageway": [
+        { "lane": "hard_strip", "width_m": 0.5,  "side": "offside" },
+        { "lane": "driving",    "width_m": 3.65, "dir": "forward" },
+        { "lane": "driving",    "width_m": 3.65, "dir": "forward" },
+        { "lane": "hard_strip", "width_m": 1.0 },
+        { "lane": "verge",      "width_m": 2.0 }
+      ],
+      "vertical_k": { "crest": 100, "sag": 26 },
+      "min_radius_m": 720,
+      "advisory_max_grade_pct": 6,
+      "markings": "dual",
+      "street_lights": { "spacing_m": 50, "style": "column_12m", "sides": "median" }
+    },
+    {
+      "id": "motorway",
+      "name": "Motorway",
+      "dual": true,
+      "speed_limit": 70,
+      "design_speed_kph": 120,
+      "median_gap_m": 3.0,
+      "carriageway": [
+        { "lane": "hard_strip",    "width_m": 0.7,  "side": "offside" },
+        { "lane": "driving",       "width_m": 3.65, "dir": "forward" },
+        { "lane": "driving",       "width_m": 3.65, "dir": "forward" },
+        { "lane": "driving",       "width_m": 3.65, "dir": "forward" },
+        { "lane": "hard_shoulder", "width_m": 3.3 },
+        { "lane": "verge",         "width_m": 2.5 }
+      ],
+      "vertical_k": { "crest": 182, "sag": 37 },
+      "min_radius_m": 1020,
+      "advisory_max_grade_pct": 4,
+      "markings": "motorway",
+      "street_lights": { "spacing_m": 60, "style": "column_15m", "sides": "none" }
+    }
+  ]
+}

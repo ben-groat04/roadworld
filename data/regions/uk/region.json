@@ -1,0 +1,10 @@
+{
+  "_comment": "UK region pack: first pack, used for prototyping. The core must not assume any of these values.",
+  "id": "uk",
+  "version": 1,
+  "driving_side": "left",
+  "speed_unit": "mph",
+  "headroom_m": 5.3,
+  "_headroom_source": "UK standard headroom 5.03 m plus allowance; tune by eye",
+  "plan_crossing_junction_dz_m": 1.0
+}
