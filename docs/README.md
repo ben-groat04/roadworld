@@ -1,0 +1,35 @@
+# docs/ index
+
+Entry point for a new session: **HANDOFF.md**, then `CLAUDE.md` (repo root), then `planning-log.md`. Last revised 10 Oct 2026 (late evening).
+
+## Start here
+- `HANDOFF.md` – current state, working rules, first steps for the Unreal phase. Current, rewritten whenever a session ends.
+- `planning-log.md` – source of truth for every product and design decision (Rounds 1-34). Current.
+
+## Decisions and scope
+- `v0-brief.md` – v0 kickoff brief (scope, build order). Historical: v0 scope is also summarised in the planning log.
+- `road-graph-model.md` – agreed road graph data model (edges only, vertical profiles, overrides). Current.
+- `junctions.md` – junction generator interface and design notes (incl. turn pockets, section 7b). Current.
+- `road-marking-rules.md` – UK marking rules, draft from Traffic Signs Manual ch. 5. Reference only; numbers are tuned by eye.
+
+## Design references
+- `performance-plan.md` – Unreal 5.8 performance plan for runtime-generated roads and terrain. Current, measurement order matters.
+- `vegetation-and-surface-realism.md` – Nanite, Infinigen and the "sterile look" problem. Reference.
+- `sim-performance-baseline.md` – first sim_core timings (partial, one busy-laptop run). Dated.
+- `repo-health-review.md` – cold-read review of repo structure (rated fair) with the fix list. Current as a to-do source.
+- `reference/` – private real-world photos (gitignored, never commit); each folder has an INDEX.
+
+## Unreal
+- `unreal-architecture.md` – **the structure reference for the Unreal phase** (module layering, sim-to-render contract, conventions, two-week plan). Adopted in planning log Round 34. Current.
+- `unreal-photorealism.md` – what fits the look target in UE 5.8. Reference; partly amended by `research/ue58-feature-sweep.md`.
+- `windows-setup.md` – Visual Studio/MSVC setup for Unreal C++. Historical (done on this machine).
+- `../unreal/tools/README.md` and `../unreal/tools/KNOWN_RISKS.md` – build and editor automation, predicted first-compile errors.
+
+## Research (`research/`, dated 10 Oct 2026, each ends in a verdict)
+- `research/ue58-feature-sweep.md` – UE 5.8 features our docs missed, MCP comparison, Realtime Mesh Component pricing.
+- `research/pcg-city-research.md` – Epic's PCG City Sample; buildings stay in sim_core, PCG for dressing only.
+- `research/mesh-terrain-research.md` – Mesh Terrain: verdict stays "avoid" (editor-only modifiers).
+- `research/pre-research.md` – v0 licence and data pre-research (CGAL ruled out, Clipper2). Historical.
+
+## Progress
+- `progress/2026-10-10-structures/` – first structure and earthwork renders: `INDEX.md` (scenarios) and `REVIEW.md` (cold-read score 4.5/10). Snapshot; later rounds get their own dated folder.
