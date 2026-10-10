@@ -305,6 +305,7 @@ function hTri(A, x, y) {
 let roads = [], nextId = 1;
 const undoStack = [], redoStack = [];
 const edgeOf = ty => ty.total / 2 + SHOULDER + CELL;   // formation edge: everything within this of the centreline is graded flat to formation
+const wallLineOf = ty => ty.total / 2 + 0.2;           // retaining wall face: just outside the ribbon (incl. pavement / verge)
 const reachOf = ty => edgeOf(ty) + 28 * T.batter;
 function closeGaps(a, maxGap) { // fill false runs shorter than maxGap that sit between true samples
   let i = 0; const n = a.length;
@@ -316,7 +317,7 @@ function dropShort(a, minRun) {
 }
 // Per sample: base heights at the formation edges, wall flags, bridge / tunnel flags (shared by grader and mesh builder).
 function classify(r, ty) {
-  const S = r.samples, n = S.length, off = edgeOf(ty);
+  const S = r.samples, n = S.length, off = wallLineOf(ty);
   const br = new Array(n).fill(false), tu = new Array(n).fill(false);
   const cL = br.slice(), fL = br.slice(), cR = br.slice(), fR = br.slice();
   for (let i = 0; i < n; i++) {
@@ -375,13 +376,13 @@ function applyRoad(r, rg) {
   }
   const formAt = idx => { const k = BS[idx], t = BT[idx], a = S[k], b = S[k + 1]; return a.z + (b.z - a.z) * t - FORM_DROP; };
   const sampAt = idx => { const k = BS[idx]; return BT[idx] < 0.5 ? S[k] : S[k + 1]; };
-  const edge2 = edgeOf(ty) * edgeOf(ty), edge = edgeOf(ty);
+  const edge2 = edgeOf(ty) * edgeOf(ty), edge = edgeOf(ty), wl2 = wallLineOf(ty) * wallLineOf(ty);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const idx = j * TN + i; if (!(BD[idx] < reach2)) continue;
     const sm = sampAt(idx); if (sm.br || sm.tu) continue;
     const wall = BL[idx] > 0 ? sm.wL : sm.wR, form = formAt(idx), old = TG[idx]; let h = old;
-    if (BD[idx] <= edge2) h = form;                       // formation (incl. one extra cell so every triangle under the ribbon is fully under it)
-    else if (wall) continue;                               // walled side: natural ground outside the wall line
+    if (wall) { if (BD[idx] <= wl2) h = form; else continue; }   // walled side: formation up to the wall line, natural beyond (no batter)
+    else if (BD[idx] <= edge2) h = form;                  // formation (incl. one extra cell so every triangle under the ribbon is fully under it)
     else { const e = Math.sqrt(BD[idx]) - edge; h = h > form ? Math.min(h, form + e / bt) : Math.max(h, form - e / bt); }
     TG[idx] = h; if (Math.abs(h - old) > 0.02) GR[idx] = 1;
   }
@@ -660,9 +661,9 @@ function buildRoadGroup(r) {
       obox(k, a0, a1, -hw, hw, Math.min(gnd, S[k].z - DECK_T - 0.5) - 1.0, S[k].z + zo - 0.03, B.conc);
     }
   }
-  // Retaining walls: thin vertical face at the formation edge, from formation-0.5 to natural ground+0.3 (no lid, no block).
+  // Retaining walls: 0.4 m thick, face at the road's outer edge; fill sides form a parapet 0.6 m above the road. extrude() closes each run with end faces.
   for (const sg of [1, -1]) {
-    const key = sg > 0 ? 'wL' : 'wR', edge = edgeOf(ty);
+    const key = sg > 0 ? 'wL' : 'wR', edge = wallLineOf(ty);
     for (const [a, b] of runs(s => s[key] > 0)) {
       if (b <= a) continue;
       const bots = new Float32Array(n), tops = new Float32Array(n);
@@ -676,9 +677,9 @@ function buildRoadGroup(r) {
   }
   // Tunnels: portal headwalls with a recessed opening, plus a short dark lining so the portal is not see-through.
   for (const [a, b] of runs(s => s.tu)) {
-    const ow = hw + 0.5, W = ty.total / 2 + 3, HW_H = 7.0, DEPTH = 1.2;
-    const lining = (k0, dir) => { // from the portal sample inwards (dir +1 / -1) for ~10 m, closed by a back wall
-      let k1 = k0; while (k1 + dir >= a && k1 + dir <= b && Math.abs(S[k1].s - S[k0].s) < 10) k1 += dir;
+    const pa0 = Math.max(0, a - 2), pb0 = Math.min(n - 1, b + 2), ow = hw + 0.5, W = ty.total / 2 + 3, HW_H = 7.0, DEPTH = 1.2;
+    const lining = (k0, dir, lim) => { // from the portal sample inwards (dir +1 / -1) for ~10 m, closed by a back wall
+      let k1 = k0; while (k1 + dir >= pa0 && k1 + dir <= pb0 && Math.abs(S[k1].s - S[k0].s) < 10) k1 += dir;
       if (k1 === k0) return;
       const lo = Math.min(k0, k1), hi = Math.max(k0, k1);
       for (let k = lo; k < hi; k++) {
@@ -686,10 +687,12 @@ function buildRoadGroup(r) {
         B.tube.quad(P(k, -ow, 0), P(k + 1, -ow, 0), P(k + 1, -ow, TUNNEL_H), P(k, -ow, TUNNEL_H), lnorm(S[k].h));
         B.tube.quad(P(k, -ow, TUNNEL_H), P(k + 1, -ow, TUNNEL_H), P(k + 1, ow, TUNNEL_H), P(k, ow, TUNNEL_H), DOWN);
       }
-      if (k1 !== (dir > 0 ? b : a)) B.tube.quad(P(k1, -ow, -0.6), P(k1, ow, -0.6), P(k1, ow, TUNNEL_H), P(k1, -ow, TUNNEL_H), fwd(S[k1].h).map(v => -v * dir));
+      if (k1 !== (dir > 0 ? pb0 : pa0)) B.tube.quad(P(k1, -ow, -0.6), P(k1, ow, -0.6), P(k1, ow, TUNNEL_H), P(k1, -ow, TUNNEL_H), fwd(S[k1].h).map(v => -v * dir));
     };
-    lining(a, 1); lining(b, -1);
-    for (const [k, a0, a1] of [[a, -DEPTH, 0], [b, 0, DEPTH]]) {
+    // Portal sits 2 samples outside the flagged run: the terrain is only graded up to there and ramps up into the hill just after.
+    const pa = Math.max(0, a - 2), pb = Math.min(n - 1, b + 2);
+    lining(pa, 1, a); lining(pb, -1, b);
+    for (const [k, a0, a1] of [[pa, -DEPTH, 0], [pb, 0, DEPTH]]) {
       const z0 = S[k].z + zo - 0.6, zt = S[k].z + zo + HW_H;
       obox(k, a0, a1, ow, W, z0, zt, B.conc);
       obox(k, a0, a1, -W, -ow, z0, zt, B.conc);
