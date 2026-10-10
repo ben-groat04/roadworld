@@ -135,7 +135,9 @@ struct CornerCurve {
     int arm_right = 0, arm_left = 0;   // arm_left = (arm_right + 1) % n
     EdgeId edge_r, edge_l;             // override key parts
     double angle = 0;                  // rad, CCW angle from arm_right to arm_left, (0, 2pi)
-    double radius = 0;                 // m, as used (override or default); 0 = sharp corner
+    double radius = 0;                 // m, as used; 0 = sharp corner or no fillet. Never above requested_radius
+    double requested_radius = 0;       // m, override or default. radius < requested_radius means the trims
+                                       // (edge length / 40 m cap) left no room: an ordinary clamp, NOT degraded
     bool overridden = false;
     std::vector<Vec3> kerb;            // empty if there is no corner (angle >= pi: straight kerb)
 };
@@ -178,8 +180,12 @@ struct Junction {
     PolygonSet pavements;              // pavement/kerb polygons around the corners and between arms
     PolygonSet gore;                   // [C] Merge/Diverge only: nose/gore area between the two nearly parallel arms (hatching)
     std::vector<CrossingSpot> crossings;
-    // [B] true when the geometry could not be built cleanly (edges too short for the trims,
-    // duplicate headings, or a polygon that failed validation); degraded_reason says why.
+    // [B] true when the geometry could not be built cleanly: the fillet solver did not converge,
+    // a kerb intersection lies beyond a trim line even at radius 0 (the corner becomes a chord
+    // between the trim-line kerb points), the carriageway union came back empty, duplicate
+    // headings, or a polygon that failed validation; degraded_reason says why (first cause).
+    // A fillet merely smaller than asked because the trims leave no room is NOT degraded: compare
+    // CornerCurve::radius with CornerCurve::requested_radius.
     bool degraded = false;
     std::string degraded_reason;
 

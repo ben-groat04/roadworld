@@ -2,6 +2,8 @@
 // polygons, crossings. See docs/junctions.md.
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <vector>
 
 #include "clipper2/clipper.h"
 #include "cp/junction.h"
@@ -33,6 +35,8 @@ namespace {
 constexpr double kFilletStep = 0.1;       // rad, max angle per arc segment
 constexpr double kNoCornerAngle = kPi - 0.01;
 constexpr double kCrossingGap = 2.0;      // m from the trim line to the crossing centre
+constexpr double kSolveTol = 1e-5;        // m, fillet centre mismatch accepted by the solver
+constexpr double kMinArea = 1e-3;         // m^2, smaller polygons (and holes) are dropped
 
 Vec2 left_normal(double h) { return {-std::sin(h), std::cos(h)}; }
 
@@ -67,39 +71,90 @@ Vec3 arc_point(const Corner& c, double r, int i, int n) {
     return {c.centre.x + r * std::cos(a), c.centre.y + r * std::sin(a), c.p.z + (c.q.z - c.p.z) * t};
 }
 
-// Fillet of radius r between the left kerb of `ak` (offset a) and the right kerb of `aj` (offset b),
-// found on the real (possibly curved) kerb lines: the arm parameters sp, sq where the circle
-// centres c1(sp) = kerb_k + r n_k and c2(sq) = kerb_j - r n_j coincide. r = 0 gives the kerb
-// intersection. Newton from the straight-kerb estimate; false when it does not converge.
-bool solve_fillet(const JunctionArm& ak, const JunctionArm& aj, double a, double b, double r, double& sp,
-                  double& sq) {
-    const auto f = [&](double s, double t, Vec2& out) {
+enum class Newton { Diverged, Converged, Stalled };
+
+// One damped-Newton run from (sp, sq) on F(sp, sq) = c1(sp) - c2(sq), where c1 / c2 are the circle
+// centres offset r from the left kerb of ak (lateral a) and the right kerb of aj (lateral -b).
+// arm_point is piecewise linear, so the Jacobian is a central difference over a step that
+// straddles at most one kink, and every step is backtracked until the residual shrinks.
+// Stalled: stopped within 1 mm of a root without reaching kSolveTol.
+Newton newton_fillet(const JunctionArm& ak, const JunctionArm& aj, double a, double b, double r, double& sp,
+                     double& sq) {
+    const auto f = [&](double s, double t) {
         const ArmPoint p = arm_point(ak, s, a), q = arm_point(aj, t, -b);
         const Vec2 c1 = p.pos.xy() + left_normal(p.heading_out) * r;
         const Vec2 c2 = q.pos.xy() - left_normal(q.heading_out) * r;
-        out = c1 - c2;
+        return c1 - c2;
     };
-    constexpr double h = 0.05;
-    for (int it = 0; it < 40; ++it) {
-        Vec2 f0;
-        f(sp, sq, f0);
-        if (std::hypot(f0.x, f0.y) < 1e-9) return sp >= 0 && sq >= 0;
-        Vec2 fs0, fs1, ft0, ft1;
-        f(sp - h, sq, fs0);
-        f(sp + h, sq, fs1);
-        f(sp, sq - h, ft0);
-        f(sp, sq + h, ft1);
-        const Vec2 ds = (fs1 - fs0) * (0.5 / h), dt = (ft1 - ft0) * (0.5 / h);
+    constexpr double h = 0.02;
+    Vec2 f0 = f(sp, sq);
+    double n0 = f0.length();
+    const auto verdict = [&] { return n0 < 1e-3 ? Newton::Stalled : Newton::Diverged; };
+    for (int it = 0; it < 60; ++it) {
+        if (n0 < kSolveTol) return Newton::Converged;
+        const double s_lo = std::max(0.0, sp - h), t_lo = std::max(0.0, sq - h);
+        const Vec2 ds = (f(sp + h, sq) - f(s_lo, sq)) * (1.0 / (sp + h - s_lo));
+        const Vec2 dt = (f(sp, sq + h) - f(sp, t_lo)) * (1.0 / (sq + h - t_lo));
         const double det = ds.cross(dt);
-        if (std::fabs(det) < 1e-9) return false;
+        if (std::fabs(det) < 1e-12) return verdict();
         // Solve [ds dt] [x y]^T = -f0.
         const Vec2 rhs{-f0.x, -f0.y};
-        const double x = rhs.cross(dt) / det, y = ds.cross(rhs) / det;
-        sp += std::clamp(x, -20.0, 20.0);
-        sq += std::clamp(y, -20.0, 20.0);
-        if (!std::isfinite(sp) || !std::isfinite(sq)) return false;
+        const double x = std::clamp(rhs.cross(dt) / det, -20.0, 20.0);
+        const double y = std::clamp(ds.cross(rhs) / det, -20.0, 20.0);
+        double lam = 1.0;
+        bool moved = false;
+        for (int bt = 0; bt < 14; ++bt, lam *= 0.5) {
+            const double ns = std::max(0.0, sp + lam * x), nt = std::max(0.0, sq + lam * y);
+            const Vec2 fn = f(ns, nt);
+            const double nn = fn.length();
+            if (nn < n0 * (1.0 - 1e-4 * lam) || nn < kSolveTol) {
+                sp = ns, sq = nt, f0 = fn, n0 = nn;
+                moved = true;
+                break;
+            }
+        }
+        if (!moved) return verdict();
     }
-    return false;
+    return n0 < kSolveTol ? Newton::Converged : verdict();
+}
+
+enum class Solve { Found, Outside, Unsolved };
+
+// Fillet of radius r between the left kerb of `ak` (offset a) and the right kerb of `aj` (offset b),
+// found on the real (possibly curved) kerb lines: the arm parameters sp, sq where the circle
+// centres coincide. r = 0 gives the kerb intersection. (sp, sq) is the straight-kerb estimate on
+// entry. Found: a root with sp <= smax_k and sq <= smax_j (the one nearest the node when several).
+// Outside: roots exist only beyond the trims, or the kerbs never meet there (acute fork, arms
+// curving apart). Unsolved: the iteration stalled next to a root it could not reach.
+Solve solve_fillet(const JunctionArm& ak, const JunctionArm& aj, double a, double b, double r, double smax_k,
+                   double smax_j, double& sp, double& sq) {
+    constexpr int kGrid = 6;
+    const double est_s = sp, est_t = sq;
+    bool stalled = false, outside = false;
+    double best = 1e18, bs = 0, bt = 0;
+    const auto run_from = [&](double s0, double t0) {
+        double s = s0, t = t0;
+        const Newton v = newton_fillet(ak, aj, a, b, r, s, t);
+        if (v == Newton::Stalled) stalled = true;
+        if (v != Newton::Converged) return;
+        if (s <= smax_k + 1e-6 && t <= smax_j + 1e-6) {
+            if (s + t < best) best = s + t, bs = s, bt = t;
+        } else {
+            outside = true;
+        }
+    };
+    run_from(est_s, est_t);
+    if (best < 1e17) {  // the straight-kerb estimate converges to a root inside the trims
+        sp = bs, sq = bt;
+        return Solve::Found;
+    }
+    for (int i = 1; i <= kGrid; ++i)
+        for (int k = 1; k <= kGrid; ++k) run_from(smax_k * i / (kGrid + 1), smax_j * k / (kGrid + 1));
+    if (best < 1e17) {
+        sp = bs, sq = bt;
+        return Solve::Found;
+    }
+    return outside || !stalled ? Solve::Outside : Solve::Unsolved;
 }
 
 int arc_segments(double sweep) { return std::max(2, static_cast<int>(std::ceil(std::fabs(sweep) / kFilletStep))); }
@@ -110,20 +165,74 @@ double signed_area(const std::vector<Vec2>& r) {
     return a / 2;
 }
 
-// True when two non-adjacent edges properly cross (touching and collinear overlaps ignored).
+int sgn(double v) { return v > 1e-9 ? 1 : (v < -1e-9 ? -1 : 0); }
+
+bool within_box(Vec2 a, Vec2 b, Vec2 p) {
+    return p.x >= std::min(a.x, b.x) - 1e-9 && p.x <= std::max(a.x, b.x) + 1e-9 &&
+           p.y >= std::min(a.y, b.y) - 1e-9 && p.y <= std::max(a.y, b.y) + 1e-9;
+}
+
+// Closed segments ab and cd share a point (proper crossing, touching, or collinear overlap).
+bool segments_meet(Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
+    const int o1 = sgn((b - a).cross(c - a)), o2 = sgn((b - a).cross(d - a));
+    const int o3 = sgn((d - c).cross(a - c)), o4 = sgn((d - c).cross(b - c));
+    if (o1 * o2 < 0 && o3 * o4 < 0) return true;
+    return (o1 == 0 && within_box(a, b, c)) || (o2 == 0 && within_box(a, b, d)) ||
+           (o3 == 0 && within_box(c, d, a)) || (o4 == 0 && within_box(c, d, b));
+}
+
+// True when two non-adjacent edges share any point (crossing, pinch or overlap): such a ring is
+// not a simple polygon and goes through the Clipper union instead of being used as drawn.
 bool ring_self_intersects(const std::vector<Vec2>& r) {
     const std::size_t n = r.size();
-    const auto o = [](Vec2 p, Vec2 q, Vec2 s) { return (q - p).cross(s - p); };
     for (std::size_t i = 0; i < n; ++i)
         for (std::size_t k = i + 2; k < n; ++k) {
             if (i == 0 && k == n - 1) continue;
-            const Vec2 a = r[i], b = r[(i + 1) % n], c = r[k], d = r[(k + 1) % n];
-            const double d1 = o(a, b, c), d2 = o(a, b, d), d3 = o(c, d, a), d4 = o(c, d, b);
-            if (((d1 > 1e-9 && d2 < -1e-9) || (d1 < -1e-9 && d2 > 1e-9)) &&
-                ((d3 > 1e-9 && d4 < -1e-9) || (d3 < -1e-9 && d4 > 1e-9)))
-                return true;
+            if (segments_meet(r[i], r[(i + 1) % n], r[k], r[(k + 1) % n])) return true;
         }
     return false;
+}
+
+bool ring_contains(const std::vector<Vec2>& r, Vec2 p) {
+    bool in = false;
+    for (std::size_t i = 0, j = r.size() - 1; i < r.size(); j = i++)
+        if ((r[i].y > p.y) != (r[j].y > p.y) && p.x < (r[j].x - r[i].x) * (p.y - r[i].y) / (r[j].y - r[i].y) + r[i].x)
+            in = !in;
+    return in;
+}
+
+// Clipper output to the PolygonSet convention: each outer ring (CCW) is followed by its holes
+// (CW). Rings and holes under kMinArea are dropped; a hole outside every outer ring is dropped.
+void append_polygons(PolygonSet& out, const Clipper2Lib::PathsD& paths) {
+    std::vector<std::vector<Vec2>> outers, holes;
+    for (const Clipper2Lib::PathD& m : paths) {
+        std::vector<Vec2> ring;
+        for (const auto& pt : m) ring.push_back({pt.x, pt.y});
+        if (ring.size() < 3) continue;
+        const double a = signed_area(ring);
+        if (std::fabs(a) <= kMinArea) continue;
+        (a > 0 ? outers : holes).push_back(std::move(ring));
+    }
+    std::vector<std::vector<std::vector<Vec2>>> mine(outers.size());
+    for (auto& h : holes) {
+        Vec2 c{0, 0};
+        for (const Vec2& p : h) c = c + p * (1.0 / static_cast<double>(h.size()));
+        const Vec2 probe = h[0] + (c - h[0]) * 0.05;
+        int best = -1;
+        for (std::size_t o = 0; o < outers.size(); ++o)
+            if (ring_contains(outers[o], probe) && (best < 0 || signed_area(outers[o]) < signed_area(outers[static_cast<std::size_t>(best)])))
+                best = static_cast<int>(o);
+        if (best >= 0) mine[static_cast<std::size_t>(best)].push_back(std::move(h));
+    }
+    for (std::size_t o = 0; o < outers.size(); ++o) {
+        out.push_back(std::move(outers[o]));
+        for (auto& h : mine[o]) out.push_back(std::move(h));
+    }
+}
+
+void flag_degraded(Junction& j, const std::string& why) {
+    if (!j.degraded) j.degraded_reason = why;
+    j.degraded = true;
 }
 
 }  // namespace
@@ -151,32 +260,64 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
         c.angle = theta;
         const double a = ak.kerb_left, b = aj.kerb_right;
         c.fillet = theta < kNoCornerAngle;
+        const double requested = std::max(0.0, junction.corner_radii[k]);
         if (c.fillet) {
             const double sn = std::sin(theta), cot = std::cos(theta) / sn, th = std::tan(theta / 2);
             const double base_k = a * cot + b / sn, base_j = a / sn + b * cot;
-            const double fit = std::min(trims[k] - base_k, trims[j] - base_j) * th;
-            c.radius = std::clamp(junction.corner_radii[k], 0.0, std::max(0.0, fit));
-            c.sp = base_k + c.radius / th;
-            c.sq = base_j + c.radius / th;
-            // Refine on the real kerb lines (arms may curve): the tangent points must also lie
-            // inside the trims, else shrink the fillet; r = 0 settles for the kerb intersection.
-            for (int tries = 0; tries < 16; ++tries) {
-                double sp = base_k + c.radius / th, sq = base_j + c.radius / th;
-                const bool solved = solve_fillet(ak, aj, a, b, c.radius, sp, sq);
-                if (solved && (c.radius <= 1e-9 || (sp <= trims[k] + 1e-6 && sq <= trims[j] + 1e-6))) {
-                    c.sp = sp;
-                    c.sq = sq;
-                    break;
+            enum class Fit { Unsolved, Outside, Ok };
+            // Solve for radius r on the real kerb lines; Outside = a tangent point lies beyond a trim.
+            const auto attempt = [&](double r, double& sp, double& sq) {
+                sp = base_k + r / th;
+                sq = base_j + r / th;
+                switch (solve_fillet(ak, aj, a, b, r, trims[k], trims[j], sp, sq)) {
+                    case Solve::Found: return Fit::Ok;
+                    case Solve::Outside: return Fit::Outside;
+                    case Solve::Unsolved: break;
                 }
-                if (c.radius <= 1e-9) {
-                    c.sp = base_k;
-                    c.sq = base_j;
-                    break;
+                return Fit::Unsolved;
+            };
+            // The requested radius is used whenever it fits. When it does not (trims clamp to half
+            // the edge / 40 m) the largest radius that does is found by bisection: an ordinary
+            // clamp, visible as radius < requested_radius, not a degraded junction.
+            double sp = 0, sq = 0;
+            bool unsolved = false;
+            Fit fit = attempt(requested, sp, sq);
+            c.radius = requested;
+            if (fit != Fit::Ok) {
+                unsolved = fit == Fit::Unsolved;
+                double lo_sp = 0, lo_sq = 0;
+                const Fit zero = attempt(0.0, lo_sp, lo_sq);
+                if (zero != Fit::Ok) {
+                    // Even the sharp kerb intersection is not between the trim lines (acute angle or
+                    // strongly curving arms): chord between the trim-line kerb points instead.
+                    c.radius = 0;
+                    sp = std::min(zero == Fit::Unsolved ? base_k : lo_sp, trims[k]);
+                    sq = std::min(zero == Fit::Unsolved ? base_j : lo_sq, trims[j]);
+                    flag_degraded(junction, zero == Fit::Unsolved
+                                                ? "corner " + std::to_string(k) + ": fillet solver did not converge"
+                                                : "corner " + std::to_string(k) + ": kerb intersection lies beyond the trim line");
+                } else {
+                    double lo = 0, hi = requested;
+                    sp = lo_sp;
+                    sq = lo_sq;
+                    for (int i = 0; i < 30 && hi - lo > 1e-6; ++i) {
+                        const double mid = 0.5 * (lo + hi);
+                        double ms = 0, mq = 0;
+                        const Fit f = attempt(mid, ms, mq);
+                        if (f == Fit::Ok) lo = mid, sp = ms, sq = mq;
+                        else {
+                            hi = mid;
+                            unsolved = unsolved || f == Fit::Unsolved;
+                        }
+                    }
+                    c.radius = lo;
+                    if (unsolved)
+                        flag_degraded(junction, "corner " + std::to_string(k) +
+                                                    ": fillet solver did not converge, radius may be smaller than needed");
                 }
-                c.radius = c.radius < 0.25 ? 0.0 : c.radius * 0.7;
-                c.sp = base_k + c.radius / th;
-                c.sq = base_j + c.radius / th;
             }
+            c.sp = sp;
+            c.sq = sq;
         } else {
             c.radius = 0;
         }
@@ -203,6 +344,7 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
         cc.edge_l = aj.edge;
         cc.angle = theta;
         cc.radius = c.radius;
+        cc.requested_radius = requested;
         cc.overridden = overrides.corner_radius.count(CornerKey{junction.node, aj.edge, ak.edge}) > 0;
         cc.kerb = c.kerb;
         junction.corners.push_back(std::move(cc));
@@ -226,17 +368,10 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
     Clipper2Lib::PathD path;
     for (const Vec3& p : outline) path.emplace_back(p.x, p.y);
     const Clipper2Lib::PathsD merged = Clipper2Lib::Union(Clipper2Lib::PathsD{path}, Clipper2Lib::FillRule::NonZero, 3);
-    if (merged.empty()) {  // failure: leave the junction without geometry
+    append_polygons(junction.carriageway, merged);
+    if (junction.carriageway.empty()) {  // failure: leave the junction without geometry
         junction.corners.clear();
-        return;
-    }
-    for (const Clipper2Lib::PathD& m : merged) {
-        std::vector<Vec2> ring;
-        for (const auto& pt : m) ring.push_back({pt.x, pt.y});
-        if (ring.size() >= 3) junction.carriageway.push_back(std::move(ring));
-    }
-    if (junction.carriageway.empty()) {
-        junction.corners.clear();
+        flag_degraded(junction, "carriageway outline produced no polygon");
         return;
     }
 
@@ -287,19 +422,20 @@ void generate_geometry(Junction& junction, const RoadGraph&, const RegionPack&, 
         // Straight bands are kept as drawn; one that crosses itself (curved arms, tight fillets)
         // goes through a Clipper union to normalise it.
         std::vector<Vec2> raw;
-        for (const Vec3& p : band) raw.push_back(p.xy());
-        if (signed_area(raw) < 0) std::reverse(raw.begin(), raw.end());
+        for (const Vec3& p : band)
+            if (raw.empty() || (raw.back() - p.xy()).length() > 1e-9) raw.push_back(p.xy());
+        while (raw.size() > 1 && (raw.front() - raw.back()).length() <= 1e-9) raw.pop_back();
+        if (raw.size() < 3) continue;
         if (!ring_self_intersects(raw)) {
-            if (raw.size() >= 3 && std::fabs(signed_area(raw)) > 1e-6) junction.pavements.push_back(std::move(raw));
+            const double ar = signed_area(raw);
+            if (std::fabs(ar) <= kMinArea) continue;
+            if (ar < 0) std::reverse(raw.begin(), raw.end());
+            junction.pavements.push_back(std::move(raw));
             continue;
         }
         Clipper2Lib::PathD bp;
-        for (const Vec3& p : band) bp.emplace_back(p.x, p.y);
-        for (const Clipper2Lib::PathD& m : Clipper2Lib::Union(Clipper2Lib::PathsD{bp}, Clipper2Lib::FillRule::NonZero, 3)) {
-            std::vector<Vec2> ring;
-            for (const auto& pt : m) ring.push_back({pt.x, pt.y});
-            if (ring.size() >= 3 && std::fabs(signed_area(ring)) > 1e-3) junction.pavements.push_back(std::move(ring));
-        }
+        for (const Vec2& p : raw) bp.emplace_back(p.x, p.y);
+        append_polygons(junction.pavements, Clipper2Lib::Union(Clipper2Lib::PathsD{bp}, Clipper2Lib::FillRule::NonZero, 3));
     }
 
     // ---- crossings: one per arm, just outside the trim line

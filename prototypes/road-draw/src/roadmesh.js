@@ -27,7 +27,7 @@ class MB {
   }
 }
 const lin = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
-const COL = { asph: lin('#3c3f44'), pave: lin('#bdbcb7'), kerb: lin('#9d9c96'), verge: [0.24, 0.42, 0.15], hard: lin('#4b4e53'), joint: lin('#7a7872'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#d2d0c9'), concDk: lin('#aeaca5'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0'), wallC: lin('#8a8882'), wallJ: lin('#55534f'), steel: lin('#9aa0a6') };
+const COL = { asph: lin('#3c3f44'), pave: lin('#bdbcb7'), kerb: lin('#9d9c96'), hard: lin('#4b4e53'), joint: lin('#7a7872'), mark: lin('#f2f2f2'), conc: lin('#d2d0c9'), concDk: lin('#aeaca5'), tube: lin('#060607'), parapet: lin('#c9c7c0'), wallC: lin('#8a8882'), wallJ: lin('#55534f'), steel: lin('#9aa0a6') };
 const stdMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, ...o });
 // Subtle procedural asphalt grain (near-white so vertex colours still drive the tint); uv = world metres / 4.
 const asphTex = (() => {
@@ -40,9 +40,9 @@ const asphTex = (() => {
   } catch (e) { return null; }
 })();
 const MAT = {
-  asph: stdMat({ roughness: 0.9, map: asphTex }), pave: stdMat(), kerb: stdMat(), verge: stdMat({ roughness: 1 }), soil: stdMat({ roughness: 1 }),
+  asph: stdMat({ roughness: 0.9, map: asphTex }), pave: stdMat(), kerb: stdMat(),
   mark: stdMat({ roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
-  conc: stdMat({ roughness: 0.85 }), joint: stdMat({ roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), cap: stdMat({ roughness: 1 }), tube: stdMat({ roughness: 1 }),
+  conc: stdMat({ roughness: 0.85 }), joint: stdMat({ roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), tube: stdMat({ roughness: 1 }),
 };
 // Per-road material variants: higher road id => pulled slightly closer in depth, so overlaps never z-fight; markings always above every surface.
 const roadMatCache = new Map();
@@ -50,7 +50,7 @@ function roadMats(id) {
   const q = id % 64; let m = roadMatCache.get(q);
   if (!m) {
     const po = (mat, f, u) => { const c = mat.clone(); c.polygonOffset = true; c.polygonOffsetFactor = f; c.polygonOffsetUnits = u; return c; };
-    m = { asph: po(MAT.asph, -q * 0.1, -q), pave: po(MAT.pave, -q * 0.1 - 0.05, -q - 0.5), hard: po(MAT.asph, -q * 0.1 - 0.02, -q - 0.2), verge: po(MAT.verge, -q * 0.1, -q), kerb: po(MAT.kerb, -q * 0.1 - 0.05, -q - 0.5), mark: po(MAT.mark, -10 - q * 0.1, -100 - q) };
+    m = { asph: po(MAT.asph, -q * 0.1, -q), pave: po(MAT.pave, -q * 0.1 - 0.05, -q - 0.5), hard: po(MAT.asph, -q * 0.1 - 0.02, -q - 0.2), kerb: po(MAT.kerb, -q * 0.1 - 0.05, -q - 0.5), mark: po(MAT.mark, -10 - q * 0.1, -100 - q) };
     roadMatCache.set(q, m);
   }
   return m;
@@ -127,7 +127,7 @@ function buildRoadGroup(r) {
       strip(B.pave, sg * cw, sg * hw, PAVE_H, UP, pav);
       face(B.kerb, sg * cw, 0, PAVE_H, -sg, pav);
       face(B.kerb, sg * hw, -0.43, PAVE_H, sg, pav);
-    } else {       // rural: grass verge (dual/motorway: hard strip first), no kerbs or footways
+    } else {       // rural: no kerbs or footways (the verge is graded ground, not a mesh); dual/motorway get a hard shoulder strip
       const hs = ty.dual ? 1.0 : 0, v0 = cw + hs;
       if (hs) strip(B.hard, sg * cw, sg * v0, -0.02, UP, surf);
       strip(B.hard, sg * v0, sg * hw, -0.03, UP, k => surf(k) && (S[k].br || S[k + 1].br));   // deck: asphalt right to the parapet
@@ -177,8 +177,15 @@ function buildRoadGroup(r) {
     bk.quad(v[0], v[1], v[5], v[4], neg(ln)); bk.quad(v[3], v[2], v[6], v[7], ln);
     bk.quad(v[0], v[3], v[7], v[4], neg(f)); bk.quad(v[1], v[2], v[6], v[5], f);
   };
+  const MIN_BRIDGE = 20;   // m of flagged span: shorter runs render as a solid-fill block, not a bridge
   for (const [a, b] of runs(s => s.br)) {
     if (b <= a) continue;
+    if (S[b].s - S[a].s < MIN_BRIDGE) {   // too short to be a bridge (fill only briefly exceeds the cap): a solid-fill abutment block with parapets, no deck slab or piers
+      const sa = Math.max(0, a - 1), sb = Math.min(n - 1, b + 1);
+      extrude(sa, sb, -hw, hw, k => Math.min(gMin2(S[k], -1.0, 1.0, -hw, hw), S[k].z + zo - DECK_T) - 1.0, k => S[k].z + zo - 0.03, { side: CB.abutment.c, noTop: true });
+      for (const sg of [1, -1]) extrude(sa, sb, sg > 0 ? hw - 0.4 : -hw + 0.1, sg > 0 ? hw - 0.1 : -hw + 0.4, k => S[k].z + zo - 0.03, k => S[k].z + zo + PARAPET_H, { top: CB.parapet.d, side: CB.parapet.c });
+      continue;
+    }
     let a2 = Math.max(0, a - 1), b2 = Math.min(n - 1, b + 1); while (S[b2].s - S[a2].s < 24 && (a2 > 0 || b2 < n - 1)) { if (a2 > 0) a2--; if (S[b2].s - S[a2].s >= 24) break; if (b2 < n - 1) b2++; }   // short flagged runs get a sensible >=24 m span, deck+abutments at both ends
     const zD = k => S[k].z + zo;
     // Deck: 0.5 m fascia over the full width, 1.0 m slab body inset 0.7 m each side (reads as a slab, not a wall).
@@ -221,6 +228,7 @@ function buildRoadGroup(r) {
       if (st.length > 1) { const pp = st[st.length - 2], dP = [pr.a[0] - pp.a[0], pr.a[1] - pp.a[1]]; if (dP[0] * dA[0] + dP[1] * dA[1] < 0) continue; }
       st.push(q);
     }
+    
     if (st.length < 2) return;
     { let L = 0; for (let i = 1; i < st.length; i++) L += Math.hypot(st[i].a[0] - st[i - 1].a[0], st[i].a[1] - st[i - 1].a[1]); if (L < 6 && WB === CB.wall) return; }
     let acc = 0, nextJ = 3;
@@ -241,7 +249,6 @@ function buildRoadGroup(r) {
       WB.c.quad(W3(p, WALL_T, p.zb), W3(q, WALL_T, q.zb), W3(q, WALL_T, wt(q)), W3(p, WALL_T, wt(p)), hi);
       const c0 = 0, c1 = WALL_T;   // cap flush with the body (same mesh, so every column reaches the foot)
       WB.c.quad(W3(p, c0, p.zt), W3(q, c0, q.zt), W3(q, c1, q.zt), W3(p, c1, p.zt), UP);
-      WB.c.quad(W3(p, c0, wt(p)), W3(q, c0, wt(q)), W3(q, c1, wt(q)), W3(p, c1, wt(p)), DOWN);
       WB.c.quad(W3(p, c0, wt(p)), W3(q, c0, wt(q)), W3(q, c0, q.zt), W3(p, c0, p.zt), lo);
       WB.c.quad(W3(p, c1, wt(p)), W3(q, c1, wt(q)), W3(q, c1, q.zt), W3(p, c1, p.zt), hi);
     }
@@ -300,8 +307,13 @@ function buildRoadGroup(r) {
       const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go, hB(q.x, q.y), hB(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)) - 1.0, top = Math.min(q.top, q.zTop + 0.7, Math.max(Math.min(gi, go) + 0.55, zb + 0.1));   // fill wall: barrier-height cap (+0.55 above road level)
       topRaw.push(top); zbA.push(zb); uA.push(u);
     }
-    // smooth coping line: ~10 m moving average of the top, then monotone linear tapers into the ground at free ends
-    const HW = 10, topSm = topRaw.map((_, i) => { let sum = 0, c = 0; for (let j = Math.max(0, i - HW); j <= Math.min(m - 1, i + HW); j++) { sum += topRaw[j]; c++; } return sum / c; });
+    // smooth coping line: cut walls use a moving-max then moving-average envelope (always >= the raw top, so the retained ground never pokes over the coping), fill walls a plain moving average;
+    // then a gradient limiter that only ever raises the top (max WALL_SLOPE m per m, walls slope rather than saw-tooth with the 0.5 m grid), then monotone linear tapers into the ground at free ends
+    const HW = 12, WALL_SLOPE = 0.25, movF = (a, f) => a.map((_, i) => { let v = f.init, c = 0; for (let j = Math.max(0, i - HW); j <= Math.min(m - 1, i + HW); j++) { v = f.acc(v, a[j]); c++; } return f.fin(v, c); });
+    const AVG = { init: 0, acc: (v, x) => v + x, fin: (v, c) => v / c }, MAX = { init: -1e9, acc: Math.max, fin: v => v };
+    const topSm = run.cut ? movF(movF(topRaw, MAX), AVG) : movF(topRaw, AVG);
+    for (let i = 1; i < m; i++) topSm[i] = Math.max(topSm[i], topSm[i - 1] - WALL_SLOPE * (cum[i] - cum[i - 1]));
+    for (let i = m - 2; i >= 0; i--) topSm[i] = Math.max(topSm[i], topSm[i + 1] - WALL_SLOPE * (cum[i + 1] - cum[i]));
     const tgtA = Math.min(topSm[0], gSm[0] - 0.1), tgtB = Math.min(topSm[m - 1], gSm[m - 1] - 0.1), TL = Math.min(TAPER_L * 1.5, tot / 2);
     for (let i = 0; i < m; i++) {
       let zt = topSm[i];
@@ -345,6 +357,11 @@ function buildRoadGroup(r) {
     }
     const pe = poses[poses.length - 1];
     B.tube.quad(latPt(pe, -LW, pe.z + zo - 0.02), latPt(pe, LW, pe.z + zo - 0.02), latPt(pe, LW, pe.z + zo + ZR), latPt(pe, -LW, pe.z + zo + ZR), fwd(pe.h).map(v => -v * dir));
+    // mouth cap: the graded ground is a heightfield, so it can still rise across the opening a few metres into the bore (the grading steps up from formation to natural there).
+    // An opaque dark panel just in front of that rise (at most HEAD_T deep, so the headwall reveal stays visible) guarantees you only ever see a dark lined tube, never terrain or sky through the opening.
+    { let capAl = HEAD_T; for (let al = 0.5; al <= HEAD_T + 6; al += 0.5) { let hit = false; for (const la of [-OW * 0.8, 0, OW * 0.8]) { const q = alOf(al, la); if (gAt(q[0], q[1]) > zr + 0.3) hit = true; } if (hit) { capAl = Math.max(0.3, Math.min(HEAD_T, al - 0.6)); break; } }
+      const pc = poseAt(r, P0.s + dir * capAl), zc = pc.z + zo;
+      B.tube.quad(latPt(pc, -LW, zc - 0.02), latPt(pc, LW, zc - 0.02), latPt(pc, LW, zc + ZR), latPt(pc, -LW, zc + ZR), fwd(pc.h).map(v => -v * dir)); }
     // wing walls: symmetric 30 deg splay from the approach wall line out to the headwall edges; start flush with the approach wall (wallRuns) if present
     const sApp = clamp(P0.s - dir * wingLen, S[0].s, S[n - 1].s), Lw = Math.abs(P0.s - sApp), NS = Math.max(2, Math.ceil(Lw / 1.5));
     for (const sg of [1, -1]) {
@@ -367,8 +384,8 @@ function buildRoadGroup(r) {
   }
   const add = (bk, mat, shadow, pick, kind = 'surface') => { const m = bk.mesh(mat, shadow); if (m) { m.userData.road = r; m.userData.pick = pick; m.userData.kind = kind; g.add(m); } };
   add(B.asph, RM.asph, false, true); add(B.tunRoad, RM.asph, false, false);
-  add(B.pave, RM.pave, false, true); add(B.verge, RM.verge, false, true); add(B.soil, MAT.soil, false, false); add(B.kerb, RM.kerb, false, false);
-  add(B.mark, RM.mark, false, false); add(B.steel, MAT.conc, true, false, 'barrier'); add(B.hard, RM.hard, false, true); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false, 'lining');
+  add(B.pave, RM.pave, false, true); add(B.kerb, RM.kerb, false, false);
+  add(B.mark, RM.mark, false, false); add(B.steel, MAT.conc, true, false, 'barrier'); add(B.hard, RM.hard, false, true); add(B.tube, MAT.tube, false, false, 'lining');
   for (const k of Object.keys(CB)) { add(CB[k].j, MAT.joint, false, false, k); add(CB[k].c, MAT.conc, true, false, k); add(CB[k].d, MAT.conc, true, false, k); }
   return g;
 }

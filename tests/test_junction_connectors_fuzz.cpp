@@ -177,12 +177,31 @@ TEST_CASE("A fuzz: coverage, endpoints, determinism, overrides, dirty rebuild") 
             const Junction& j2 = s2.junctions.at(n.centre);
             CHECK(same(j2, build_junctions(n.g, *n.region, ov, {n.centre}).junctions.at(n.centre)));
             CHECK(same(j2, build_junctions(n.g, *n.region, ov).junctions.at(n.centre)));
-            // The keyed corner reports the override (also on reflex corners, which have no fillet);
-            // its radius never exceeds the request (trim clamps may shrink it).
+            // The keyed corner reports the override (also on reflex corners, which have no fillet).
+            // The arms are straight here, so the radius used is exactly the request when the trims
+            // leave room for it, else the largest that fits (an ordinary clamp, not degraded);
+            // a silent shrink to a smaller value must have been flagged.
             bool corner_ok = false;
-            for (const auto& c2 : j2.corners)
-                if (c2.edge_l == cc.edge_l && c2.edge_r == cc.edge_r)
-                    corner_ok = c2.overridden && c2.radius >= 0 && c2.radius <= radius + 1e-9;
+            for (std::size_t ci = 0; ci < j2.corners.size(); ++ci) {
+                const auto& c2 = j2.corners[ci];
+                if (c2.edge_l != cc.edge_l || c2.edge_r != cc.edge_r) continue;
+                corner_ok = c2.overridden && c2.requested_radius == doctest::Approx(radius) && c2.radius >= 0 &&
+                            c2.radius <= radius + 1e-9;
+                if (j2.cls != NodeClass::Junction || j2.degraded) continue;  // merge/diverge or flagged: no promise
+                if (c2.angle >= kPi - 0.01) {
+                    CHECK(c2.radius == 0);
+                    continue;
+                }
+                const auto& ak = j2.arms[static_cast<std::size_t>(c2.arm_right)];
+                const auto& aj = j2.arms[static_cast<std::size_t>(c2.arm_left)];
+                const double sn = std::sin(c2.angle), cot = std::cos(c2.angle) / sn, th = std::tan(c2.angle / 2);
+                const double base_k = ak.kerb_left * cot + aj.kerb_right / sn;
+                const double base_j = ak.kerb_left / sn + aj.kerb_right * cot;
+                const double fit = std::max(0.0, std::min(j2.trims[ci] - base_k,
+                                                          j2.trims[static_cast<std::size_t>(c2.arm_left)] - base_j) *
+                                                     th);
+                CHECK(c2.radius == doctest::Approx(std::min(radius, fit)).epsilon(1e-4).scale(1.0));
+            }
             CHECK(corner_ok);
             for (const auto& c : j2.connectors) {
                 const ConnectorKey k = key_of(j2, c);

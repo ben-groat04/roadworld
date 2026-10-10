@@ -149,11 +149,8 @@ const info = await page.evaluate(({ CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOT
   return out;
 }, { CROSS, TEE, HILL, VIADUCT, TUNNEL, DUAL, MOTORWAY, TIGHT });
 
-
-if (process.env.SHOT) { const [tx,ty,dist,elev,look,path] = process.env.SHOT.split(","); await page.evaluate(({tx,ty,dist,elev,look}) => { const P = window.__proto, az = Math.atan2(-Math.cos(look * Math.PI / 180), Math.sin(look * Math.PI / 180)); P.setView(+tx, +ty, +dist, az, (90 - elev) * Math.PI / 180); P.renderNow(); }, {tx,ty,dist,elev,look}); await page.waitForTimeout(300); await page.evaluate(() => window.__proto.renderNow()); await page.screenshot({ path }); await browser.close(); process.exit(0); }
-if (process.env.DBG) { const fn = eval("(" + readFileSync(process.env.DBG, "utf8") + ")"); console.log(JSON.stringify(await page.evaluate(fn), null, 1)); await browser.close(); process.exit(0); }
 if (CHECK_MODE) {
-  const results = await page.evaluate(CHECKS_IN_PAGE);
+  const results = await page.evaluate(CHECKS_IN_PAGE); console.log(await page.evaluate(DBGFN));
   await page.waitForTimeout(300);
   const consoleErrs = [...new Set(errors)];
   results.push({ name: 'no_console_errors', pass: consoleErrs.length === 0, msg: consoleErrs.length ? consoleErrs.join(' | ') : '0 errors' });
@@ -453,7 +450,15 @@ function CHECKS_IN_PAGE() {
     for (let j = 0; j < GW; j++) for (let i = 0; i < GW; i++) { const g = GHH[j * GW + i];
       for (const [di, dj] of [[1, 0], [0, 1]]) { if (i + di >= GW || j + dj >= GW) continue; const st = Math.abs(GHH[(j + dj) * GW + i + di] - g); if (st <= 1.0) continue; n++;
         const x = (i + di / 2) * GR, y = (j + dj / 2) * GR;
-        if (inWall(x, y) || stuct(x, y)) continue; bad++; w = track(w, { x, y, road: 0, what: 'bare ground step', v: st }); } }
+        if (inWall(x, y) || stuct(x, y)) continue; bad++; (window.__bare=window.__bare||[]).push([x,y,st]); w = track(w, { x, y, road: 0, what: 'bare ground step', v: st }); } }
     done('no_bare_steps', w, bad, n, `${n} texel steps > 1 m, all inside wall solids or bridge/tunnel zones`); }
   return results;
 }
+
+function DBGFN(){
+  const P=window.__proto,out=[];
+  for(const y of [1410,1417.5,1424]){let row='y='+y+': ';for(let x=1160;x<=1215;x+=2.5)row+=`${x}:${P.groundAt(x,y).toFixed(1)}/${P.hBase(x,y).toFixed(1)} `;out.push(row);}
+  const r=P.roads().find(r=>r.id===6);out.push(r.samples.filter(s=>s.x>1160&&s.x<1230).map(s=>s.x.toFixed(0)+(s.br?'B':'.')).join(' '));
+  return out.join('\n');
+}
+

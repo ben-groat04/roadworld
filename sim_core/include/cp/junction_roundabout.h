@@ -1,14 +1,19 @@
 #pragma once
-// Roundabouts: a JunctionGroup of kind Roundabout (docs/road-graph-model.md section 4). A closed
-// ring of one-way edges whose circulation follows DrivingSide (clockwise for left-hand traffic).
-// Two ways in, one group out:
-//   - make_place_roundabout: the dedicated tool, emits the ring and cuts the approach roads;
-//   - recognise_roundabouts: promotes hand-drawn closed one-way loops.
-// The group is always derived (recognised from the graph), never stored, so both routes yield
-// the same object. build_roundabout turns a group into the layout (island, carriageway, splitter
-// islands, entry/exit/through/ring connectors); apply_roundabouts is the post-pass over the
-// JunctionSet from build_junctions that replaces the ring nodes' plain junctions by one
-// Junction of kind Roundabout (see docs/junctions.md section 7).
+// Roundabouts (docs/junctions.md section 7, docs/road-graph-model.md section 4).
+//
+// A roundabout is NOT a merged junction. Its ring is ordinary, individually editable one-way
+// edges whose road type carries RoadType::roundabout_ring, and every ring node keeps its own
+// Junction. "Roundabout" is a property layered on top:
+//   - find_roundabouts():   groups = closed directed loops of flagged edges circulating the way
+//                           DrivingSide dictates. Only flagged edges are walked; anything else
+//                           that is flagged but not a clean ring is reported, never guessed.
+//   - apply_roundabouts():  post-pass over the JunctionSet from build_junctions: marks every ring
+//                           node's Junction (kind = Roundabout, group_nodes), forces entry/exit
+//                           corner radii, creates a Joint-class Junction for ring nodes that have
+//                           only the two ring arms (so JunctionSet::find works for every ring
+//                           node), flags unbuildable rings as degraded, and returns the group-level
+//                           results (islands, splitters, give-way).
+//   - make_place_roundabout(): a preset that draws the ring (and cuts the approach roads).
 #include <string>
 #include <vector>
 
@@ -17,32 +22,12 @@
 
 namespace cp {
 
-// Tunables. Everything here is region-agnostic geometry or a placeholder for a region-pack
-// field: roundabout_params() is the one place that will read the pack (it has no roundabout
-// fields yet, so it returns these fallbacks).
-struct RoundaboutParams {
-    // Recognition limits (hand-drawn rings must be roughly round and small).
-    double min_radius = 5.0;      // m, mean ring radius
-    double max_radius = 80.0;     // m
-    double min_roundness = 0.6;   // min/max distance of the ring from its centroid
-    int max_ring_edges = 16;
-    int min_arms = 3;             // approach edges attached to the ring
-    // Forced kerb fillet radii at ring nodes (m): tight entries, easy exits; ring_corner_radius_factor
-    // times the ring radius on the island side.
-    double entry_corner_radius = 8.0;
-    double exit_corner_radius = 12.0;
-    double ring_corner_radius_factor = 1.0;
-    // The tool.
-    double max_arc = 1.62;           // rad, longest ring edge (about 93 degrees)
-    double min_island_radius = 3.0;  // m, smallest central island the tool accepts
-    double min_edge_length = 4.0;    // m, shortest ring edge or approach stub the tool accepts
-    // Splitter islands on two-way approaches.
-    double splitter_length = 12.0;   // m beyond the trim line
-    double splitter_width = 1.8;     // m at the ring end
-};
-RoundaboutParams roundabout_params(const RegionPack& region);
+// The region-pack tunables (RegionPack::roundabout; fallbacks live in RoundaboutRules).
+const RoundaboutRules& roundabout_params(const RegionPack& region);
 
-// An approach road attached to the ring.
+// First (smallest id) road type flagged roundabout_ring, or "" if the pack has none.
+std::string default_ring_road_type(const RegionPack& region);
+
 struct RoundaboutArm {
     int ring_index = 0;   // index into JunctionGroup::nodes
     EdgeId edge;          // the approach edge (not a ring edge)
@@ -50,79 +35,101 @@ struct RoundaboutArm {
     bool exit = false;    // carries traffic off the ring (both set on a two-way approach)
 };
 
+// A valid ring. It exists as soon as the loop closes: the island is built and the ring nodes
+// are marked even with no approach roads (a ring with fewer than 3 arms in total is just an
+// unattached loop; nothing below treats the arm count as a requirement).
 struct JunctionGroup {
     JunctionKind kind = JunctionKind::Roundabout;
     std::vector<NodeId> nodes;       // ring nodes in circulation order, nodes[0] has the smallest id
     std::vector<EdgeId> ring_edges;  // ring_edges[i] runs nodes[i] -> nodes[(i + 1) % n]
-    std::vector<RoundaboutArm> arms; // ordered by ring index, then edge id
-    Vec2 centre;                     // centroid of the ring
-    double radius = 0;               // m, mean distance of the ring from the centre
+    std::vector<RoundaboutArm> arms; // approach edges, ordered by ring index then edge id
+    Vec2 centre;                     // centroid of the ring centreline
+    double radius = 0;               // m, mean distance of the ring centreline from the centre
     bool clockwise = true;
 };
 
-// Detects hand-drawn (or tool-made) rings: a simple closed loop of one-way edges whose
-// circulation matches region.driving_side, roughly round, with at least min_arms approach
-// edges attached. Ring nodes with only the two ring edges (joints) are allowed. Groups are
-// node-disjoint; order is deterministic.
-std::vector<JunctionGroup> recognise_roundabouts(const RoadGraph& graph, const RegionPack& region);
+// A flagged edge set that is not a clean ring. Reported to the caller and shown as degraded
+// on the Junctions of its nodes; never turned into a group.
+struct RoundaboutProblem {
+    std::vector<NodeId> nodes;
+    std::vector<EdgeId> edges;
+    std::string what;
+};
 
-// The tool. Every edge crossing the circle is cut at the ring (the part inside the circle is
-// removed, including nodes left inside); the ring of one-way edges (at least 4 nodes, arcs of
-// at most max_arc) is inserted with the circulation of region.driving_side. Ring nodes take the
-// height of `centre`. Fails (and leaves the graph unchanged) if the ring road type is unknown
-// or too wide for the radius, or if a crossing leaves a stub or ring edge shorter than
-// min_edge_length. One undo step; redo reproduces the same ids.
+struct RoundaboutScan {
+    std::vector<JunctionGroup> groups;
+    std::vector<RoundaboutProblem> problems;
+};
+
+// Finds roundabout groups. Walks only edges of roundabout_ring road types. Malformed means: not
+// closed, a node without exactly one flagged in-edge and one flagged out-edge (figure of eight,
+// two rings sharing a node, a T on the ring), a flagged edge that is two-way or a self-loop, fewer
+// than 3 ring nodes, or circulation against DrivingSide. A loop that mixes flagged and unflagged
+// road types is not a ring: its flagged part is an open chain and is reported as such.
+// `only` empty: whole graph. Otherwise just the rings touching those nodes (dirty rebuild): the
+// cost is proportional to the rings found, not to the graph size.
+RoundaboutScan find_roundabouts(const RoadGraph& graph, const RegionPack& region, const std::vector<NodeId>& only = {});
+
+// Tool validation: empty string if make_place_roundabout would succeed, else the reason.
+std::string check_place_roundabout(const RoadGraph& graph, Vec3 centre, double radius, const std::string& ring_road_type,
+                                   const RegionPack& region);
+
+// The preset. Every edge crossing the circle is cut at the ring (the part inside the circle is
+// removed along with nodes left without edges inside it). It FAILS, graph untouched, when:
+// the road type is not a roundabout_ring type; the radius is outside [min_tool_radius,
+// max_tool_radius] or leaves an island under min_island_radius; an existing road lies wholly
+// inside the circle (it would be a road in the island); a roundabout ring or a bridge/tunnel
+// crosses the circle; a stub or ring edge would be shorter than min_edge_length. Nothing the tool
+// did not create is ever deleted other than the inside parts cut by that rule. The ring has at
+// least 4 nodes, arcs of at most max_arc, is flat at centre.z and circulates per DrivingSide.
+// One undo step; redo reproduces the same ids.
 RoadCommandPtr make_place_roundabout(Vec3 centre, double radius, const std::string& ring_road_type,
                                      const RegionPack& region);
-
-enum class RoundaboutConnectorRole {
-    Entry,    // approach inbound lane -> ring lane (gives way to the ring)
-    Exit,     // ring lane -> approach outbound lane
-    Through,  // ring lane -> ring lane across a ring node (from the node's junction)
-    Ring,     // along a ring edge between the trim lines of consecutive ring nodes
-};
-
-struct RoundaboutConnector {
-    RoundaboutConnectorRole role = RoundaboutConnectorRole::Ring;
-    int ring_index = 0;     // ring node where it happens (Ring: the node it starts at)
-    EdgeId from_edge, to_edge;
-    int from_slot = 0, to_slot = 0;
-    std::vector<Vec3> path;
-    bool give_way = false;  // entries only
-    // Entries only: the circulating movements they must yield to (Through at the same node and
-    // the Ring connector arriving on the same lane). Indices into RoundaboutLayout::connectors.
-    std::vector<int> conflicts;
-};
 
 struct SplitterIsland {
     int arm = 0;                 // index into JunctionGroup::arms
     std::vector<Vec2> polygon;   // teardrop, CCW
 };
 
+// Which connectors of a ring node give way, and to what. Priority data only (no lane choice or
+// traffic behaviour): v0 needs it for give-way markings. Wanted later as fields on LaneConnector
+// (`bool give_way; std::vector<int> yields_to;`); until then it lives here, keyed by node and
+// connector index into that node's Junction::connectors.
+struct GiveWay {
+    NodeId node;
+    int connector = 0;              // approach arm -> ring-out arm connector (an entry)
+    std::vector<int> yields_to;     // ring-in -> ring-out connectors it must give way to
+};
+
+// Group-level result: derived per group, not stored on any Junction.
 struct RoundaboutLayout {
     JunctionGroup group;
-    bool ok = false;         // false: nothing below is usable, `error` says why
+    bool ok = false;         // false: the island and splitters are empty and `error` says why
     std::string error;
     PolygonSet island;       // central island: one CCW ring
-    PolygonSet carriageway;  // circulatory carriageway and approach flares: outer CCW ring(s) + island-shaped CW hole
     std::vector<SplitterIsland> splitters;
-    std::vector<RoundaboutConnector> connectors;
-    // The ring nodes' own junctions (forced fillet radii applied); empty for joint nodes.
+    std::vector<GiveWay> give_way;
+    // The ring nodes' own junctions with the forced fillet radii (and player overrides) applied;
+    // absent for ring nodes that have only the two ring arms.
     std::map<NodeId, Junction> ring_junctions;
 };
 
-// Layout for one group. Builds the ring nodes' junctions internally with the forced entry/exit
-// corner radii (player corner overrides in `overrides` win).
+// Layout for one group: builds the ring nodes' junctions (forced radii; a player corner override
+// wins), then island, splitters and give-way.
 RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& graph, const RegionPack& region,
                                   const JunctionOverrides& overrides);
 
-// Post-pass over the JunctionSet from build_junctions. For every recognised roundabout with at
-// least one ring node in `set`, erases the ring nodes' plain junctions and inserts ONE Junction
-// at group.nodes[0]: kind = Roundabout, group_nodes = the ring nodes, arms = the approach arms
-// of all ring nodes (CCW about the ring centre, trims from the ring node junctions), carriageway
-// = ring + flares with the island as a hole, one connector per (inbound lane, outbound lane of
-// another arm) routed round the ring. Groups whose layout fails are left as plain junctions.
-void apply_roundabouts(JunctionSet& set, const RoadGraph& graph, const RegionPack& region,
-                       const JunctionOverrides& overrides);
+struct RoundaboutResult {
+    std::vector<RoundaboutLayout> layouts;
+    std::vector<RoundaboutProblem> problems;
+};
+
+// Post-pass over the JunctionSet from build_junctions(graph, region, overrides[, only]). For
+// every group with a ring node in `set` (or, when `only` is non-empty, touching `only`), replaces
+// the ring nodes' junctions by the forced-radius ones with kind = Roundabout and group_nodes set.
+// Failures (a layout that cannot be built, malformed rings) set Junction::degraded on the ring
+// nodes' junctions and are returned. Use the same `only` as for build_junctions.
+RoundaboutResult apply_roundabouts(JunctionSet& set, const RoadGraph& graph, const RegionPack& region,
+                                   const JunctionOverrides& overrides, const std::vector<NodeId>& only = {});
 
 }  // namespace cp

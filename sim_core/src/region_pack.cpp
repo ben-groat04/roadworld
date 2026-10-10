@@ -233,6 +233,9 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     rt.advisory_max_grade = opt_number(e, "advisory_max_grade_pct", 0, ctx, err) / 100.0;
     if (rt.advisory_max_grade < 0) err.set(ctx + ": advisory_max_grade_pct must not be negative");
     if (optional_member(e, "markings")) rt.markings = get_string(e, "markings", ctx, err);
+    rt.roundabout_ring = get_bool(e, "roundabout_ring", false, ctx, err);
+    if (rt.roundabout_ring && (rt.two_way || rt.dual))
+        err.set(ctx + ": roundabout_ring types must be one-way (neither two_way nor dual)");
     return rt;
 }
 
@@ -253,6 +256,25 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
     const double speed_to_mps = err.failed() ? 1.0 : speed_unit_to_mps(unit, err);
     pack.headroom_m = opt_number(rj, "headroom_m", 0, "region", err);
     pack.plan_crossing_junction_dz_m = opt_number(rj, "plan_crossing_junction_dz_m", 0, "region", err);
+    if (const json* rb = optional_member(rj, "roundabout")) {
+        RoundaboutRules& r = pack.roundabout;
+        const std::string c = "region.roundabout";
+        r.entry_corner_radius = opt_number(*rb, "entry_corner_radius_m", r.entry_corner_radius, c, err);
+        r.exit_corner_radius = opt_number(*rb, "exit_corner_radius_m", r.exit_corner_radius, c, err);
+        r.ring_corner_radius_factor = opt_number(*rb, "ring_corner_radius_factor", r.ring_corner_radius_factor, c, err);
+        r.max_arc = opt_number(*rb, "max_arc_rad", r.max_arc, c, err);
+        r.max_ring_edges = static_cast<int>(opt_number(*rb, "max_ring_edges", r.max_ring_edges, c, err));
+        r.min_island_radius = opt_number(*rb, "min_island_radius_m", r.min_island_radius, c, err);
+        r.min_edge_length = opt_number(*rb, "min_edge_length_m", r.min_edge_length, c, err);
+        r.min_tool_radius = opt_number(*rb, "min_tool_radius_m", r.min_tool_radius, c, err);
+        r.max_tool_radius = opt_number(*rb, "max_tool_radius_m", r.max_tool_radius, c, err);
+        r.splitter_length = opt_number(*rb, "splitter_length_m", r.splitter_length, c, err);
+        r.splitter_width = opt_number(*rb, "splitter_width_m", r.splitter_width, c, err);
+        if (!err.failed() && (!(r.max_arc > 0.1) || !(r.min_tool_radius > 0) || r.max_tool_radius < r.min_tool_radius ||
+                              r.max_ring_edges < 4 || r.min_edge_length < 0 || r.min_island_radius < 0 ||
+                              r.entry_corner_radius < 0 || r.exit_corner_radius < 0 || r.ring_corner_radius_factor < 0))
+            err.set(c + ": a value is out of range");
+    }
 
     const json tj = parse_json(road_types_text, "road_types.json", err);
     const json* arr = require(tj, "road_types", "road_types.json", err);

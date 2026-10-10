@@ -27,8 +27,8 @@ if(MSVC)
     # Third-party headers (Clipper2 C4702, nlohmann) are SYSTEM includes; see root CMakeLists.
     /external:W0)
   # C4702 from Clipper2 templates is a back-end warning that /external:W0 cannot suppress; limit the
-  # silencing to the two sources that instantiate Clipper2 (not the rest of sim_core).
-  set_source_files_properties(src/junction_geometry.cpp src/junction_merge.cpp PROPERTIES COMPILE_OPTIONS /wd4702)
+  # silencing to the sources that instantiate Clipper2 (not the rest of sim_core).
+  set_source_files_properties(src/junction_geometry.cpp src/junction_merge.cpp src/junction_roundabout.cpp PROPERTIES COMPILE_OPTIONS /wd4702)
 else()
   # Exceptions stay off so the library can be linked into Unreal modules (CI-enforced:
   # any throw/try/catch in sim_core fails to compile). Callers still see them if enabled.
