@@ -11,7 +11,13 @@ add_library(sim_core
   src/edge_sampling.cpp
   src/heightfield.cpp
   src/earthworks.cpp
+  src/junction.cpp
+  src/junction_connectors.cpp
+  src/junction_geometry.cpp
+  src/junction_merge.cpp
 )
+add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/clipper2 ${CMAKE_BINARY_DIR}/clipper2)
+target_link_libraries(sim_core PUBLIC clipper2)
 target_include_directories(sim_core PUBLIC include)
 # Vendored MIT header; SYSTEM keeps its warnings out of our -Wconversion build.
 target_include_directories(sim_core SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
