@@ -1,13 +1,13 @@
 # City Painter (roadworld)
 
-Photoreal UK sandbox city builder. Source of truth for decisions: `docs/planning-log.md`.
+Photoreal sandbox city builder. UK is only the first region pack, for prototyping; the core must stay region-agnostic (all region-specific values live in `data/regions/<region>/`). Source of truth for decisions: `docs/planning-log.md`.
 v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 
 ## Layout
 - `sim_core/` – engine-agnostic headless C++20 library. No Unreal headers, no GPL/copyleft deps (no CGAL). Clipper2 is the approved geometry lib.
 - `tests/` – doctest unit/golden tests. Build: `cmake -S . -B build && cmake --build build && ctest --test-dir build`.
 - `prototypes/` – throwaway browser UX test tools (not production code).
-- `data/` – data-defined road types, lane types, marking rules.
+- `data/` – data-defined lane types, plus region packs (`data/regions/uk/`: road types, marking rules, clearances, units).
 - `docs/` – planning docs and design proposals.
 
 ## Rules
