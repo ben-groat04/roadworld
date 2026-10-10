@@ -68,8 +68,14 @@ function addMaskDiscard(shader) {
   shader.uniforms.uMask = { value: maskTex };
   shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vMaskXZ;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMaskXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+  // Conservative, smooth discard: erode the (linearly filtered, antialiased) mask by ~1 m using 4 diagonal taps, so the discard edge sits well inside the earthwork edge and has no 1 m stair-steps.
   shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec2 vMaskXZ;\nuniform sampler2D uMask;`)
-    .replace('void main() {', `void main() {\n  if (texture2D(uMask, vec2(vMaskXZ.x, -vMaskXZ.y) / ${WORLD.toFixed(1)}).r > 0.5) discard;`);
+    .replace('void main() {', `void main() {
+  { vec2 mq = vec2(vMaskXZ.x, -vMaskXZ.y), e = vec2(1.0, 1.0); const float MW = ${WORLD.toFixed(1)};
+    float mm = min(min(texture2D(uMask, (mq + e * vec2(1.0, 1.0)) / MW).r, texture2D(uMask, (mq + e * vec2(-1.0, 1.0)) / MW).r),
+                   min(texture2D(uMask, (mq + e * vec2(1.0, -1.0)) / MW).r, texture2D(uMask, (mq + e * vec2(-1.0, -1.0)) / MW).r));
+    mm = min(mm, texture2D(uMask, mq / MW).r);
+    if (mm > 0.55) discard; }`);
 }
 // Terrain material (masked) and the identical unmasked one used by road earthworks.
 const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
@@ -103,7 +109,31 @@ function terrainColour(x, y, out) {
 }
 function updateTerrainMesh() {}   // base terrain is static (kept for callers)
 
-const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), new THREE.MeshStandardMaterial({ color: 0x2f7fa6, transparent: true, opacity: 0.68, roughness: 0.15, metalness: 0.1, depthWrite: false }));
+// Height texture (float, nearest + manual bilinear in the shader) so water only draws where the base terrain is below the water level.
+const hTex = new THREE.DataTexture(TH, TN, TN, THREE.RedFormat, THREE.FloatType);
+hTex.minFilter = hTex.magFilter = THREE.NearestFilter; hTex.generateMipmaps = false; hTex.needsUpdate = true;
+const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f7fa6, transparent: true, opacity: 0.88, roughness: 0.15, metalness: 0.1, depthWrite: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+waterMat.onBeforeCompile = shader => {
+  shader.uniforms.uH = { value: hTex }; shader.uniforms.uLevel = { value: T.water }; waterMat.userData.sh = shader;
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;\nuniform sampler2D uH;\nuniform float uLevel;')
+    .replace('void main() {', `void main() {
+  { vec2 g = vec2(vWXZ.x, -vWXZ.y) / ${WORLD.toFixed(1)} * ${(TN - 1).toFixed(1)}; vec2 f = fract(g); vec2 i0 = floor(g) + 0.5; const float N = ${TN.toFixed(1)};
+    float a = texture2D(uH, i0 / N).r, b = texture2D(uH, (i0 + vec2(1.0, 0.0)) / N).r, c = texture2D(uH, (i0 + vec2(0.0, 1.0)) / N).r, d = texture2D(uH, (i0 + 1.0) / N).r;
+    float h = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+    if (h > uLevel + 0.2) discard; }`);
+};
+const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), waterMat);
 water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);
+water.onBeforeRender = () => { if (waterMat.userData.sh) waterMat.userData.sh.uniforms.uLevel.value = water.position.y; };
+// Skirt around the world edge down below the lowest height, dark earth.
+{
+  const N = TN, pos = [], idx = [], BOT = -40;
+  const edge = (f) => { const base = pos.length / 3; for (let k = 0; k < N; k++) { const [x, y, h] = f(k); pos.push(x, h, -y, x, BOT, -y); } for (let k = 0; k < N - 1; k++) { const a = base + k * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); } };
+  edge(k => [k * CELL, 0, TH[k]]); edge(k => [k * CELL, WORLD, TH[(N - 1) * N + k]]); edge(k => [0, k * CELL, TH[k * N]]); edge(k => [WORLD, k * CELL, TH[k * N + N - 1]]);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+  const sk = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x2a2118, roughness: 1, side: THREE.DoubleSide }));
+  sk.frustumCulled = false; sk.receiveShadow = true; scene.add(sk);
+}
 const apron = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.MeshStandardMaterial({ color: 0x41522f, roughness: 1 }));
 apron.rotation.x = -Math.PI / 2; apron.position.set(WORLD / 2, 0, -WORLD / 2); apron.receiveShadow = true; scene.add(apron);
