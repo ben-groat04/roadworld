@@ -3,7 +3,8 @@
   "_sources": {
     "vertical_k": "DMRB CD 109 Table 3.1 (desirable min crest K / sag K by design speed). Recalled values, not yet checked against the current CD 109; starting points only, tuned by eye.",
     "min_radius": "DMRB CD 109 desirable minimum horizontal radius by design speed; residential uses a Manual for Streets-style tighter value. Advisory only.",
-    "widths": "Typical UK practice; tuned by eye."
+    "widths": "Typical UK practice; tuned by eye.",
+    "street_lights": "estimate: spacing, setbacks, column heights, outreach and arrangement are plausible UK practice (BS 5489 style values recalled, not checked); the motorway is unlit by default (rural motorways are usually unlit); tuned by eye."
   },
   "version": 1,
   "road_types": [
@@ -36,7 +37,7 @@
       "min_radius_m": 20,
       "advisory_max_grade_pct": 10,
       "markings": "urban_single",
-      "street_lights": { "spacing_m": 35, "style": "residential_column_6m", "sides": "staggered" }
+      "street_lights": { "lit": true, "spacing_m": 30, "arrangement": "single_side", "setback_m": 0.8, "footway_inset_m": 0.3, "mounting_height_m": 6, "outreach_m": 0.6, "style": "residential_column_6m" }
     },
     {
       "id": "b_road",
@@ -63,7 +64,7 @@
       "min_radius_m": 180,
       "advisory_max_grade_pct": 8,
       "markings": "rural_single",
-      "street_lights": { "spacing_m": 40, "style": "column_10m", "sides": "single" }
+      "street_lights": { "lit": true, "spacing_m": 35, "arrangement": "staggered", "setback_m": 1.0, "footway_inset_m": 0.3, "mounting_height_m": 10, "outreach_m": 1.5, "style": "column_10m" }
     },
     {
       "id": "roundabout_ring",
@@ -84,7 +85,8 @@
       "vertical_k": { "crest": 10, "sag": 9 },
       "min_radius_m": 12,
       "advisory_max_grade_pct": 5,
-      "markings": "urban_single"
+      "markings": "urban_single",
+      "street_lights": { "lit": true, "spacing_m": 28, "arrangement": "single_side", "setback_m": 0.8, "footway_inset_m": 0.3, "mounting_height_m": 8, "outreach_m": 1.0, "style": "column_8m", "island_min_radius_m": 10 }
     },
     {
       "id": "a_road_dual",
@@ -106,7 +108,7 @@
       "min_radius_m": 720,
       "advisory_max_grade_pct": 6,
       "markings": "dual",
-      "street_lights": { "spacing_m": 50, "style": "column_12m", "sides": "median" }
+      "street_lights": { "lit": true, "spacing_m": 50, "arrangement": "central_reservation", "setback_m": 1.5, "mounting_height_m": 12, "outreach_m": 1.8, "style": "column_12m_twin" }
     },
     {
       "id": "motorway",
@@ -128,7 +130,7 @@
       "min_radius_m": 1020,
       "advisory_max_grade_pct": 4,
       "markings": "motorway",
-      "street_lights": { "spacing_m": 60, "style": "column_15m", "sides": "none" }
+      "street_lights": { "lit": false, "spacing_m": 50, "arrangement": "central_reservation", "setback_m": 1.5, "mounting_height_m": 12, "outreach_m": 1.8, "style": "column_12m_twin" }
     }
   ]
 }

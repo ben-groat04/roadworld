@@ -14,3 +14,4 @@ prototypes/road-draw/progress/
 # Private reference images (Google Street View, copyrighted): never commit
 docs/reference/gsv/
 docs/reference/aerial/
+docs/reference/street/

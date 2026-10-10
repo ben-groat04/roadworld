@@ -197,6 +197,40 @@ std::vector<CrossSectionSlot> parse_slots(const json* arr, const std::string& ct
     return out;
 }
 
+void parse_street_lights(const json& j, RoadType& rt, const std::string& ctx, Err& err) {
+    if (!j.is_object()) {
+        err.set(ctx + ": expected an object");
+        return;
+    }
+    StreetLightRules& r = rt.street_lights;
+    r.lit = get_bool(j, "lit", true, ctx, err);
+    r.spacing = opt_number(j, "spacing_m", r.spacing, ctx, err);
+    r.setback = opt_number(j, "setback_m", r.setback, ctx, err);
+    r.footway_inset = opt_number(j, "footway_inset_m", r.footway_inset, ctx, err);
+    r.mounting_height = opt_number(j, "mounting_height_m", r.mounting_height, ctx, err);
+    r.outreach = opt_number(j, "outreach_m", r.outreach, ctx, err);
+    r.island_min_radius = opt_number(j, "island_min_radius_m", r.island_min_radius, ctx, err);
+    if (optional_member(j, "style")) r.style = get_string(j, "style", ctx, err);
+    if (optional_member(j, "arrangement")) {
+        const std::string a = get_string(j, "arrangement", ctx, err);
+        if (a == "single_side") r.arrangement = LightArrangement::SingleSide;
+        else if (a == "staggered") r.arrangement = LightArrangement::Staggered;
+        else if (a == "opposite") r.arrangement = LightArrangement::Opposite;
+        else if (a == "central_reservation") r.arrangement = LightArrangement::CentralReservation;
+        else if (!err.failed())
+            err.set(ctx + ": arrangement must be single_side, staggered, opposite or central_reservation");
+    }
+    if (err.failed()) return;
+    if (r.arrangement == LightArrangement::CentralReservation && !rt.dual)
+        err.set(ctx + ": central_reservation needs a dual road type");
+    if (r.lit && !(r.spacing >= 5 && r.spacing <= 500)) err.set(ctx + ": spacing_m must be between 5 and 500");
+    if (!(r.setback >= 0 && r.setback <= 10)) err.set(ctx + ": setback_m must be between 0 and 10");
+    if (!(r.footway_inset >= 0 && r.footway_inset <= 2)) err.set(ctx + ": footway_inset_m must be between 0 and 2");
+    if (!(r.mounting_height > 0 && r.mounting_height <= 30)) err.set(ctx + ": mounting_height_m must be between 0 and 30");
+    if (!(r.outreach >= 0 && r.outreach <= 6)) err.set(ctx + ": outreach_m must be between 0 and 6");
+    if (!(r.island_min_radius >= 0)) err.set(ctx + ": island_min_radius_m must not be negative");
+}
+
 RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable& lane_types, Err& err) {
     RoadType rt;
     rt.id = get_string(e, "id", "road type", err);
@@ -253,6 +287,7 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     rt.roundabout_ring = get_bool(e, "roundabout_ring", false, ctx, err);
     if (rt.roundabout_ring && (rt.two_way || rt.dual))
         err.set(ctx + ": roundabout_ring types must be one-way (neither two_way nor dual)");
+    if (const json* sl = optional_member(e, "street_lights")) parse_street_lights(*sl, rt, ctx + ".street_lights", err);
     return rt;
 }
 

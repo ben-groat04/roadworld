@@ -10,6 +10,15 @@ Skeleton only. Written without Unreal installed, so the first compile is the rea
 - If you add or move `sim_core` files, add a matching `Wrap_<name>.cpp` in `Private/SimCore/`.
 
 ## First run (scripted, from "engine just finished installing")
+**One command, engine installed to first pictures (re-runnable, resumes where it stopped):**
+`powershell -NoProfile -ExecutionPolicy Bypass -File unreal\tools\First-Run.ps1`
+(`-DryRun` previews, `-From <step>` / `-Only <step>` / `-Force` override; steps: find-engine, build, environment, textures, level, screenshots; state in `unreal\CityPainter\Saved\first-run-state.json`. On failure it prints the log path and the exact command to re-run that step.)
+
+Only these still need a human:
+1. Accept the prerequisites prompt if one is shown.
+2. Wait out the first shader compile (10-30+ minutes).
+3. Enable the Unreal MCP + All Toolsets plugins and tick Auto Start Server.
+
 Prerequisites: `docs/windows-setup.md` (VS 2026 / 2022 17.14+, Game development workload), UE 5.8 installed, `git lfs pull`. Tools are documented in `tools/README.md`; first-build failures map to fixes in `tools/KNOWN_RISKS.md`. Run from the repo root:
 
 ```powershell

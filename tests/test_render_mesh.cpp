@@ -582,3 +582,16 @@ TEST_CASE("render mesh: fuzz over random junctions") {
     CHECK(built >= 25);
     CHECK(seams > 500);
 }
+
+TEST_CASE("render mesh: highways have no kerbs") {
+    for (const char* type : {"a_road_dual", "motorway"}) {
+        World w;
+        const EdgeId id = w.road({0, 0, 0}, {200, 20, 3}, type, true, {{100, 0, 1}});
+        const JunctionSet none;
+        const WorldMeshSet set = build_edge_mesh(w.g, *w.region, id, none);
+        check_valid(set);
+        INFO(type);
+        CHECK(set.count("kerb") == 0);
+        CHECK(set.count("asphalt") == 1);
+    }
+}
