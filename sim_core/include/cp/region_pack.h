@@ -195,6 +195,18 @@ struct GradingRules {
     double wall_cap = 12.0;            // m, height above which the road needs a bridge or tunnel
     double wall_slack = 0.75;          // m, a slope may exceed wall_start by this much before a wall is needed
     double tunnel_clear_height = 5.5;  // m, tunnel springline height above the road (side-wall headroom)
+    // retaining walls and earthworks (docs/planning-log.md, grading round 4)
+    double wall_max_height = 3.0;      // m, tallest single retaining wall; taller needs wall + slope, benching, or (flagged) exceeds it
+    double bench_min_width = 2.0;      // m, flat bench between stacked walls, from the back of the lower wall to the face of the upper one
+    double wall_min_length = 4.0;      // m, a wall run shorter than this (one panel) becomes a slope
+    double toe_ditch_depth = 0.3;      // m, shallow ditch between verge and slope at the toe of a cutting (0 disables)
+    double toe_ditch_width = 1.0;      // m
+    double end_taper_batter = 4.0;     // horizontal : vertical of the run-out beyond a free road end (embankment eases into the ground along the road)
+    double wing_max = 10.0;            // m, longest wing wall beside a portal / abutment
+    double wing_ratio = 1.0;           // m of wing wall per m of retained height at the structure
+    double wing_min_height = 0.3;      // m, no wing wall where the ground beside the structure is within this of formation
+    double round_daylight = 2.0;       // m (horizontal), roll-over of slope tops / toes into natural ground
+    double round_hinge = 1.0;          // m (horizontal), parabolic verge -> slope hinge
 };
 
 // Structure dimensions (region.json "structures" object, used by structure_mesh.h). The values here are the
@@ -207,7 +219,11 @@ struct StructureRules {
     double wall_panel = 4.0;            // m, retaining wall panel length
     double tunnel_rise_k = 0.2;         // tunnel arch rise as a fraction of the half-width
     double coping_thickness = 0.15;     // m
-    double coping_overhang = 0.04;      // m
+    double coping_overhang = 0.05;      // m
+    double wall_face_thickness = 0.4;   // m, the visible wall itself (grading reserves wall_thickness)
+    double wall_joint_width = 0.12;     // m along the wall, pilaster at each panel boundary
+    double wall_joint_proud = 0.04;     // m the pilaster stands out of the face
+    bool wall_allow_short_panels = false;  // true: panels are halved where the step limit is exceeded
 };
 
 struct RegionPack {

@@ -455,6 +455,21 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
         g.wall_cap = opt_number(*gr, "wall_cap_m", g.wall_cap, c, err);
         g.wall_slack = opt_number(*gr, "wall_slack_m", g.wall_slack, c, err);
         g.tunnel_clear_height = opt_number(*gr, "tunnel_clear_height_m", g.tunnel_clear_height, c, err);
+        g.wall_max_height = opt_number(*gr, "wall_max_height_m", g.wall_max_height, c, err);
+        g.bench_min_width = opt_number(*gr, "bench_min_width_m", g.bench_min_width, c, err);
+        g.wall_min_length = opt_number(*gr, "wall_min_length_m", g.wall_min_length, c, err);
+        g.toe_ditch_depth = opt_number(*gr, "toe_ditch_depth_m", g.toe_ditch_depth, c, err);
+        g.toe_ditch_width = opt_number(*gr, "toe_ditch_width_m", g.toe_ditch_width, c, err);
+        g.end_taper_batter = opt_number(*gr, "end_taper_batter", g.end_taper_batter, c, err);
+        g.wing_max = opt_number(*gr, "wing_max_m", g.wing_max, c, err);
+        g.wing_ratio = opt_number(*gr, "wing_ratio", g.wing_ratio, c, err);
+        g.wing_min_height = opt_number(*gr, "wing_min_height_m", g.wing_min_height, c, err);
+        g.round_daylight = opt_number(*gr, "round_daylight_m", g.round_daylight, c, err);
+        g.round_hinge = opt_number(*gr, "round_hinge_m", g.round_hinge, c, err);
+        if (!err.failed() && (g.wall_max_height < 0.3 || g.bench_min_width < 0 || g.wall_min_length < 0 || g.toe_ditch_depth < 0 ||
+                              g.toe_ditch_width < 0 || g.end_taper_batter < 0.1 || g.wing_max < 0 || g.wing_ratio < 0 ||
+                              g.wing_min_height < 0 || g.round_daylight < 0 || g.round_hinge < 0))
+            err.set(c + ": a value is out of range");
         if (!err.failed() && (!(g.batter > 0.1) || g.formation_drop < 0 || g.verge < 0 || !(g.wall_thickness > 0) ||
                               !(g.wall_start > 0) || !(g.wall_cap > 0) || g.wall_slack < 0 || !(g.tunnel_clear_height > 0)))
             err.set(c + ": a value is out of range");
@@ -470,6 +485,11 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
         s.tunnel_rise_k = opt_number(*sr, "tunnel_rise_k", s.tunnel_rise_k, c, err);
         s.coping_thickness = opt_number(*sr, "coping_thickness_m", s.coping_thickness, c, err);
         s.coping_overhang = opt_number(*sr, "coping_overhang_m", s.coping_overhang, c, err);
+        s.wall_face_thickness = opt_number(*sr, "wall_face_thickness_m", s.wall_face_thickness, c, err);
+        s.wall_joint_width = opt_number(*sr, "wall_joint_width_m", s.wall_joint_width, c, err);
+        s.wall_joint_proud = opt_number(*sr, "wall_joint_proud_m", s.wall_joint_proud, c, err);
+        if (const json* v = member(*sr, "wall_allow_short_panels")) { if (v->is_boolean()) s.wall_allow_short_panels = v->get<bool>(); else err.set(c + ".wall_allow_short_panels: expected a boolean"); }
+        if (!err.failed() && (s.wall_face_thickness <= 0 || s.wall_joint_width < 0 || s.wall_joint_proud < 0)) err.set(c + ": a value is out of range");
         if (!err.failed() && (!(s.parapet_height > 0) || !(s.max_pier_spacing >= 4) || s.min_bridge_length < 0 || s.pier_road_clearance < 0 ||
                               !(s.wall_panel >= 1) || !(s.tunnel_rise_k > 0.02 && s.tunnel_rise_k < 2) || !(s.coping_thickness > 0) ||
                               s.coping_overhang < 0))

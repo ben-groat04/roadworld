@@ -1534,6 +1534,10 @@ StructureParams structure_params_for(const RegionPack& region) {
     p.tunnel_rise_k = r.tunnel_rise_k;
     p.coping_thickness = r.coping_thickness;
     p.coping_overhang = r.coping_overhang;
+    p.wall_face_thickness = r.wall_face_thickness;
+    p.wall_joint_width = r.wall_joint_width;
+    p.wall_joint_proud = r.wall_joint_proud;
+    p.wall_allow_short_panels = r.wall_allow_short_panels;
     return p;
 }
 

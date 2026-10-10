@@ -57,6 +57,13 @@ struct GradingParams {
     double wing_max = 10.0;        // m, longest wing wall beside a portal / abutment
     double round_daylight = 2.0;   // m (horizontal), roll-over of slope tops / toes into natural ground
     double round_hinge = 1.0;      // m (horizontal), parabolic verge -> slope hinge
+    double wing_min_h = 0.3;       // m, no wing wall where the ground beside the structure is this close to formation
+    double wall_max_height = 3.0;  // m, tallest single retaining wall (wall + slope, benching, or flagged over_height beyond it)
+    double bench_min_width = 2.0;  // m, flat bench between stacked walls
+    double wall_min_length = 4.0;  // m, shorter wall runs become slope
+    double toe_ditch_depth = 0.3;  // m, ditch between verge and slope at the toe of a cutting (0 disables)
+    double toe_ditch_width = 1.0;  // m
+    double end_taper_batter = 4.0; // horizontal : vertical run-out beyond a free road end
     // ---- sampling ----
     double sample_step = 2.0;      // m, adapter centreline sampling step
     // ---- structures and walls (sample counts) ----
@@ -65,7 +72,6 @@ struct GradingParams {
     int wall_gap = 8;              // gaps between wall runs shorter than this are bridged
     int wall_min_run = 8;          // a wall run is at least this long (grown, never dropped)
     double wing_ratio = 1.0;       // m of wing wall per m of retained height at the structure
-    double wing_min_h = 0.3;       // m, no wing wall where the ground beside the structure is this close to formation
     int wall_pad = 5;              // wall runs are padded by this much beyond the stations that need them
     double wall_ramp = 11.0;       // m, wall weight blends 0 -> 1 over this run from a free end
     // ---- portals and reach ----
@@ -77,6 +83,35 @@ struct GradingParams {
     TunnelParams tunnel;
 
     static GradingParams from_rules(const GradingRules& rules);
+};
+
+// ---- wall plans (stacked retaining walls; see earthworks.js planSide) ----
+
+constexpr int kMaxWallTiers = 4;
+
+// The cross-section of one side beyond the footprint edge (e = lateral distance from it): tier k is a wall whose
+// solid occupies e in [a[k], a[k] + wall_thickness], its top at height z[k] relative to the formation (cut: up,
+// fill: down), at most wall_max_height above the previous tier; between tiers a flat bench; after the last tier a
+// plain slope, natural ground (nat), or a flat plateau up to a neighbouring road (plat: one structure shared by two
+// roads, built by the lower one). The whole profile scales with the run weight (a[] and z[] shrink towards the plain
+// verge + slope), so runs taper to nothing at their free ends.
+struct TierSet {
+    int n = 0;
+    double a[kMaxWallTiers] = {0, 0, 0, 0};
+    double z[kMaxWallTiers] = {0, 0, 0, 0};
+    bool cut = false, plat = false, nat = false;
+};
+
+struct WallPlan {
+    bool present = false;
+    bool cut = false;
+    bool full = false;     // legacy single wall retaining the natural ground at its outer face (wing walls; over_height fallback)
+    bool wing = false;     // full wall blended in with weight fw from the earthworks beside it (base tiers, or the plain slope)
+    bool over = false;     // the wall cap could not be kept inside the corridor: reported (over_height)
+    double fw = 0;
+    TierSet t;             // own tiers (not full)
+    bool has_base = false;
+    TierSet base;          // wing: the adjacent run's tiers
 };
 
 // ---- sampled roads ----
@@ -91,6 +126,7 @@ struct RoadSample {
     int wL0 = 0, wR0 = 0;         // wall flags before median removal
     double wwL = 0, wwR = 0;      // wall weight 0..1 (0 at free run ends, 1 beyond wall_ramp)
     bool mL = false, mR = false;  // side faces a parallel opposite-direction road of the same dual type
+    WallPlan pL, pR;              // wall cross-section per side (present when wL / wR != 0)
 };
 
 // One road as plain data: the golden tests fill it directly, sample_graph_for_grading builds it
@@ -102,6 +138,7 @@ struct SampledRoad {
     double median_gap = 0;    // m, dual types only
     std::vector<RoadSample> samples;
     std::vector<int> portals;  // filled by classify_road: indices of portal stations
+    bool over_height = false;  // some wall had to exceed wall_max_height (diagnostic, set by classify_walls)
 };
 
 using GroundFn = std::function<double(double, double)>;  // natural ground height at (x, y)
@@ -157,6 +194,8 @@ struct GradingSample {
     double wwL = 0, wwR = 0;
     std::int8_t wL = 0, wR = 0;
     bool br = false, tu = false;
+    double fwL = 0, fwR = 0;  // wing funnel weight
+    WallPlan pL, pR;
 };
 
 struct PortalPlane {
@@ -217,8 +256,9 @@ std::vector<float> sample_natural_tile(const GroundFn& ground, const TileSpec& t
 // Scratch arrays of grade_tile_into, reusable between calls (no allocation after the first call
 // of a given size). One workspace per worker thread; never share one between threads.
 struct GradeWorkspace {
-    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey;
+    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey, rq_bt, rq_fw;
     std::vector<std::uint8_t> rq_w;
+    std::vector<const WallPlan*> rq_p;
 };
 void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t,
                      const float* natural, float* out, std::uint8_t* footprint, GradeWorkspace& ws);
@@ -233,8 +273,9 @@ GradedTile grade_tile(const std::vector<GradingRoad>& roads, const GradingParams
 struct WallPoint {
     double x = 0, y = 0;      // on the wall line (road outer edge)
     double zTop = 0, zBot = 0;  // retained height range at the wall line
-    double top = 0;           // wall top (cut: ground + 0.3; fill: road + 1.0)
+    double top = 0;           // wall top (cut: retained ground + coping allowance; fill: road + 1.0 at tier 0)
     double h = 0;             // heading
+    bool nat = false;         // natural ground carries on beyond this wall's outer face
 };
 
 // Contiguous runs at the wall line per side; a run splits at bridge / tunnel stations and where
@@ -242,7 +283,9 @@ struct WallPoint {
 struct WallRun {
     char side = 'L';
     bool cut = false;
-    double lo = 0, hi = 0;    // lateral solid range from the wall line: [0, wall_thickness]
+    double lo = 0, hi = 0;    // lateral solid range from the point: [0, wall_thickness] (a tier's offset is baked into the points)
+    int tier = 0;             // 0 = the wall beside the road; 1.. = stacked walls further out (benching)
+    bool over = false;        // over_height: this wall exceeds wall_max_height
     std::vector<WallPoint> pts;
 };
 

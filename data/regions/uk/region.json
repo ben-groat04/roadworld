@@ -16,7 +16,18 @@
     "wall_start_m": 12,
     "wall_cap_m": 12,
     "wall_slack_m": 0.75,
-    "tunnel_clear_height_m": 5.5
+    "tunnel_clear_height_m": 5.5,
+    "wall_max_height_m": 3.0,
+    "bench_min_width_m": 2.0,
+    "wall_min_length_m": 4.0,
+    "toe_ditch_depth_m": 0.3,
+    "toe_ditch_width_m": 1.0,
+    "end_taper_batter": 4.0,
+    "wing_max_m": 10,
+    "wing_ratio": 1.0,
+    "wing_min_height_m": 0.3,
+    "round_daylight_m": 2.0,
+    "round_hinge_m": 1.0
   },
   "structures": {
     "_comment": "Structure dimensions (cp::StructureRules); engineering defaults tuned by eye.",
@@ -27,7 +38,11 @@
     "wall_panel_m": 4,
     "tunnel_rise_k": 0.2,
     "coping_thickness_m": 0.15,
-    "coping_overhang_m": 0.04
+    "coping_overhang_m": 0.05,
+    "wall_face_thickness_m": 0.4,
+    "wall_joint_width_m": 0.12,
+    "wall_joint_proud_m": 0.04,
+    "wall_allow_short_panels": false
   },
   "roundabout": {
     "_comment": "Roundabout tool and layout tunables; tuned by eye. Roundabout-ness itself comes from the roundabout_ring flag on a road type.",

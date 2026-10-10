@@ -51,8 +51,23 @@ const CASES = [
   // two level parallel roads on a hillside that is steeper than the batter in the middle and flat at both ends: alone each needs walls both sides; side by side the inner sides meet the neighbour's earthworks and need none
   { name: 'steep_pair', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0 }, { k: 'slopeEnv', slope: 0.52, yc: 0, cx: 100, sig: 40 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [200, 0, 30]] }, { type: 2, pts: [[0, 15, 30], [200, 15, 30]] }] },
   { name: 'crossing_and_ends', off: NOISE_OFF, terms: [{ k: 'plane', c0: 20, cx: 0, cy: 0 }, { k: 'gauss', amp: 5, cx: 60, cy: 30, sx: 30, sy: 30 }, ripple], roads: [{ type: 2, pts: [[0, 0, 20], [160, 0, 20]] }, { type: 1, pts: [[100, -70, 20], [100, 70, 20]] }] },
+  // ---- grading round 4 ----
+  // steep side hill: a 3 m wall cannot retain it (rise at the road edge ~4 m), so a second tier (bench) takes the rest
+  { name: 'bench_side_hill', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0 }, { k: 'slopeEnv', slope: 0.62, yc: 0, cx: 130, sig: 60 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [260, 0, 30]] }] },
+  // a very steep side hill: the cap cannot be kept inside the corridor, the legacy single wall is used and flagged over_height
+  { name: 'over_height_cliff', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0 }, { k: 'slopeEnv', slope: 1.6, yc: 0, cx: 100, sig: 40 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [200, 0, 30]] }] },
+  // two roads 20 m apart at different levels on a terrace: ONE structure, built by the lower road
+  { name: 'adjacent_levels', off: NOISE_OFF, terms: [{ k: 'plane', c0: 20, cx: 0, cy: 0.3 }, ripple], roads: [{ type: 2, pts: [[0, 0, 20], [200, 0, 20]] }, { type: 2, pts: [[0, 20, 28], [200, 20, 28]] }] },
+  // road ramps up 0 -> 6 m on flat ground and ends: the embankment eases out along the road beyond its end (run-out batter)
+  { name: 'embankment_end', off: NOISE_OFF, terms: [{ k: 'plane', c0: 20, cx: 0, cy: 0 }, ripple], roads: [{ type: 2, pts: [[0, 0, 20], [100, 0, 24], [160, 0, 26]] }] },
+  // a cutting with the toe ditch between verge and slope
+  { name: 'cutting_toe', off: NOISE_OFF, terms: [{ k: 'plane', c0: 20, cx: 0, cy: 0 }, { k: 'gauss', amp: 7, cx: 100, cy: 0, sx: 30, sy: 80 }, ripple], roads: [{ type: 2, pts: [[0, 0, 20], [200, 0, 20]] }] },
+  // two authored bridges one sample apart on a side hill: the 1-sample wall run between them (< wall_min_length) becomes slope
+  { name: 'short_run_between_bridges', off: NOISE_OFF, authored: [[10, 20], [22, 40]], terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0 }, { k: 'slopeEnv', slope: 0.62, yc: 0, cx: 100, sig: 80 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [200, 0, 30]] }] },
 ];
 
+// compact plan serialisation: 0 | [full, wing, over, plat, nat, cut, n, fw, ...a, ...z, base]
+const ser = p => !p ? 0 : [+!!p.full, +!!p.wing, +!!p.over, +!!p.plat, +!!p.nat, +!!p.cut, p.n, p.fw ?? 0, ...p.a.map(r4), ...p.z.map(r4), ser(p.base)];
 const q4 = v => Math.round(v * 1e4);
 const r4 = v => Math.round(v * 1e4) / 1e4;
 
@@ -64,12 +79,16 @@ function buildCase(c) {
   ctx.__roadsSpec = c.roads.map(r => ({ type: r.type, pts: r.pts.map(p => ({ x: p[0] + ox, y: p[1] + oy, z: p[2] })) }));
   const ok = run(`__roadsSpec.every(sp => { const r = { type: sp.type, pts: sp.pts, hs: null, he: null, ver: 0, id: roads.length + 1 }; roads.push(r); return rebuild(r); })`);
   if (!ok) throw new Error('rebuild failed in ' + c.name);
+  if (c.authored) {   // explicit bridge sample ranges (inclusive) instead of the cut / fill rule
+    ctx.__auth = c.authored;
+    run('{ const r = roads[0], ty = ROAD_TYPES[r.type]; for (const s of r.samples) { s.br = s.bridge = false; s.tu = s.tunnel = false; s.portal = false; } for (const [a, b] of __auth) for (let i = a; i <= b; i++) { r.samples[i].br = r.samples[i].bridge = true; } r.portals = []; computeWalls(r, ty, null); }');
+  }
   const rd = run('roadsData()');   // markMedians, wallWeights, slopeReach, decimation, portal planes
   const rsJs = run('roads');
-  const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER'), roundK: run('ROUND_DAYLIGHT / (2 * T.batter)'), roundHinge: run('ROUND_HINGE') };
+  const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER'), roundK: run('ROUND_DAYLIGHT / (2 * T.batter)'), roundHinge: run('ROUND_HINGE'), ditchD: run('DITCH_D'), ditchW: run('DITCH_W'), endBatter: run('END_BATTER') };
   const out = {
-    name: c.name, version: 1, quant: 1e-4, terrain,
-    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingRatio: run('WING_RATIO'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundHinge: run('ROUND_HINGE'), roundReach: run('ROUND_REACH'), wallRamp: run('WALL_RAMP'), planeMargin: run('PLANE_MARGIN'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
+    name: c.name, version: 2, authored: c.authored || null, quant: 1e-4, terrain,
+    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingRatio: run('WING_RATIO'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundHinge: run('ROUND_HINGE'), roundReach: run('ROUND_REACH'), wallRamp: run('WALL_RAMP'), planeMargin: run('PLANE_MARGIN'), wallMaxHeight: run('WALL_MAX_H'), benchMinWidth: run('BENCH_MIN'), wallMinLength: run('WALL_MIN_LEN'), sampleStep: run('SAMPLE_STEP'), toeDitchDepth: run('DITCH_D'), toeDitchWidth: run('DITCH_W'), endTaperBatter: run('END_BATTER'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
     roads: [], tiles: [],
   };
   rsJs.forEach((r, ri) => {
@@ -80,7 +99,7 @@ function buildCase(c) {
       samples: S.map(s => [s.s, s.x, s.y, s.z, s.h]),
       expect: {
         br: col(s => +!!s.br), tu: col(s => +!!s.tu), portal: col(s => +!!s.portal), wL: col(s => s.wL), wR: col(s => s.wR), wL0: col(s => s.wL0), wR0: col(s => s.wR0),
-        wwL: col(s => s.wwL), wwR: col(s => s.wwR), mL: col(s => +!!s.mL), mR: col(s => +!!s.mR),
+        plL: col(s => ser(s.pL)), plR: col(s => ser(s.pR)), overHeight: !!r.overHeight, wwL: col(s => s.wwL), wwR: col(s => s.wwR), mL: col(s => +!!s.mL), mR: col(s => +!!s.mR),
         portals: r.portals, reach: rd[ri].reach, bbox: [rd[ri].bbox.x0, rd[ri].bbox.y0, rd[ri].bbox.x1, rd[ri].bbox.y1],
         ndec: rd[ri].samples.length, planes: rd[ri].planes.map(p => [p.k0, p.k1, p.x, p.y, p.nx, p.ny]),
       },
@@ -94,7 +113,7 @@ function buildCase(c) {
       const ch = i === 0 || i === S.length - 1 || a.br !== b.br || a.tu !== b.tu || a.wL !== b.wL || a.wR !== b.wR;
       if (ch && picks.length < 5 && farFromPicked(a.x, a.y)) picks.push([a.x, a.y]); } });
   rsJs.forEach(r => { const m = r.samples[r.samples.length >> 1]; if (picks.length < 5 && farFromPicked(m.x, m.y)) picks.push([m.x, m.y]); });
-  const gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE })');
+  const gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER })');
   for (const [cx, cy] of picks) {
     const x0 = Math.round(cx / 0.5) * 0.5 - 16, y0 = Math.round(cy / 0.5) * 0.5 - 16, nx = 64, ny = 64, res = 0.5, o = new Float32Array(nx * ny);
     ctx.__gp = gp; ctx.__rd = rd; ctx.__o = o;
@@ -102,7 +121,7 @@ function buildCase(c) {
     out.tiles.push({ x0, y0, nx, ny, res, h: Array.from(o, q4) });
   }
   // ---- wall runs (full-resolution samples) ----
-  out.walls = rsJs.map((r, ri) => run(`wallRuns(roads[${ri}])`).map(w => ({ side: w.side, cut: w.cut, lo: w.lo, hi: w.hi, pts: w.pts.map(p => [r4(p.x), r4(p.y), r4(p.zTop), r4(p.zBot), r4(p.top), r4(p.h)]) })));
+  out.walls = rsJs.map((r, ri) => run(`wallRuns(roads[${ri}])`).map(w => ({ side: w.side, cut: w.cut, lo: w.lo, hi: w.hi, tier: w.tier, over: +w.over, pts: w.pts.map(p => [r4(p.x), r4(p.y), r4(p.zTop), r4(p.zBot), r4(p.top), r4(p.h), +p.nat]) })));
   // ---- tunnel table + inBore probes ----
   const vols = run('tunnelVolumes()');
   const W = run('2 + 2 * (TUN.chunk + 1)'), maxRows = 64, data = new Float32Array(W * maxRows * 4);

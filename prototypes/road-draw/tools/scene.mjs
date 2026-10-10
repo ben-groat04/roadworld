@@ -510,7 +510,7 @@ function CHECKS_IN_PAGE() {
           const x = p.x + ux * e, y = p.y + uy * e, g = groundAt(x, y); n++;
           const inside = e >= lo - 1e-9 && e <= hi + 1e-9, lim = inside ? top - 0.3 : top;
           if (g > lim + 0.02) { bad++; { const k = 'r' + r.id + (run.cut ? 'c' : 'f') + (inside ? 'in' : 'out'); cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + (run.cut ? ' cut' : ' fill') + ' wall ground above ' + (inside ? 'top-0.3' : 'top') + ' at e=' + e.toFixed(1) + ' by', v: g - lim }); }
-          else if (!endZone && e > hi + 0.1 && !nearOther(r, x, y) && Math.abs(g - terrainH(x, y)) > 0.25) { bad++; { const k = 'r' + r.id + (run.cut ? 'c' : 'f') + 'ramp'; cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + ' wall ramp outside outer face, off natural at e=' + e.toFixed(1) + ' by', v: Math.abs(g - terrainH(x, y)) }); }
+          else if (!endZone && p.nat !== false && e > hi + 0.1 && !nearOther(r, x, y) && Math.abs(g - terrainH(x, y)) > 0.25) { bad++; { const k = 'r' + r.id + (run.cut ? 'c' : 'f') + 'ramp'; cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + ' wall ramp outside outer face, off natural at e=' + e.toFixed(1) + ' by', v: Math.abs(g - terrainH(x, y)) }); }
         }
       } }
     done('ground_hidden_by_walls', w, bad, n, n ? `${n} ground samples across wall faces, all hidden or natural` : 'WARNING no wall runs'); if (!n) results[results.length - 1].pass = false; if (bad) results[results.length - 1].msg += ' [' + Object.entries(cat).map(([k, v]) => k + ':' + v).join(' ') + ']'; }
