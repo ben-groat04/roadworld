@@ -1,0 +1,4 @@
+[
+ {"name":"s1_bridge_over_road_street","width":1600,"height":900,"pos":[-38,-52,1.8],"target":[0,0,5],"fov":62,"near":0.2,"shadow":120,"shadowCentre":[0,0,3],"exposure":1.05},
+ {"name":"s1_bridge_over_road_aerial","width":1600,"height":900,"pos":[-110,-130,70],"target":[0,0,3],"fov":45,"near":1,"shadow":170,"shadowCentre":[0,0,3],"exposure":1.05}
+]

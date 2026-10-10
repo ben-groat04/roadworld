@@ -1,0 +1,4 @@
+[
+ {"name":"s5_cutting_street","width":1600,"height":900,"pos":[-85,-1.8,1.7],"target":[-10,0,3],"fov":62,"near":0.2,"shadow":110,"shadowCentre":[-30,0,3],"exposure":1.05,"sun":[190,42]},
+ {"name":"s5_cutting_aerial","width":1600,"height":900,"pos":[-95,-34,13],"target":[0,0,3],"fov":55,"near":0.5,"shadow":130,"shadowCentre":[-30,0,3],"exposure":1.2,"sun":[150,38]}
+]

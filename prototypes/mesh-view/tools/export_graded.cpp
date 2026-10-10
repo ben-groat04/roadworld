@@ -158,6 +158,11 @@ int main(int argc, char** argv) {
     std::vector<StructureWallRun> walls;
     for (const auto& r : roads)
         for (const WallRun& w : wall_runs(r, natural, p)) {
+            {
+                double hmin = 1e9, hmax = -1e9;
+                for (const WallPoint& q : w.pts) { hmin = std::min(hmin, q.zTop - q.zBot); hmax = std::max(hmax, q.zTop - q.zBot); }
+                std::printf("  wall run side=%c cut=%d tier=%d over=%d pts=%zu retained %.2f..%.2f m x %.1f..%.1f\n", w.side, (int)w.cut, w.tier, (int)w.over, w.pts.size(), hmin, hmax, w.pts.empty() ? 0.0 : w.pts.front().x, w.pts.empty() ? 0.0 : w.pts.back().x);
+            }
             StructureWallRun o;
             o.side = w.side; o.cut = w.cut; o.lo = w.lo; o.hi = w.hi;
             for (const WallPoint& q : w.pts) o.pts.push_back({q.x, q.y, q.zTop, q.zBot, q.top, q.h});

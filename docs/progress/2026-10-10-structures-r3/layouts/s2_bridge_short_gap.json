@@ -1,0 +1,4 @@
+{ "format": "cp-test-layout", "version": 1, "name": "s2_bridge_short_gap", "region": "uk", "driving_side": "left",
+  "roads": [
+ {"type":"b_road_rural","points":[[0,-150,0],[0,150,0]],
+  "structures":[{"kind":"bridge","at":[0,0],"length":14}]} ] }

@@ -1,0 +1,4 @@
+[
+ {"name":"s6_embankment_street","width":1600,"height":900,"pos":[-85,-32,1.7],"target":[-115,0,4],"fov":70,"near":0.2,"shadow":110,"shadowCentre":[-100,0,3],"exposure":1.2,"sun":[150,40]},
+ {"name":"s6_embankment_aerial","width":1600,"height":900,"pos":[-85,-45,16],"target":[-130,0,2.5],"fov":55,"near":1,"shadow":130,"shadowCentre":[-120,0,3],"exposure":1.3,"sun":[150,40]}
+]
