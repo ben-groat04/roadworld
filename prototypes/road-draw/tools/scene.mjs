@@ -338,7 +338,7 @@ function CHECKS_IN_PAGE() {
         let surf = s.z; const xs = xsOf(r), sec = xs && xs[i] && xs[i][lat > 0 ? 'L' : 'R'];
         if (sec && sec.kind === 'slope' && sec.d1 > sec.edge) { const t = Math.min(1, Math.max(0, (al - sec.edge) / (sec.d1 - sec.edge))); surf = sec.z0 + (sec.z1 - sec.z0) * t; } else if (sec) surf = sec.z0;
         const ex = z - (Math.max(hAt(x, y), surf) + 0.6);
-        if (ex > 0.02) { bad++; if (!w || ex > w.v) w = { x, y, road: r.id, what: (kd || 'earthwork') + ' vertex above surface by', v: ex }; }
+        if (ex > 0.02) { (globalThis.__nf = globalThis.__nf || {})[kd || 'ew'] = ((globalThis.__nf || {})[kd || 'ew'] || 0) + 1; bad++; if (!w || ex > w.v) w = { x, y, road: r.id, what: (kd || 'earthwork') + ' vertex above surface by', v: ex }; }
       } }
     done('no_floating_faces', w, bad, n, `${n} outer vertices all within surface + 0.6 m`); }
   return results;

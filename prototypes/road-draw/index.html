@@ -1249,6 +1249,11 @@ const EditPoint = (r, i, before, after) => ({
   apply() { touch(r); r.pts[i] = { ...after }; if (!rebuild(r)) { r.pts[i] = { ...before }; rebuild(r); pend = []; return false; } touch(r); },
   revert() { touch(r); r.pts[i] = { ...before }; rebuild(r); touch(r); },
 });
+const EditPts = (r, before, after) => {
+  const cp = a => a.map(p => ({ ...p }));
+  return { apply() { touch(r); r.pts = cp(after); if (!rebuild(r)) { r.pts = cp(before); rebuild(r); pend = []; return false; } touch(r); },
+           revert() { touch(r); r.pts = cp(before); rebuild(r); touch(r); } };
+};
 function fixSelection() { if (state.sel && !roads.includes(state.sel)) state.sel = null; if (state.hover && !roads.includes(state.hover)) state.hover = null; }
 
 // ===== Picking =====
@@ -1407,20 +1412,88 @@ function startOrAddPoint() {
   }
   state.dz = 0; dirty();
 }
+// Grade-separation rule (region pack plan_crossing_junction_dz_m = 1.0, headroom 5.3 m): plan crossings with |dz| < 1.0 share the existing
+// road's height (a control point is pinned into the new road there), 1.0..5.3 is invalid, >= 5.3 is a clear grade separation.
+const JUNCTION_DZ = 1.0, HEADROOM = 5.3, PIN_MERGE = 4;
+function planHits(r, o) {   // plan-view intersections of r's centreline with o's: [{s, x, y, zo}]
+  const A = r.samples, B = o.samples, out = [];
+  for (let p = 0; p + 1 < A.length; p++) {
+    const a = A[p], b = A[p + 1], rx = b.x - a.x, ry = b.y - a.y;
+    for (let q = 0; q + 1 < B.length; q++) {
+      const c = B[q], d = B[q + 1], sx = d.x - c.x, sy = d.y - c.y, den = rx * sy - ry * sx;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((c.x - a.x) * sy - (c.y - a.y) * sx) / den, u = ((c.x - a.x) * ry - (c.y - a.y) * rx) / den;
+      if (t < -1e-3 || t > 1 + 1e-3 || u < -1e-3 || u > 1 + 1e-3) continue;
+      const tt = clamp(t, 0, 1), s = a.s + (b.s - a.s) * tt;
+      if (out.some(h => Math.abs(h.s - s) < 1.5)) continue;
+      out.push({ s, x: a.x + rx * tt, y: a.y + ry * tt, zo: c.z + (d.z - c.z) * clamp(u, 0, 1) });
+    }
+  }
+  return out;
+}
+// Conform road r (rebuilt, r.pts editable) to the roads in `others`. Returns null when ok (r.pts/rebuild updated), or an error string.
+function conformRoad(r, others) {
+  const pins = [];
+  for (const o of others) for (const h of planHits(r, o)) {
+    const dz = Math.abs(G.profZ(r.vp, h.s) - h.zo);
+    if (dz >= HEADROOM) continue;
+    if (dz >= JUNCTION_DZ) return `crossing too close vertically (${dz.toFixed(1)} m): raise/lower to junction or clear ${HEADROOM} m`;
+    if (!pins.some(q => Math.abs(q.s - h.s) < 1.5)) pins.push(h);
+  }
+  if (!pins.length) return null;
+  if (r.attach) r.attach = [...r.attach];
+  pins.sort((a, b) => b.s - a.s);   // insert from the far end so earlier station indices stay valid
+  const keep = [];
+  for (const h of pins) {
+    let k = 0, bd = 1e18; r.S.forEach((s, i) => { const d = Math.abs(s - h.s); if (d < bd) { bd = d; k = i; } });
+    if (bd < PIN_MERGE) { keep.push({ pt: r.pts[k], zo: h.zo }); continue; }
+    let i = 0; while (i + 1 < r.S.length && r.S[i + 1] < h.s) i++;
+    const pt = { x: h.x, y: h.y, z: h.zo }; r.pts.splice(i + 1, 0, pt); r.S.splice(i + 1, 0, h.s); keep.push({ pt, zo: h.zo });
+    if (r.attach) r.attach.splice(i + 1, 0, 'free');
+  }
+  // vertical curves round every interior vertex, so move each pinned vertex until the surface itself hits the target height
+  for (let it = 0; it < 10; it++) {
+    if (!rebuild(r)) return 'cannot fit curve through crossing';
+    let worst = 0;
+    for (const k of keep) { const s = r.S[r.pts.indexOf(k.pt)], e = k.zo - G.profZ(r.vp, s); worst = Math.max(worst, Math.abs(e)); k.pt.z += e; }
+    if (worst < 0.003) break;
+  }
+  return rebuild(r) ? null : 'cannot fit curve through crossing';
+}
+function refuseFinish(d, centre, msg) {   // keep the stroke open and show the red invalid state
+  state.draw = d; state.flash = performance.now();
+  state.preview = { road: centre, errors: [msg], warns: [], cursorZ: d.pts[d.pts.length - 1].z };
+  dirty();
+}
 function finishRoad() {
   const d = state.draw; state.draw = null; state.preview = null; state.dz = 0;
   if (!d || d.pts.length < 2) { dirty(); return; }
   const ty = ROAD_TYPES[state.type];
   const centre = { id: nextId++, type: state.type, oneWay: state.oneWay, pts: d.pts, hs: d.hs, he: d.he ?? null, attach: d.attach };
   if (!rebuild(centre)) { dirty(); return; }
-  if (!ty.dual || state.oneWay) { exec(AddRoads([centre])); return; }
+  if (!ty.dual || state.oneWay) {
+    const err = conformRoad(centre, roads);
+    if (err) { refuseFinish(d, centre, err); return; }
+    exec(AddRoads([centre])); return;
+  }
   const off = ty.gap / 2 + ty.total / 2, sideSign = DRIVING_SIDE === 'left' ? 1 : -1;
   const offPts = sg => centre.pts.map((p, i) => { const h = G.chainPose(centre.chain, centre.S[i]).h; return { x: p.x - Math.sin(h) * off * sg, y: p.y + Math.cos(h) * off * sg, z: p.z }; });
   const fwd = { id: nextId++, type: state.type, oneWay: true, pts: offPts(sideSign), hs: d.hs, he: d.he ?? null, attach: d.attach };
   const back = { id: nextId++, type: state.type, oneWay: true, pts: offPts(-sideSign).reverse(),
     hs: d.he != null ? d.he + Math.PI : null, he: d.hs != null ? d.hs + Math.PI : null, attach: [...d.attach].reverse() };
   const made = [fwd, back].filter(rebuild);
+  for (const m of made) { const err = conformRoad(m, roads); if (err) { refuseFinish(d, centre, err); return; } }
   if (made.length) exec(AddRoads(made));
+}
+
+function commitHandleEdit(r, i, before, after) {   // one undoable command: moved handle plus any junction control points
+  const cp = a => a.map(p => ({ ...p })), pre = cp(r.pts), post = cp(r.pts); post[i] = { ...after };
+  r.pts = cp(post); const ok = rebuild(r);
+  const err = ok ? conformRoad(r, roads.filter(o => o !== r)) : 'cannot fit curve';
+  const conformed = cp(r.pts);
+  r.pts = cp(pre); rebuild(r);
+  if (err) { state.flash = performance.now(); state.preview = { road: null, errors: [err], warns: [] }; dirty(); return; }
+  state.preview = null; exec(EditPts(r, pre, conformed));
 }
 
 // ===== Overlay (ghost road, guides, cursor ring, points, edit handles) =====
@@ -1544,7 +1617,7 @@ addEventListener('pointerup', e => {
     const d = state.drag; state.drag = null;
     const after = { ...d.r.pts[d.i] };
     d.r.pts[d.i] = d.before; rebuild(d.r);
-    if (!wasClick) exec(EditPoint(d.r, d.i, d.before, after));
+    if (!wasClick) commitHandleEdit(d.r, d.i, d.before, after);
     dirty(); return;
   }
   if (!wasClick || e.target !== canvas) return;
