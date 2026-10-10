@@ -132,7 +132,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
 // ---- THREE-facing glue: tiles the box into 64 m tiles, feeds gradeTile, writes GH. ----
 const TILE_M = 64;
 const tileOut = new Float32Array((TILE_M / GRID_RES) * (TILE_M / GRID_RES));
-const gridBase = (x, y) => baseIJ(Math.round(x / GRID_RES), Math.round(y / GRID_RES));   // base sampler for grid-aligned texels
+const gridBase = hBaseFine;   // bicubic base (terrain.js), identical to the initial GH fill   // base sampler for grid-aligned texels
 function roadsData() {
   return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = reachOfRoad(ty), sb = [], full = r.samples, dec = [];
     for (let i = 0; i < full.length; i += 2) { const a = full[i], b = full[Math.min(i + 1, full.length - 1)], c = full[Math.min(i + 2, full.length - 1)]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, br: a.br || b.br || (i > 0 && full[i - 1].br), tu: a.tu || b.tu || (i > 0 && full[i - 1].tu) }); }   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
@@ -149,7 +149,7 @@ function gradeRegion(box) {
     const nx = Math.min(TS, gi1 - ti + 1), ny = Math.min(TS, gj1 - tj + 1);
     const tx0 = ti * GRID_RES, ty0 = tj * GRID_RES, tx1 = tx0 + nx * GRID_RES, ty1 = ty0 + ny * GRID_RES;
     if (!rd.some(q => q.segBoxes.some(b => b[2] >= tx0 && b[0] <= tx1 && b[3] >= ty0 && b[1] <= ty1))) {   // no road reaches this tile: plain base
-      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) GH[(tj + j) * GN + ti + i] = baseIJ(ti + i, tj + j);
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) GH[(tj + j) * GN + ti + i] = hBaseFine((ti + i) * GRID_RES, (tj + j) * GRID_RES);
       continue;
     }
     gradeTile(gridBase, rd, params, tx0, ty0, nx, ny, GRID_RES, tileOut);

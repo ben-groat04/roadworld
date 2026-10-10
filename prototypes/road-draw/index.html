@@ -446,14 +446,14 @@ function groundAt(x, y) {
   const a = GH[k], b = GH[k + 1], c = GH[k + GN], d = GH[k + GN + 1];
   return u >= v ? a + u * (b - a) + v * (d - b) : a + u * (d - c) + v * (c - a);
 }
+// Bicubic base ground at 0.5 m (the exact function GH is initialised from); earthworks grades against this.
+function hBaseFine(x, y) { return terrainH(x, y); }
 const hAt = groundAt;   // shim: everything that used the old base-terrain height now sees the graded ground
 function hBase(x, y) { return hTri(TH, x, y); }   // original ground as the (linear 4 m) mesh would show it
 
 // ===== Textures: GH (R32F, nearest + manual bilinear), base TH (R32F) =====
 const hTex = new THREE.DataTexture(GH, GN, GN, THREE.RedFormat, THREE.FloatType);
 hTex.minFilter = hTex.magFilter = THREE.NearestFilter; hTex.generateMipmaps = false; hTex.flipY = false; hTex.unpackAlignment = 4; hTex.needsUpdate = true;
-const hSrcTex = new THREE.DataTexture(GH, GN, GN, THREE.RedFormat, THREE.FloatType);   // never uploaded itself: source for sub-rectangle copies
-hSrcTex.minFilter = hSrcTex.magFilter = THREE.NearestFilter; hSrcTex.generateMipmaps = false; hSrcTex.flipY = false;
 const tbTex = new THREE.DataTexture(TH, TN, TN, THREE.RedFormat, THREE.FloatType);
 tbTex.minFilter = tbTex.magFilter = THREE.NearestFilter; tbTex.generateMipmaps = false; tbTex.needsUpdate = true;
 let hTexLive = false;   // true once the first full upload has been issued by a draw
@@ -472,7 +472,12 @@ function onGroundChanged(box) {
   i0 = clamp(Math.floor(i0), 0, GN - 1); j0 = clamp(Math.floor(j0), 0, GN - 1); i1 = clamp(Math.ceil(i1), i0, GN - 1); j1 = clamp(Math.ceil(j1), j0, GN - 1);
   if (i1 < i0 || j1 < j0) return;
   if ((i1 - i0 + 1) * (j1 - j0 + 1) > GN * GN * 0.5) { hTex.needsUpdate = true; return; }
-  renderer.copyTextureToTexture(hSrcTex, hTex, new THREE.Box2(new THREE.Vector2(i0, j0), new THREE.Vector2(i1 + 1, j1 + 1)), new THREE.Vector2(i0, j0));
+  const gl = renderer.getContext(), tex = renderer.properties.get(hTex).__webglTexture;
+  if (!tex) { hTex.needsUpdate = true; return; }
+  const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);   // upload just the changed rectangle straight from GH (row stride GN)
+  gl.bindTexture(gl.TEXTURE_2D, tex); gl.pixelStorei(gl.UNPACK_ROW_LENGTH, GN); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, i0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, j0);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, i0, j0, i1 - i0 + 1, j1 - j0 + 1, gl.RED, gl.FLOAT, GH);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0); gl.bindTexture(gl.TEXTURE_2D, prev);
 }
 
 // ===== Ground clipmap: concentric rings at 0.5, 1, 2, 4, 8, 16 m, all centred on one point snapped to 16 m so every ring's grid lines up exactly =====
@@ -744,7 +749,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
 // ---- THREE-facing glue: tiles the box into 64 m tiles, feeds gradeTile, writes GH. ----
 const TILE_M = 64;
 const tileOut = new Float32Array((TILE_M / GRID_RES) * (TILE_M / GRID_RES));
-const gridBase = (x, y) => baseIJ(Math.round(x / GRID_RES), Math.round(y / GRID_RES));   // base sampler for grid-aligned texels
+const gridBase = hBaseFine;   // bicubic base (terrain.js), identical to the initial GH fill   // base sampler for grid-aligned texels
 function roadsData() {
   return roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = reachOfRoad(ty), sb = [], full = r.samples, dec = [];
     for (let i = 0; i < full.length; i += 2) { const a = full[i], b = full[Math.min(i + 1, full.length - 1)], c = full[Math.min(i + 2, full.length - 1)]; dec.push({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, br: a.br || b.br || (i > 0 && full[i - 1].br), tu: a.tu || b.tu || (i > 0 && full[i - 1].tu) }); }   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
@@ -761,7 +766,7 @@ function gradeRegion(box) {
     const nx = Math.min(TS, gi1 - ti + 1), ny = Math.min(TS, gj1 - tj + 1);
     const tx0 = ti * GRID_RES, ty0 = tj * GRID_RES, tx1 = tx0 + nx * GRID_RES, ty1 = ty0 + ny * GRID_RES;
     if (!rd.some(q => q.segBoxes.some(b => b[2] >= tx0 && b[0] <= tx1 && b[3] >= ty0 && b[1] <= ty1))) {   // no road reaches this tile: plain base
-      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) GH[(tj + j) * GN + ti + i] = baseIJ(ti + i, tj + j);
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) GH[(tj + j) * GN + ti + i] = hBaseFine((ti + i) * GRID_RES, (tj + j) * GRID_RES);
       continue;
     }
     gradeTile(gridBase, rd, params, tx0, ty0, nx, ny, GRID_RES, tileOut);
@@ -1662,7 +1667,7 @@ requestAnimationFrame(frame);
 // Scripting hook for automated screenshots.
 window.__proto = {
   THREE, state, T, scene, camera, controls, roads: () => roads, hAt, terrainH, setView, project, pick, setTune, undo, redo, flushGrade, regradeAll,
-  undoCount: () => undoStack.length, TG, TH, ROAD_TYPES, crossSections, maskCanvas,
+  undoCount: () => undoStack.length, TG, TH, ROAD_TYPES, groundAt, GH, GRID_RES, wallRuns,
   drawRoad(type, pts, oneWay = false) {
     state.type = type; state.oneWay = oneWay; state.mode = 'draw';
     state.draw = { pts: pts.map(p => ({ x: p[0], y: p[1], z: p[2] != null ? p[2] : hAt(p[0], p[1]) })), hs: null, attach: pts.map(() => 'free') };

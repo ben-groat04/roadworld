@@ -62,14 +62,14 @@ function groundAt(x, y) {
   const a = GH[k], b = GH[k + 1], c = GH[k + GN], d = GH[k + GN + 1];
   return u >= v ? a + u * (b - a) + v * (d - b) : a + u * (d - c) + v * (c - a);
 }
+// Bicubic base ground at 0.5 m (the exact function GH is initialised from); earthworks grades against this.
+function hBaseFine(x, y) { return terrainH(x, y); }
 const hAt = groundAt;   // shim: everything that used the old base-terrain height now sees the graded ground
 function hBase(x, y) { return hTri(TH, x, y); }   // original ground as the (linear 4 m) mesh would show it
 
 // ===== Textures: GH (R32F, nearest + manual bilinear), base TH (R32F) =====
 const hTex = new THREE.DataTexture(GH, GN, GN, THREE.RedFormat, THREE.FloatType);
 hTex.minFilter = hTex.magFilter = THREE.NearestFilter; hTex.generateMipmaps = false; hTex.flipY = false; hTex.unpackAlignment = 4; hTex.needsUpdate = true;
-const hSrcTex = new THREE.DataTexture(GH, GN, GN, THREE.RedFormat, THREE.FloatType);   // never uploaded itself: source for sub-rectangle copies
-hSrcTex.minFilter = hSrcTex.magFilter = THREE.NearestFilter; hSrcTex.generateMipmaps = false; hSrcTex.flipY = false;
 const tbTex = new THREE.DataTexture(TH, TN, TN, THREE.RedFormat, THREE.FloatType);
 tbTex.minFilter = tbTex.magFilter = THREE.NearestFilter; tbTex.generateMipmaps = false; tbTex.needsUpdate = true;
 let hTexLive = false;   // true once the first full upload has been issued by a draw
@@ -88,7 +88,12 @@ function onGroundChanged(box) {
   i0 = clamp(Math.floor(i0), 0, GN - 1); j0 = clamp(Math.floor(j0), 0, GN - 1); i1 = clamp(Math.ceil(i1), i0, GN - 1); j1 = clamp(Math.ceil(j1), j0, GN - 1);
   if (i1 < i0 || j1 < j0) return;
   if ((i1 - i0 + 1) * (j1 - j0 + 1) > GN * GN * 0.5) { hTex.needsUpdate = true; return; }
-  renderer.copyTextureToTexture(hSrcTex, hTex, new THREE.Box2(new THREE.Vector2(i0, j0), new THREE.Vector2(i1 + 1, j1 + 1)), new THREE.Vector2(i0, j0));
+  const gl = renderer.getContext(), tex = renderer.properties.get(hTex).__webglTexture;
+  if (!tex) { hTex.needsUpdate = true; return; }
+  const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);   // upload just the changed rectangle straight from GH (row stride GN)
+  gl.bindTexture(gl.TEXTURE_2D, tex); gl.pixelStorei(gl.UNPACK_ROW_LENGTH, GN); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, i0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, j0);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, i0, j0, i1 - i0 + 1, j1 - j0 + 1, gl.RED, gl.FLOAT, GH);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0); gl.bindTexture(gl.TEXTURE_2D, prev);
 }
 
 // ===== Ground clipmap: concentric rings at 0.5, 1, 2, 4, 8, 16 m, all centred on one point snapped to 16 m so every ring's grid lines up exactly =====
