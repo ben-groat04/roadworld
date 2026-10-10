@@ -1466,7 +1466,8 @@ struct JGen {
 
     void triangle(const JunctionArm& arm, const ArmLayout& L, double lo, double hi) {
         const GiveWayRule& g = rules.give_way;
-        const double base = L.line_s1 + g.triangle_gap_m, c = (lo + hi) / 2;
+        // Behind the zebra when the arm has one (the crossing sits between the line and the triangle).
+        const double base = std::max(L.line_s1 + g.triangle_gap_m, L.zebra ? L.clear : 0.0), c = (lo + hi) / 2;
         if (arm.edge_length < base + g.triangle_height_m + 1.0) return;
         const double H = g.triangle_height_m, B = g.triangle_base_m;
         const SL o[3] = {{base, c - B / 2}, {base, c + B / 2}, {base + H, c}};

@@ -254,7 +254,7 @@ struct GoreRule {
 
 struct RoundaboutEntryRule {
     bool enabled = false;
-    std::string style;
+    StyleSel style;
     double setback_m = 0.5;
     double line_gap_m = 0.3;
     std::string source;

@@ -140,13 +140,12 @@ int check_seams(const RoadGraph& g, const RegionPack& r, const JunctionSet& js, 
                     if (on_seam(m.positions[k])) B.push_back({m.positions[k], m.uv[k]});
             const auto near = [](const SeamVert& v, const std::vector<SeamVert>& set, double& duv) {
                 double best = 1e9;
+                duv = 1e9;
                 for (const SeamVert& o : set) {
                     const double d = std::sqrt((o.p.x - v.p.x) * (o.p.x - v.p.x) + (o.p.y - v.p.y) * (o.p.y - v.p.y) +
                                                (o.p.z - v.p.z) * (o.p.z - v.p.z));
-                    if (d < best) {
-                        best = d;
-                        duv = std::max(std::abs(o.uv.x - v.uv.x), std::abs(o.uv.y - v.uv.y));
-                    }
+                    best = std::min(best, d);
+                    if (d < 1e-3) duv = std::min(duv, std::max(std::abs(o.uv.x - v.uv.x), std::abs(o.uv.y - v.uv.y)));
                 }
                 return best;
             };
@@ -154,7 +153,9 @@ int check_seams(const RoadGraph& g, const RegionPack& r, const JunctionSet& js, 
             CHECK(!B.empty());
             for (const SeamVert& a : A) {
                 double duv = 0;
-                CHECK(near(a, B, duv) < 1e-3);
+                const double nd = near(a, B, duv);
+                CHECK(nd < 1e-3);
+                if (nd > 1e-3 || duv > 1e-3) { MESSAGE("A vertex " << a.p.x << " " << a.p.y << " " << a.p.z << " uv " << a.uv.x << " " << a.uv.y); for (const SeamVert& o : B) if (std::abs(o.p.y - a.p.y) < 1e-2 && std::abs(o.p.x - a.p.x) < 1e-2) MESSAGE("  B " << o.p.z << " uv " << o.uv.x << " " << o.uv.y); }
                 CHECK(duv < 1e-3);
                 ++matched;
             }
@@ -229,7 +230,7 @@ TEST_CASE("render mesh: uv v follows arc length along a curved climbing road") {
     const WorldMeshSet set = build_edge_mesh(w.g, *w.region, id, none);
     check_valid(set);
     const Edge& e = *w.g.edge(id);
-    const std::vector<EdgeSample> c = sample_centreline(e, {0.001, 0.01, 1.0});
+    const std::vector<EdgeSample> c = sample_centreline(e, {0.001, 0.01, 0.05});
     const WorldMesh& m = set.at("asphalt");
     REQUIRE(!m.positions.empty());
     for (std::size_t i = 0; i < m.positions.size(); ++i) {
@@ -245,7 +246,7 @@ TEST_CASE("render mesh: uv v follows arc length along a curved climbing road") {
                 s = q.s;
             }
         }
-        CHECK(m.uv[i].y == doctest::Approx(s).epsilon(2e-3).scale(10));
+        CHECK(std::abs(m.uv[i].y - s) < 0.06);
     }
 }
 

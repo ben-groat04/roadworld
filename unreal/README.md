@@ -5,6 +5,7 @@ Skeleton only. Written without Unreal installed, so the first compile is the rea
 ## Layout
 - `CityPainter/CityPainter.uproject` – project, one game module `CityPainter` (empty), enables `CityPainterSim` and `ProceduralMeshComponent`.
 - `CityPainter/Plugins/CityPainterSim/` – runtime plugin. Its module compiles `sim_core/src/*.cpp` straight from the repo (tiny wrapper files in `Private/SimCore/`; include path `sim_core/include`). `ACPRoadNetworkActor` owns a `cp::RoadGraph` + `cp::CommandStack`, draws debug lines and a ribbon mesh.
+- `tools/` – PowerShell build and headless-editor scripts (`tools/README.md`).
 - `CPCoords.h` is the only place sim coordinates are converted. Sim: metres, x east, y north, z up, right-handed. Unreal: cm, left-handed. Mapping is an X/Y swap: `UE.X = sim.y*100` (north), `UE.Y = sim.x*100` (east), `UE.Z = sim.z*100`. Heading: `yaw = 90 - degrees(heading)`.
 - If you add or move `sim_core` files, add a matching `Wrap_<name>.cpp` in `Private/SimCore/`.
 
@@ -31,6 +32,7 @@ Step 5 uses `pie` because the roads are built in `BeginPlay`; without `pie` you 
 Manual fallback for the road: open the map, press Play. You should see cyan debug lines along two two-way curved roads and an orange line along one one-way road, with a grey ribbon mesh 7 m wide. The Output Log shows `CPRoadNetwork: 3 edges, N verts`. Undo/redo: call `UndoLast` / `RedoLast` (BlueprintCallable). If the ribbon is invisible from above the winding is flipped (see `RebuildVisuals`).
 
 ## If it does not compile
+See `tools/KNOWN_RISKS.md` first (error message -> exact edit). Original notes:
 Likely suspects, in order: (1) `BuildSettingsVersion.Latest` / `EngineIncludeOrderVersion.Latest` in the two `*.Target.cs` files (replace with the explicit values from your engine's `Engine/Source/Programs/UnrealBuildTool/Configuration/TargetRules.cs`); (2) sim_core warnings promoted to errors (extend the `#pragma warning(disable ...)` list in `Private/SimCore/Wrap_*.cpp`); (3) `CreateMeshSection_LinearColor` signature in `ProceduralMeshComponent.h`. Paste the first error to Claude.
 
 ## First look and performance test (v0 brief), all TODO

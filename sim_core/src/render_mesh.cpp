@@ -763,13 +763,14 @@ void add_blended_polygon(WorldMesh& m, const std::vector<std::vector<Vec2>>& rin
 
 // Vertical face along A -> B between heights bottom and top; the front side is the left of A -> B
 // when `left_facing`, else the right.
-void add_face(WorldMesh& m, Vec3 a, Vec3 b, double dza, double dzb, Vec2 uva, Vec2 uvb, bool left_facing) {
+void add_face(WorldMesh& m, Vec3 a, Vec3 b, double dza, double dzb, Vec2 uva, Vec2 uvb, Vec2 uvta, Vec2 uvtb,
+              bool left_facing) {
     const Vec3 t{b.x - a.x, b.y - a.y, 0};
     const double tl = length(t);
     const Vec3 tan = tl > 1e-12 ? Vec3{t.x / tl, t.y / tl, 0} : Vec3{1, 0, 0};
     const u32 va = add_vertex(m, a, uva, tan), vb = add_vertex(m, b, uvb, tan);
-    const u32 ta = add_vertex(m, {a.x, a.y, a.z + dza}, {uva.x + dza, uva.y}, tan);
-    const u32 tb = add_vertex(m, {b.x, b.y, b.z + dzb}, {uvb.x + dzb, uvb.y}, tan);
+    const u32 ta = add_vertex(m, {a.x, a.y, a.z + dza}, uvta, tan);
+    const u32 tb = add_vertex(m, {b.x, b.y, b.z + dzb}, uvtb, tan);
     if (left_facing) {
         add_tri(m, va, ta, tb, false);
         add_tri(m, va, tb, vb, false);
@@ -871,7 +872,8 @@ WorldMeshSet build_junction_mesh(const RoadGraph& graph, const RegionPack& regio
             const Blended ba = blend(arms, A, true), bb = blend(arms, B, true);
             const double dza = blend(arms, A, false).z - ba.z, dzb = blend(arms, B, false).z - bb.z;
             if (dza < 1e-4 || dzb < 1e-4) continue;
-            add_face(kerb, {A.x, A.y, ba.z}, {B.x, B.y, bb.z}, dza, dzb, {ba.u, ba.v}, {bb.u, bb.v}, true);
+            add_face(kerb, {A.x, A.y, ba.z}, {B.x, B.y, bb.z}, dza, dzb, {ba.u, ba.v}, {bb.u, bb.v},
+                     {blend(arms, A, false).u, ba.v}, {blend(arms, B, false).u, bb.v}, true);
         }
     }
     finish_normals(out);
@@ -936,7 +938,7 @@ void add_raised_polygon(WorldMeshSet& out, const PolygonSet& poly, const std::fu
             const Vec2 A = r[i], B = r[(i + 1) % r.size()];
             const double l = (B - A).length();
             if (l < 1e-4) continue;
-            add_face(kerb, {A.x, A.y, base_z(A)}, {B.x, B.y, base_z(B)}, H, H, {0, run}, {0, run + l}, false);
+            add_face(kerb, {A.x, A.y, base_z(A)}, {B.x, B.y, base_z(B)}, H, H, {0, run}, {0, run + l}, {H, run}, {H, run + l}, false);
             run += l;
         }
     }

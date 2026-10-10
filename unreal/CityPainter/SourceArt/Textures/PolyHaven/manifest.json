@@ -1,0 +1,750 @@
+{
+ "source": "Poly Haven (api.polyhaven.com / dl.polyhaven.org)",
+ "license": "CC0",
+ "normal_convention": "DirectX (nor_dx)",
+ "slots": {
+  "asphalt_new": {
+   "asset_id": "asphalt_01",
+   "name": "Asphalt 01",
+   "url": "https://polyhaven.com/a/asphalt_01",
+   "authors": [
+    "Dario Barresi",
+    "Charlotte Baglioni"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 2.08,
+   "size_m_xy": [
+    2.08,
+    2.08
+   ],
+   "files": {
+    "diff": "asphalt_01/asphalt_01_diff_2k.jpg",
+    "nor_dx": "asphalt_01/asphalt_01_nor_dx_2k.jpg",
+    "rough": "asphalt_01/asphalt_01_rough_2k.jpg",
+    "ao": "asphalt_01/asphalt_01_ao_2k.jpg",
+    "disp": "asphalt_01/asphalt_01_disp_2k.jpg",
+    "arm": "asphalt_01/asphalt_01_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "asphalt_01/asphalt_01_diff_2k.jpg",
+     "bytes": 3118607,
+     "sha256": "10fe1dafe34fec51397dbe9011f798c68c4e3fc16abfd4d7aea0123122db8993",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "asphalt_01/asphalt_01_nor_dx_2k.jpg",
+     "bytes": 4848672,
+     "sha256": "1507655a981c5da937f181df7ac201a1512112724d42dbf597607680810756fa",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "asphalt_01/asphalt_01_rough_2k.jpg",
+     "bytes": 1599661,
+     "sha256": "c6962037eb41c6f0feafba22353e315d37ae8c8ea472dfd7d4fe28136904ceb5",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "asphalt_01/asphalt_01_ao_2k.jpg",
+     "bytes": 4048107,
+     "sha256": "0cbbf5252a632482c9ce15fd53b26a6b468250114b8e3fef20d0393d139d2611",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "asphalt_01/asphalt_01_disp_2k.jpg",
+     "bytes": 1389676,
+     "sha256": "c5c3e80e20613b1b925dd91da579238564ae3a0a29b8bea58101f3ed87d0fbec",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "asphalt_01/asphalt_01_arm_2k.jpg",
+     "bytes": 4169097,
+     "sha256": "4db10d1e7a965951a418b96819e11f7eef810d99c7ba6bf5e3d9a89a8fd60aff",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Dark, fine-grained grey-brown asphalt with subtle wear; reads as fairly new, damp UK tarmac without strong colour cast."
+  },
+  "asphalt_worn": {
+   "asset_id": "asphalt_02",
+   "name": "Asphalt 02",
+   "url": "https://polyhaven.com/a/asphalt_02",
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 3.0,
+   "size_m_xy": [
+    3.0,
+    3.0
+   ],
+   "files": {
+    "diff": "asphalt_02/asphalt_02_diff_2k.jpg",
+    "nor_dx": "asphalt_02/asphalt_02_nor_dx_2k.jpg",
+    "rough": "asphalt_02/asphalt_02_rough_2k.jpg",
+    "ao": "asphalt_02/asphalt_02_ao_2k.jpg",
+    "disp": "asphalt_02/asphalt_02_disp_2k.jpg",
+    "arm": "asphalt_02/asphalt_02_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "asphalt_02/asphalt_02_diff_2k.jpg",
+     "bytes": 3075676,
+     "sha256": "28f5ba8690553f192c0e5e1a5ff40f34765b4b93f4cc7059b1a3e9c795b6c28c",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "asphalt_02/asphalt_02_nor_dx_2k.jpg",
+     "bytes": 5052243,
+     "sha256": "64dc04b1fc4288e1ceea00202ad581ef6e1715b12fd7a3e30c9d8b325772fa80",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "asphalt_02/asphalt_02_rough_2k.jpg",
+     "bytes": 2230457,
+     "sha256": "b9a516b61b7040a9245ac206642d5f767ad9589a0169c4a1668221429e8a998c",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "asphalt_02/asphalt_02_ao_2k.jpg",
+     "bytes": 2039487,
+     "sha256": "5fe1737cbbcd55f2fec3632d6170762e5733f24bbc7a7816afb22a23c710b11f",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "asphalt_02/asphalt_02_disp_2k.jpg",
+     "bytes": 1131595,
+     "sha256": "943f254ed5e1504131547b35afe3798771cdda33842b7fdc6c0288b8312a44b0",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "asphalt_02/asphalt_02_arm_2k.jpg",
+     "bytes": 1299186,
+     "sha256": "ed70e88640e4ed51cf1c3e57cb20db26983599b20b867c2526439e3a2c849fea",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Cool grey asphalt with long cracks and bitumen patches; ideal wear/crack layer, neutral temperate tone."
+  },
+  "pavement": {
+   "asset_id": "concrete_pavement",
+   "name": "Concrete Pavement",
+   "url": "https://polyhaven.com/a/concrete_pavement",
+   "authors": [
+    "Charlotte Baglioni"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 1.8,
+   "size_m_xy": [
+    1.8,
+    1.8
+   ],
+   "files": {
+    "diff": "concrete_pavement/concrete_pavement_diff_2k.jpg",
+    "nor_dx": "concrete_pavement/concrete_pavement_nor_dx_2k.jpg",
+    "rough": "concrete_pavement/concrete_pavement_rough_2k.jpg",
+    "ao": "concrete_pavement/concrete_pavement_ao_2k.jpg",
+    "disp": "concrete_pavement/concrete_pavement_disp_2k.jpg",
+    "arm": "concrete_pavement/concrete_pavement_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "concrete_pavement/concrete_pavement_diff_2k.jpg",
+     "bytes": 3817566,
+     "sha256": "e5a1cecfe7765cc0b24a6ab0abf492bd21c9e7af64e97fc46ef6021d0645fbd3",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "concrete_pavement/concrete_pavement_nor_dx_2k.jpg",
+     "bytes": 5183398,
+     "sha256": "3bd5c94646943c48f813b5324affb2ebe54a76868221f2ab88b3b28957a5f85a",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "concrete_pavement/concrete_pavement_rough_2k.jpg",
+     "bytes": 2125646,
+     "sha256": "e97b7d190dcda5a842813502505bf3d1b2348b4cad57b1d51d1bcc694a92d137",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "concrete_pavement/concrete_pavement_ao_2k.jpg",
+     "bytes": 3576206,
+     "sha256": "c5c7287990c57336c27ef68353d4cf2599e23977f7426c79c6a1a3a5982fa6be",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "concrete_pavement/concrete_pavement_disp_2k.jpg",
+     "bytes": 2490285,
+     "sha256": "ab724fbe03ae03af5565bedf9fc299612e4cd086fffa6a2828488b78f4e0062a",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "concrete_pavement/concrete_pavement_arm_2k.jpg",
+     "bytes": 3465289,
+     "sha256": "1ee3ab8013a6204c739b40ef9b87ccfdff32711525bccf94ee9b3c171aa731f6",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Grey concrete footway slabs in a running bond, 450x300-style; the classic UK pavement look with muted colour."
+  },
+  "kerb_concrete": {
+   "asset_id": "concrete_wall_009",
+   "name": "Concrete Wall 009",
+   "url": "https://polyhaven.com/a/concrete_wall_009",
+   "authors": [
+    "Charlotte Baglioni"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 1.805,
+   "size_m_xy": [
+    1.805,
+    1.805
+   ],
+   "files": {
+    "diff": "concrete_wall_009/concrete_wall_009_diff_2k.jpg",
+    "nor_dx": "concrete_wall_009/concrete_wall_009_nor_dx_2k.jpg",
+    "rough": "concrete_wall_009/concrete_wall_009_rough_2k.jpg",
+    "ao": "concrete_wall_009/concrete_wall_009_ao_2k.jpg",
+    "disp": "concrete_wall_009/concrete_wall_009_disp_2k.jpg",
+    "arm": "concrete_wall_009/concrete_wall_009_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "concrete_wall_009/concrete_wall_009_diff_2k.jpg",
+     "bytes": 2573465,
+     "sha256": "abcdc1ad41eb5cd58ba158f954cb00bae57c2eba13f90a1145f04edfc85cc617",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "concrete_wall_009/concrete_wall_009_nor_dx_2k.jpg",
+     "bytes": 2222474,
+     "sha256": "303803d72d733adfacc8d0d12aba2757d7a2597c79d1b1200b0cdc1044973b23",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "concrete_wall_009/concrete_wall_009_rough_2k.jpg",
+     "bytes": 3065890,
+     "sha256": "7cde841b0b3e658bcf49ef9a5f1d8d0eb17a260f797eebf3d11c8befcab091e0",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "concrete_wall_009/concrete_wall_009_ao_2k.jpg",
+     "bytes": 1369622,
+     "sha256": "6c0a9821d1ba5aee6a68b8f934bfbaa7024b7c14a829183ebfd037b6e6ef8376",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "concrete_wall_009/concrete_wall_009_disp_2k.jpg",
+     "bytes": 760759,
+     "sha256": "98181881b8fb802b76b78c1a899a5ad5ec21820f53211a78b8360e67e4b150c7",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "concrete_wall_009/concrete_wall_009_arm_2k.jpg",
+     "bytes": 3598343,
+     "sha256": "4d73fd77208ec5681e9493299672f65d23a0d18e0993432e0c8a6ad2f8941d7d",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Plain light grey cast concrete with fine form lines; reads as precast kerb/island edge."
+  },
+  "structural_concrete": {
+   "asset_id": "concrete",
+   "name": "Concrete",
+   "url": "https://polyhaven.com/a/concrete",
+   "authors": [
+    "Rob Tuytel"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 4.0,
+   "size_m_xy": [
+    4.0,
+    4.0
+   ],
+   "files": {
+    "diff": "concrete/concrete_diff_2k.jpg",
+    "nor_dx": "concrete/concrete_nor_dx_2k.jpg",
+    "rough": "concrete/concrete_rough_2k.jpg",
+    "ao": "concrete/concrete_ao_2k.jpg",
+    "disp": "concrete/concrete_disp_2k.jpg",
+    "arm": "concrete/concrete_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "concrete/concrete_diff_2k.jpg",
+     "bytes": 2265804,
+     "sha256": "92a0b37c2f64630ba776b514f3276ecbb98cd59a23dea2c7b83b3c63bc3e4f7a",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "concrete/concrete_nor_dx_2k.jpg",
+     "bytes": 595198,
+     "sha256": "9f97cdec154b2e481a25872e3d2c6348a4d919e75b5182792bcf27e6bf9eb289",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "concrete/concrete_rough_2k.jpg",
+     "bytes": 961406,
+     "sha256": "d58060aa195ffd5fc90fc2468491f9e6fd8a8d374362605d8cfe7ddeabcdc84c",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "concrete/concrete_ao_2k.jpg",
+     "bytes": 1543459,
+     "sha256": "0356e19784c8413e2fd201f160403b919b95fd09e30c1743d063a691975684a4",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "concrete/concrete_disp_2k.jpg",
+     "bytes": 569304,
+     "sha256": "9c2da331a1f05a92684612a866b294f7f72aac02ba218f20aa0666de943ac160",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "concrete/concrete_arm_2k.jpg",
+     "bytes": 559238,
+     "sha256": "642131193dffaf8bb1f505ba91d1342f375b8657920912ab29150d3241dca6c3",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Board-marked grey concrete with tie holes and damp staining; typical UK retaining wall/bridge abutment."
+  },
+  "wall_brick": {
+   "asset_id": "brick_wall_005",
+   "name": "Brick Wall 005",
+   "url": "https://polyhaven.com/a/brick_wall_005",
+   "authors": [
+    "Dario Barresi",
+    "Dimitrios Savva"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 1.44,
+   "size_m_xy": [
+    1.44,
+    1.44
+   ],
+   "files": {
+    "diff": "brick_wall_005/brick_wall_005_diff_2k.jpg",
+    "nor_dx": "brick_wall_005/brick_wall_005_nor_dx_2k.jpg",
+    "rough": "brick_wall_005/brick_wall_005_rough_2k.jpg",
+    "ao": "brick_wall_005/brick_wall_005_ao_2k.jpg",
+    "disp": "brick_wall_005/brick_wall_005_disp_2k.jpg",
+    "arm": "brick_wall_005/brick_wall_005_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "brick_wall_005/brick_wall_005_diff_2k.jpg",
+     "bytes": 3510130,
+     "sha256": "80723d094871de5b34698d828e43c0014a6e4c6db7551ac88639a202c8783dd9",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "brick_wall_005/brick_wall_005_nor_dx_2k.jpg",
+     "bytes": 4344942,
+     "sha256": "4e46af073c355b2621757ce1ad1a339d9a415de8172af50d7caadf3b0bb78595",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "brick_wall_005/brick_wall_005_rough_2k.jpg",
+     "bytes": 1555567,
+     "sha256": "b7461fe2867e931e55ac4182b0e22bdea9eb8720091f16bb94b2297ee414e4e6",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "brick_wall_005/brick_wall_005_ao_2k.jpg",
+     "bytes": 2860929,
+     "sha256": "a5916861df77d6c032568ac27d854477a9e0b4481d319f6f9e5915b1be9a3891",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "brick_wall_005/brick_wall_005_disp_2k.jpg",
+     "bytes": 933385,
+     "sha256": "a1c7b72bc4ddb7b72888e24063f228f7fded0833c201bcd3d32b9dc17ded7548",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "brick_wall_005/brick_wall_005_arm_2k.jpg",
+     "bytes": 2794162,
+     "sha256": "0fe551328a3bbbc09a20abffe09e6ec1c02ac356e608a222664730821505a1bf",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Weathered mixed red/blue engineering brick with lime mortar; very UK Victorian railway/retaining wall look."
+  },
+  "grass": {
+   "asset_id": "sparse_grass",
+   "name": "Sparse Grass",
+   "url": "https://polyhaven.com/a/sparse_grass",
+   "authors": [
+    "Amal Kumar"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 2.0,
+   "size_m_xy": [
+    2.0,
+    2.0
+   ],
+   "files": {
+    "diff": "sparse_grass/sparse_grass_diff_2k.jpg",
+    "nor_dx": "sparse_grass/sparse_grass_nor_dx_2k.jpg",
+    "rough": "sparse_grass/sparse_grass_rough_2k.jpg",
+    "ao": "sparse_grass/sparse_grass_ao_2k.jpg",
+    "disp": "sparse_grass/sparse_grass_disp_2k.jpg",
+    "arm": "sparse_grass/sparse_grass_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "sparse_grass/sparse_grass_diff_2k.jpg",
+     "bytes": 3733797,
+     "sha256": "3b655de96161164bf2324e136b3409ad8417c9f94750bc008e9c93ee507c2fac",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "sparse_grass/sparse_grass_nor_dx_2k.jpg",
+     "bytes": 5862886,
+     "sha256": "333514bb0832a784f40362f16941e1889e078f06776a9162908da1ec2d898677",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "sparse_grass/sparse_grass_rough_2k.jpg",
+     "bytes": 1729786,
+     "sha256": "b023f187999956449b5f25df19f4eaae1c891f474e0a599b23d986118fe706d7",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "sparse_grass/sparse_grass_ao_2k.jpg",
+     "bytes": 3904928,
+     "sha256": "92641df46170082a9cfeb42efee5b0ae7a5f30ab2125f8d593cd8fd3daaecd7b",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "sparse_grass/sparse_grass_disp_2k.jpg",
+     "bytes": 2312240,
+     "sha256": "84301f04bb98bb87a2101bd6923142d17d070a97227f01c55aa3a383ec823297",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "sparse_grass/sparse_grass_arm_2k.jpg",
+     "bytes": 3835537,
+     "sha256": "f498dcdbfd1c29b6c36232fc56e69d467be7d6d1d180d2a294138d9c725d6b66",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Dark damp green-brown short turf with soil showing; temperate verge look, not lush or dry."
+  },
+  "soil": {
+   "asset_id": "forest_ground_06",
+   "name": "Forest Ground 06",
+   "url": "https://polyhaven.com/a/forest_ground_06",
+   "authors": [
+    "Charlotte Baglioni"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 2.11,
+   "size_m_xy": [
+    2.11,
+    2.11
+   ],
+   "files": {
+    "diff": "forest_ground_06/forest_ground_06_diff_2k.jpg",
+    "nor_dx": "forest_ground_06/forest_ground_06_nor_dx_2k.jpg",
+    "rough": "forest_ground_06/forest_ground_06_rough_2k.jpg",
+    "ao": "forest_ground_06/forest_ground_06_ao_2k.jpg",
+    "disp": "forest_ground_06/forest_ground_06_disp_2k.jpg",
+    "arm": "forest_ground_06/forest_ground_06_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "forest_ground_06/forest_ground_06_diff_2k.jpg",
+     "bytes": 3375916,
+     "sha256": "7e40f1a8e8a84db5f69f084d4fcbe962fe85da81c63ddc929964b5ae6a40b3c5",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "forest_ground_06/forest_ground_06_nor_dx_2k.jpg",
+     "bytes": 5781005,
+     "sha256": "deecf9be0f9127c0ab233ee891c4fc314b8705ee00f05143fccd81b2fa3e6d2d",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "forest_ground_06/forest_ground_06_rough_2k.jpg",
+     "bytes": 2759516,
+     "sha256": "0d9a0c6c93862fd59e10a5b5829833a5fe1458c8d38a05afb7c2f88519de2821",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "forest_ground_06/forest_ground_06_ao_2k.jpg",
+     "bytes": 4010773,
+     "sha256": "021e65738c5fbf41cd0d6d25c5e46a2fcc50fc930046690649acdbab22226145",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "forest_ground_06/forest_ground_06_disp_2k.jpg",
+     "bytes": 1846804,
+     "sha256": "811204f484d9fd5123b04d0ae8e5132cf62bd609c7f5bfa8761042cefb63af89",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "forest_ground_06/forest_ground_06_arm_2k.jpg",
+     "bytes": 4209470,
+     "sha256": "720f6cd3e0d9d87e3564f5aaaf7a64fe853dde9d3ff288c1b52957a9bc66893d",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Dark damp brown compact soil; neutral for fresh cuttings and embankments."
+  },
+  "rock": {
+   "asset_id": "rock_face_04",
+   "name": "Rock Face 04",
+   "url": "https://polyhaven.com/a/rock_face_04",
+   "authors": [
+    "Dimitrios Savva"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 2.0,
+   "size_m_xy": [
+    2.0,
+    2.0
+   ],
+   "files": {
+    "diff": "rock_face_04/rock_face_04_diff_2k.jpg",
+    "nor_dx": "rock_face_04/rock_face_04_nor_dx_2k.jpg",
+    "rough": "rock_face_04/rock_face_04_rough_2k.jpg",
+    "ao": "rock_face_04/rock_face_04_ao_2k.jpg",
+    "disp": "rock_face_04/rock_face_04_disp_2k.jpg",
+    "arm": "rock_face_04/rock_face_04_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "rock_face_04/rock_face_04_diff_2k.jpg",
+     "bytes": 3929674,
+     "sha256": "297035d0c9c92ae8d8e17952ca527105916e06bb3160adfa4ceaa2689750688d",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "rock_face_04/rock_face_04_nor_dx_2k.jpg",
+     "bytes": 4413589,
+     "sha256": "fd9fcb6c04e6d19755ea0fca58955e638121998a03670011ae06d0f147e1262d",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "rock_face_04/rock_face_04_rough_2k.jpg",
+     "bytes": 1922333,
+     "sha256": "4b19723ae8f63c8db4d97848cb103e80169e3120390d4661016e08ef2cd3e48d",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "rock_face_04/rock_face_04_ao_2k.jpg",
+     "bytes": 1907591,
+     "sha256": "2cb2ca78343e4e8ea87781f87940d520bfe5806bbb3896a50b19b446bdb52049",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "rock_face_04/rock_face_04_disp_2k.jpg",
+     "bytes": 751476,
+     "sha256": "b2b9aecb368a44f5e2fc72c72ef020bff7886229e573d748d0f891768b00ca9a",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "rock_face_04/rock_face_04_arm_2k.jpg",
+     "bytes": 2512407,
+     "sha256": "37698fe51b60a59e36a8c8ff7ea679cbb150574d9da602a19985957ae00dab93",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Dark grey-brown weathered, fractured rock face; sober temperate cutting rock rather than desert sandstone."
+  },
+  "gravel": {
+   "asset_id": "gravel_floor_02",
+   "name": "Gravel Floor 02",
+   "url": "https://polyhaven.com/a/gravel_floor_02",
+   "authors": [
+    "Jenelle van Heerden",
+    "Dimitrios Savva"
+   ],
+   "license": "CC0",
+   "resolution": "2K",
+   "size_m": 2.0,
+   "size_m_xy": [
+    2.0,
+    2.0
+   ],
+   "files": {
+    "diff": "gravel_floor_02/gravel_floor_02_diff_2k.jpg",
+    "nor_dx": "gravel_floor_02/gravel_floor_02_nor_dx_2k.jpg",
+    "rough": "gravel_floor_02/gravel_floor_02_rough_2k.jpg",
+    "ao": "gravel_floor_02/gravel_floor_02_ao_2k.jpg",
+    "disp": "gravel_floor_02/gravel_floor_02_disp_2k.jpg",
+    "arm": "gravel_floor_02/gravel_floor_02_arm_2k.jpg"
+   },
+   "file_details": {
+    "diff": {
+     "path": "gravel_floor_02/gravel_floor_02_diff_2k.jpg",
+     "bytes": 4698557,
+     "sha256": "27c8953655dd2f289106106bb2c2c4845f77152bf1621b3d7091bd43b5083ffc",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "nor_dx": {
+     "path": "gravel_floor_02/gravel_floor_02_nor_dx_2k.jpg",
+     "bytes": 5883223,
+     "sha256": "5f9bee30b52445369bcfa8db1aadccb7c627f0afb545534edbd474c95ac7d118",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "rough": {
+     "path": "gravel_floor_02/gravel_floor_02_rough_2k.jpg",
+     "bytes": 2698006,
+     "sha256": "76f84ef27c72cffb1b1906c6a5b06cb06db664d2d6cb6c0ba2ee996c04e2607d",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "ao": {
+     "path": "gravel_floor_02/gravel_floor_02_ao_2k.jpg",
+     "bytes": 4279088,
+     "sha256": "f40680eaf50c5c456b72d1b7466c2c32e26e04559c2b188e92c1adf87ce614d7",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "disp": {
+     "path": "gravel_floor_02/gravel_floor_02_disp_2k.jpg",
+     "bytes": 2160182,
+     "sha256": "0fdfd2961efadaba61e65c2a2557f17cdeb34c0b49b5ce82bef4824618be499f",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    },
+    "arm": {
+     "path": "gravel_floor_02/gravel_floor_02_arm_2k.jpg",
+     "bytes": 4204438,
+     "sha256": "8c02781ee25054fc83303e45a4bc8e1b1fdf024a4a980dc93e071f27fc3bbe22",
+     "width": 2048,
+     "height": 2048,
+     "format": "jpg"
+    }
+   },
+   "why": "Fine pale grey gravel, even and tileable; good for verges, shoulders and ballast-like margins."
+  }
+ }
+}

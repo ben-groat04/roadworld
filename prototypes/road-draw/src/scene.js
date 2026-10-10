@@ -48,6 +48,7 @@ controls.screenSpacePanning = false; controls.enableDamping = false;
 controls.minDistance = 15; controls.maxDistance = 3800; controls.maxPolarAngle = 1.42; controls.minPolarAngle = 0.05; controls.zoomSpeed = 1.1;
 controls.addEventListener('change', () => { needsRender = true; mouseDirty = true; overlayDirty = true; });
 function setView(tx, ty, dist, az, polar) {
+  state.freeCam = false;
   const gx = clamp(tx, 0, WORLD), gy = clamp(ty, 0, WORLD), gz = hAt(gx, gy);
   controls.target.set(gx, gz, -gy);
   camera.position.set(gx + dist * Math.sin(polar) * Math.sin(az), gz + dist * Math.cos(polar), -gy + dist * Math.sin(polar) * Math.cos(az));
