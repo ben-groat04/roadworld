@@ -670,7 +670,8 @@ TEST_CASE("markings: interchange fixture generates cleanly") {
     CHECK(counts["edge_line"] > 0);
     CHECK(counts["roundabout_entry"] > 0);
     CHECK(counts["zebra"] == 0);
-    CHECK(counts["hatching"] > 0);
+    CHECK(counts["chevron"] > 0);
+    CHECK(counts["hatching"] == 0);  // the interchange has only same-direction noses
     CHECK(counts["give_way_line"] > 0);
     CHECK(count_overlaps(s) == 0);
     int slip_edges = 0;
@@ -726,4 +727,115 @@ TEST_CASE("markings: B road keeps its centre line") {
         CHECK(s.style_id(*m) == "centre_low");
         for (const Vec3& p : s.points(*m)) CHECK(std::fabs(p.y) <= 0.05 + 1e-9);
     }
+}
+
+// ---------------------------------------------------------------- gore patterns
+
+namespace {
+
+// One-way b_road in from the west splitting into two outbound roads at +-15 degrees (a diverge), or the
+// same with the flows reversed (a merge).
+struct SlipNode {
+    Net n;
+    explicit SlipNode(DrivingSide side, bool diverge) : n(side) {
+        REQUIRE(n.polar(180, 100, "b_road", true, diverge));
+        REQUIRE(n.polar(15, 100, "b_road", true, !diverge));
+        REQUIRE(n.polar(-15, 100, "b_road", true, !diverge));
+    }
+};
+
+// Wings of every chevron trail behind its apex, relative to the travel direction through the gore.
+void check_chevron_direction(const MarkingSet& s, const Junction& j) {
+    REQUIRE(j.gore.size() == 1);
+    Vec2 c{0, 0};
+    for (const Vec2& p : j.gore[0]) c = c + p;
+    c = c * (1.0 / static_cast<double>(j.gore[0].size()));
+    // Travel direction: out along the pair arms of a diverge, in along them for a merge.
+    Vec2 f{0, 0};
+    for (const JunctionArm& a : j.arms) {
+        const bool odd_in = a.inbound_count() > 0;
+        const Vec2 out{std::cos(a.heading_out), std::sin(a.heading_out)};
+        if (j.cls == NodeClass::Diverge && !odd_in) f = f + out;
+        if (j.cls == NodeClass::Merge && odd_in) f = f + out * -1.0;
+    }
+    f = f * (1.0 / f.length());
+    const Vec2 side{-f.y, f.x};
+    int checked = 0;
+    for (const Marking* m : of(s, MarkingCategory::Chevron)) {
+        double u_axis = 0, u_wing = 0, lat_max = 0;
+        int n_axis = 0;
+        for (const Vec3& p : s.points(*m)) lat_max = std::max(lat_max, std::fabs(side.dot(p.xy() - c)));
+        if (lat_max < 0.6) continue;  // small pieces are clipped by the border and the polygon
+        for (const Vec3& p : s.points(*m)) {
+            const double lat = std::fabs(side.dot(p.xy() - c)), u = f.dot(p.xy() - c);
+            if (lat < 1e-6) u_axis += u, ++n_axis;
+            if (lat > lat_max - 1e-6) u_wing = u;
+        }
+        if (n_axis == 0) continue;
+        CHECK(u_wing < u_axis / n_axis);
+        ++checked;
+    }
+    CHECK(checked > 3);
+}
+
+}  // namespace
+
+TEST_CASE("markings: same-direction gore gets chevrons pointing with the traffic, bordered") {
+    for (DrivingSide side : {DrivingSide::Left, DrivingSide::Right})
+        for (bool diverge : {true, false}) {
+            SlipNode t(side, diverge);
+            const JunctionSet js = t.n.junctions();
+            const Junction* j = js.find(t.n.centre);
+            REQUIRE(j);
+            REQUIRE((j->cls == NodeClass::Diverge || j->cls == NodeClass::Merge));
+            const MarkingSet s = generate_junction_markings(t.n.g, *t.n.region, uk_rules(), *j);
+            check_well_formed(s);
+            CHECK(of(s, MarkingCategory::Hatching).empty());
+            check_chevron_direction(s, *j);
+            int border = 0;
+            for (const Marking* m : of(s, MarkingCategory::EdgeLine)) border += s.style_id(*m).rfind("edge_", 0) == 0;
+            CHECK(border >= 3);
+            CHECK(count_overlaps(s) == 0);
+        }
+}
+
+TEST_CASE("markings: diverge under both driving sides mirrors exactly") {
+    SlipNode l(DrivingSide::Left, true), r(DrivingSide::Right, true);
+    const JunctionSet jl = l.n.junctions(), jr = r.n.junctions();
+    const MarkingSet sl = all_marks(l.n, jl), sr = all_marks(r.n, jr);
+    REQUIRE(sl.marks.size() == sr.marks.size());
+    for (const Marking& m : sl.marks) {
+        const Vec2 c = centroid(sl, m);
+        bool found = false;
+        for (const Marking& q : sr.marks) {
+            const Vec2 d = centroid(sr, q);
+            if (q.category == m.category && std::fabs(d.x - c.x) < 1e-5 && std::fabs(d.y + c.y) < 1e-5) {
+                found = true;
+                break;
+            }
+        }
+        REQUIRE(found);
+    }
+}
+
+TEST_CASE("markings: opposing flows either side of a gore get diagonal hatching") {
+    SlipNode t(DrivingSide::Left, true);
+    const JunctionSet js = t.n.junctions();
+    Junction j = *js.find(t.n.centre);
+    REQUIRE(j.cls == NodeClass::Diverge);
+    // Reverse the flow of one arm next to the gore: the nose now separates opposing traffic.
+    for (JunctionArm& a : j.arms)
+        if (a.inbound_count() == 0) {
+            for (LaneRef& l : a.lanes) l.inbound = true;
+            break;
+        }
+    const MarkingSet s = generate_junction_markings(t.n.g, *t.n.region, uk_rules(), j);
+    CHECK(of(s, MarkingCategory::Chevron).empty());
+    CHECK(of(s, MarkingCategory::Hatching).size() > 3);
+    // The choice is data: with the opposing pattern set to none only the border remains.
+    MarkingRules rules = uk_rules();
+    rules.gore.opposing = "none";
+    const MarkingSet s2 = generate_junction_markings(t.n.g, *t.n.region, rules, j);
+    CHECK(of(s2, MarkingCategory::Hatching).empty());
+    CHECK(of(s2, MarkingCategory::Chevron).empty());
 }

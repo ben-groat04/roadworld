@@ -43,7 +43,7 @@ const asphTex = (() => {
 const MAT = {
   asph: stdMat({ roughness: 0.9, map: asphTex }), pave: stdMat(), kerb: stdMat(),
   mark: stdMat({ roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
-  conc: stdMat({ roughness: 0.85, emissive: new THREE.Color(0x242321) }), joint: stdMat({ roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), tube: new THREE.MeshBasicMaterial({ vertexColors: true }), tunRoad: new THREE.MeshBasicMaterial({ vertexColors: true, map: asphTex }), tunMark: new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), lamp: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),   // tunnel interior: unlit, brightness baked into vertex colours
+  conc: stdMat({ roughness: 0.85, emissive: new THREE.Color(0x3a3834) }), joint: stdMat({ roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }), tube: new THREE.MeshBasicMaterial({ vertexColors: true }), tunRoad: new THREE.MeshBasicMaterial({ vertexColors: true, map: asphTex }), tunMark: new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), lamp: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),   // tunnel interior: unlit, brightness baked into vertex colours
 };
 // Per-road material variants: higher road id => pulled slightly closer in depth, so overlaps never z-fight; markings always above every surface.
 const roadMatCache = new Map();
@@ -421,14 +421,14 @@ function buildRoadGroup(r) {
       const l0 = brk[i], l1 = brk[i + 1], inOpen = l0 >= -TW - 1e-9 && l1 <= TW + 1e-9, t0 = tops[i], t1 = tops[i + 1];
       const b0 = inOpen ? zr + tunRoof(TP, Math.abs(l0)) : zb, b1 = inOpen ? zr + tunRoof(TP, Math.abs(l1)) : zb;
       CB.portal.c.quad(V(0, l0, b0), V(0, l1, b1), V(0, l1, t1 - CH), V(0, l0, t0 - CH), front);   // face
-      CB.portal.d.quad(V(-CO, l0, t0 - CH), V(-CO, l1, t1 - CH), V(-CO, l1, t1), V(-CO, l0, t0), front);   // coping: front fascia, top, back fascia, soffits
-      CB.portal.d.quad(V(-CO, l0, t0), V(-CO, l1, t1), V(HT + CO, l1, t1), V(HT + CO, l0, t0), UP);
-      CB.portal.d.quad(V(HT + CO, l0, t0 - CH), V(HT + CO, l1, t1 - CH), V(HT + CO, l1, t1), V(HT + CO, l0, t0), back);
+      CB.portal.c.quad(V(-CO, l0, t0 - CH), V(-CO, l1, t1 - CH), V(-CO, l1, t1), V(-CO, l0, t0), front, COL.concDk);   // coping: front fascia, top, back fascia, soffits
+      CB.portal.c.quad(V(-CO, l0, t0), V(-CO, l1, t1), V(HT + CO, l1, t1), V(HT + CO, l0, t0), UP, COL.concDk);
+      CB.portal.c.quad(V(HT + CO, l0, t0 - CH), V(HT + CO, l1, t1 - CH), V(HT + CO, l1, t1), V(HT + CO, l0, t0), back, COL.concDk);
     }
     for (const sg of [1, -1]) {   // closed side ends
       const e = sg * Wh, t = tops[sg > 0 ? brk.length - 1 : 0];
       CB.portal.c.quad(V(0, e, zb), V(HT, e, zb), V(HT, e, t - CH), V(0, e, t - CH), lnP.map(v => v * sg));
-      CB.portal.d.quad(V(-CO, e, t - CH), V(HT + CO, e, t - CH), V(HT + CO, e, t), V(-CO, e, t), lnP.map(v => v * sg));
+      CB.portal.c.quad(V(-CO, e, t - CH), V(HT + CO, e, t - CH), V(HT + CO, e, t), V(-CO, e, t), lnP.map(v => v * sg), COL.concDk);
     }
   }
   const add = (bk, mat, shadow, pick, kind = 'surface', layer = '') => { const m = bk.mesh(mat, shadow); if (m) { m.userData.road = r; m.userData.layer = layer; m.userData.pick = pick; m.userData.kind = kind; g.add(m); } };

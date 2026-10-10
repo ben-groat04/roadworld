@@ -43,10 +43,10 @@ const MOTORWAY = [[900, 1800, 79.3], [720, 1800, 79.3], [540, 1800, 79.3]];
 // 8. tight_curve_fill: residential U-turn (radius ~45 m) on gentle ground (~100 m, relief ~4 m) with the deck held at 110.5 m: fill ~8-12 m all round the bend,
 //    so slopes from the two sides of the bend overlap on the inside. [x, y, z]
 const TIGHT = { c: [1700, 880], R: 45, z: 110.5 };
-// 9. tunnel_curve: residential road, CURVED (about 22 deg of bend inside the bore) and on a ~5% gradient (z a straight ramp 25.6 -> 35.0), through a spur: 74 m tunnel, portals found automatically.
-const TUNNEL_CURVE = [[1657.5, 1516.4, 25.6], [1703.1, 1513, 27.9], [1748.1, 1520.4, 30.3], [1790.2, 1538.1, 32.6], [1826.9, 1565.2, 35]];
-// 10. tunnel_short: straight, flat (z 92) 100 m tunnel under a thin ridge with open road beyond both portals: you can see daylight through it from the entry.
-const TUNNEL_SHORT = [[1166.2, 920.9, 91.8], [1296.6, 994, 92], [1427, 1067, 92.1]];
+// 9. tunnel_curve: residential road, CURVED (about 22 deg of bend inside the bore) and on a ~7% gradient (z a straight ramp 15.6 -> 29.5), through a spur: 71 m tunnel, portals found automatically.
+const TUNNEL_CURVE = [[1831.5, 1834.5, 15.6], [1783.7, 1845.3, 19.1], [1734.7, 1843.4, 22.5], [1687.8, 1829, 26], [1646.2, 1803.1, 29.5]];
+// 10. tunnel_short: straight, flat (z 93.7) 98 m tunnel under a thin ridge with open road beyond both portals: you can see daylight through it from the entry.
+const TUNNEL_SHORT = [[1163.5, 743, 93.8], [1283.1, 663.4, 93.7], [1402.6, 583.7, 93.6]];
 // Camera views. target = [x, y] (terrain target), dist = camera distance from target (m), elev = degrees looking down,
 // look = compass-style heading the camera LOOKS toward, degrees (0 = +x east, 90 = +y north), or 'dyn:<name>' computed at runtime.
 // Registered below after the scene is drawn (some depend on measured geometry).

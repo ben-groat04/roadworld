@@ -45,6 +45,7 @@ const char* marking_category_name(MarkingCategory c) {
         case MarkingCategory::Zebra: return "zebra";
         case MarkingCategory::Arrow: return "arrow";
         case MarkingCategory::RoundaboutEntry: return "roundabout_entry";
+        case MarkingCategory::Chevron: return "chevron";
     }
     return "?";
 }
@@ -107,6 +108,18 @@ std::vector<std::uint32_t> triangulate_marking(const MarkingSet& set, const Mark
     std::vector<std::uint32_t> idx(n);
     for (std::size_t i = 0; i < n; ++i) idx[i] = static_cast<std::uint32_t>(i);
     if (ring_area(p.data(), n) < 0) std::reverse(idx.begin(), idx.end());
+    // Drop duplicate and collinear vertices (clipping leaves them) so ear clipping cannot stall.
+    for (bool again = true; again && idx.size() > 3;) {
+        again = false;
+        for (std::size_t i = 0; i < idx.size(); ++i) {
+            const Vec2 a = p[idx[(i + idx.size() - 1) % idx.size()]].xy(), bq = p[idx[i]].xy(), c = p[idx[(i + 1) % idx.size()]].xy();
+            if ((bq - a).length() < 1e-9 || std::fabs((bq - a).cross(c - bq)) < 1e-10) {
+                idx.erase(idx.begin() + static_cast<std::ptrdiff_t>(i));
+                again = true;
+                break;
+            }
+        }
+    }
     std::size_t guard = 0;
     while (idx.size() > 3 && guard++ < n * n) {
         bool clipped = false;
@@ -348,7 +361,7 @@ ValueSel parse_value_sel(const json* j, double unit, const std::string& ctx, Err
 }
 
 bool parse_category(const std::string& name, MarkingCategory& out) {
-    for (int i = 0; i <= static_cast<int>(MarkingCategory::RoundaboutEntry); ++i) {
+    for (int i = 0; i <= static_cast<int>(MarkingCategory::Chevron); ++i) {
         const auto c = static_cast<MarkingCategory>(i);
         if (name == marking_category_name(c)) {
             out = c;
@@ -576,7 +589,7 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         r.roundabout_entry.source = str(*g, "source", "", "roundabout_entry", err);
     }
     if (const json* g = mem(*jn, "gore")) {
-        check_keys(*g, {"style", "stripe_width_m", "pitch_m", "angle_deg", "min_area_m2", "edge_style", "edge_inset_m", "source"},
+        check_keys(*g, {"style", "stripe_width_m", "pitch_m", "angle_deg", "chevron", "same_direction", "opposing", "border_style", "min_area_m2", "edge_style", "edge_inset_m", "source"},
                    "gore", err);
         GoreRule& z = r.gore;
         z.enabled = true;
@@ -585,6 +598,25 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         z.pitch_m = num(*g, "pitch_m", 1.2, "gore", err);
         z.angle_deg = num(*g, "angle_deg", 60, "gore", err);
         z.min_area_m2 = num(*g, "min_area_m2", 0.05, "gore", err);
+        z.chevron.style = z.style;
+        z.chevron.stripe_width_m = z.stripe_width_m;
+        z.chevron.pitch_m = z.pitch_m;
+        z.chevron.angle_deg = 35;
+        if (const json* c = mem(*g, "chevron")) {
+            check_keys(*c, {"style", "stripe_width_m", "pitch_m", "angle_deg"}, "gore chevron", err);
+            z.chevron.style = str(*c, "style", z.style, "gore chevron", err);
+            z.chevron.stripe_width_m = num(*c, "stripe_width_m", z.stripe_width_m, "gore chevron", err);
+            z.chevron.pitch_m = num(*c, "pitch_m", z.pitch_m, "gore chevron", err);
+            z.chevron.angle_deg = num(*c, "angle_deg", 35, "gore chevron", err);
+            if (!(z.chevron.stripe_width_m > 0) || !(z.chevron.pitch_m > z.chevron.stripe_width_m) ||
+                !(z.chevron.angle_deg > 5 && z.chevron.angle_deg < 85))
+                err.set("gore chevron: need 0 < stripe_width_m < pitch_m and 5 < angle_deg < 85");
+        }
+        z.same_direction = str(*g, "same_direction", "chevron", "gore", err);
+        z.opposing = str(*g, "opposing", "diagonal", "gore", err);
+        for (const std::string* m : {&z.same_direction, &z.opposing})
+            if (*m != "chevron" && *m != "diagonal" && *m != "none") err.set("gore: patterns are chevron, diagonal or none");
+        z.border_style = parse_style_sel(mem(*g, "border_style"), unit, "gore", err);
         z.edge_style = parse_style_sel(mem(*g, "edge_style"), unit, "gore", err);
         z.edge_inset_m = num(*g, "edge_inset_m", 0.225, "gore", err);
         z.source = str(*g, "source", "", "gore", err);
@@ -679,6 +711,8 @@ void validate(const MarkingRules& r, Err& err) {
     need(r.zebra.give_way_style, "zebra give_way_style");
     need_sel(r.roundabout_entry.style, "roundabout_entry");
     need(r.gore.style, "gore");
+    need(r.gore.chevron.style, "gore chevron");
+    need_sel(r.gore.border_style, "gore border_style");
     need_sel(r.gore.edge_style, "gore edge_style");
     need(r.arrows.style, "arrows");
     if (r.give_way.enabled && r.give_way.triangle && r.give_way.triangle_style.empty()) err.set("give_way triangle: missing style");
@@ -1563,42 +1597,140 @@ struct JGen {
         }
     }
 
-    // Diagonal hatching of the gore, clipped to its polygon.
+    // Flow sense of an arm: +1 all lanes inbound, -1 all outbound, 0 mixed (two-way).
+    static int arm_flow(const JunctionArm& a) {
+        if (a.inbound_count() > 0 && a.outbound_count() == 0) return 1;
+        if (a.outbound_count() > 0 && a.inbound_count() == 0) return -1;
+        return 0;
+    }
+
+    // Gore areas: a continuous border line, then chevrons (traffic passes on both sides in the same
+    // direction: merge and diverge noses) or diagonal hatching (opposing flows), by the lanes either side.
     void gore() {
         const GoreRule& gr = rules.gore;
-        if (!gr.enabled) return;
-        for (const std::vector<Vec2>& ring : j.gore) {
+        if (!gr.enabled || j.arms.size() < 2) return;
+        for (const std::vector<Vec2>& ring0 : j.gore) {
+            std::vector<Vec2> ring = ring0;
             if (ring.size() < 3) continue;
+            double a2 = 0;
+            for (std::size_t k = 0; k < ring.size(); ++k) a2 += ring[k].cross(ring[(k + 1) % ring.size()]);
+            if (std::fabs(a2) / 2 < gr.min_area_m2) continue;
+            if (a2 < 0) std::reverse(ring.begin(), ring.end());
             Vec2 c{0, 0};
             for (const Vec2& p : ring) c = c + p;
             c = c * (1.0 / static_cast<double>(ring.size()));
-            double cxx = 0, cxy = 0, cyy = 0;
-            for (const Vec2& p : ring) {
-                const Vec2 d = p - c;
-                cxx += d.x * d.x;
-                cxy += d.x * d.y;
-                cyy += d.y * d.y;
+
+            // The two arms flanking the gore: nearest trim points to its centroid.
+            std::vector<std::pair<double, std::size_t>> near;
+            for (std::size_t i = 0; i < j.arms.size(); ++i)
+                near.push_back({(arm_point(j.arms[i], trim_of(j, static_cast<int>(i)), 0).pos.xy() - c).length(), i});
+            std::sort(near.begin(), near.end());
+            const std::size_t i0 = near[0].second, i1 = near[1].second;
+            const int f0 = arm_flow(j.arms[i0]), f1 = arm_flow(j.arms[i1]);
+            const bool same = f0 != 0 && f0 == f1;
+            const std::string& mode = same ? gr.same_direction : gr.opposing;
+            // Travel direction through the gore: inbound arms flow toward the node, outbound away from it.
+            Vec2 flow{0, 0};
+            for (std::size_t i : {i0, i1}) {
+                const ArmPoint ap = arm_point(j.arms[i], trim_of(j, static_cast<int>(i)), 0);
+                const Vec2 out{std::cos(ap.heading_out), std::sin(ap.heading_out)};
+                const int fl = arm_flow(j.arms[i]);
+                flow = flow + out * (fl >= 0 ? -1.0 : 1.0);
             }
-            const double th = 0.5 * std::atan2(2 * cxy, cxx - cyy);
-            const double ang = th + gr.angle_deg * kPi / 180;
-            const Vec2 dir{std::cos(ang), std::sin(ang)}, nrm = left_normal(dir);
-            double tmin = 1e18, tmax = -1e18;
-            for (const Vec2& p : ring) {
-                const double t = nrm.dot(p - c);
-                tmin = std::min(tmin, t);
-                tmax = std::max(tmax, t);
+            flow = normalized(flow);
+            if (flow.length() < 0.5) flow = {std::cos(j.arms[i0].heading_out), std::sin(j.arms[i0].heading_out)};
+            b.edge = j.arms[i0].edge;
+
+            // Continuous border: each side of the polygon becomes a mitred strip inside it.
+            std::vector<Vec2> inner = ring;
+            const std::string* bs = select_style(gr.border_style, arm_ctx(i0));
+            const LineStyle* bst = bs ? style_of(rules, *bs) : nullptr;
+            if (bst && !bst->strands.empty()) {
+                const double w = bst->strands[0].width;
+                const std::size_t n = ring.size();
+                std::vector<Vec2> bis(n);
+                for (std::size_t k = 0; k < n; ++k) {
+                    const Vec2 d0 = normalized(ring[k] - ring[(k + n - 1) % n]), d1 = normalized(ring[(k + 1) % n] - ring[k]);
+                    bis[k] = normalized(left_normal(d0) + left_normal(d1));
+                }
+                for (std::size_t k = 0; k < n; ++k) {
+                    const Vec2 a = ring[k], bq = ring[(k + 1) % n];
+                    const Vec2 nrm = left_normal(normalized(bq - a));
+                    std::vector<Vec2> strip = clip_halfplane(ring, nrm * -1.0, a, -w);  // n.(p-a) <= w
+                    const Vec2 mid = (a + bq) * 0.5;
+                    for (int end = 0; end < 2; ++end) {
+                        const Vec2 v = end == 0 ? a : bq;
+                        const Vec2 bv = bis[end == 0 ? k : (k + 1) % n];
+                        Vec2 q = left_normal(bv);
+                        if (q.dot(mid - v) < 0) q = q * -1.0;
+                        strip = clip_halfplane(strip, q, v, 0.0);
+                    }
+                    emit_gore_poly(MarkingCategory::EdgeLine, *bs, strip, 1e-4);
+                    inner = clip_halfplane(inner, nrm, a, w);
+                }
             }
-            for (double t = tmin + gr.pitch_m / 2; t < tmax; t += gr.pitch_m) {
-                std::vector<Vec2> poly = ring;
-                poly = clip_halfplane(poly, nrm, c, t);                       // keep nrm.(p-c) >= t
-                poly = clip_halfplane(poly, nrm * -1.0, c, -(t + gr.stripe_width_m));  // keep <= t + w
-                if (poly.size() < 3) continue;
-                double area = 0;
-                for (std::size_t k = 0; k < poly.size(); ++k) area += poly[k].cross(poly[(k + 1) % poly.size()]);
-                if (std::fabs(area) / 2 < gr.min_area_m2) continue;
-                std::vector<Vec3> r;
-                for (const Vec2& p : poly) r.push_back({p.x, p.y, surface_z(p)});
-                b.add(MarkingCategory::Hatching, gr.style, r, false);
+            if (inner.size() < 3 || mode == "none") continue;
+
+            if (mode == "chevron") chevrons(inner, c, flow, gr.chevron);
+            else diagonals(inner, c, gr);
+        }
+    }
+
+    void emit_gore_poly(MarkingCategory cat, const std::string& style, const std::vector<Vec2>& poly, double min_area) {
+        if (poly.size() < 3) return;
+        double area2 = 0;
+        for (std::size_t k = 0; k < poly.size(); ++k) area2 += poly[k].cross(poly[(k + 1) % poly.size()]);
+        if (std::fabs(area2) / 2 < min_area) return;
+        std::vector<Vec3> r;
+        for (const Vec2& p : poly) r.push_back({p.x, p.y, surface_z(p)});
+        b.add(cat, style, r, false);
+    }
+
+    void diagonals(const std::vector<Vec2>& ring, Vec2 c, const GoreRule& gr) {
+        double cxx = 0, cxy = 0, cyy = 0;
+        for (const Vec2& p : ring) {
+            const Vec2 d = p - c;
+            cxx += d.x * d.x;
+            cxy += d.x * d.y;
+            cyy += d.y * d.y;
+        }
+        const double th = 0.5 * std::atan2(2 * cxy, cxx - cyy);
+        const double ang = th + gr.angle_deg * kPi / 180;
+        const Vec2 dir{std::cos(ang), std::sin(ang)}, nrm = left_normal(dir);
+        double tmin = 1e18, tmax = -1e18;
+        for (const Vec2& p : ring) {
+            const double t = nrm.dot(p - c);
+            tmin = std::min(tmin, t);
+            tmax = std::max(tmax, t);
+        }
+        for (double t = tmin + gr.pitch_m / 2; t < tmax; t += gr.pitch_m) {
+            std::vector<Vec2> poly = clip_halfplane(ring, nrm, c, t);
+            poly = clip_halfplane(poly, nrm * -1.0, c, -(t + gr.stripe_width_m));
+            emit_gore_poly(MarkingCategory::Hatching, gr.style, poly, gr.min_area_m2);
+        }
+    }
+
+    // V-shaped stripes whose apexes lie on the gore axis and point the way the traffic travels.
+    void chevrons(const std::vector<Vec2>& ring, Vec2 c, Vec2 flow, const GorePattern& cp) {
+        const Vec2 side = left_normal(flow);
+        const double al = cp.angle_deg * kPi / 180, sa = std::sin(al), ca = std::cos(al);
+        const Vec2 nl = flow * sa + side * ca, nr = flow * sa - side * ca;  // band normals, both advance with the flow
+        double umin = 1e18, umax = -1e18, ymax = 0;
+        for (const Vec2& p : ring) {
+            umin = std::min(umin, flow.dot(p - c));
+            umax = std::max(umax, flow.dot(p - c));
+            ymax = std::max(ymax, std::fabs(side.dot(p - c)));
+        }
+        const double step = cp.pitch_m / sa;
+        const std::vector<Vec2> left_half = clip_halfplane(ring, side, c, 0.0);
+        const std::vector<Vec2> right_half = clip_halfplane(ring, side * -1.0, c, 0.0);
+        for (double u = umin - cp.stripe_width_m / sa + step / 2; u < umax + ca / sa * ymax; u += step) {
+            const Vec2 apex = c + flow * u;
+            for (int h = 0; h < 2; ++h) {
+                const Vec2 n = h == 0 ? nl : nr;
+                std::vector<Vec2> poly = clip_halfplane(h == 0 ? left_half : right_half, n, apex, 0.0);
+                poly = clip_halfplane(poly, n * -1.0, apex, -cp.stripe_width_m);
+                emit_gore_poly(MarkingCategory::Chevron, cp.style, poly, rules.gore.min_area_m2 * 0.2);
             }
         }
     }

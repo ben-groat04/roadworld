@@ -166,10 +166,14 @@
       "source": "estimate: give way line across the entering lanes (roundabout markings not extracted from the Manual)"
     },
     "gore": {
+      "same_direction": "chevron",
+      "opposing": "diagonal",
       "style": "fill_white", "stripe_width_m": 0.3, "pitch_m": 1.2, "angle_deg": 60, "min_area_m2": 0.05,
+      "chevron": { "style": "fill_white", "stripe_width_m": 0.3, "pitch_m": 1.2, "angle_deg": 35 },
+      "border_style": [ { "if": { "speed_min": 40 }, "style": "edge_200" }, { "style": "edge_100" } ],
       "edge_style": [ { "if": { "speed_min": 40 }, "style": "edge_200" }, { "style": "edge_100" } ],
       "edge_inset_m": 0.225,
-      "source": "estimate: diagonal hatching in the gore (diagrams 1042/1043 not extracted); edge lines continue through the slip at the edge-line width"
+      "source": "Pattern choice follows the owner (traditional practice): chevrons (TSRGD diagram 1042, as remembered; docs/road-marking-rules.md does not extract it) where traffic passes the nose in the same direction on both sides (merge, diverge); diagonal hatching (diagrams 1040 family) where opposing flows are separated. Both are bordered by a continuous line. Estimates: chevron wing angle 35 degrees, 0.3 m stripes at 1.2 m pitch, apex pointing the way the traffic travels; edge lines continue through the slip at the edge-line width"
     },
     "arrows": {
       "min_inbound_lanes": 2,

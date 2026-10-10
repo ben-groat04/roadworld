@@ -40,6 +40,7 @@ enum class MarkingCategory : std::uint8_t {
     Zebra,         // crossing stripes and their give-way lines
     Arrow,         // lane arrows
     RoundaboutEntry,  // give-way line across the entering lanes of a roundabout approach
+    Chevron,          // gore chevrons (same-direction flows either side)
 };
 const char* marking_category_name(MarkingCategory c);
 
@@ -240,12 +241,28 @@ struct ArrowRule {
     std::string source;
 };
 
+// Stripe pattern for a gore.
+struct GorePattern {
+    std::string style;        // fill style
+    double stripe_width_m = 0.3;
+    double pitch_m = 1.2;     // stripe repeat, measured across the stripes
+    double angle_deg = 60;    // diagonal: stripe angle from the gore long axis; chevron: wing angle from the axis
+};
+
+// Gore / nose areas. The pattern is chosen by comparing the travel directions of the lanes either side of
+// the gore: the same direction on both sides (merge, diverge) uses `same_direction`, opposing flows use
+// `opposing`; each names "chevron", "diagonal" or "none". Chevron V apexes point the way the traffic
+// travels. Either pattern is bordered by a continuous line when border_style is set.
 struct GoreRule {
     bool enabled = false;
-    std::string style;          // stripes
+    std::string style;          // diagonal stripes (kept at this level for source compatibility)
     double stripe_width_m = 0.3;
-    double pitch_m = 1.2;       // stripe repeat along the gore
-    double angle_deg = 60;      // stripe angle from the gore's long axis
+    double pitch_m = 1.2;
+    double angle_deg = 60;
+    GorePattern chevron;
+    std::string same_direction = "chevron";
+    std::string opposing = "diagonal";
+    StyleSel border_style;      // continuous boundary line round the gore (inside the polygon); empty = none
     double min_area_m2 = 0.05;
     StyleSel edge_style;        // empty / no match = no edge-line continuity through merge / diverge junctions
     double edge_inset_m = 0.225;  // edge line centre in from the lane edge
