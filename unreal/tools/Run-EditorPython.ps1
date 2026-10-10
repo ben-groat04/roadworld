@@ -11,6 +11,8 @@
   Scripts get arguments through the environment variable CP_SCRIPT_ARGS (space separated) and find
   their helper modules through CP_PY_DIR. Scripts quit the editor themselves (cp_common.finish);
   this runner kills the process tree after -TimeoutMinutes as a backstop.
+  If the environment variable UE-LocalDataCachePath is unset it is set for this process to -LocalDdcPath (default C:\UEDDC).
+  -GraphicsAdapter N appends -graphicsadapter=N (pick the RTX 4060 when the integrated Radeon is also present).
   Exit code: 0 = script reported OK, 1 = script/editor failure, 2 = setup problem, 124 = timeout.
 .EXAMPLE
   .\Run-EditorPython.ps1 -Script py\report_environment.py
@@ -24,7 +26,10 @@ param(
     [int]$ResX = 1920,
     [int]$ResY = 1080,
     [string]$EngineRoot,
-    [int]$TimeoutMinutes = 30,
+    [int]$TimeoutMinutes = 60,
+    [string]$LocalDdcPath = 'C:\UEDDC',
+    [string]$LogPath,        # default Saved\Logs\py-<name>-<timestamp>.log; First-Run.ps1 sets it so it can announce the path first
+    [Nullable[int]]$GraphicsAdapter = $null,
     [int]$MaxPythonLines = 80,
     [string[]]$ExtraEditorArgs = @()
 )
@@ -36,6 +41,12 @@ try {
 } catch {
     Write-Host $_.Exception.Message
     exit 2
+}
+
+# Derived-data cache: keep it off the (slow) engine drive unless the user already chose one.
+if (-not ${env:UE-LocalDataCachePath}) {
+    New-Item -ItemType Directory -Force -Path $LocalDdcPath | Out-Null
+    ${env:UE-LocalDataCachePath} = $LocalDdcPath
 }
 
 $projectDir = (Resolve-Path (Join-Path $PSScriptRoot '..\CityPainter')).Path
@@ -61,6 +72,7 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $name = [IO.Path]::GetFileNameWithoutExtension($scriptPath)
 $logPath = Join-Path $logDir "py-$name-$stamp.log"
+if ($LogPath) { $logPath = $LogPath }
 $stdoutPath = Join-Path $logDir "py-$name-$stamp.stdout.txt"
 $stderrPath = Join-Path $logDir "py-$name-$stamp.stderr.txt"
 
@@ -88,10 +100,12 @@ if ($Render) {
 } else {
     $edArgs += '-nullrhi'
 }
+if ($null -ne $GraphicsAdapter) { $edArgs += "-graphicsadapter=$GraphicsAdapter" }
 $edArgs += $ExtraEditorArgs
 
 Write-Host "Running $([IO.Path]::GetFileName($scriptPath)) in $(if ($Render) { 'rendering' } else { 'nullrhi' }) mode"
 Write-Host "  log: $logPath"
+Write-Host "  DDC: ${env:UE-LocalDataCachePath}"
 $p = Start-Process -FilePath $ue.EditorCmd -ArgumentList ($edArgs -join ' ') -PassThru -WindowStyle Hidden `
     -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
 $null = $p.Handle

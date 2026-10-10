@@ -3,7 +3,7 @@
   Locate the Unreal Engine install (default 5.8) without a hard-coded path.
 .DESCRIPTION
   Order: -EngineRoot parameter, UE_ROOT env var, Epic launcher manifest
-  (LauncherInstalled.dat), registry (HKLM:\SOFTWARE\EpicGames\Unreal Engine\<ver> InstalledDirectory),
+  (LauncherInstalled.dat), registry (HKLM:\SOFTWARE\EpicGames\Unreal Engine\<ver> InstalledDirectory; plus the values of HKCU:\Software\Epic Games\Unreal Engine\Builds, each named by build id with the engine root as data),
   then a last-resort scan of <drive>:\UE_<ver> and <drive>:\Program Files\Epic Games\UE_<ver>.
   Each candidate is verified (Build.bat, UnrealEditor-Cmd.exe, RunUAT.bat). The first candidate that
   passes wins; if none pass, throws a message listing every candidate and what was missing
@@ -84,7 +84,7 @@ function Find-UnrealEngine {
     foreach ($loc in (Get-UnrealCandidatesFromLauncherDat -Path $LauncherDat -Version $Version)) {
         Add-Cand $loc "LauncherInstalled.dat (UE_$Version)"
     }
-    foreach ($hive in @('HKLM:\SOFTWARE\EpicGames\Unreal Engine', 'HKLM:\SOFTWARE\WOW6432Node\EpicGames\Unreal Engine', 'HKCU:\SOFTWARE\Epic Games\Unreal Engine\Builds')) {
+    foreach ($hive in @('HKLM:\SOFTWARE\EpicGames\Unreal Engine', 'HKLM:\SOFTWARE\WOW6432Node\EpicGames\Unreal Engine')) {
         try {
             $key = Join-Path $hive $Version
             if (Test-Path -LiteralPath $key) {
@@ -93,6 +93,18 @@ function Find-UnrealEngine {
             }
         } catch { }
     }
+    # HKCU Builds: one VALUE per registered build, named by build id (a version like "5.8" or a GUID), data = engine root.
+    try {
+        $builds = 'HKCU:\Software\Epic Games\Unreal Engine\Builds'
+        if (Test-Path -LiteralPath $builds) {
+            $props = Get-ItemProperty -LiteralPath $builds -ErrorAction Stop
+            foreach ($pr in $props.PSObject.Properties) {
+                if ($pr.Name -like 'PS*') { continue }   # PSPath, PSParentPath, ...
+                # A GUID name says nothing about the version; the verification below rejects wrong or incomplete roots.
+                if ($pr.Value -is [string]) { Add-Cand $pr.Value "registry $builds [$($pr.Name)]" }
+            }
+        }
+    } catch { }
     # Last resort: well-known folder names on every fixed drive.
     try {
         foreach ($d in (Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -match '^[A-Za-z]:[\\/]$' })) {

@@ -14,7 +14,7 @@ public class CityPainterSim : ModuleRules
 		// (and avoids anonymous-namespace collisions between sim_core .cpp files).
 		PCHUsage = PCHUsageMode.NoPCHs;
 		bUseUnity = false;
-		bEnableExceptions = false; // sim_core is built exception-free
+		bEnableExceptions = false; // sim_core is built exception-free: no throw/try/catch, nlohmann parse(allow_exceptions=false), no throwing filesystem calls
 		CppStandard = CppStandardVersion.Cpp20;
 
 		// Third-party-style warning relaxation. UE promotes some warnings to errors.

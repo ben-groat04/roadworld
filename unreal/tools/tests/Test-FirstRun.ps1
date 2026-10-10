@@ -43,6 +43,12 @@ class P { static int Main(string[] a) {
     Check 'dryrun lists all steps' (($r.text -match 'find-engine') -and ($r.text -match 'build') -and ($r.text -match 'screenshots') -and ($r.text -match 'import_textures|textures'))
     Check 'dryrun writes no state' (-not (Test-Path $state))
 
+    # 1b. DryRun with forwarded options: -Stream/-LogPath on build, DDC/GPU/parallelism forwarded, 120 min timeouts.
+    $r = Run-FR @('-DryRun', '-LocalDdcPath', 'C:ddc-test', '-MaxParallelActions', '3', '-GraphicsAdapter', '1')
+    Check 'dryrun build gets -Stream, -MaxParallelActions 3, -LocalDdcPath' (($r.text -match 'Build-Editor.ps1" -Stream') -and ($r.text -match '-MaxParallelActions 3') -and ($r.text -match 'ddc-test'))
+    Check 'dryrun editor steps get -GraphicsAdapter 1 and 120 min timeouts' (($r.text -match 'import_textures.py -TimeoutMinutes 120') -and ($r.text -match 'screenshot_views.py -Render -TimeoutMinutes 120') -and ($r.text -match '-GraphicsAdapter 1'))
+    Check 'dryrun prints log paths before steps' (($r.text -match 'log: .*build-d{8}-d{6}.log') -and ($r.text -match 'log: .*py-screenshot_views-'))
+
     # 2. Build fails: stops, non-zero, later steps not run, rerun hint printed.
     $r = Run-FR @()
     Check 'build failure -> exit 1' ($r.code -eq 1)

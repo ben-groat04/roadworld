@@ -12,6 +12,9 @@
   -DryRun        print what would run; change nothing
   -ScriptArgs    passed to the level and screenshots Python scripts (space-joined into one CP_SCRIPT_ARGS value)
   -EngineRoot    passed to every step
+  -LocalDdcPath / -MaxParallelActions / -GraphicsAdapter   forwarded to the steps that take them (build: DDC + parallelism;
+                 editor steps: DDC + GPU index for -graphicsadapter). Unset = each script's own default (C:\UEDDC, 4, none).
+  Each step's log path is printed before the step starts; the build step runs with -Stream, but its output is shown when it ends.
   Exit: 0 all done, 1 a step failed, 2 bad arguments.
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File unreal\tools\First-Run.ps1
@@ -25,7 +28,10 @@ param(
     [string[]]$ScriptArgs = @(),
     [string]$EngineRoot,
     [string]$StateFile,
-    [int]$ShaderTimeoutMinutes = 120
+    [int]$ShaderTimeoutMinutes = 120,
+    [string]$LocalDdcPath,
+    [int]$MaxParallelActions = 0,
+    [Nullable[int]]$GraphicsAdapter = $null
 )
 
 $ErrorActionPreference = 'Stop'
@@ -41,19 +47,42 @@ $order = @('find-engine', 'build', 'environment', 'textures', 'level', 'screensh
 
 function Q($s) { return '"' + $s + '"' }
 
+# Planned log file per step (announced before the step runs; the child script is told to write exactly there).
+$runStamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+function Get-StepLog($name) {
+    $logs = Join-Path $projectDir 'Saved\Logs'
+    switch ($name) {
+        'build' { return (Join-Path $logs "build-$runStamp.log") }
+        'environment' { return (Join-Path $logs "py-report_environment-$runStamp.log") }
+        'textures' { return (Join-Path $logs "py-import_textures-$runStamp.log") }
+        'level' { return (Join-Path $logs "py-setup_look_test_level-$runStamp.log") }
+        'screenshots' { return (Join-Path $logs "py-screenshot_views-$runStamp.log") }
+    }
+    return ''
+}
+
 # Per-step command line (arguments to powershell.exe).
 function Get-StepCommand($name) {
     $eng = ''
     if ($EngineRoot) { $eng = ' -EngineRoot ' + (Q $EngineRoot) }
     $sa = ''
     if ($scriptArgStr) { $sa = ' -ScriptArgs ' + (Q $scriptArgStr) }
+    $ddc = ''
+    if ($LocalDdcPath) { $ddc = ' -LocalDdcPath ' + (Q $LocalDdcPath) }
+    $par = ''
+    if ($MaxParallelActions -gt 0) { $par = " -MaxParallelActions $MaxParallelActions" }
+    $gpu = ''
+    if ($null -ne $GraphicsAdapter) { $gpu = " -GraphicsAdapter $GraphicsAdapter" }
+    $lp = ''
+    if ($name -ne 'find-engine') { $lp = ' -LogPath ' + (Q (Get-StepLog $name)) }
+    $ed = "$eng$ddc$gpu$lp"
     switch ($name) {
         'find-engine' { return "$psPrefix $(Q (Join-Path $tools 'Find-Unreal.ps1'))$eng" }
-        'build' { return "$psPrefix $(Q (Join-Path $tools 'Build-Editor.ps1'))$eng" }
-        'environment' { return "$psPrefix $(Q (Join-Path $tools 'Run-EditorPython.ps1')) -Script py\report_environment.py -TimeoutMinutes $ShaderTimeoutMinutes$eng" }
-        'textures' { return "$psPrefix $(Q (Join-Path $tools 'Run-EditorPython.ps1')) -Script py\import_textures.py -TimeoutMinutes 60$eng" }
-        'level' { return "$psPrefix $(Q (Join-Path $tools 'Run-EditorPython.ps1')) -Script py\setup_look_test_level.py -TimeoutMinutes 60$eng$sa" }
-        'screenshots' { return "$psPrefix $(Q (Join-Path $tools 'Run-EditorPython.ps1')) -Script py\screenshot_views.py -Render -TimeoutMinutes 60$eng$sa" }
+        'build' { return "$psPrefix $(Q (Join-Path $tools 'Build-Editor.ps1')) -Stream$eng$ddc$par$lp" }
+        'environment' { return "$psPrefix $(Q (Join-Path $tools 'Run-EditorPython.ps1')) -Script py\report_environment.py -TimeoutMinutes $ShaderTimeoutMinutes$ed" }
+        'textures' { return "$psPrefix $(Q (Join-Path $tools 'Run-EditorPython.ps1')) -Script py\import_textures.py -TimeoutMinutes 120$ed" }
+        'level' { return "$psPrefix $(Q (Join-Path $tools 'Run-EditorPython.ps1')) -Script py\setup_look_test_level.py -TimeoutMinutes 120$ed$sa" }
+        'screenshots' { return "$psPrefix $(Q (Join-Path $tools 'Run-EditorPython.ps1')) -Script py\screenshot_views.py -Render -TimeoutMinutes 120$ed$sa" }
     }
 }
 
@@ -91,13 +120,21 @@ function Newest-SourceTime {
 function Invoke-Step($name) {
     $cmd = Get-StepCommand $name
     $out = Join-Path ([IO.Path]::GetTempPath()) ("cp-firstrun-" + [guid]::NewGuid().ToString('N') + '.txt')
-    $p = Start-Process -FilePath 'powershell.exe' -ArgumentList $cmd -PassThru -WindowStyle Hidden -RedirectStandardOutput $out
+    $err = $out + '.err'
+    $p = Start-Process -FilePath 'powershell.exe' -ArgumentList $cmd -PassThru -WindowStyle Hidden -RedirectStandardOutput $out -RedirectStandardError $err
     $null = $p.Handle
     $p.WaitForExit()
     $code = $p.ExitCode
     $lines = @()
     if (Test-Path -LiteralPath $out) { $lines = @(Get-Content -LiteralPath $out); Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue }
     foreach ($l in $lines) { Write-Host "    $l" }
+    $errLines = @()
+    if (Test-Path -LiteralPath $err) { $errLines = @(Get-Content -LiteralPath $err | Where-Object { $_ -and $_.Trim() }); Remove-Item -LiteralPath $err -Force -ErrorAction SilentlyContinue }
+    # A thrown error lands on stderr only; show it on failure so a FAIL is never blank.
+    if ($code -ne 0 -and $errLines.Count -gt 0) {
+        Write-Host '    stderr:'
+        foreach ($l in $errLines) { Write-Host "    ! $l" }
+    }
     $log = '-'
     foreach ($l in $lines) {
         if ($l -match 'Full log:\s*(?<p>.+?)\s*$') { $log = $Matches['p'] }
@@ -123,6 +160,9 @@ $invalidate = $false
 $startAll = Get-Date
 
 Write-Host "First-Run: state file $StateFile"
+if (-not $EngineRoot -and -not $env:UE_ROOT) {
+    Write-Host 'Note: no -EngineRoot and UE_ROOT is unset, so engine detection will scan drives (slow on a USB disk). Prefer: -EngineRoot D:\UE_5.8'
+}
 foreach ($name in $stepNames) {
     $reason = ''
     $run = $true
@@ -152,6 +192,8 @@ foreach ($name in $stepNames) {
     }
     Write-Host "[$name] RUN ($reason)"
     Write-Host "    powershell.exe $(Get-StepCommand $name)"
+    $plannedLog = Get-StepLog $name
+    if ($plannedLog) { Write-Host "    log: $plannedLog" }
     if ($DryRun) {
         [void]$rows.Add([pscustomobject]@{ Step = $name; Status = 'DRYRUN'; Seconds = 0; Log = '-' })
         $invalidate = $true
@@ -193,6 +235,9 @@ if ($failed) {
     $extraArgs = ''
     if ($scriptArgStr) { $extraArgs += ' -ScriptArgs ' + (Q $scriptArgStr) }
     if ($EngineRoot) { $extraArgs += ' -EngineRoot ' + (Q $EngineRoot) }
+    if ($LocalDdcPath) { $extraArgs += ' -LocalDdcPath ' + (Q $LocalDdcPath) }
+    if ($MaxParallelActions -gt 0) { $extraArgs += " -MaxParallelActions $MaxParallelActions" }
+    if ($null -ne $GraphicsAdapter) { $extraArgs += " -GraphicsAdapter $GraphicsAdapter" }
     Write-Host "  powershell -NoProfile -ExecutionPolicy Bypass -File unreal\tools\First-Run.ps1 -Only $failed$extraArgs"
     Write-Host "(or without -Only to resume from there and continue with later steps)"
     exit 1
