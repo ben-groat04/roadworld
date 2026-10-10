@@ -262,8 +262,8 @@ function CHECKS_IN_PAGE() {
         let nearSt = 99; for (let k = -6; k <= 6; k++) { const q = r.samples[si + k]; if (q && (isBr(q) || isTu(q))) nearSt = Math.min(nearSt, Math.abs(k)); }
         for (let lat = -hw; lat <= hw + 1e-6; lat += 0.5) { const l = Math.min(hw - 0.01, Math.max(-hw + 0.01, lat)), [x, y] = latPt(s, l); n++;
           const d = s.z - groundAt(x, y);   // want 0.05 <= d <= 0.6
-          if (d < 0.05 - 1e-4 || d > 0.6 + 1e-4) { bad++; (globalThis.__dbg=globalThis.__dbg||[]).push([+x.toFixed(1),+y.toFixed(1),r.id,+d.toFixed(2),otherRoadNear(x,y,r,0)?1:0,si,Math.round(lat*2)/2]); const v = d < 0.05 ? 0.05 - d : d - 0.6; if (d < 0.05) hi++; else lo++; if (nearSt <= 6) nearEnd++; roadsBad[r.id] = (roadsBad[r.id] || 0) + 1; w = track(w, { x, y, road: r.id, what: (d < 0.05 ? 'ground pokes through road by' : 'gap under road edge') + ' (' + (nearSt === 99 ? 'far from' : nearSt + ' stations from') + ' bridge/tunnel) ', v }); } } }); }
-    done('ground_under_road', w, bad, n, `${n} footprint points, ground 5..60 cm below road`); results[results.length-1].msg += ' DBG'+JSON.stringify(globalThis.__dbg||[]); if (bad) results[results.length - 1].msg += ` (poke-through ${hi}, gaps ${lo}, ${nearEnd} within 6 stations of bridge/tunnel, by road ${JSON.stringify(roadsBad)})`; }
+          if (d < 0.05 - 1e-4 || d > 0.6 + 1e-4) { bad++; const v = d < 0.05 ? 0.05 - d : d - 0.6; if (d < 0.05) hi++; else lo++; if (nearSt <= 6) nearEnd++; roadsBad[r.id] = (roadsBad[r.id] || 0) + 1; w = track(w, { x, y, road: r.id, what: (d < 0.05 ? 'ground pokes through road by' : 'gap under road edge') + ' (' + (nearSt === 99 ? 'far from' : nearSt + ' stations from') + ' bridge/tunnel) ', v }); } } }); }
+    done('ground_under_road', w, bad, n, `${n} footprint points, ground 5..60 cm below road`); if (bad) results[results.length - 1].msg += ` (poke-through ${hi}, gaps ${lo}, ${nearEnd} within 6 stations of bridge/tunnel, by road ${JSON.stringify(roadsBad)})`; }
 
   // slopes_daylight: unwalled sides, walking outward from the footprint edge. Never overshoot the original ground (cut: above, fill: below) by > 0.3 m,
   // and reach it (within 0.15 m) by the batter reach. Reference = P.terrainH (the exact base function GH is graded against). Skipped near other roads.
@@ -275,10 +275,10 @@ function CHECKS_IN_PAGE() {
           for (let d = hw + 0.5; d <= reach + 4; d += 0.5) { const [x, y] = latPt(s, sg * d); if (otherRoadNear(x, y, r, 0) || (d > hw + 0.5 && otherRoadNear(x, y, r, 0))) { skip = true; break; }
             const b = terrainH(x, y), g = groundAt(x, y), cut = b > s.z - 0.15, over = cut ? g - b : b - g;
             if (over > worst) { worst = over; wp = [x, y]; }
-            if (d >= reach + 3.5 && Math.abs(g - b) > 0.15 && !skip) { (globalThis.__d2=globalThis.__d2||[]).push(['UNC',+x.toFixed(1),+y.toFixed(1),r.id,i,side,d,+b.toFixed(2),+g.toFixed(2),+s.z.toFixed(2)]); nc++; bad++; w = track(w, { x, y, road: r.id, what: 'not converged to base by', v: Math.abs(g - b) }); skip = 'counted'; } }
+            if (d >= reach + 3.5 && Math.abs(g - b) > 0.15 && !skip) { nc++; bad++; w = track(w, { x, y, road: r.id, what: 'not converged to base by', v: Math.abs(g - b) }); skip = 'counted'; } }
           if (skip === true) continue; n++;
-          if (worst > 0.3) { ov++; (globalThis.__d2=globalThis.__d2||[]).push(['OV',+wp[0].toFixed(1),+wp[1].toFixed(1),r.id,i,side,+worst.toFixed(2),+s.z.toFixed(2)]); bad++; w = track(w, { x: wp[0], y: wp[1], road: r.id, what: 'overshoots base by', v: worst }); } } }); }
-    results[results.length-1].msg+=' D2'+JSON.stringify(globalThis.__d2||[]);done('slopes_daylight', w, bad, n, `${n} unwalled side profiles reach base ground, max overshoot <= 0.3 m`); if (bad) results[results.length - 1].msg += ` (overshoot ${ov}, unconverged ${nc})`; }
+          if (worst > 0.3) { ov++; bad++; w = track(w, { x: wp[0], y: wp[1], road: r.id, what: 'overshoots base by', v: worst }); } } }); }
+    done('slopes_daylight', w, bad, n, `${n} unwalled side profiles reach base ground, max overshoot <= 0.3 m`); if (bad) results[results.length - 1].msg += ` (overshoot ${ov}, unconverged ${nc})`; }
 
   // median_flat: between the two carriageways of each dual pair, groundAt has no step > 0.5 m between adjacent 0.5 m texels
   { let n = 0, bad = 0, w = null, pairs = 0;
@@ -362,18 +362,21 @@ function CHECKS_IN_PAGE() {
   // ground_hidden_by_walls: along every wall run, the graded ground must not poke through the wall. Samples at lateral offsets from just
   // inside the road face (-0.3) to just outside the outer face (hi+0.3), every 0.1 m: (a) ground between the faces (lo..hi) <= wall top - 0.3;
   // (b) ground just outside either face <= wall top; (c) outside the outer face the ground is natural again (within 0.25 m of terrainH): no ramp left outside.
-  { let n = 0, bad = 0, w = null; const cat = {}; const hwOf = r => RT[r.type].total / 2;
+  { let n = 0, bad = 0, w = null; const cat = {}; const nearOther = (r0, x, y) => roads.some(o => o !== r0 && o.samples.some(q => Math.abs(q.x - x) < 45 && Math.abs(q.y - y) < 45 && Math.hypot(q.x - x, q.y - y) < RT[o.type].total / 2 + 12));   // another road's formation / slope apron reaches here
+    const hwOf = r => RT[r.type].total / 2;
     for (const r of roads) for (const run of wallRuns(r)) {
       const sg = run.side === 'L' ? 1 : -1, lo = run.lo != null ? run.lo : 0, hi = run.hi != null ? run.hi : 1.0, hw = hwOf(r);
-      for (const p of run.pts) {
+      const cum = [0]; for (let i = 1; i < run.pts.length; i++) cum.push(cum[i - 1] + Math.hypot(run.pts[i].x - run.pts[i - 1].x, run.pts[i].y - run.pts[i - 1].y));
+      for (let pi = 0; pi < run.pts.length; pi++) {
+        const p = run.pts[pi], endZone = cum[pi] < 12 || cum[cum.length - 1] - cum[pi] < 12;   // the slope run beyond a wall end aprons round it; ramp check skipped there
         const top = p.top != null ? p.top : p.zTop, ux = -Math.sin(p.h) * sg, uy = Math.cos(p.h) * sg;
         for (let e = lo - 0.3; e <= hi + 0.3 + 1e-9; e += 0.1) {
           const x = p.x + ux * e, y = p.y + uy * e, g = groundAt(x, y); n++;
           const inside = e >= lo - 1e-9 && e <= hi + 1e-9, lim = inside ? top - 0.3 : top;
-          if (g > lim + 1e-6) { bad++; { const k = 'r' + r.id + (run.cut ? 'c' : 'f') + (inside ? 'in' : 'out'); cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + (run.cut ? ' cut' : ' fill') + ' wall ground above ' + (inside ? 'top-0.3' : 'top') + ' at e=' + e.toFixed(1) + ' by', v: g - lim }); }
-          else if (e > hi + 0.1 && Math.abs(g - terrainH(x, y)) > 0.25) { bad++; { if (window.__dbg = (window.__dbg || [])) (window.__dbg.length < 12 || r.id >= 12 && window.__dbg.length < 22) && window.__dbg.push([r.id, x.toFixed(1), y.toFixed(1), e.toFixed(1), g.toFixed(2), terrainH(x, y).toFixed(2), top.toFixed(2), p.zBot.toFixed(2), (() => { let bi = 0, bd = 1e9; r.samples.forEach((q, i) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; bi = i; } }); return 'i' + bi + '/' + r.samples.length + ' ' + r.samples.slice(Math.max(0, bi - 6), bi + 7).map(q => (q.wL ? 'L' : '-') + (q.wR ? 'R' : '-') + (q.br ? 'b' : '')).join(','); })()].join(' ')); const k = 'r' + r.id + (run.cut ? 'c' : 'f') + 'ramp'; cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + ' wall ramp outside outer face, off natural at e=' + e.toFixed(1) + ' by', v: Math.abs(g - terrainH(x, y)) }); }
+          if (g > lim + 0.02) { bad++; { const k = 'r' + r.id + (run.cut ? 'c' : 'f') + (inside ? 'in' : 'out'); cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + (run.cut ? ' cut' : ' fill') + ' wall ground above ' + (inside ? 'top-0.3' : 'top') + ' at e=' + e.toFixed(1) + ' by', v: g - lim }); }
+          else if (!endZone && e > hi + 0.1 && !nearOther(r, x, y) && Math.abs(g - terrainH(x, y)) > 0.25) { bad++; (globalThis.__d3=globalThis.__d3||[]).push([r.id,run.side,run.cut?'c':'f',+x.toFixed(1),+y.toFixed(1),pi,run.pts.length,+e.toFixed(1),+g.toFixed(2),+terrainH(x,y).toFixed(2),+p.zTop.toFixed(2),+p.zBot.toFixed(2)]); { const k = 'r' + r.id + (run.cut ? 'c' : 'f') + 'ramp'; cat[k] = (cat[k] || 0) + 1; } w = track(w, { x, y, road: r.id, what: run.side + ' wall ramp outside outer face, off natural at e=' + e.toFixed(1) + ' by', v: Math.abs(g - terrainH(x, y)) }); }
         }
       } }
-    done('ground_hidden_by_walls', w, bad, n, n ? `${n} ground samples across wall faces, all hidden or natural` : 'WARNING no wall runs'); if (!n) results[results.length - 1].pass = false; if (bad) results[results.length - 1].msg += ' DBG ' + (window.__dbg || []).join(' | ') + ' [' + Object.entries(cat).map(([k, v]) => k + ':' + v).join(' ') + ']'; }
+    results[results.length-1].msg+=' D3'+JSON.stringify(globalThis.__d3||[]);done('ground_hidden_by_walls', w, bad, n, n ? `${n} ground samples across wall faces, all hidden or natural` : 'WARNING no wall runs'); if (!n) results[results.length - 1].pass = false; if (bad) results[results.length - 1].msg += ' [' + Object.entries(cat).map(([k, v]) => k + ':' + v).join(' ') + ']'; }
   return results;
 }

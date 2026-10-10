@@ -295,13 +295,13 @@ function buildRoadGroup(r) {
     const zb = Math.min(zr - 2.5, gmn - 1.0);
     const ob = (a0, a1, l0, l1, z0, z1, bk) => obox(P0, Math.min(a0 * dir, a1 * dir), Math.max(a0 * dir, a1 * dir), l0, l1, z0, z1, bk);
     // headwall in 0.5 m lateral strips: each strip's top follows the graded ground (+0.15 m), or the lintel height over the opening
-    const NSTR = Math.ceil(2 * Wd / 0.5), SW = 2 * Wd / NSTR, ztEdge = [0, 0];
+    const NSTR = Math.ceil(2 * Wd / 0.5), SW = 2 * Wd / NSTR;
     const sl = (al0, al1, l0, l1, z0, t0, t1, bk, topB) => dir > 0 ? sbox(P0, al0, al1, l0, l1, z0, t0, t1, bk, topB) : sbox(P0, -al1, -al0, l0, l1, z0, t1, t0, bk, topB);   // sloping-top prism, alongs measured into the tunnel
     for (let i = 0; i < NSTR; i++) {
       const l0 = -Wd + i * SW, l1 = l0 + SW, inOpen = l0 >= -OW - 1e-6 && l1 <= OW + 1e-6, lo = inOpen ? zr + OPEN_H + 0.5 : zr + 0.2;
-      const tp = al => { let g = -1e9; for (const la of [l0, l1]) { const q = alOf(al, la); g = Math.max(g, gAt(q[0], q[1])); } return Math.max(g + 0.15, lo); };
+      const tp = al => { let g = -1e9; for (const la of [l0, l1]) { const q = alOf(al, la); g = Math.max(g, gAt(q[0], q[1])); } return inOpen ? g + 0.15 : Math.max(g + 0.15, lo); };
       const tF = tp(-CAP_O), tB = tp(HEAD_T + CAP_O), at = al => tF + (tB - tF) * (al + CAP_O) / (HEAD_T + 2 * CAP_O);
-      if (i === 0) ztEdge[1] = Math.max(tF, tB); if (i === NSTR - 1) ztEdge[0] = Math.max(tF, tB);
+      if (inOpen && Math.min(tF, tB) < lo) continue;   // graded ground is below the lintel here (open cutting): nothing to carry
       const lc0 = i === 0 ? l0 - CAP_O : l0, lc1 = i === NSTR - 1 ? l1 + CAP_O : l1;
       sl(0, HEAD_T, l0, l1, inOpen ? zr + OPEN_H : zb, at(0) - CAP_P, at(HEAD_T) - CAP_P, CB.portal.c);
       sl(-CAP_O, HEAD_T + CAP_O, lc0, lc1, Math.min(tF, tB) - CAP_P - 0.0, tF, tB, CB.portal.d);
@@ -332,7 +332,8 @@ function buildRoadGroup(r) {
       for (let i = 0; i <= NS; i++) {
         const t = i / NS, ps = poseAt(r, sApp + (P0.s - sApp) * t), lat = edge0 + (Wf - edge0) * t, ln = lnorm(ps.h), f = fwd(ps.h), cp = latPt(ps, sg * lat, 0);
         const u = [(-dir * sa) * f[0] + ca * sg * ln[0], (-dir * sa) * f[1] + ca * sg * ln[1]], ul = Math.hypot(u[0], u[1]);
-        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: Math.min(botA * (1 - t) + zb * t, hB(cp[0], cp[1]) - 1, gAt(cp[0], cp[1]) - 1), zt: Math.max(zb + 0.5, Math.max(...[0, 0.75, -0.75].map(o => gAt(cp[0] - u[1] / ul * o, cp[1] + u[0] / ul * o))) + 0.15) });
+        const wzb = Math.min(botA * (1 - t) + zb * t, hB(cp[0], cp[1]) - 1, gAt(cp[0], cp[1]) - 1);
+        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: wzb, zt: Math.max(wzb + 0.5, Math.min(...[-0.1, 0, 0.75, 1.5, 1.6].map(o => gAt(cp[0] + u[0] / ul * o, cp[1] + u[1] / ul * o))) + 0.5) });
       }
       wallStations(st, CB.portal);
     }
