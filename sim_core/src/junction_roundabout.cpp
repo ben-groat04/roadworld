@@ -6,7 +6,14 @@
 #include <cmath>
 #include <set>
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4702)  // unreachable code inside the vendored Clipper2 header
+#endif
 #include "clipper2/clipper.h"
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 namespace cp {
 
