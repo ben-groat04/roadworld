@@ -64,6 +64,13 @@ void poly_set(W& w, const Junction& j, const PolygonSet& ps) {
     w.raw("]");
 }
 
+// Junction::islands (roundabout central island etc.) is optional until the field exists.
+template <class J>
+void islands(W& w, const J& j) {
+    if constexpr (requires { j.islands; }) poly_set(w, j, j.islands);
+    else w.raw("[]");
+}
+
 const char* kind_name(const Junction& j) {
     if (j.kind == JunctionKind::Roundabout) return "roundabout";
     switch (j.cls) {
@@ -139,7 +146,7 @@ std::string export_scene_json(const Scene& sc, const JunctionSet& js) {
         w.raw(",\"pavements\":");
         poly_set(w, j, j.pavements);
         w.raw(",\"islands\":");
-        poly_set(w, j, j.islands);
+        islands(w, j);
         w.raw(",\"gore\":");
         poly_set(w, j, j.gore);
         w.raw(",\"connectors\":[");

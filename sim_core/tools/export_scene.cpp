@@ -1,4 +1,4 @@
-// export_scene [--data <dir>] <fixture>  ->  JSON (contract v1) on stdout.
+// export_scene [--data <dir>] [--out <file>] <fixture>  ->  JSON (contract v1) on stdout.
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -10,13 +10,14 @@
 #endif
 
 int main(int argc, char** argv) {
-    std::string data = CP_DATA_DIR, name;
+    std::string data = CP_DATA_DIR, name, out_path;
     for (int i = 1; i < argc; ++i) {
         if (!std::strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
+        else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out_path = argv[++i];
         else name = argv[i];
     }
     if (name.empty()) {
-        std::fprintf(stderr, "usage: export_scene [--data <dir>] <fixture>   fixtures:");
+        std::fprintf(stderr, "usage: export_scene [--data <dir>] [--out <file>] <fixture>   fixtures:");
         for (const auto& n : cp::tools::scene_names()) std::fprintf(stderr, " %s", n.c_str());
         std::fprintf(stderr, "\n");
         return 2;
@@ -28,6 +29,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     const std::string json = cp::tools::export_scene_json(*sc, cp::tools::scene_junctions(*sc));
-    std::fwrite(json.data(), 1, json.size(), stdout);
+    std::FILE* f = out_path.empty() ? stdout : std::fopen(out_path.c_str(), "wb");
+    if (!f) {
+        std::fprintf(stderr, "export_scene: cannot write %s\n", out_path.c_str());
+        return 1;
+    }
+    std::fwrite(json.data(), 1, json.size(), f);
+    if (f != stdout) std::fclose(f);
     return 0;
 }

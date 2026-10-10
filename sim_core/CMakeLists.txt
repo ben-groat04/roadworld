@@ -28,3 +28,6 @@ else()
   # any throw/try/catch in sim_core fails to compile). Callers still see them if enabled.
   target_compile_options(sim_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion -fno-exceptions)
 endif()
+
+# Developer tools (export_scene, fixtures); not part of the library.
+add_subdirectory(tools)

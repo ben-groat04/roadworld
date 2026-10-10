@@ -10,5 +10,5 @@ target_compile_definitions(export_scene PRIVATE CP_DATA_DIR="${PROJECT_SOURCE_DI
 set(CP_FIXTURE_DIR ${PROJECT_SOURCE_DIR}/prototypes/road-draw/fixtures)
 add_custom_target(export_fixtures
   COMMAND ${CMAKE_COMMAND} -E make_directory ${CP_FIXTURE_DIR}
-  COMMAND export_scene interchange > ${CP_FIXTURE_DIR}/interchange.json
+  COMMAND export_scene --out ${CP_FIXTURE_DIR}/interchange.json interchange
   VERBATIM)
