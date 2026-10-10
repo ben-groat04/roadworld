@@ -27,7 +27,7 @@ class MB {
   }
 }
 const lin = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
-const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: lin('#587a3a'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#b4b2ab'), concDk: lin('#8f8d87'), cap: lin('#628443'), tube: lin('#2a2a2d'), parapet: lin('#c9c7c0') };
+const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: lin('#587a3a'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#b4b2ab'), concDk: lin('#8f8d87'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0') };
 const stdMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, ...o });
 // Subtle procedural asphalt grain (near-white so vertex colours still drive the tint); uv = world metres / 4.
 const asphTex = (() => {
@@ -42,7 +42,7 @@ const asphTex = (() => {
 const MAT = {
   asph: stdMat({ roughness: 0.9, map: asphTex }), pave: stdMat(), kerb: stdMat(), verge: stdMat({ roughness: 1 }), soil: stdMat({ roughness: 1 }),
   mark: stdMat({ roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
-  conc: stdMat({ roughness: 0.85 }), cap: stdMat({ roughness: 1 }), tube: stdMat({ roughness: 0.9, emissive: 0x141416 }),
+  conc: stdMat({ roughness: 0.85 }), cap: stdMat({ roughness: 1 }), tube: stdMat({ roughness: 1 }),
 };
 // Per-road material variants: higher road id => pulled slightly closer in depth, so overlaps never z-fight; markings always above every surface.
 const roadMatCache = new Map();
@@ -152,7 +152,7 @@ function buildRoadGroup(r) {
     let m = 1e9;
     for (let i = 0; i <= 2; i++) for (let j = 0; j <= 4; j++) {
       const al = a0 + (a1 - a0) * i / 2, la = l0 + (l1 - l0) * j / 4, c = Math.cos(pose.h), sn = Math.sin(pose.h);
-      const x = pose.x + c * al - sn * la, y = pose.y + sn * al + c * la; m = Math.min(m, hAt(x, y), hBase(x, y));
+      const x = pose.x + c * al - sn * la, y = pose.y + sn * al + c * la; m = Math.min(m, hBase(x, y));
     }
     return m;
   };
@@ -175,58 +175,139 @@ function buildRoadGroup(r) {
       obox(k, a0, a1, -hw, hw, Math.min(gnd, S[k].z - DECK_T - 0.5) - 1.0, S[k].z + zo - 0.03, B.conc);
     }
   }
-  // Retaining walls: 0.4 m thick, face at the road's outer edge; fill sides form a parapet 0.6 m above the road. extrude() closes each run with end faces.
+  // ===== Retaining walls, tunnel portals (headwall + wing walls + dark lining) =====
+  const NONE = { kind: 'none', edge: wallLineOf(ty), z0: 0, z1: 0, d1: 0, z1c: 0, cut: false };
+  const XS = typeof crossSections === 'function' ? crossSections(r) : null;
+  const sec = (k, sg) => {
+    if (S[k].tu || S[k].br) return NONE;
+    if (XS && XS[k]) { const s = XS[k][sg > 0 ? 'L' : 'R']; if (s) return s; }
+    const f = S[k][sg > 0 ? 'wL' : 'wR'], e = sg > 0 ? S[k].eL : S[k].eR, z0 = S[k].z - FORM_DROP;
+    const z1 = e === undefined ? z0 : e;
+    return f ? { kind: 'wall', edge: wallLineOf(ty), z0, z1, d1: 0, cut: z1 > z0 } : { kind: 'slope', edge: wallLineOf(ty), z0, z1, d1: 0, cut: z1 > z0 };
+  };
+  const CAP_T = 0.25, WALL_T = 0.4;
+  const hdir = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l, 0]; };
+  // Wall + coping along a station list: {a:[x,y] inner face point, u:[x,y] outward unit, zb, zt (top of coping)}.
+  const wallStations = st => {
+    if (st.length < 2) return;
+    const W3 = (q, off, z) => [q.a[0] + q.u[0] * off, q.a[1] + q.u[1] * off, z];
+    for (let i = 0; i + 1 < st.length; i++) {
+      const p = st[i], q = st[i + 1], hi = [p.u[0], p.u[1], 0], lo = [-p.u[0], -p.u[1], 0];
+      const wt = z => z - CAP_T;
+      B.conc.quad(W3(p, 0, p.zb), W3(q, 0, q.zb), W3(q, 0, wt(q.zt)), W3(p, 0, wt(p.zt)), lo);
+      B.conc.quad(W3(p, WALL_T, p.zb), W3(q, WALL_T, q.zb), W3(q, WALL_T, wt(q.zt)), W3(p, WALL_T, wt(p.zt)), hi);
+      const c0 = -0.05, c1 = 0.45;
+      B.concDk.quad(W3(p, c0, p.zt), W3(q, c0, q.zt), W3(q, c1, q.zt), W3(p, c1, p.zt), UP);
+      B.concDk.quad(W3(p, c0, wt(p.zt)), W3(q, c0, wt(q.zt)), W3(q, c1, wt(q.zt)), W3(p, c1, wt(p.zt)), DOWN);
+      B.concDk.quad(W3(p, c0, wt(p.zt)), W3(q, c0, wt(q.zt)), W3(q, c0, q.zt), W3(p, c0, p.zt), lo);
+      B.concDk.quad(W3(p, c1, wt(p.zt)), W3(q, c1, wt(q.zt)), W3(q, c1, q.zt), W3(p, c1, p.zt), hi);
+    }
+    for (const [i, sgn] of [[0, -1], [st.length - 1, 1]]) {
+      const p = st[i], d = hdir(st[Math.max(0, i - 1)].a, st[Math.min(st.length - 1, i + 1)].a).map(v => v * sgn), wt = p.zt - CAP_T;
+      B.conc.quad(W3(p, 0, p.zb), W3(p, WALL_T, p.zb), W3(p, WALL_T, wt), W3(p, 0, wt), d);
+      B.concDk.quad(W3(p, -0.05, wt), W3(p, 0.45, wt), W3(p, 0.45, p.zt), W3(p, -0.05, p.zt), d);
+    }
+  };
+  const smooth = (arr, rad = 2) => { const o = arr.slice(); for (let i = 0; i < arr.length; i++) { let s = 0, c = 0; for (let j = Math.max(0, i - rad); j <= Math.min(arr.length - 1, i + rad); j++) { s += arr[j]; c++; } o[i] = s / c; } return o; };
+  const stationAt = (k, sg, edge, zb, zt) => { const ln = lnorm(S[k].h), c = latPt(S[k], sg * edge, 0); return { a: [c[0], c[1]], u: [ln[0] * sg, ln[1] * sg], zb, zt }; };
+
+  // Portals: tunnel run [a,b] -> plane at S[a] (interior towards +index) and S[b] (interior towards -index).
+  const portals = [];
+  for (const [a, b] of runs(s => s.tu)) { portals.push({ p: a, dir: 1 }); portals.push({ p: b, dir: -1 }); }
+  const blocked = new Uint8Array(n), WING_ANG = Math.PI / 6;
+  const Wd = ty.total / 2 + 6, Wf = Wd - 0.45, OW = (ty.total + 1) / 2;
+  for (const pt of portals) {
+    const edge = wallLineOf(ty), Lneed = (Wf - edge) / Math.tan(WING_ANG);
+    let N = 1; while (N < n && Math.abs(S[pt.p].s - S[clamp(pt.p - pt.dir * N, 0, n - 1)].s) < Lneed && pt.p - pt.dir * N > 0 && pt.p - pt.dir * N < n - 1) N++;
+    pt.ws = clamp(pt.p - pt.dir * N, 0, n - 1);
+    for (let j = 0; j < N; j++) { const k = pt.p - pt.dir * j; if (k >= 0 && k < n) blocked[k] = 1; }
+  }
+  const wallTop = { 1: new Float32Array(n).fill(NaN), '-1': new Float32Array(n).fill(NaN) }, wallBot = { 1: new Float32Array(n).fill(NaN), '-1': new Float32Array(n).fill(NaN) };
+  const TAPER = 4;
   for (const sg of [1, -1]) {
-    const key = sg > 0 ? 'wL' : 'wR', edge = wallLineOf(ty);
-    for (const [a, b] of runs(s => s[key] > 0)) {
-      if (b <= a) continue;
-      const bots = new Float32Array(n), tops = new Float32Array(n);
-      for (let k = a; k <= b; k++) {
-        const c = latPt(S[k], sg * edge, 0), nat = hBase(c[0], c[1]), form = S[k].z + zo - FORM_DROP;
-        bots[k] = Math.min(form, nat) - 1.0; tops[k] = Math.max(S[k].z + zo + 0.6, nat + 0.3);
+    for (const [a, b] of runs(s => true)) {
+      // contiguous wall runs on this side
+      let k = a;
+      while (k <= b) {
+        const isW = j => !blocked[j] && sec(j, sg).kind === 'wall';
+        if (!isW(k)) { k++; continue; }
+        let e = k; while (e + 1 <= b && isW(e + 1)) e++;
+        if (e - k >= 1) {
+          const m = e - k + 1, Z0 = [], Z1 = [], ED = [];
+          for (let j = k; j <= e; j++) { const s = sec(j, sg); Z0.push(s.z0 + zo); Z1.push(s.z1); ED.push(s.edge); }
+          const z1s = smooth(Z1), z0s = smooth(Z0, 1), edS = smooth(ED, 2);
+          let top = [], bot = [];
+          for (let i = 0; i < m; i++) {
+            const cut = z1s[i] > z0s[i];
+            top.push(cut ? Math.max(z0s[i], z1s[i]) + 0.3 : z0s[i] + FORM_DROP + 1.0);
+            bot.push(Math.min(z0s[i], z1s[i]) - 1.0);
+          }
+          top = smooth(top, 2); bot = smooth(bot, 2);
+          const ent = []; for (let i = 0; i < m; i++) ent.push({ k: k + i, edge: edS[i], zb: bot[i], zt: top[i] });
+          const ext = (from, dir, endE) => {
+            const out = [];
+            for (let j = 1; j <= TAPER; j++) {
+              const kk = from + dir * j; if (kk < 0 || kk >= n || blocked[kk] || S[kk].br || S[kk].tu) break;
+              const s = sec(kk, sg), t = j / TAPER, z0 = s.z0 + zo;
+              out.push({ k: kk, edge: s.kind === 'none' ? endE.edge : (endE.edge * (1 - t) + s.edge * t), zb: endE.zb * (1 - t) + (z0 - 1.0) * t, zt: Math.max(endE.zb + 1.0, endE.zt * (1 - t) + (z0 - 0.02) * t) });
+            }
+            return out;
+          };
+          const pre = ext(k, -1, ent[0]).reverse(), post = ext(e, 1, ent[m - 1]);
+          const all = pre.concat(ent, post);
+          for (const q of all) { wallTop[sg][q.k] = q.zt; wallBot[sg][q.k] = q.zb; }
+          wallStations(all.map(q => stationAt(q.k, sg, q.edge, q.zb, q.zt)));
+        }
+        k = e + 1;
       }
-      const L = sg > 0 ? [edge, edge + 0.4] : [-edge - 0.4, -edge];
-      extrude(a, b, L[0], L[1], k => bots[k], k => tops[k], { noTop: true });
+      break;
     }
   }
-  // Tunnels: portal headwalls with a recessed opening, plus a short dark lining so the portal is not see-through.
-  for (const [a, b] of runs(s => s.tu)) {
-    const pa0 = Math.min(n - 1, a + 1), pb0 = Math.max(0, b - 1), ow = hw + 0.5, W = ty.total / 2 + 3, DEPTH = 1.2;
-    const lining = (k0, dir, lim) => { // from the portal sample inwards (dir +1 / -1) for ~10 m, closed by a back wall
-      let k1 = k0; while (k1 + dir >= pa0 && k1 + dir <= pb0 && Math.abs(S[k1].s - S[k0].s) < 10) k1 += dir;
-      if (k1 === k0) return;
-      const lo = Math.min(k0, k1), hi = Math.max(k0, k1);
-      for (let k = lo; k < hi; k++) {
-        B.tube.quad(P(k, ow, 0), P(k + 1, ow, 0), P(k + 1, ow, TUNNEL_H), P(k, ow, TUNNEL_H), neg(lnorm(S[k].h)));
-        B.tube.quad(P(k, -ow, 0), P(k + 1, -ow, 0), P(k + 1, -ow, TUNNEL_H), P(k, -ow, TUNNEL_H), lnorm(S[k].h));
-        B.tube.quad(P(k, -ow, TUNNEL_H), P(k + 1, -ow, TUNNEL_H), P(k + 1, ow, TUNNEL_H), P(k, ow, TUNNEL_H), DOWN);
-      }
-      if (k1 !== (dir > 0 ? pb0 : pa0)) B.tube.quad(P(k1, -ow, -0.6), P(k1, ow, -0.6), P(k1, ow, TUNNEL_H), P(k1, -ow, TUNNEL_H), fwd(S[k1].h).map(v => -v * dir));
-    };
-    // Portal sits on the last graded approach sample (2nd flagged sample from each end); the ground step lies behind the headwall.
-    const pa = pa0, pb = pb0;
-    const hwH = (k, a0, a1) => { let m = 0; const p = S[k]; for (const al of [a0, a1]) for (const la of [-W, -ow, 0, ow, W]) { const x = p.x + Math.cos(p.h) * al - Math.sin(p.h) * la, y = p.y + Math.sin(p.h) * al + Math.cos(p.h) * la; m = Math.max(m, hBase(x, y)); } return Math.max(7.0, m - p.z + 1.0); };
-    lining(pa, 1, a); lining(pb, -1, b);
-    // Earth fill over the graded portal zone (between the cutting walls, above the lining roof) so the graded trench is not open to the sky.
-    const wlE = wallLineOf(ty);
-    for (const [k0, dir] of [[pa, 1], [pb, -1]]) {
-      let k1 = k0; while (k1 + dir >= 0 && k1 + dir < n && S[k1 + dir].tp && S[k1 + dir].tu) k1 += dir;
-      if (k1 === k0) continue;
-      const lo = Math.min(k0, k1), hi = Math.max(k0, k1), tops = {};
-      for (let k = lo; k <= hi; k++) { let m = 1e9; for (const la of [-wlE, 0, wlE]) { const c = latPt(S[k], la, 0); m = Math.min(m, hBase(c[0], c[1])); } tops[k] = Math.max(S[k].z + zo + TUNNEL_H + 0.3, m - 0.1); }
-      extrude(lo, hi, -wlE, wlE, k => S[k].z + zo + TUNNEL_H, k => tops[k], { top: B.soil, side: B.soil, noL0: true, noL1: true });
+  // Tunnel portals.
+  const OPEN_H = TUNNEL_H, LIN = 15, REC = 0.5, HEAD_T = 1.5;
+  for (const pt of portals) {
+    const { p, dir, ws } = pt, P0 = S[p], zr = P0.z + zo, c = Math.cos(P0.h), sn = Math.sin(P0.h);
+    const alOf = (al, la) => [P0.x + c * al * dir - sn * la, P0.y + sn * al * dir + c * la];
+    // headwall height: cover the natural ground across the full width (at the face and just behind it)
+    let gmax = -1e9; for (const al of [0, HEAD_T, 4]) for (let la = -Wd; la <= Wd + 1e-6; la += 1) { const q = alOf(al, la); gmax = Math.max(gmax, hBase(q[0], q[1])); }
+    const H = Math.max(8, gmax - zr + 1), zt = zr + H, zb = zr - 1.5;
+    const ob = (a0, a1, l0, l1, z0, z1, bk) => obox(P0, Math.min(a0 * dir, a1 * dir), Math.max(a0 * dir, a1 * dir), l0, l1, z0, z1, bk);
+    ob(0, HEAD_T, OW, Wd, zb, zt - CAP_T, B.conc); ob(0, HEAD_T, -Wd, -OW, zb, zt - CAP_T, B.conc);
+    ob(0, HEAD_T, -OW, OW, zr + OPEN_H, zt - CAP_T, B.conc);
+    ob(-0.15, HEAD_T + 0.15, -Wd - 0.15, Wd + 0.15, zt - CAP_T, zt, B.concDk);
+    // lining: stations by arc length, near-black, recessed
+    const poses = []; for (let d = REC; d <= REC + LIN + 1e-6; d += 2) poses.push(poseAt(r, P0.s + dir * Math.min(d, REC + LIN)));
+    const LW = OW - 0.02, ZR = TUNNEL_H - 0.02;
+    for (let i = 0; i + 1 < poses.length; i++) {
+      const p0 = poses[i], p1 = poses[i + 1], z = q => q.z + zo;
+      B.tube.quad(latPt(p0, LW, z(p0)), latPt(p1, LW, z(p1)), latPt(p1, LW, z(p1) + ZR), latPt(p0, LW, z(p0) + ZR), lnorm(p0.h).map(v => -v));
+      B.tube.quad(latPt(p0, -LW, z(p0)), latPt(p1, -LW, z(p1)), latPt(p1, -LW, z(p1) + ZR), latPt(p0, -LW, z(p0) + ZR), lnorm(p0.h));
+      B.tube.quad(latPt(p0, -LW, z(p0) + ZR), latPt(p1, -LW, z(p1) + ZR), latPt(p1, LW, z(p1) + ZR), latPt(p0, LW, z(p0) + ZR), DOWN);
+      for (const sg of [1, -1]) B.tube.quad(latPt(p0, sg * cw, z(p0) - 0.02), latPt(p1, sg * cw, z(p1) - 0.02), latPt(p1, sg * LW, z(p1) - 0.02), latPt(p0, sg * LW, z(p0) - 0.02), UP);
     }
-    for (const [k, a0, a1] of [[pa, -DEPTH, 0], [pb, 0, DEPTH]]) {
-      const z0 = S[k].z + zo - 0.6, zt = S[k].z + zo + hwH(k, a0, a1);
-      obox(k, a0, a1, ow, W, z0, zt, B.conc);
-      obox(k, a0, a1, -W, -ow, z0, zt, B.conc);
-      obox(k, a0, a1, -ow, ow, S[k].z + zo + TUNNEL_H, zt, B.conc);
+    const pe = poses[poses.length - 1];
+    B.tube.quad(latPt(pe, -LW, pe.z + zo - 0.02), latPt(pe, LW, pe.z + zo - 0.02), latPt(pe, LW, pe.z + zo + ZR), latPt(pe, -LW, pe.z + zo + ZR), fwd(pe.h).map(v => -v * dir));
+    // wing walls: continue the approach cutting walls, splaying out to the headwall edges, tops sloping down from the headwall top
+    const sApp = S[ws].s, Lw = Math.abs(P0.s - sApp), NS = Math.max(2, Math.ceil(Lw / 1.5));
+    for (const sg of [1, -1]) {
+      const s0 = sec(ws, sg), edge0 = s0.kind === 'none' ? wallLineOf(ty) : s0.edge;
+      let topA = wallTop[sg][ws], botA = wallBot[sg][ws];
+      if (!(topA === topA)) { topA = s0.kind === 'wall' ? Math.max(s0.z0, s0.z1) + 0.3 + zo : s0.z0 + zo + 0.5; botA = Math.min(s0.z0, s0.z1) + zo - 1.0; }
+      const tg = Lw > 0.1 ? (Wf - edge0) / Lw : Math.tan(WING_ANG), ca = 1 / Math.hypot(1, tg), sa = tg * ca;
+      const st = [];
+      for (let i = 0; i <= NS; i++) {
+        const t = i / NS, ps = poseAt(r, sApp + (P0.s - sApp) * t), lat = edge0 + (Wf - edge0) * t, ln = lnorm(ps.h), f = fwd(ps.h), cp = latPt(ps, sg * lat, 0);
+        const u = [(-dir * sa) * f[0] + ca * sg * ln[0], (-dir * sa) * f[1] + ca * sg * ln[1]], ul = Math.hypot(u[0], u[1]);
+        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: Math.min(botA, ps.z + zo - 1.5) * (1 - t) + (zb) * t, zt: topA * (1 - t) + zt * t });
+      }
+      wallStations(st);
     }
   }
   const add = (bk, mat, shadow, pick) => { const m = bk.mesh(mat, shadow); if (m) { m.userData.road = r; m.userData.pick = pick; g.add(m); } };
   add(B.asph, RM.asph, false, true); add(B.tunRoad, RM.asph, false, false);
   add(B.pave, RM.pave, false, true); add(B.verge, RM.verge, false, true); add(B.soil, MAT.soil, false, false); add(B.kerb, RM.kerb, false, false);
-  add(B.mark, RM.mark, false, false); add(B.conc, MAT.conc, true, false); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false);
+  add(B.mark, RM.mark, false, false); add(B.conc, MAT.conc, true, false); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false); add(B.concDk, MAT.conc, true, false);
+  if (typeof buildEarthworks === 'function') { const eg = buildEarthworks(r); if (eg) g.add(eg); }
   return g;
 }
 

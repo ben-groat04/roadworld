@@ -374,8 +374,7 @@ const TH = new Float32Array(TN * TN);
     TH[j * TN + i] = Math.max(2, h);
   }
 })();
-const TG = Float32Array.from(TH);
-const GR = new Uint8Array(TN * TN);       // 1 where grading changed the ground
+const TG = TH;   // compat alias: roads never modify the base heightfield
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 // Original ground (smooth Catmull-Rom, as in 2D): profile panel, cut/fill, wall edge heights.
 function terrainH(x, y) {
@@ -386,8 +385,8 @@ function terrainH(x, y) {
   const row = jj => cr(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), u);
   return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v);
 }
-// Current graded ground: exactly the rendered mesh surface (triangles a-b-d and a-d-c).
-function hAt(x, y) { return hTri(TG, x, y); }
+// Ground as rendered by the (linear) mesh: triangles a-b-d and a-d-c.
+function hAt(x, y) { return hTri(TH, x, y); }
 const hBase = (x, y) => hTri(TH, x, y);   // original ground as the (linear) mesh would show it
 function hTri(A, x, y) {
   const fx = clamp(x / CELL, 0, TN - 1.0001), fy = clamp(y / CELL, 0, TN - 1.0001);
@@ -399,7 +398,7 @@ function hTri(A, x, y) {
 // Terrain mesh (513 x 513, 4 m cells). three position = (x, h, -y).
 const tGeo = new THREE.BufferGeometry();
 const tPos = new Float32Array(TN * TN * 3), tNor = new Float32Array(TN * TN * 3), tCol = new Float32Array(TN * TN * 3);
-for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) { const k = (j * TN + i) * 3; tPos[k] = i * CELL; tPos[k + 1] = TG[j * TN + i]; tPos[k + 2] = -j * CELL; }
+for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) { const k = (j * TN + i) * 3; tPos[k] = i * CELL; tPos[k + 1] = TH[j * TN + i]; tPos[k + 2] = -j * CELL; }
 {
   const idx = new Uint32Array((TN - 1) * (TN - 1) * 6); let p = 0;
   for (let j = 0; j < TN - 1; j++) for (let i = 0; i < TN - 1; i++) {
@@ -412,38 +411,59 @@ tGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
 tGeo.setAttribute('normal', new THREE.BufferAttribute(tNor, 3));
 tGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
 tGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(WORLD / 2, 60, -WORLD / 2), WORLD);
-const terrain = new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+
+// Corridor mask: 1 px = 1 m over the world, white where a road's earthwork replaces the terrain. Fragments with mask > 0.5 are discarded.
+const maskCanvas = document.createElement('canvas'); maskCanvas.width = maskCanvas.height = WORLD;
+const maskCtx = maskCanvas.getContext('2d');
+maskCtx.fillStyle = '#000'; maskCtx.fillRect(0, 0, WORLD, WORLD);
+const maskTex = new THREE.CanvasTexture(maskCanvas);
+maskTex.flipY = false; maskTex.generateMipmaps = false; maskTex.minFilter = maskTex.magFilter = THREE.LinearFilter;
+maskTex.wrapS = maskTex.wrapT = THREE.ClampToEdgeWrapping;
+function addMaskDiscard(shader) {
+  shader.uniforms.uMask = { value: maskTex };
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vMaskXZ;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMaskXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec2 vMaskXZ;\nuniform sampler2D uMask;`)
+    .replace('void main() {', `void main() {\n  if (texture2D(uMask, vec2(vMaskXZ.x, -vMaskXZ.y) / ${WORLD.toFixed(1)}).r > 0.5) discard;`);
+}
+// Terrain material (masked) and the identical unmasked one used by road earthworks.
+const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+const terrainMat = groundMat.clone(); terrainMat.onBeforeCompile = addMaskDiscard;
+const terrain = new THREE.Mesh(tGeo, terrainMat);
+terrain.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); terrain.customDepthMaterial.onBeforeCompile = addMaskDiscard;
 terrain.receiveShadow = true; terrain.castShadow = true; terrain.frustumCulled = false; scene.add(terrain);
 
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42], EARTH = [0.42, 0.47, 0.22];
-function shadeVertex(i, j) {
-  const k = j * TN + i, il = Math.max(0, i - 1), ir = Math.min(TN - 1, i + 1), jd = Math.max(0, j - 1), ju = Math.min(TN - 1, j + 1);
-  const sx = (TG[j * TN + ir] - TG[j * TN + il]) / ((ir - il) * CELL), sy = (TG[ju * TN + i] - TG[jd * TN + i]) / ((ju - jd) * CELL);
-  const inv = 1 / Math.sqrt(sx * sx + sy * sy + 1);
-  tNor[k * 3] = -sx * inv; tNor[k * 3 + 1] = inv; tNor[k * 3 + 2] = sy * inv;
-  const h = TG[k], slope = Math.sqrt(sx * sx + sy * sy);
+const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42];
+const hash2 = (i, j) => (((Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0) % 1000) / 1000 - 0.5;
+// The terrain colour function: linear RGB at world (x, y) from base ground height / slope (+ bilinear speckle). Terrain vertices and road earthworks both use it.
+function terrainColour(x, y, out) {
+  const h = hBase(x, y), sx = (hBase(x + CELL, y) - hBase(x - CELL, y)) / (2 * CELL), sy = (hBase(x, y + CELL) - hBase(x, y - CELL)) / (2 * CELL);
+  const slope = Math.sqrt(sx * sx + sy * sy);
   let c = lerp3(GRASS_LO, GRASS_HI, clamp((h - 5) / 150, 0, 1));
   const rt = clamp((slope - 0.55) / 0.4, 0, 1); c = lerp3(c, ROCK, rt * rt * (3 - 2 * rt));
-  if (GR[k]) c = lerp3(c, EARTH, 0.6);
   if (h < T.water + 1.2) c = lerp3(c, [0.36, 0.33, 0.24], clamp((T.water + 1.2 - h) / 3, 0, 0.8));
-  const n = (((Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0) % 1000) / 1000 - 0.5, v = 1 + n * 0.1;
-  tCol[k * 3] = c[0] * c[0] * v; tCol[k * 3 + 1] = c[1] * c[1] * v; tCol[k * 3 + 2] = c[2] * c[2] * v;   // approx sRGB -> linear
+  const fx = x / CELL, fy = y / CELL, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+  const n = hash2(i, j) * (1 - u) * (1 - v) + hash2(i + 1, j) * u * (1 - v) + hash2(i, j + 1) * (1 - u) * v + hash2(i + 1, j + 1) * u * v, k = 1 + n * 0.1;
+  out[0] = c[0] * c[0] * k; out[1] = c[1] * c[1] * k; out[2] = c[2] * c[2] * k;   // approx sRGB -> linear
 }
-function updateTerrainMesh(rg) {
-  const i0 = rg ? rg.i0 : 0, i1 = rg ? rg.i1 : TN - 1, j0 = rg ? rg.j0 : 0, j1 = rg ? rg.j1 : TN - 1;
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) tPos[(j * TN + i) * 3 + 1] = TG[j * TN + i];
-  for (let j = Math.max(0, j0 - 1); j <= Math.min(TN - 1, j1 + 1); j++) for (let i = Math.max(0, i0 - 1); i <= Math.min(TN - 1, i1 + 1); i++) shadeVertex(i, j);
-  tGeo.attributes.position.needsUpdate = tGeo.attributes.normal.needsUpdate = tGeo.attributes.color.needsUpdate = true;
+{
+  const o = [0, 0, 0];
+  for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) {
+    const k = j * TN + i, il = Math.max(0, i - 1), ir = Math.min(TN - 1, i + 1), jd = Math.max(0, j - 1), ju = Math.min(TN - 1, j + 1);
+    const sx = (TH[j * TN + ir] - TH[j * TN + il]) / ((ir - il) * CELL), sy = (TH[ju * TN + i] - TH[jd * TN + i]) / ((ju - jd) * CELL), inv = 1 / Math.sqrt(sx * sx + sy * sy + 1);
+    tNor[k * 3] = -sx * inv; tNor[k * 3 + 1] = inv; tNor[k * 3 + 2] = sy * inv;
+    terrainColour(i * CELL, j * CELL, o); tCol[k * 3] = o[0]; tCol[k * 3 + 1] = o[1]; tCol[k * 3 + 2] = o[2];
+  }
 }
-updateTerrainMesh(null);
+function updateTerrainMesh() {}   // base terrain is static (kept for callers)
 
 const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), new THREE.MeshStandardMaterial({ color: 0x2f7fa6, transparent: true, opacity: 0.68, roughness: 0.15, metalness: 0.1, depthWrite: false }));
 water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);
 const apron = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.MeshStandardMaterial({ color: 0x41522f, roughness: 1 }));
 apron.rotation.x = -Math.PI / 2; apron.position.set(WORLD / 2, 0, -WORLD / 2); apron.receiveShadow = true; scene.add(apron);
 
-// earthworks.js: road fitting/sampling, classify, applyRoad, regrade, wall line / edge helpers.
+// earthworks.js: road fitting/sampling, classify, cross-sections, earthwork meshes, corridor mask. Roads never modify the terrain heightfield.
 // ===== Roads: fitting, sampling, structure classification =====
 let roads = [], nextId = 1;
 const undoStack = [], redoStack = [];
@@ -494,67 +514,121 @@ function rebuild(r) {
   const S = [0]; ch.spans.forEach(c => S.push(S[S.length - 1] + c.L));
   r.chain = ch; r.S = S;
   r.vp = G.profile(S, r.pts.map(p => p.z), ty.kc * T.kMul, ty.ks * T.kMul);
-  r.samples = G.sample(ch, 2);
+  r.samples = G.sample(ch, 2); r.xs = null;
   for (const s of r.samples) { s.z = G.profZ(r.vp, s.s); s.g = G.profGrade(r.vp, s.s); s.t = terrainH(s.x, s.y); }
   classify(r, ty);
   r.ver = (r.ver || 0) + 1;
   return true;
 }
 
-// ===== Terrain grading (derived from roads; base heights are never lost) =====
-const BD = new Float32Array(TN * TN), BS = new Int32Array(TN * TN), BT = new Float32Array(TN * TN), BL = new Int8Array(TN * TN), MK = new Uint8Array(TN * TN);
-function roadBBox(r) {
-  const reach = reachOf(ROAD_TYPES[r.type]); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const s of r.samples) { if (s.x < x0) x0 = s.x; if (s.x > x1) x1 = s.x; if (s.y < y0) y0 = s.y; if (s.y > y1) y1 = s.y; }
-  return { x0: x0 - reach, y0: y0 - reach, x1: x1 + reach, y1: y1 + reach };
+// ===== Cross-sections: where each road's earthwork meets the (unmodified) base ground =====
+const WALL_DX = 0.4;
+// One side of one sample. sg = +1 left, -1 right. hLimit = max slope height searched before declaring a wall.
+function marchSide(s, hw, sg, hLimit) {
+  const nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, bt = T.batter, z0 = s.z - FORM_DROP;
+  const base = d => hBase(s.x + nx * d, s.y + ny * d);
+  const g0 = base(hw) - z0, cut = g0 > 0;
+  if (Math.abs(g0) < 1e-3) return { kind: 'slope', edge: hw, z0, d1: hw, z1: z0, cut };
+  const f = d => { const zs = cut ? z0 + (d - hw) / bt : z0 - (d - hw) / bt; return cut ? zs - base(d) : base(d) - zs; };
+  const dMax = hw + hLimit * bt;
+  let lo = hw, hi = -1;
+  for (let d = hw + 0.5; d < dMax + 0.5; d += 0.5) { const dd = Math.min(d, dMax); if (f(dd) >= 0) { hi = dd; break; } lo = dd; if (dd >= dMax) break; }
+  if (hi < 0) { const d1 = hw + WALL_DX; return { kind: 'wall', edge: hw, z0, d1, z1: base(d1), cut }; }
+  for (let it = 0; it < 10; it++) { const m = (lo + hi) / 2; if (f(m) >= 0) hi = m; else lo = m; }
+  return { kind: 'slope', edge: hw, z0, d1: hi, z1: base(hi), cut };
 }
-const boxHit = (a, b) => a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0;
-function applyRoad(r, rg) {
-  const ty = ROAD_TYPES[r.type], S = r.samples, hw = ty.total / 2, reach = reachOf(ty), reach2 = reach * reach, bt = T.batter;
-  const bb = roadBBox(r); r.gbb = bb;
-  const i0 = Math.max(rg.i0, Math.floor(bb.x0 / CELL)), i1 = Math.min(rg.i1, Math.ceil(bb.x1 / CELL));
-  const j0 = Math.max(rg.j0, Math.floor(bb.y0 / CELL)), j1 = Math.min(rg.j1, Math.ceil(bb.y1 / CELL));
-  if (i0 > i1 || j0 > j1) return;
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const k = j * TN + i; BD[k] = Infinity; MK[k] = 0; }
-  for (let k = 0; k + 1 < S.length; k++) {
-    const a = S[k], b = S[k + 1], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1;
-    const si0 = Math.max(i0, Math.floor((Math.min(a.x, b.x) - reach) / CELL)), si1 = Math.min(i1, Math.ceil((Math.max(a.x, b.x) + reach) / CELL));
-    const sj0 = Math.max(j0, Math.floor((Math.min(a.y, b.y) - reach) / CELL)), sj1 = Math.min(j1, Math.ceil((Math.max(a.y, b.y) + reach) / CELL));
-    for (let j = sj0; j <= sj1; j++) for (let i = si0; i <= si1; i++) {
-      const x = i * CELL, y = j * CELL, t = clamp(((x - a.x) * dx + (y - a.y) * dy) / l2, 0, 1);
-      const ex = x - (a.x + dx * t), ey = y - (a.y + dy * t), d2 = ex * ex + ey * ey, idx = j * TN + i;
-      if (d2 < BD[idx]) { BD[idx] = d2; BS[idx] = k; BT[idx] = t; BL[idx] = (dx * (y - a.y) - dy * (x - a.x)) >= 0 ? 1 : -1; }
+function crossSections(r) {
+  if (r.xs) return r.xs;
+  const ty = ROAD_TYPES[r.type], S = r.samples, n = S.length, hw = ty.total / 2, xs = new Array(n);
+  const raw = [[], []], wall = [new Array(n).fill(false), new Array(n).fill(false)];
+  for (let i = 0; i < n; i++) {
+    const s = S[i];
+    if (s.bridge || (s.tunnel && !s.tp)) { raw[0].push(null); raw[1].push(null); continue; }
+    for (let q = 0; q < 2; q++) { const m = marchSide(s, hw, q ? -1 : 1, T.wallStart); raw[q].push(m); wall[q][i] = m.kind === 'wall' || !!s.tp; }
+  }
+  for (let q = 0; q < 2; q++) {
+    const w = wall[q], skip = i => S[i].bridge || (S[i].tunnel && !S[i].tp);
+    for (let i = 0; i < n; i++) if (skip(i)) w[i] = false;
+    closeGaps(w, 6); dropShort(w, 4);
+    for (let i = 0; i < n; i++) if (skip(i)) w[i] = false; else if (S[i].tp) w[i] = true;
+  }
+  for (let i = 0; i < n; i++) {
+    const s = S[i], z0 = s.z - FORM_DROP, none = { kind: 'none', edge: hw, z0, d1: hw, z1: z0, cut: false }, out = {};
+    for (let q = 0; q < 2; q++) {
+      let m = raw[q][i];
+      if (!m) m = { ...none };
+      else if (wall[q][i] && m.kind !== 'wall') { const sg = q ? -1 : 1, d1 = hw + WALL_DX, z1 = hBase(s.x - Math.sin(s.h) * sg * d1, s.y + Math.cos(s.h) * sg * d1); m = { kind: 'wall', edge: hw, z0, d1, z1, cut: z1 > z0 }; }
+      else if (!wall[q][i] && m.kind === 'wall') { m = marchSide(s, hw, q ? -1 : 1, 60); if (m.kind === 'wall') m = { kind: 'slope', edge: hw, z0, d1: hw + 60 * T.batter, z1: m.z1, cut: m.cut }; }
+      out[q ? 'R' : 'L'] = m;
+    }
+    xs[i] = out; s.wL = out.L.kind === 'wall' ? (out.L.cut ? 1 : 2) : 0; s.wR = out.R.kind === 'wall' ? (out.R.cut ? 1 : 2) : 0;   // compat flags
+  }
+  return r.xs = xs;
+}
+
+// ===== Earthwork slope meshes (strip per side, using the terrain material + colour function) =====
+function buildEarthworks(r) {
+  const g = new THREE.Group(), S = r.samples, xs = crossSections(r), n = S.length, bt = T.batter;
+  const pos = [], col = [], idx = [], o = [0, 0, 0];
+  for (let q = 0; q < 2; q++) {
+    const sg = q ? -1 : 1, key = q ? 'R' : 'L', base = new Array(n).fill(-1);
+    for (let i = 0; i < n; i++) {
+      const m = xs[i][key]; if (m.kind !== 'slope') continue;
+      const s = S[i], nx = -Math.sin(s.h) * sg, ny = Math.cos(s.h) * sg, v0 = pos.length / 3;
+      const dExt = m.d1 + 1, zc = m.cut ? m.z1 + 1 / bt : m.z1 - 1 / bt, zExt = Math.min(zc, hBase(s.x + nx * dExt, s.y + ny * dExt) - 0.05);
+      for (const [d, z] of [[m.edge, m.z0], [m.d1, m.z1], [dExt, zExt]]) {
+        const x = s.x + nx * d, y = s.y + ny * d; pos.push(x, z, -y); terrainColour(x, y, o); col.push(o[0], o[1], o[2]);
+      }
+      base[i] = v0 / 3;
+    }
+    for (let i = 0; i + 1 < n; i++) {
+      if (base[i] < 0 || base[i + 1] < 0) continue;
+      for (let c = 0; c < 2; c++) {
+        const a = base[i] + c, b = base[i] + c + 1, a2 = base[i + 1] + c, b2 = base[i + 1] + c + 1;
+        for (const t of [[a, a2, b], [b, a2, b2]]) {   // orient each triangle up
+          const [p, qq, w] = t.map(k => new THREE.Vector3(pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]));
+          const nrm = qq.clone().sub(p).cross(w.clone().sub(p));
+          if (nrm.y >= 0) idx.push(t[0], t[1], t[2]); else idx.push(t[0], t[2], t[1]);
+        }
+      }
     }
   }
-  const formAt = idx => { const k = BS[idx], t = BT[idx], a = S[k], b = S[k + 1]; return a.z + (b.z - a.z) * t - FORM_DROP; };
-  const sampAt = idx => { const k = BS[idx]; return BT[idx] < 0.5 ? S[k] : S[k + 1]; };
-  const edge2 = edgeOf(ty) * edgeOf(ty), edge = edgeOf(ty), wl2 = wallLineOf(ty) * wallLineOf(ty);
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-    const idx = j * TN + i; if (!(BD[idx] < reach2)) continue;
-    const sm = sampAt(idx); if (sm.br || (sm.tu && !sm.tp)) continue;
-    const wall = BL[idx] > 0 ? sm.wL : sm.wR, form = formAt(idx), old = TG[idx]; let h = old;
-    if (wall) { if (BD[idx] <= wl2) h = form; else continue; }   // walled side: formation up to the wall line, natural beyond (no batter)
-    else if (BD[idx] <= edge2) h = form;                  // formation (incl. one extra cell so every triangle under the ribbon is fully under it)
-    else { const e = Math.sqrt(BD[idx]) - edge; h = h > form ? Math.min(h, form + e / bt) : Math.max(h, form - e / bt); }
-    TG[idx] = h; if (Math.abs(h - old) > 0.02) GR[idx] = 1;
+  if (!idx.length) return g;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(idx); geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, groundMat); m.receiveShadow = true; m.castShadow = true; m.userData.road = r; m.userData.pick = false;
+  g.add(m); return g;
+}
+
+// ===== Corridor mask (terrain hidden under each road's earthwork footprint) =====
+let maskDirty = true, pend = [];
+function drawMask() {
+  const c = maskCtx; c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = '#000'; c.fillRect(0, 0, WORLD, WORLD); c.fillStyle = '#fff';
+  for (const r of roads) {
+    if (!r.samples) continue;
+    const S = r.samples, xs = crossSections(r), n = S.length;
+    const half = m => m.kind === 'slope' ? Math.max(m.edge, m.d1 - 1) : m.d1;
+    const on = i => xs[i].L.kind !== 'none' && xs[i].R.kind !== 'none';
+    for (let i = 0; i < n;) {
+      if (!on(i)) { i++; continue; }
+      let j = i; while (j < n && on(j)) j++;
+      if (j - i >= 2) {
+        c.beginPath();
+        for (let k = i; k < j; k++) { const s = S[k], d = half(xs[k].L); c.lineTo(s.x - Math.sin(s.h) * d, s.y + Math.cos(s.h) * d); }
+        for (let k = j - 1; k >= i; k--) { const s = S[k], d = half(xs[k].R); c.lineTo(s.x + Math.sin(s.h) * d, s.y - Math.cos(s.h) * d); }
+        c.closePath(); c.fill();
+      }
+      i = j;
+    }
   }
+  maskTex.needsUpdate = true; maskDirty = false;
 }
-function regradeRegion(box) {
-  const rg = { i0: Math.max(0, Math.floor(box.x0 / CELL)), i1: Math.min(TN - 1, Math.ceil(box.x1 / CELL)), j0: Math.max(0, Math.floor(box.y0 / CELL)), j1: Math.min(TN - 1, Math.ceil(box.y1 / CELL)) };
-  if (rg.i0 > rg.i1 || rg.j0 > rg.j1) return;
-  for (let j = rg.j0; j <= rg.j1; j++) for (let i = rg.i0; i <= rg.i1; i++) { const k = j * TN + i; TG[k] = TH[k]; GR[k] = 0; }
-  for (const r of roads) if (boxHit(roadBBox(r), box)) { applyRoad(r, rg); r.ver = (r.ver || 0) + 1; }
-  updateTerrainMesh(rg);
-}
-let pend = [];
-function touch(r) { if (r.samples) pend.push(roadBBox(r)); if (r.gbb) pend.push(r.gbb); }
-function flushGrade() {
-  if (!pend.length) return;
-  const b = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
-  for (const p of pend) { b.x0 = Math.min(b.x0, p.x0); b.y0 = Math.min(b.y0, p.y0); b.x1 = Math.max(b.x1, p.x1); b.y1 = Math.max(b.y1, p.y1); }
-  pend = []; regradeRegion(b);
-}
-const regradeAll = () => { pend = []; regradeRegion({ x0: 0, y0: 0, x1: WORLD, y1: WORLD }); };
+// Compat wrappers (input.js / ui.js call these): they now just invalidate and redraw the mask.
+function touch(r) { maskDirty = true; }
+function flushGrade() { if (maskDirty) drawMask(); }
+const regradeAll = () => { maskDirty = true; drawMask(); };
 
 // roadmesh.js: materials, mesh helpers and buildRoadGroup (surface, markings, skirts, walls, bridges, tunnels).
 // ===== Mesh builder: flat-shaded quads in world coords; each quad is wound to face a hint direction =====
@@ -585,7 +659,7 @@ class MB {
   }
 }
 const lin = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
-const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: lin('#587a3a'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#b4b2ab'), concDk: lin('#8f8d87'), cap: lin('#628443'), tube: lin('#2a2a2d'), parapet: lin('#c9c7c0') };
+const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: lin('#587a3a'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#b4b2ab'), concDk: lin('#8f8d87'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0') };
 const stdMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, ...o });
 // Subtle procedural asphalt grain (near-white so vertex colours still drive the tint); uv = world metres / 4.
 const asphTex = (() => {
@@ -600,7 +674,7 @@ const asphTex = (() => {
 const MAT = {
   asph: stdMat({ roughness: 0.9, map: asphTex }), pave: stdMat(), kerb: stdMat(), verge: stdMat({ roughness: 1 }), soil: stdMat({ roughness: 1 }),
   mark: stdMat({ roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
-  conc: stdMat({ roughness: 0.85 }), cap: stdMat({ roughness: 1 }), tube: stdMat({ roughness: 0.9, emissive: 0x141416 }),
+  conc: stdMat({ roughness: 0.85 }), cap: stdMat({ roughness: 1 }), tube: stdMat({ roughness: 1 }),
 };
 // Per-road material variants: higher road id => pulled slightly closer in depth, so overlaps never z-fight; markings always above every surface.
 const roadMatCache = new Map();
@@ -710,7 +784,7 @@ function buildRoadGroup(r) {
     let m = 1e9;
     for (let i = 0; i <= 2; i++) for (let j = 0; j <= 4; j++) {
       const al = a0 + (a1 - a0) * i / 2, la = l0 + (l1 - l0) * j / 4, c = Math.cos(pose.h), sn = Math.sin(pose.h);
-      const x = pose.x + c * al - sn * la, y = pose.y + sn * al + c * la; m = Math.min(m, hAt(x, y), hBase(x, y));
+      const x = pose.x + c * al - sn * la, y = pose.y + sn * al + c * la; m = Math.min(m, hBase(x, y));
     }
     return m;
   };
@@ -733,58 +807,139 @@ function buildRoadGroup(r) {
       obox(k, a0, a1, -hw, hw, Math.min(gnd, S[k].z - DECK_T - 0.5) - 1.0, S[k].z + zo - 0.03, B.conc);
     }
   }
-  // Retaining walls: 0.4 m thick, face at the road's outer edge; fill sides form a parapet 0.6 m above the road. extrude() closes each run with end faces.
+  // ===== Retaining walls, tunnel portals (headwall + wing walls + dark lining) =====
+  const NONE = { kind: 'none', edge: wallLineOf(ty), z0: 0, z1: 0, d1: 0, z1c: 0, cut: false };
+  const XS = typeof crossSections === 'function' ? crossSections(r) : null;
+  const sec = (k, sg) => {
+    if (S[k].tu || S[k].br) return NONE;
+    if (XS && XS[k]) { const s = XS[k][sg > 0 ? 'L' : 'R']; if (s) return s; }
+    const f = S[k][sg > 0 ? 'wL' : 'wR'], e = sg > 0 ? S[k].eL : S[k].eR, z0 = S[k].z - FORM_DROP;
+    const z1 = e === undefined ? z0 : e;
+    return f ? { kind: 'wall', edge: wallLineOf(ty), z0, z1, d1: 0, cut: z1 > z0 } : { kind: 'slope', edge: wallLineOf(ty), z0, z1, d1: 0, cut: z1 > z0 };
+  };
+  const CAP_T = 0.25, WALL_T = 0.4;
+  const hdir = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l, 0]; };
+  // Wall + coping along a station list: {a:[x,y] inner face point, u:[x,y] outward unit, zb, zt (top of coping)}.
+  const wallStations = st => {
+    if (st.length < 2) return;
+    const W3 = (q, off, z) => [q.a[0] + q.u[0] * off, q.a[1] + q.u[1] * off, z];
+    for (let i = 0; i + 1 < st.length; i++) {
+      const p = st[i], q = st[i + 1], hi = [p.u[0], p.u[1], 0], lo = [-p.u[0], -p.u[1], 0];
+      const wt = z => z - CAP_T;
+      B.conc.quad(W3(p, 0, p.zb), W3(q, 0, q.zb), W3(q, 0, wt(q.zt)), W3(p, 0, wt(p.zt)), lo);
+      B.conc.quad(W3(p, WALL_T, p.zb), W3(q, WALL_T, q.zb), W3(q, WALL_T, wt(q.zt)), W3(p, WALL_T, wt(p.zt)), hi);
+      const c0 = -0.05, c1 = 0.45;
+      B.concDk.quad(W3(p, c0, p.zt), W3(q, c0, q.zt), W3(q, c1, q.zt), W3(p, c1, p.zt), UP);
+      B.concDk.quad(W3(p, c0, wt(p.zt)), W3(q, c0, wt(q.zt)), W3(q, c1, wt(q.zt)), W3(p, c1, wt(p.zt)), DOWN);
+      B.concDk.quad(W3(p, c0, wt(p.zt)), W3(q, c0, wt(q.zt)), W3(q, c0, q.zt), W3(p, c0, p.zt), lo);
+      B.concDk.quad(W3(p, c1, wt(p.zt)), W3(q, c1, wt(q.zt)), W3(q, c1, q.zt), W3(p, c1, p.zt), hi);
+    }
+    for (const [i, sgn] of [[0, -1], [st.length - 1, 1]]) {
+      const p = st[i], d = hdir(st[Math.max(0, i - 1)].a, st[Math.min(st.length - 1, i + 1)].a).map(v => v * sgn), wt = p.zt - CAP_T;
+      B.conc.quad(W3(p, 0, p.zb), W3(p, WALL_T, p.zb), W3(p, WALL_T, wt), W3(p, 0, wt), d);
+      B.concDk.quad(W3(p, -0.05, wt), W3(p, 0.45, wt), W3(p, 0.45, p.zt), W3(p, -0.05, p.zt), d);
+    }
+  };
+  const smooth = (arr, rad = 2) => { const o = arr.slice(); for (let i = 0; i < arr.length; i++) { let s = 0, c = 0; for (let j = Math.max(0, i - rad); j <= Math.min(arr.length - 1, i + rad); j++) { s += arr[j]; c++; } o[i] = s / c; } return o; };
+  const stationAt = (k, sg, edge, zb, zt) => { const ln = lnorm(S[k].h), c = latPt(S[k], sg * edge, 0); return { a: [c[0], c[1]], u: [ln[0] * sg, ln[1] * sg], zb, zt }; };
+
+  // Portals: tunnel run [a,b] -> plane at S[a] (interior towards +index) and S[b] (interior towards -index).
+  const portals = [];
+  for (const [a, b] of runs(s => s.tu)) { portals.push({ p: a, dir: 1 }); portals.push({ p: b, dir: -1 }); }
+  const blocked = new Uint8Array(n), WING_ANG = Math.PI / 6;
+  const Wd = ty.total / 2 + 6, Wf = Wd - 0.45, OW = (ty.total + 1) / 2;
+  for (const pt of portals) {
+    const edge = wallLineOf(ty), Lneed = (Wf - edge) / Math.tan(WING_ANG);
+    let N = 1; while (N < n && Math.abs(S[pt.p].s - S[clamp(pt.p - pt.dir * N, 0, n - 1)].s) < Lneed && pt.p - pt.dir * N > 0 && pt.p - pt.dir * N < n - 1) N++;
+    pt.ws = clamp(pt.p - pt.dir * N, 0, n - 1);
+    for (let j = 0; j < N; j++) { const k = pt.p - pt.dir * j; if (k >= 0 && k < n) blocked[k] = 1; }
+  }
+  const wallTop = { 1: new Float32Array(n).fill(NaN), '-1': new Float32Array(n).fill(NaN) }, wallBot = { 1: new Float32Array(n).fill(NaN), '-1': new Float32Array(n).fill(NaN) };
+  const TAPER = 4;
   for (const sg of [1, -1]) {
-    const key = sg > 0 ? 'wL' : 'wR', edge = wallLineOf(ty);
-    for (const [a, b] of runs(s => s[key] > 0)) {
-      if (b <= a) continue;
-      const bots = new Float32Array(n), tops = new Float32Array(n);
-      for (let k = a; k <= b; k++) {
-        const c = latPt(S[k], sg * edge, 0), nat = hBase(c[0], c[1]), form = S[k].z + zo - FORM_DROP;
-        bots[k] = Math.min(form, nat) - 1.0; tops[k] = Math.max(S[k].z + zo + 0.6, nat + 0.3);
+    for (const [a, b] of runs(s => true)) {
+      // contiguous wall runs on this side
+      let k = a;
+      while (k <= b) {
+        const isW = j => !blocked[j] && sec(j, sg).kind === 'wall';
+        if (!isW(k)) { k++; continue; }
+        let e = k; while (e + 1 <= b && isW(e + 1)) e++;
+        if (e - k >= 1) {
+          const m = e - k + 1, Z0 = [], Z1 = [], ED = [];
+          for (let j = k; j <= e; j++) { const s = sec(j, sg); Z0.push(s.z0 + zo); Z1.push(s.z1); ED.push(s.edge); }
+          const z1s = smooth(Z1), z0s = smooth(Z0, 1), edS = smooth(ED, 2);
+          let top = [], bot = [];
+          for (let i = 0; i < m; i++) {
+            const cut = z1s[i] > z0s[i];
+            top.push(cut ? Math.max(z0s[i], z1s[i]) + 0.3 : z0s[i] + FORM_DROP + 1.0);
+            bot.push(Math.min(z0s[i], z1s[i]) - 1.0);
+          }
+          top = smooth(top, 2); bot = smooth(bot, 2);
+          const ent = []; for (let i = 0; i < m; i++) ent.push({ k: k + i, edge: edS[i], zb: bot[i], zt: top[i] });
+          const ext = (from, dir, endE) => {
+            const out = [];
+            for (let j = 1; j <= TAPER; j++) {
+              const kk = from + dir * j; if (kk < 0 || kk >= n || blocked[kk] || S[kk].br || S[kk].tu) break;
+              const s = sec(kk, sg), t = j / TAPER, z0 = s.z0 + zo;
+              out.push({ k: kk, edge: s.kind === 'none' ? endE.edge : (endE.edge * (1 - t) + s.edge * t), zb: endE.zb * (1 - t) + (z0 - 1.0) * t, zt: Math.max(endE.zb + 1.0, endE.zt * (1 - t) + (z0 - 0.02) * t) });
+            }
+            return out;
+          };
+          const pre = ext(k, -1, ent[0]).reverse(), post = ext(e, 1, ent[m - 1]);
+          const all = pre.concat(ent, post);
+          for (const q of all) { wallTop[sg][q.k] = q.zt; wallBot[sg][q.k] = q.zb; }
+          wallStations(all.map(q => stationAt(q.k, sg, q.edge, q.zb, q.zt)));
+        }
+        k = e + 1;
       }
-      const L = sg > 0 ? [edge, edge + 0.4] : [-edge - 0.4, -edge];
-      extrude(a, b, L[0], L[1], k => bots[k], k => tops[k], { noTop: true });
+      break;
     }
   }
-  // Tunnels: portal headwalls with a recessed opening, plus a short dark lining so the portal is not see-through.
-  for (const [a, b] of runs(s => s.tu)) {
-    const pa0 = Math.min(n - 1, a + 1), pb0 = Math.max(0, b - 1), ow = hw + 0.5, W = ty.total / 2 + 3, DEPTH = 1.2;
-    const lining = (k0, dir, lim) => { // from the portal sample inwards (dir +1 / -1) for ~10 m, closed by a back wall
-      let k1 = k0; while (k1 + dir >= pa0 && k1 + dir <= pb0 && Math.abs(S[k1].s - S[k0].s) < 10) k1 += dir;
-      if (k1 === k0) return;
-      const lo = Math.min(k0, k1), hi = Math.max(k0, k1);
-      for (let k = lo; k < hi; k++) {
-        B.tube.quad(P(k, ow, 0), P(k + 1, ow, 0), P(k + 1, ow, TUNNEL_H), P(k, ow, TUNNEL_H), neg(lnorm(S[k].h)));
-        B.tube.quad(P(k, -ow, 0), P(k + 1, -ow, 0), P(k + 1, -ow, TUNNEL_H), P(k, -ow, TUNNEL_H), lnorm(S[k].h));
-        B.tube.quad(P(k, -ow, TUNNEL_H), P(k + 1, -ow, TUNNEL_H), P(k + 1, ow, TUNNEL_H), P(k, ow, TUNNEL_H), DOWN);
-      }
-      if (k1 !== (dir > 0 ? pb0 : pa0)) B.tube.quad(P(k1, -ow, -0.6), P(k1, ow, -0.6), P(k1, ow, TUNNEL_H), P(k1, -ow, TUNNEL_H), fwd(S[k1].h).map(v => -v * dir));
-    };
-    // Portal sits on the last graded approach sample (2nd flagged sample from each end); the ground step lies behind the headwall.
-    const pa = pa0, pb = pb0;
-    const hwH = (k, a0, a1) => { let m = 0; const p = S[k]; for (const al of [a0, a1]) for (const la of [-W, -ow, 0, ow, W]) { const x = p.x + Math.cos(p.h) * al - Math.sin(p.h) * la, y = p.y + Math.sin(p.h) * al + Math.cos(p.h) * la; m = Math.max(m, hBase(x, y)); } return Math.max(7.0, m - p.z + 1.0); };
-    lining(pa, 1, a); lining(pb, -1, b);
-    // Earth fill over the graded portal zone (between the cutting walls, above the lining roof) so the graded trench is not open to the sky.
-    const wlE = wallLineOf(ty);
-    for (const [k0, dir] of [[pa, 1], [pb, -1]]) {
-      let k1 = k0; while (k1 + dir >= 0 && k1 + dir < n && S[k1 + dir].tp && S[k1 + dir].tu) k1 += dir;
-      if (k1 === k0) continue;
-      const lo = Math.min(k0, k1), hi = Math.max(k0, k1), tops = {};
-      for (let k = lo; k <= hi; k++) { let m = 1e9; for (const la of [-wlE, 0, wlE]) { const c = latPt(S[k], la, 0); m = Math.min(m, hBase(c[0], c[1])); } tops[k] = Math.max(S[k].z + zo + TUNNEL_H + 0.3, m - 0.1); }
-      extrude(lo, hi, -wlE, wlE, k => S[k].z + zo + TUNNEL_H, k => tops[k], { top: B.soil, side: B.soil, noL0: true, noL1: true });
+  // Tunnel portals.
+  const OPEN_H = TUNNEL_H, LIN = 15, REC = 0.5, HEAD_T = 1.5;
+  for (const pt of portals) {
+    const { p, dir, ws } = pt, P0 = S[p], zr = P0.z + zo, c = Math.cos(P0.h), sn = Math.sin(P0.h);
+    const alOf = (al, la) => [P0.x + c * al * dir - sn * la, P0.y + sn * al * dir + c * la];
+    // headwall height: cover the natural ground across the full width (at the face and just behind it)
+    let gmax = -1e9; for (const al of [0, HEAD_T, 4]) for (let la = -Wd; la <= Wd + 1e-6; la += 1) { const q = alOf(al, la); gmax = Math.max(gmax, hBase(q[0], q[1])); }
+    const H = Math.max(8, gmax - zr + 1), zt = zr + H, zb = zr - 1.5;
+    const ob = (a0, a1, l0, l1, z0, z1, bk) => obox(P0, Math.min(a0 * dir, a1 * dir), Math.max(a0 * dir, a1 * dir), l0, l1, z0, z1, bk);
+    ob(0, HEAD_T, OW, Wd, zb, zt - CAP_T, B.conc); ob(0, HEAD_T, -Wd, -OW, zb, zt - CAP_T, B.conc);
+    ob(0, HEAD_T, -OW, OW, zr + OPEN_H, zt - CAP_T, B.conc);
+    ob(-0.15, HEAD_T + 0.15, -Wd - 0.15, Wd + 0.15, zt - CAP_T, zt, B.concDk);
+    // lining: stations by arc length, near-black, recessed
+    const poses = []; for (let d = REC; d <= REC + LIN + 1e-6; d += 2) poses.push(poseAt(r, P0.s + dir * Math.min(d, REC + LIN)));
+    const LW = OW - 0.02, ZR = TUNNEL_H - 0.02;
+    for (let i = 0; i + 1 < poses.length; i++) {
+      const p0 = poses[i], p1 = poses[i + 1], z = q => q.z + zo;
+      B.tube.quad(latPt(p0, LW, z(p0)), latPt(p1, LW, z(p1)), latPt(p1, LW, z(p1) + ZR), latPt(p0, LW, z(p0) + ZR), lnorm(p0.h).map(v => -v));
+      B.tube.quad(latPt(p0, -LW, z(p0)), latPt(p1, -LW, z(p1)), latPt(p1, -LW, z(p1) + ZR), latPt(p0, -LW, z(p0) + ZR), lnorm(p0.h));
+      B.tube.quad(latPt(p0, -LW, z(p0) + ZR), latPt(p1, -LW, z(p1) + ZR), latPt(p1, LW, z(p1) + ZR), latPt(p0, LW, z(p0) + ZR), DOWN);
+      for (const sg of [1, -1]) B.tube.quad(latPt(p0, sg * cw, z(p0) - 0.02), latPt(p1, sg * cw, z(p1) - 0.02), latPt(p1, sg * LW, z(p1) - 0.02), latPt(p0, sg * LW, z(p0) - 0.02), UP);
     }
-    for (const [k, a0, a1] of [[pa, -DEPTH, 0], [pb, 0, DEPTH]]) {
-      const z0 = S[k].z + zo - 0.6, zt = S[k].z + zo + hwH(k, a0, a1);
-      obox(k, a0, a1, ow, W, z0, zt, B.conc);
-      obox(k, a0, a1, -W, -ow, z0, zt, B.conc);
-      obox(k, a0, a1, -ow, ow, S[k].z + zo + TUNNEL_H, zt, B.conc);
+    const pe = poses[poses.length - 1];
+    B.tube.quad(latPt(pe, -LW, pe.z + zo - 0.02), latPt(pe, LW, pe.z + zo - 0.02), latPt(pe, LW, pe.z + zo + ZR), latPt(pe, -LW, pe.z + zo + ZR), fwd(pe.h).map(v => -v * dir));
+    // wing walls: continue the approach cutting walls, splaying out to the headwall edges, tops sloping down from the headwall top
+    const sApp = S[ws].s, Lw = Math.abs(P0.s - sApp), NS = Math.max(2, Math.ceil(Lw / 1.5));
+    for (const sg of [1, -1]) {
+      const s0 = sec(ws, sg), edge0 = s0.kind === 'none' ? wallLineOf(ty) : s0.edge;
+      let topA = wallTop[sg][ws], botA = wallBot[sg][ws];
+      if (!(topA === topA)) { topA = s0.kind === 'wall' ? Math.max(s0.z0, s0.z1) + 0.3 + zo : s0.z0 + zo + 0.5; botA = Math.min(s0.z0, s0.z1) + zo - 1.0; }
+      const tg = Lw > 0.1 ? (Wf - edge0) / Lw : Math.tan(WING_ANG), ca = 1 / Math.hypot(1, tg), sa = tg * ca;
+      const st = [];
+      for (let i = 0; i <= NS; i++) {
+        const t = i / NS, ps = poseAt(r, sApp + (P0.s - sApp) * t), lat = edge0 + (Wf - edge0) * t, ln = lnorm(ps.h), f = fwd(ps.h), cp = latPt(ps, sg * lat, 0);
+        const u = [(-dir * sa) * f[0] + ca * sg * ln[0], (-dir * sa) * f[1] + ca * sg * ln[1]], ul = Math.hypot(u[0], u[1]);
+        st.push({ a: [cp[0], cp[1]], u: [u[0] / ul, u[1] / ul], zb: Math.min(botA, ps.z + zo - 1.5) * (1 - t) + (zb) * t, zt: topA * (1 - t) + zt * t });
+      }
+      wallStations(st);
     }
   }
   const add = (bk, mat, shadow, pick) => { const m = bk.mesh(mat, shadow); if (m) { m.userData.road = r; m.userData.pick = pick; g.add(m); } };
   add(B.asph, RM.asph, false, true); add(B.tunRoad, RM.asph, false, false);
   add(B.pave, RM.pave, false, true); add(B.verge, RM.verge, false, true); add(B.soil, MAT.soil, false, false); add(B.kerb, RM.kerb, false, false);
-  add(B.mark, RM.mark, false, false); add(B.conc, MAT.conc, true, false); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false);
+  add(B.mark, RM.mark, false, false); add(B.conc, MAT.conc, true, false); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false); add(B.concDk, MAT.conc, true, false);
+  if (typeof buildEarthworks === 'function') { const eg = buildEarthworks(r); if (eg) g.add(eg); }
   return g;
 }
 

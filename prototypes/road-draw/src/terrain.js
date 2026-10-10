@@ -19,8 +19,7 @@ const TH = new Float32Array(TN * TN);
     TH[j * TN + i] = Math.max(2, h);
   }
 })();
-const TG = Float32Array.from(TH);
-const GR = new Uint8Array(TN * TN);       // 1 where grading changed the ground
+const TG = TH;   // compat alias: roads never modify the base heightfield
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 // Original ground (smooth Catmull-Rom, as in 2D): profile panel, cut/fill, wall edge heights.
 function terrainH(x, y) {
@@ -31,8 +30,8 @@ function terrainH(x, y) {
   const row = jj => cr(at(i - 1, jj), at(i, jj), at(i + 1, jj), at(i + 2, jj), u);
   return cr(row(j - 1), row(j), row(j + 1), row(j + 2), v);
 }
-// Current graded ground: exactly the rendered mesh surface (triangles a-b-d and a-d-c).
-function hAt(x, y) { return hTri(TG, x, y); }
+// Ground as rendered by the (linear) mesh: triangles a-b-d and a-d-c.
+function hAt(x, y) { return hTri(TH, x, y); }
 const hBase = (x, y) => hTri(TH, x, y);   // original ground as the (linear) mesh would show it
 function hTri(A, x, y) {
   const fx = clamp(x / CELL, 0, TN - 1.0001), fy = clamp(y / CELL, 0, TN - 1.0001);
@@ -44,7 +43,7 @@ function hTri(A, x, y) {
 // Terrain mesh (513 x 513, 4 m cells). three position = (x, h, -y).
 const tGeo = new THREE.BufferGeometry();
 const tPos = new Float32Array(TN * TN * 3), tNor = new Float32Array(TN * TN * 3), tCol = new Float32Array(TN * TN * 3);
-for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) { const k = (j * TN + i) * 3; tPos[k] = i * CELL; tPos[k + 1] = TG[j * TN + i]; tPos[k + 2] = -j * CELL; }
+for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) { const k = (j * TN + i) * 3; tPos[k] = i * CELL; tPos[k + 1] = TH[j * TN + i]; tPos[k + 2] = -j * CELL; }
 {
   const idx = new Uint32Array((TN - 1) * (TN - 1) * 6); let p = 0;
   for (let j = 0; j < TN - 1; j++) for (let i = 0; i < TN - 1; i++) {
@@ -57,31 +56,52 @@ tGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
 tGeo.setAttribute('normal', new THREE.BufferAttribute(tNor, 3));
 tGeo.setAttribute('color', new THREE.BufferAttribute(tCol, 3));
 tGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(WORLD / 2, 60, -WORLD / 2), WORLD);
-const terrain = new THREE.Mesh(tGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }));
+
+// Corridor mask: 1 px = 1 m over the world, white where a road's earthwork replaces the terrain. Fragments with mask > 0.5 are discarded.
+const maskCanvas = document.createElement('canvas'); maskCanvas.width = maskCanvas.height = WORLD;
+const maskCtx = maskCanvas.getContext('2d');
+maskCtx.fillStyle = '#000'; maskCtx.fillRect(0, 0, WORLD, WORLD);
+const maskTex = new THREE.CanvasTexture(maskCanvas);
+maskTex.flipY = false; maskTex.generateMipmaps = false; maskTex.minFilter = maskTex.magFilter = THREE.LinearFilter;
+maskTex.wrapS = maskTex.wrapT = THREE.ClampToEdgeWrapping;
+function addMaskDiscard(shader) {
+  shader.uniforms.uMask = { value: maskTex };
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vMaskXZ;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMaskXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec2 vMaskXZ;\nuniform sampler2D uMask;`)
+    .replace('void main() {', `void main() {\n  if (texture2D(uMask, vec2(vMaskXZ.x, -vMaskXZ.y) / ${WORLD.toFixed(1)}).r > 0.5) discard;`);
+}
+// Terrain material (masked) and the identical unmasked one used by road earthworks.
+const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+const terrainMat = groundMat.clone(); terrainMat.onBeforeCompile = addMaskDiscard;
+const terrain = new THREE.Mesh(tGeo, terrainMat);
+terrain.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); terrain.customDepthMaterial.onBeforeCompile = addMaskDiscard;
 terrain.receiveShadow = true; terrain.castShadow = true; terrain.frustumCulled = false; scene.add(terrain);
 
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42], EARTH = [0.42, 0.47, 0.22];
-function shadeVertex(i, j) {
-  const k = j * TN + i, il = Math.max(0, i - 1), ir = Math.min(TN - 1, i + 1), jd = Math.max(0, j - 1), ju = Math.min(TN - 1, j + 1);
-  const sx = (TG[j * TN + ir] - TG[j * TN + il]) / ((ir - il) * CELL), sy = (TG[ju * TN + i] - TG[jd * TN + i]) / ((ju - jd) * CELL);
-  const inv = 1 / Math.sqrt(sx * sx + sy * sy + 1);
-  tNor[k * 3] = -sx * inv; tNor[k * 3 + 1] = inv; tNor[k * 3 + 2] = sy * inv;
-  const h = TG[k], slope = Math.sqrt(sx * sx + sy * sy);
+const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42];
+const hash2 = (i, j) => (((Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0) % 1000) / 1000 - 0.5;
+// The terrain colour function: linear RGB at world (x, y) from base ground height / slope (+ bilinear speckle). Terrain vertices and road earthworks both use it.
+function terrainColour(x, y, out) {
+  const h = hBase(x, y), sx = (hBase(x + CELL, y) - hBase(x - CELL, y)) / (2 * CELL), sy = (hBase(x, y + CELL) - hBase(x, y - CELL)) / (2 * CELL);
+  const slope = Math.sqrt(sx * sx + sy * sy);
   let c = lerp3(GRASS_LO, GRASS_HI, clamp((h - 5) / 150, 0, 1));
   const rt = clamp((slope - 0.55) / 0.4, 0, 1); c = lerp3(c, ROCK, rt * rt * (3 - 2 * rt));
-  if (GR[k]) c = lerp3(c, EARTH, 0.6);
   if (h < T.water + 1.2) c = lerp3(c, [0.36, 0.33, 0.24], clamp((T.water + 1.2 - h) / 3, 0, 0.8));
-  const n = (((Math.imul(i, 73856093) ^ Math.imul(j, 19349663)) >>> 0) % 1000) / 1000 - 0.5, v = 1 + n * 0.1;
-  tCol[k * 3] = c[0] * c[0] * v; tCol[k * 3 + 1] = c[1] * c[1] * v; tCol[k * 3 + 2] = c[2] * c[2] * v;   // approx sRGB -> linear
+  const fx = x / CELL, fy = y / CELL, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j;
+  const n = hash2(i, j) * (1 - u) * (1 - v) + hash2(i + 1, j) * u * (1 - v) + hash2(i, j + 1) * (1 - u) * v + hash2(i + 1, j + 1) * u * v, k = 1 + n * 0.1;
+  out[0] = c[0] * c[0] * k; out[1] = c[1] * c[1] * k; out[2] = c[2] * c[2] * k;   // approx sRGB -> linear
 }
-function updateTerrainMesh(rg) {
-  const i0 = rg ? rg.i0 : 0, i1 = rg ? rg.i1 : TN - 1, j0 = rg ? rg.j0 : 0, j1 = rg ? rg.j1 : TN - 1;
-  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) tPos[(j * TN + i) * 3 + 1] = TG[j * TN + i];
-  for (let j = Math.max(0, j0 - 1); j <= Math.min(TN - 1, j1 + 1); j++) for (let i = Math.max(0, i0 - 1); i <= Math.min(TN - 1, i1 + 1); i++) shadeVertex(i, j);
-  tGeo.attributes.position.needsUpdate = tGeo.attributes.normal.needsUpdate = tGeo.attributes.color.needsUpdate = true;
+{
+  const o = [0, 0, 0];
+  for (let j = 0; j < TN; j++) for (let i = 0; i < TN; i++) {
+    const k = j * TN + i, il = Math.max(0, i - 1), ir = Math.min(TN - 1, i + 1), jd = Math.max(0, j - 1), ju = Math.min(TN - 1, j + 1);
+    const sx = (TH[j * TN + ir] - TH[j * TN + il]) / ((ir - il) * CELL), sy = (TH[ju * TN + i] - TH[jd * TN + i]) / ((ju - jd) * CELL), inv = 1 / Math.sqrt(sx * sx + sy * sy + 1);
+    tNor[k * 3] = -sx * inv; tNor[k * 3 + 1] = inv; tNor[k * 3 + 2] = sy * inv;
+    terrainColour(i * CELL, j * CELL, o); tCol[k * 3] = o[0]; tCol[k * 3 + 1] = o[1]; tCol[k * 3 + 2] = o[2];
+  }
 }
-updateTerrainMesh(null);
+function updateTerrainMesh() {}   // base terrain is static (kept for callers)
 
 const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), new THREE.MeshStandardMaterial({ color: 0x2f7fa6, transparent: true, opacity: 0.68, roughness: 0.15, metalness: 0.1, depthWrite: false }));
 water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);
