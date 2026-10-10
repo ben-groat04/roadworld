@@ -326,8 +326,9 @@ function mouseXY(e) { const rc = canvas.getBoundingClientRect(); return [e.clien
 function processMouse() {
   mouseDirty = false;
   if (!mouseIn || state.drag) return;
-  const [sx, sy] = state.mouse, pk = state.pick = pick(sx, sy);
-  if (state.mode === 'draw') { state.snap = pk ? computeSnap(pk) : null; buildPreview(); }
+  const [sx, sy] = state.mouse; let t = performance.now();
+  const pk = state.pick = pick(sx, sy); PF.cur.pick += performance.now() - t; t = performance.now();
+  if (state.mode === 'draw') { state.snap = pk ? computeSnap(pk) : null; PF.cur.snap += performance.now() - t; t = performance.now(); buildPreview(); PF.cur.preview += performance.now() - t; }
   else {
     state.hoverHandle = -1;
     if (state.sel) state.sel.pts.forEach((p, i) => { const [hx, hy] = project(p.x, p.y, p.z + 0.5); if (Math.hypot(hx - sx, hy - sy) < 11) state.hoverHandle = i; });

@@ -76,11 +76,13 @@ function tick(now) {
   updateCamera(dt);
   if (mouseDirty) processMouse();
   syncRoads();
-  if (overlayDirty) { overlayDirty = false; buildOverlay(); }
+  if (overlayDirty) { overlayDirty = false; const t = performance.now(); buildOverlay(); PF.cur.preview += performance.now() - t; }
   if (needsUI) { needsUI = false; renderProfile(); renderHud(); }
+  let drew = false;
   if (needsRender || performance.now() - state.flash < 300) {
-    needsRender = false; drawScene();
+    needsRender = false; drawScene(); drew = true;
   }
+  pfFrameEnd(drew);
 }
 resize();
 setView(1000, 900, 1300, 0.35, 0.95);

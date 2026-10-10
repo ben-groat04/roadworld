@@ -91,7 +91,7 @@ function updateShadow(force) {
     sun.target.updateMatrixWorld();
     const c = sun.shadow.camera; c.left = -half; c.right = half; c.top = half; c.bottom = -half; c.near = 10; c.far = ld * 2 + 400; c.updateProjectionMatrix();
     sun.shadow.normalBias = half * 2 / 2048 * 1.5;
-    renderer.shadowMap.needsUpdate = true;
+    renderer.shadowMap.needsUpdate = true; PF.shadowPasses++;
   }
   // Atmosphere: fog scales with camera height / distance; dome follows the camera.
   const hgt = Math.max(camera.position.y, 20), fn = Math.max(300, dist * 1.5 + hgt * 2);
@@ -103,18 +103,34 @@ const perfEl = document.createElement('div');
 perfEl.style.cssText = 'position:absolute;right:12px;top:12px;display:none;background:rgba(13,17,23,0.82);color:#9fd;font:12px/1.4 ui-monospace,Consolas,monospace;padding:6px 9px;border-radius:6px;pointer-events:none;white-space:pre;z-index:5';
 document.body.appendChild(perfEl);
 const perfS = { on: false, n: 0, ms: 0, t0: 0 };
+// Per-frame JS cost buckets (ms). cur = this frame, avg = rolling (EMA ~30 active frames), tot/frames = exact totals for tools/scene.mjs --check.
+const PF = { names: ['pick', 'snap', 'preview', 'shadow', 'clip', 'render'], cur: {}, avg: {}, tot: {}, frames: 0, ticks: 0, shadowPasses: 0, gpu: '' };
+for (const k of PF.names) { PF.cur[k] = 0; PF.avg[k] = 0; PF.tot[k] = 0; }
+function pfFrameEnd(active) {
+  PF.ticks++; for (const k of PF.names) PF.tot[k] += PF.cur[k];
+  if (active) { PF.frames++; for (const k of PF.names) { PF.avg[k] += (PF.cur[k] - PF.avg[k]) * (PF.frames < 30 ? 1 / PF.frames : 1 / 30); } }
+  for (const k of PF.names) PF.cur[k] = 0;
+}
+try {   // which GPU is the browser really using?
+  const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+  PF.gpu = (ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || 'unknown';
+} catch (e) { PF.gpu = 'unknown'; }
+const SOFT_GPU = /swiftshader|llvmpipe|microsoft basic|intel/i;
 function togglePerf() { perfS.on = !perfS.on; perfEl.style.display = perfS.on ? 'block' : 'none'; needsRender = true; }
 function drawScene(force) {
   const t = performance.now();
-  scaleOverlay(); updateShadow(force);
-  renderer.render(scene, camera);
+  scaleOverlay(); updateShadow(force); PF.cur.shadow += performance.now() - t;
+  const tc = performance.now(); updateClipmap(); PF.cur.clip += performance.now() - tc;
+  const tr = performance.now(); renderer.render(scene, camera); PF.cur.render += performance.now() - tr;
   if (perfS.on) {
     perfS.n++; perfS.ms += performance.now() - t;
     if (t - perfS.t0 > 500) {
       const inf = renderer.info.render, ft = perfS.t0 ? (t - perfS.t0) / perfS.n : 0;
-      perfEl.textContent = `${ft.toFixed(1)} ms/frame (${ft ? (1000 / ft).toFixed(0) : '-'} fps while active)\nJS render ${(perfS.ms / perfS.n).toFixed(2)} ms\ncalls ${inf.calls}  tris ${(inf.triangles / 1000).toFixed(0)}k\npx ${renderer.domElement.width}x${renderer.domElement.height}`;
+      const a = PF.avg, f = k => a[k].toFixed(2), js = PF.names.reduce((q, k) => q + a[k], 0);
+      perfEl.textContent = `${ft.toFixed(1)} ms/frame (${ft ? (1000 / ft).toFixed(0) : '-'} fps while active)\nGPU: ${PF.gpu}\n` + (SOFT_GPU.test(PF.gpu) ? 'WARNING Browser is not using your discrete GPU: see chrome://gpu, or set Windows Graphics settings → High performance for the browser\n' : '') +
+        `JS ${js.toFixed(2)} ms/frame: pick ${f('pick')} snap ${f('snap')} preview ${f('preview')}\n   shadow ${f('shadow')} clip ${f('clip')} render ${f('render')}  (shadow maps drawn ${PF.shadowPasses})\ncalls ${inf.calls}  tris ${(inf.triangles / 1000).toFixed(0)}k\npx ${renderer.domElement.width}x${renderer.domElement.height}`;
       perfS.n = 0; perfS.ms = 0; perfS.t0 = t;
     }
   }
 }
-window.__perf = { step: now => tick(now), info: renderer.info };
+window.__perf = { step: now => tick(now), info: renderer.info, pf: PF };

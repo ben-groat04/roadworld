@@ -354,7 +354,7 @@ function updateShadow(force) {
     sun.target.updateMatrixWorld();
     const c = sun.shadow.camera; c.left = -half; c.right = half; c.top = half; c.bottom = -half; c.near = 10; c.far = ld * 2 + 400; c.updateProjectionMatrix();
     sun.shadow.normalBias = half * 2 / 2048 * 1.5;
-    renderer.shadowMap.needsUpdate = true;
+    renderer.shadowMap.needsUpdate = true; PF.shadowPasses++;
   }
   // Atmosphere: fog scales with camera height / distance; dome follows the camera.
   const hgt = Math.max(camera.position.y, 20), fn = Math.max(300, dist * 1.5 + hgt * 2);
@@ -366,21 +366,37 @@ const perfEl = document.createElement('div');
 perfEl.style.cssText = 'position:absolute;right:12px;top:12px;display:none;background:rgba(13,17,23,0.82);color:#9fd;font:12px/1.4 ui-monospace,Consolas,monospace;padding:6px 9px;border-radius:6px;pointer-events:none;white-space:pre;z-index:5';
 document.body.appendChild(perfEl);
 const perfS = { on: false, n: 0, ms: 0, t0: 0 };
+// Per-frame JS cost buckets (ms). cur = this frame, avg = rolling (EMA ~30 active frames), tot/frames = exact totals for tools/scene.mjs --check.
+const PF = { names: ['pick', 'snap', 'preview', 'shadow', 'clip', 'render'], cur: {}, avg: {}, tot: {}, frames: 0, ticks: 0, shadowPasses: 0, gpu: '' };
+for (const k of PF.names) { PF.cur[k] = 0; PF.avg[k] = 0; PF.tot[k] = 0; }
+function pfFrameEnd(active) {
+  PF.ticks++; for (const k of PF.names) PF.tot[k] += PF.cur[k];
+  if (active) { PF.frames++; for (const k of PF.names) { PF.avg[k] += (PF.cur[k] - PF.avg[k]) * (PF.frames < 30 ? 1 / PF.frames : 1 / 30); } }
+  for (const k of PF.names) PF.cur[k] = 0;
+}
+try {   // which GPU is the browser really using?
+  const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+  PF.gpu = (ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || 'unknown';
+} catch (e) { PF.gpu = 'unknown'; }
+const SOFT_GPU = /swiftshader|llvmpipe|microsoft basic|intel/i;
 function togglePerf() { perfS.on = !perfS.on; perfEl.style.display = perfS.on ? 'block' : 'none'; needsRender = true; }
 function drawScene(force) {
   const t = performance.now();
-  scaleOverlay(); updateShadow(force);
-  renderer.render(scene, camera);
+  scaleOverlay(); updateShadow(force); PF.cur.shadow += performance.now() - t;
+  const tc = performance.now(); updateClipmap(); PF.cur.clip += performance.now() - tc;
+  const tr = performance.now(); renderer.render(scene, camera); PF.cur.render += performance.now() - tr;
   if (perfS.on) {
     perfS.n++; perfS.ms += performance.now() - t;
     if (t - perfS.t0 > 500) {
       const inf = renderer.info.render, ft = perfS.t0 ? (t - perfS.t0) / perfS.n : 0;
-      perfEl.textContent = `${ft.toFixed(1)} ms/frame (${ft ? (1000 / ft).toFixed(0) : '-'} fps while active)\nJS render ${(perfS.ms / perfS.n).toFixed(2)} ms\ncalls ${inf.calls}  tris ${(inf.triangles / 1000).toFixed(0)}k\npx ${renderer.domElement.width}x${renderer.domElement.height}`;
+      const a = PF.avg, f = k => a[k].toFixed(2), js = PF.names.reduce((q, k) => q + a[k], 0);
+      perfEl.textContent = `${ft.toFixed(1)} ms/frame (${ft ? (1000 / ft).toFixed(0) : '-'} fps while active)\nGPU: ${PF.gpu}\n` + (SOFT_GPU.test(PF.gpu) ? 'WARNING Browser is not using your discrete GPU: see chrome://gpu, or set Windows Graphics settings → High performance for the browser\n' : '') +
+        `JS ${js.toFixed(2)} ms/frame: pick ${f('pick')} snap ${f('snap')} preview ${f('preview')}\n   shadow ${f('shadow')} clip ${f('clip')} render ${f('render')}  (shadow maps drawn ${PF.shadowPasses})\ncalls ${inf.calls}  tris ${(inf.triangles / 1000).toFixed(0)}k\npx ${renderer.domElement.width}x${renderer.domElement.height}`;
       perfS.n = 0; perfS.ms = 0; perfS.t0 = t;
     }
   }
 }
-window.__perf = { step: now => tick(now), info: renderer.info };
+window.__perf = { step: now => tick(now), info: renderer.info, pf: PF };
 
 // terrain.js: base terrain generator, graded-ground height grid GH (shared with earthworks.js), clipmap ground rendering, water.
 // ===== Terrain data (same generator as the 2D prototype). TH = original, TG = graded. =====
@@ -546,15 +562,31 @@ uniform float uSp, uWater; varying vec3 vW; varying float vDelta;
 float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453) - 0.5; }
 float vnz(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hsh(i), hsh(i + vec2(1, 0)), f.x), mix(hsh(i + vec2(0, 1)), hsh(i + vec2(1, 1)), f.x), f.y); }`)
       .replace('#include <color_fragment>', `
-vec2 wq = vec2(vW.x, -vW.z); float hb = vW.y - vDelta;
+vec3 wp3 = vW; float hb = vW.y - vDelta;
 float gr = smoothstep(0.2, 1.5, abs(vDelta));
-vec3 gcol = mix(vec3(0.27, 0.43, 0.17), vec3(0.5, 0.47, 0.26), clamp((hb - 5.0) / 150.0, 0.0, 1.0));
 float slp = length(gNormal.xz) / max(gNormal.y, 0.05);
-float rt = clamp((slp - 0.55) / 0.4, 0.0, 1.0); rt = rt * rt * (3.0 - 2.0 * rt) * (1.0 - 0.75 * gr);
-gcol = mix(gcol, vec3(0.47, 0.45, 0.42), rt);
+// world-space detail: 3 scales of value noise (xz) + triplanar blend for steep faces (2 extra lookups each of the mid scale)
+vec3 tw = pow(abs(gNormal), vec3(4.0)); tw /= (tw.x + tw.y + tw.z);
+float nA = vnz(wp3.xz / 3.0) + 0.6 * vnz(wp3.xz / 0.9);
+float nB = vnz(wp3.zy / 2.5) + 0.6 * vnz(wp3.zy / 0.8), nC = vnz(wp3.xy / 2.5) + 0.6 * vnz(wp3.xy / 0.8);
+float kd = tw.y * nA + tw.x * nB + tw.z * nC;
+float macro = vnz(wp3.xz / 220.0) + 0.5 * vnz(wp3.xz / 67.0);
+float dry = smoothstep(0.1, 0.5, vnz(wp3.xz / 140.0 + 17.0));
+vec3 gcol = mix(vec3(0.27, 0.43, 0.17), vec3(0.5, 0.47, 0.26), clamp((hb - 5.0) / 150.0, 0.0, 1.0));
+gcol = mix(gcol, vec3(0.42, 0.42, 0.20), dry * 0.35);
+gcol *= 1.0 + 0.22 * macro;
 gcol = mix(gcol, vec3(0.36, 0.33, 0.24), clamp((uWater + 1.2 - hb) / 3.0, 0.0, 0.8) * (1.0 - gr));
 gcol = mix(gcol, vec3(0.30, 0.50, 0.16), gr * 0.3);
-float kn = 1.0 + 0.1 * (vnz(wq / 4.0) + 0.6 * vnz(wq / 1.3));
+// subtle darker toe where a slope meets flatter ground (slope falls off with the 3x3 kernel); cheap proxy: damp-ish darkening on gentle but non-flat ground
+gcol *= 1.0 - 0.18 * smoothstep(0.08, 0.3, slp) * (1.0 - smoothstep(0.3, 0.6, slp));
+// exposed soil / rock: steep (> ~35 deg => slp > 0.7) or freshly cut (cut depth > 2 m)
+float steep = smoothstep(0.62, 0.85, slp);
+float cut = smoothstep(1.5, 3.0, -vDelta) * gr;
+float ex = max(steep, cut);
+vec3 soil = mix(vec3(0.40, 0.31, 0.22), vec3(0.47, 0.45, 0.42), smoothstep(-0.4, 0.5, nB + nC + macro));
+soil *= 1.0 + 0.25 * kd;
+gcol = mix(gcol, soil, ex);
+float kn = 1.0 + 0.1 * kd * (1.0 - ex);
 diffuseColor.rgb = gcol * gcol * kn;`)
       .replace('void main() {', `void main() {
   vec2 gw = vec2(vW.x, -vW.z); float ge = max(uSp, 1.5);   // wide 3x3 Sobel-weighted kernel on bilinear height: smooth normals
@@ -563,7 +595,11 @@ diffuseColor.rgb = gcol * gcol * kn;`)
     gdx += wgt * (Hg(gw + vec2(ge, o)) - Hg(gw + vec2(-ge, o)));
     gdy += wgt * (Hg(gw + vec2(o, ge)) - Hg(gw + vec2(o, -ge))); }
   vec3 gNormal = normalize(vec3(-gdx / 4.0, 2.0 * ge, gdy / 4.0));`)
-      .replace('#include <normal_fragment_begin>', `vec3 normal = normalize((viewMatrix * vec4(gNormal, 0.0)).xyz); vec3 nonPerturbedNormal = normal;`);
+      .replace('#include <normal_fragment_begin>', `vec3 normal = normalize((viewMatrix * vec4(gNormal, 0.0)).xyz); vec3 nonPerturbedNormal = normal;`)
+      .replace('#include <fog_fragment>', `#include <fog_fragment>
+#ifdef USE_FOG
+{ vec2 ed = min(vW.xz * vec2(1.0, -1.0), G_WORLD - vW.xz * vec2(1.0, -1.0)); float de = min(ed.x, ed.y); gl_FragColor.rgb = mix(fogColor, gl_FragColor.rgb, smoothstep(0.0, 500.0, de)); }
+#endif`);
   };
   return m;
 }
@@ -571,12 +607,15 @@ const terrain = new THREE.Group(); terrain.userData.kind = 'terrain';
 const rings = RING_SP.map((sp, k) => {
   const m = new THREE.Mesh(k === 0 ? GEO_FULL : GEO_HOLE, makeRingMat(sp));
   m.userData.kind = 'terrain'; m.receiveShadow = true; m.castShadow = false; m.renderOrder = 5; m.frustumCulled = false; m.matrixAutoUpdate = false;
-  m.onBeforeRender = () => {
-    if (k === 0) { hTexLive = true; ringU.uCentre.value.set(Math.round(camera.position.x / 16) * 16, Math.round(-camera.position.z / 16) * 16); }
-  };
+  if (k === 0) m.onBeforeRender = () => { hTexLive = true; };
   terrain.add(m); return m;
 });
 scene.add(terrain);
+// Clipmap re-centre: only moves the shared uCentre uniform (snapped to 16 m so all rings stay aligned). Geometry is never rebuilt; vertices are offset on the GPU.
+function updateClipmap() {
+  const cx = Math.round(camera.position.x / 16) * 16, cy = Math.round(-camera.position.z / 16) * 16, c = ringU.uCentre.value;
+  if (c.x !== cx || c.y !== cy) c.set(cx, cy);
+}
 
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42];
@@ -600,9 +639,20 @@ const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f7fa6, transparent: 
 waterMat.onBeforeCompile = shader => {
   shader.uniforms.uH = { value: hTex }; shader.uniforms.uLevel = { value: T.water }; waterMat.userData.sh = shader;
   shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
-  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;\nuniform float uLevel;\n' + GLSL_H)
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;\nuniform float uLevel;\nfloat wDepth;\n' + GLSL_H)
     .replace('void main() {', `void main() {
-  if (Hg(vec2(vWXZ.x, -vWXZ.y)) > uLevel + 0.2) discard;`);
+  wDepth = uLevel - Hg(vec2(vWXZ.x, -vWXZ.y));
+  if (wDepth < -0.2) discard;`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+{ float d = max(wDepth, 0.0);
+  vec3 shallow = vec3(0.30, 0.55, 0.50), deep = vec3(0.05, 0.22, 0.34), bank = vec3(0.10, 0.09, 0.06);
+  vec3 wc = mix(shallow, deep, smoothstep(0.1, 5.0, d));
+  wc = mix(bank, wc, smoothstep(0.0, 0.5, d));   // damp dark bank band at the shoreline
+  diffuseColor.rgb = wc * wc;
+  diffuseColor.a = mix(0.97, 0.9, smoothstep(0.1, 2.0, d)) * smoothstep(-0.2, 0.15, wDepth); }`)
+    .replace('#include <opaque_fragment>', `{ vec3 vd = normalize(vViewPosition); vec3 nn = normalize(normal); float sp = pow(max(dot(nn, normalize(vd + normalize((viewMatrix * vec4(0.4, 0.8, 0.3, 0.0)).xyz))), 0.0), 120.0);
+  outgoingLight += vec3(sp * 0.6); }
+#include <opaque_fragment>`);
 };
 const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), waterMat);
 water.userData.kind = 'water'; water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);
@@ -613,7 +663,7 @@ water.onBeforeRender = () => { if (waterMat.userData.sh) waterMat.userData.sh.un
   const edge = (f) => { const base = pos.length / 3; for (let k = 0; k < N; k++) { const [x, y, h] = f(k); pos.push(x, h, -y, x, BOT, -y); } for (let k = 0; k < N - 1; k++) { const a = base + k * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); } };
   edge(k => [k * CELL, 0, TH[k]]); edge(k => [k * CELL, WORLD, TH[(N - 1) * N + k]]); edge(k => [0, k * CELL, TH[k * N]]); edge(k => [WORLD, k * CELL, TH[k * N + N - 1]]);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const sk = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x2a2118, roughness: 1, side: THREE.DoubleSide }));
+  const sk = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: scene.background.clone(), side: THREE.DoubleSide, fog: false }));
   sk.userData.kind = 'skirt'; sk.frustumCulled = false; sk.receiveShadow = true; sk.renderOrder = 6; scene.add(sk);
 }
 const apron = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.MeshStandardMaterial({ color: 0x41522f, roughness: 1 }));
@@ -873,7 +923,7 @@ class MB {
   }
 }
 const lin = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
-const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: [0.30, 0.44, 0.18], hard: lin('#4b4e53'), joint: lin('#7a7872'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#d2d0c9'), concDk: lin('#aeaca5'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0') };
+const COL = { asph: lin('#3c3f44'), pave: lin('#bdbcb7'), kerb: lin('#9d9c96'), verge: [0.24, 0.42, 0.15], hard: lin('#4b4e53'), joint: lin('#7a7872'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#d2d0c9'), concDk: lin('#aeaca5'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0'), wallC: lin('#8a8882'), wallJ: lin('#55534f'), steel: lin('#9aa0a6') };
 const stdMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, ...o });
 // Subtle procedural asphalt grain (near-white so vertex colours still drive the tint); uv = world metres / 4.
 const asphTex = (() => {
@@ -923,7 +973,7 @@ function buildRoadGroup(r) {
   const zo = (r.id % 64) * 0.0025, g = new THREE.Group(), RM = roadMats(r.id);
   const B = {}; for (const k of Object.keys(COL)) B[k] = new MB(COL[k]);
   B.tunRoad = new MB(COL.asph);
-  const CB = {}; for (const k of ['wall', 'pier', 'deck', 'abutment', 'parapet', 'portal']) CB[k] = { c: new MB(COL.conc), d: new MB(COL.concDk), j: new MB(COL.joint) };   // concrete buckets per structure kind (meshes tagged userData.kind)
+  const CB = {}; for (const k of ['wall', 'pier', 'deck', 'abutment', 'parapet', 'portal']) CB[k] = k === 'wall' ? { c: new MB(COL.wallC), d: new MB(COL.wallC), j: new MB(COL.wallJ) } : { c: new MB(COL.conc), d: new MB(COL.concDk), j: new MB(COL.joint) };   // concrete buckets per structure kind (meshes tagged userData.kind)
   const P = (k, lat, dz = 0) => latPt(S[k], lat, S[k].z + zo + dz);
   const tunSeg = k => S[k].tu && S[k + 1].tu;
   const lnorm = h => [-Math.sin(h), Math.cos(h), 0], fwd = h => [Math.cos(h), Math.sin(h), 0];
@@ -974,10 +1024,16 @@ function buildRoadGroup(r) {
       face(B.kerb, sg * cw, 0, PAVE_H, -sg, pav);
       face(B.kerb, sg * hw, -0.43, PAVE_H, sg, pav);
     } else {       // rural: grass verge (dual/motorway: hard strip first), no kerbs or footways
-      const hs = ty.dual ? (hw - cw) * 0.55 : 0, v0 = cw + hs;
+      const hs = ty.dual ? 1.0 : 0, v0 = cw + hs;
       if (hs) strip(B.hard, sg * cw, sg * v0, -0.02, UP, surf);
       strip(B.verge, sg * v0, sg * hw, -0.03, UP, onGr);
       strip(B.hard, sg * v0, sg * hw, -0.03, UP, k => surf(k) && (S[k].br || S[k + 1].br));   // deck: asphalt right to the parapet
+      if (ty.dual) {   // steel barrier on embankments over 2 m
+        const emb = k => onGr(k) && S[k].z - Math.min(hB(...latPt(S[k], sg * hw, 0)), hB(...latPt(S[k + 1], sg * hw, 0))) > 2;
+        let k0 = 0;
+        while (k0 + 1 < n) { if (!emb(k0)) { k0++; continue; } let k1 = k0; while (k1 + 1 < n - 1 && emb(k1 + 1)) k1++;
+          extrude(k0, k1 + 1, sg * (hw - 0.55), sg * (hw - 0.4), kk => S[kk].z + zo + 0.45, kk => S[kk].z + zo + 0.85, { top: B.steel, side: B.steel }); k0 = k1 + 1; }
+      }
     }
   }
   // Edge lip: 0.4 m downturned verge-coloured face so the ground (0.15 m below the footprint) never shows a gap.
@@ -995,7 +1051,7 @@ function buildRoadGroup(r) {
   };
   if (!r.oneWay && !ty.dual) dashed(0);
   else if (ty.lanes > 1) for (let l = 1; l < ty.lanes; l++) dashed(-cw + l * 3.65 + (ty.id === 'motorway' ? 0.7 : 0.5));
-  solid(cw - 0.3); solid(-cw + 0.3);
+  solid(cw - 0.25); solid(-cw + 0.25);   // solid white edge lines (all types)
 
   // Runs of flags.
   const runs = f => { const out = []; let i = 0; while (i < n) { if (!f(S[i])) { i++; continue; } let j = i; while (j + 1 < n && f(S[j + 1])) j++; out.push([i, j]); i = j + 1; } return out; };
@@ -1053,7 +1109,7 @@ function buildRoadGroup(r) {
   // Wall + coping along a station list: {a:[x,y] inner face point, u:[x,y] outward unit, zb, zt (top of coping)}.
   const wallStations = (st, WB = CB.wall) => {
     if (st.length < 2) return;
-    let acc = 0, nextJ = 8;
+    let acc = 0, nextJ = 3;
     const W3 = (q, off, z) => [q.a[0] + q.u[0] * off, q.a[1] + q.u[1] * off, z];
     const cph = q => Math.min(CAP_H, Math.max(0.05, (q.zt - q.zb) * 0.4)), wt = q => q.zt - cph(q);
     for (let i = 0; i + 1 < st.length; i++) {
@@ -1064,7 +1120,7 @@ function buildRoadGroup(r) {
         const jq = { zb: p.zb + (q.zb - p.zb) * t, zt: p.zt + (q.zt - p.zt) * t }, zt = wt(jq), o = -0.012;
         const V = (sx, z) => [p.a[0] + (q.a[0] - p.a[0]) * t + p.u[0] * o + d[0] * sx, p.a[1] + (q.a[1] - p.a[1]) * t + p.u[1] * o + d[1] * sx, z];
         if (zt > jq.zb + 0.05) WB.j.quad(V(-1, jq.zb), V(1, jq.zb), V(1, zt), V(-1, zt), lo);
-        nextJ += 8;
+        nextJ += 3;
       }
       acc += sl;
       WB.c.quad(W3(p, 0, p.zb), W3(q, 0, q.zb), W3(q, 0, wt(q)), W3(p, 0, wt(p)), lo);
@@ -1122,16 +1178,22 @@ function buildRoadGroup(r) {
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
       return Math.max(gAt(q.x, q.y), gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)); });
     const gSm = gHi.map((g, i) => (gHi[Math.max(0, i - 1)] + g + gHi[Math.min(m - 1, i + 1)]) / 3);   // smoothed ground at the wall: ends taper to it
+    const topRaw = [], zbA = [], uA = [];
     for (let i = 0; i < m; i++) {
       const q = rs[i], a = rs[Math.max(0, i - 1)], b = rs[Math.min(m - 1, i + 1)], t = hdir([a.x, a.y], [b.x, b.y]);
       let u = [-t[1] * sg, t[0] * sg];
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
       const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go, hB(q.x, q.y), hB(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)) - 1.0, top = Math.min(q.top, q.zTop + 0.7, Math.max(Math.min(gi, go) + 0.55, zb + 0.1));   // fill wall: barrier-height cap (+0.55 above road level)
-      let zt = top;
-      const tp = d => { const tgt = Math.min(top, gSm[i] - 0.1); return tgt + (top - tgt) * clamp(d / TAPER_L, 0, 1); };   // ends sink into the graded ground
-      if (tapA) zt = Math.min(zt, tp(cum[i]));
-      if (tapB) zt = Math.min(zt, tp(tot - cum[i]));
-      st.push({ a: [q.x, q.y], u, zb, zt: Math.max(zb + 0.05, Math.min(top, zt)) });
+      topRaw.push(top); zbA.push(zb); uA.push(u);
+    }
+    // smooth coping line: ~10 m moving average of the top, then monotone linear tapers into the ground at free ends
+    const HW = 10, topSm = topRaw.map((_, i) => { let sum = 0, c = 0; for (let j = Math.max(0, i - HW); j <= Math.min(m - 1, i + HW); j++) { sum += topRaw[j]; c++; } return sum / c; });
+    const tgtA = Math.min(topSm[0], gSm[0] - 0.1), tgtB = Math.min(topSm[m - 1], gSm[m - 1] - 0.1), TL = Math.min(TAPER_L * 1.5, tot / 2);
+    for (let i = 0; i < m; i++) {
+      let zt = topSm[i];
+      if (tapA) zt = Math.min(zt, tgtA + (topSm[Math.min(m - 1, Math.round(TL * 2))] - tgtA) * clamp(cum[i] / TL, 0, 1));
+      if (tapB) zt = Math.min(zt, tgtB + (topSm[Math.max(0, m - 1 - Math.round(TL * 2))] - tgtB) * clamp((tot - cum[i]) / TL, 0, 1));
+      st.push({ a: [rs[i].x, rs[i].y], u: uA[i], zb: zbA[i], zt: Math.max(zbA[i] + 0.05, zt) });
     }
     wallStations(st);
     }
@@ -1192,7 +1254,7 @@ function buildRoadGroup(r) {
   const add = (bk, mat, shadow, pick, kind = 'surface') => { const m = bk.mesh(mat, shadow); if (m) { m.userData.road = r; m.userData.pick = pick; m.userData.kind = kind; g.add(m); } };
   add(B.asph, RM.asph, false, true); add(B.tunRoad, RM.asph, false, false);
   add(B.pave, RM.pave, false, true); add(B.verge, RM.verge, false, true); add(B.soil, MAT.soil, false, false); add(B.kerb, RM.kerb, false, false);
-  add(B.mark, RM.mark, false, false); add(B.hard, RM.hard, false, true); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false, 'lining');
+  add(B.mark, RM.mark, false, false); add(B.steel, MAT.conc, true, false, 'barrier'); add(B.hard, RM.hard, false, true); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false, 'lining');
   for (const k of Object.keys(CB)) { add(CB[k].j, MAT.joint, false, false, k); add(CB[k].c, MAT.conc, true, false, k); add(CB[k].d, MAT.conc, true, false, k); }
   return g;
 }
@@ -1542,8 +1604,9 @@ function mouseXY(e) { const rc = canvas.getBoundingClientRect(); return [e.clien
 function processMouse() {
   mouseDirty = false;
   if (!mouseIn || state.drag) return;
-  const [sx, sy] = state.mouse, pk = state.pick = pick(sx, sy);
-  if (state.mode === 'draw') { state.snap = pk ? computeSnap(pk) : null; buildPreview(); }
+  const [sx, sy] = state.mouse; let t = performance.now();
+  const pk = state.pick = pick(sx, sy); PF.cur.pick += performance.now() - t; t = performance.now();
+  if (state.mode === 'draw') { state.snap = pk ? computeSnap(pk) : null; PF.cur.snap += performance.now() - t; t = performance.now(); buildPreview(); PF.cur.preview += performance.now() - t; }
   else {
     state.hoverHandle = -1;
     if (state.sel) state.sel.pts.forEach((p, i) => { const [hx, hy] = project(p.x, p.y, p.z + 0.5); if (Math.hypot(hx - sx, hy - sy) < 11) state.hoverHandle = i; });
@@ -1716,11 +1779,13 @@ function tick(now) {
   updateCamera(dt);
   if (mouseDirty) processMouse();
   syncRoads();
-  if (overlayDirty) { overlayDirty = false; buildOverlay(); }
+  if (overlayDirty) { overlayDirty = false; const t = performance.now(); buildOverlay(); PF.cur.preview += performance.now() - t; }
   if (needsUI) { needsUI = false; renderProfile(); renderHud(); }
+  let drew = false;
   if (needsRender || performance.now() - state.flash < 300) {
-    needsRender = false; drawScene();
+    needsRender = false; drawScene(); drew = true;
   }
+  pfFrameEnd(drew);
 }
 resize();
 setView(1000, 900, 1300, 0.35, 0.95);

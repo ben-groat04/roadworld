@@ -162,15 +162,31 @@ uniform float uSp, uWater; varying vec3 vW; varying float vDelta;
 float hsh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453) - 0.5; }
 float vnz(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hsh(i), hsh(i + vec2(1, 0)), f.x), mix(hsh(i + vec2(0, 1)), hsh(i + vec2(1, 1)), f.x), f.y); }`)
       .replace('#include <color_fragment>', `
-vec2 wq = vec2(vW.x, -vW.z); float hb = vW.y - vDelta;
+vec3 wp3 = vW; float hb = vW.y - vDelta;
 float gr = smoothstep(0.2, 1.5, abs(vDelta));
-vec3 gcol = mix(vec3(0.27, 0.43, 0.17), vec3(0.5, 0.47, 0.26), clamp((hb - 5.0) / 150.0, 0.0, 1.0));
 float slp = length(gNormal.xz) / max(gNormal.y, 0.05);
-float rt = clamp((slp - 0.55) / 0.4, 0.0, 1.0); rt = rt * rt * (3.0 - 2.0 * rt) * (1.0 - 0.75 * gr);
-gcol = mix(gcol, vec3(0.47, 0.45, 0.42), rt);
+// world-space detail: 3 scales of value noise (xz) + triplanar blend for steep faces (2 extra lookups each of the mid scale)
+vec3 tw = pow(abs(gNormal), vec3(4.0)); tw /= (tw.x + tw.y + tw.z);
+float nA = vnz(wp3.xz / 3.0) + 0.6 * vnz(wp3.xz / 0.9);
+float nB = vnz(wp3.zy / 2.5) + 0.6 * vnz(wp3.zy / 0.8), nC = vnz(wp3.xy / 2.5) + 0.6 * vnz(wp3.xy / 0.8);
+float kd = tw.y * nA + tw.x * nB + tw.z * nC;
+float macro = vnz(wp3.xz / 220.0) + 0.5 * vnz(wp3.xz / 67.0);
+float dry = smoothstep(0.1, 0.5, vnz(wp3.xz / 140.0 + 17.0));
+vec3 gcol = mix(vec3(0.27, 0.43, 0.17), vec3(0.5, 0.47, 0.26), clamp((hb - 5.0) / 150.0, 0.0, 1.0));
+gcol = mix(gcol, vec3(0.42, 0.42, 0.20), dry * 0.35);
+gcol *= 1.0 + 0.22 * macro;
 gcol = mix(gcol, vec3(0.36, 0.33, 0.24), clamp((uWater + 1.2 - hb) / 3.0, 0.0, 0.8) * (1.0 - gr));
 gcol = mix(gcol, vec3(0.30, 0.50, 0.16), gr * 0.3);
-float kn = 1.0 + 0.1 * (vnz(wq / 4.0) + 0.6 * vnz(wq / 1.3));
+// subtle darker toe where a slope meets flatter ground (slope falls off with the 3x3 kernel); cheap proxy: damp-ish darkening on gentle but non-flat ground
+gcol *= 1.0 - 0.18 * smoothstep(0.08, 0.3, slp) * (1.0 - smoothstep(0.3, 0.6, slp));
+// exposed soil / rock: steep (> ~35 deg => slp > 0.7) or freshly cut (cut depth > 2 m)
+float steep = smoothstep(0.62, 0.85, slp);
+float cut = smoothstep(1.5, 3.0, -vDelta) * gr;
+float ex = max(steep, cut);
+vec3 soil = mix(vec3(0.40, 0.31, 0.22), vec3(0.47, 0.45, 0.42), smoothstep(-0.4, 0.5, nB + nC + macro));
+soil *= 1.0 + 0.25 * kd;
+gcol = mix(gcol, soil, ex);
+float kn = 1.0 + 0.1 * kd * (1.0 - ex);
 diffuseColor.rgb = gcol * gcol * kn;`)
       .replace('void main() {', `void main() {
   vec2 gw = vec2(vW.x, -vW.z); float ge = max(uSp, 1.5);   // wide 3x3 Sobel-weighted kernel on bilinear height: smooth normals
@@ -179,7 +195,11 @@ diffuseColor.rgb = gcol * gcol * kn;`)
     gdx += wgt * (Hg(gw + vec2(ge, o)) - Hg(gw + vec2(-ge, o)));
     gdy += wgt * (Hg(gw + vec2(o, ge)) - Hg(gw + vec2(o, -ge))); }
   vec3 gNormal = normalize(vec3(-gdx / 4.0, 2.0 * ge, gdy / 4.0));`)
-      .replace('#include <normal_fragment_begin>', `vec3 normal = normalize((viewMatrix * vec4(gNormal, 0.0)).xyz); vec3 nonPerturbedNormal = normal;`);
+      .replace('#include <normal_fragment_begin>', `vec3 normal = normalize((viewMatrix * vec4(gNormal, 0.0)).xyz); vec3 nonPerturbedNormal = normal;`)
+      .replace('#include <fog_fragment>', `#include <fog_fragment>
+#ifdef USE_FOG
+{ vec2 ed = min(vW.xz * vec2(1.0, -1.0), G_WORLD - vW.xz * vec2(1.0, -1.0)); float de = min(ed.x, ed.y); gl_FragColor.rgb = mix(fogColor, gl_FragColor.rgb, smoothstep(0.0, 500.0, de)); }
+#endif`);
   };
   return m;
 }
@@ -187,12 +207,15 @@ const terrain = new THREE.Group(); terrain.userData.kind = 'terrain';
 const rings = RING_SP.map((sp, k) => {
   const m = new THREE.Mesh(k === 0 ? GEO_FULL : GEO_HOLE, makeRingMat(sp));
   m.userData.kind = 'terrain'; m.receiveShadow = true; m.castShadow = false; m.renderOrder = 5; m.frustumCulled = false; m.matrixAutoUpdate = false;
-  m.onBeforeRender = () => {
-    if (k === 0) { hTexLive = true; ringU.uCentre.value.set(Math.round(camera.position.x / 16) * 16, Math.round(-camera.position.z / 16) * 16); }
-  };
+  if (k === 0) m.onBeforeRender = () => { hTexLive = true; };
   terrain.add(m); return m;
 });
 scene.add(terrain);
+// Clipmap re-centre: only moves the shared uCentre uniform (snapped to 16 m so all rings stay aligned). Geometry is never rebuilt; vertices are offset on the GPU.
+function updateClipmap() {
+  const cx = Math.round(camera.position.x / 16) * 16, cy = Math.round(-camera.position.z / 16) * 16, c = ringU.uCentre.value;
+  if (c.x !== cx || c.y !== cy) c.set(cx, cy);
+}
 
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42];
@@ -216,9 +239,20 @@ const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f7fa6, transparent: 
 waterMat.onBeforeCompile = shader => {
   shader.uniforms.uH = { value: hTex }; shader.uniforms.uLevel = { value: T.water }; waterMat.userData.sh = shader;
   shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
-  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;\nuniform float uLevel;\n' + GLSL_H)
+  shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;\nuniform float uLevel;\nfloat wDepth;\n' + GLSL_H)
     .replace('void main() {', `void main() {
-  if (Hg(vec2(vWXZ.x, -vWXZ.y)) > uLevel + 0.2) discard;`);
+  wDepth = uLevel - Hg(vec2(vWXZ.x, -vWXZ.y));
+  if (wDepth < -0.2) discard;`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+{ float d = max(wDepth, 0.0);
+  vec3 shallow = vec3(0.30, 0.55, 0.50), deep = vec3(0.05, 0.22, 0.34), bank = vec3(0.10, 0.09, 0.06);
+  vec3 wc = mix(shallow, deep, smoothstep(0.1, 5.0, d));
+  wc = mix(bank, wc, smoothstep(0.0, 0.5, d));   // damp dark bank band at the shoreline
+  diffuseColor.rgb = wc * wc;
+  diffuseColor.a = mix(0.97, 0.9, smoothstep(0.1, 2.0, d)) * smoothstep(-0.2, 0.15, wDepth); }`)
+    .replace('#include <opaque_fragment>', `{ vec3 vd = normalize(vViewPosition); vec3 nn = normalize(normal); float sp = pow(max(dot(nn, normalize(vd + normalize((viewMatrix * vec4(0.4, 0.8, 0.3, 0.0)).xyz))), 0.0), 120.0);
+  outgoingLight += vec3(sp * 0.6); }
+#include <opaque_fragment>`);
 };
 const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), waterMat);
 water.userData.kind = 'water'; water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);
@@ -229,7 +263,7 @@ water.onBeforeRender = () => { if (waterMat.userData.sh) waterMat.userData.sh.un
   const edge = (f) => { const base = pos.length / 3; for (let k = 0; k < N; k++) { const [x, y, h] = f(k); pos.push(x, h, -y, x, BOT, -y); } for (let k = 0; k < N - 1; k++) { const a = base + k * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); } };
   edge(k => [k * CELL, 0, TH[k]]); edge(k => [k * CELL, WORLD, TH[(N - 1) * N + k]]); edge(k => [0, k * CELL, TH[k * N]]); edge(k => [WORLD, k * CELL, TH[k * N + N - 1]]);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-  const sk = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x2a2118, roughness: 1, side: THREE.DoubleSide }));
+  const sk = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: scene.background.clone(), side: THREE.DoubleSide, fog: false }));
   sk.userData.kind = 'skirt'; sk.frustumCulled = false; sk.receiveShadow = true; sk.renderOrder = 6; scene.add(sk);
 }
 const apron = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.MeshStandardMaterial({ color: 0x41522f, roughness: 1 }));

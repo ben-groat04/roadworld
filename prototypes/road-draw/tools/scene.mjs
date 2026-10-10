@@ -146,6 +146,35 @@ if (CHECK_MODE) {
       return { ms: (performance.now() - t0) / 120, calls: maxCalls, tris };
     });
     results.push({ name: 'perf', pass: pf.calls <= 300, msg: `draw calls ${pf.calls} (max 300), triangles ${pf.tris}, JS ${pf.ms.toFixed(2)} ms/frame over 120 orbit frames` }); }
+  // perf2: JS ms per frame for 60 simulated mousemoves (static camera, mid-stroke so the preview is live) and for 60 camera-orbit frames with
+  // the pointer parked over the scene, split into the F-readout buckets. GPU time is meaningless under swiftshader, JS time is valid.
+  // Pass: pick+snap+preview+shadow+clip < 4 ms/frame (renderer.render reported but excluded: its JS side is driver dependent) and <= 2 shadow-map redraws.
+  { const pf = await page.evaluate(() => {
+      const P = window.__proto, pf = window.__perf, PF = pf.pf, c = P.camera, tg = P.controls.target, cv = document.getElementById('view'), st = P.state;
+      const out = { gpu: PF.gpu }; let now = performance.now() + 1000;
+      P.setView(1080, 200, 350, 0.4, 1.0); P.renderNow();
+      st.mode = 'draw'; st.type = 2; st.oneWay = false; st.shift = false;
+      const z0 = P.hAt(1000, 200); st.draw = { pts: [{ x: 1000, y: 200, z: z0 }], hs: null, attach: ['free'] };
+      cv.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
+      const rc = cv.getBoundingClientRect(), mv = i => { const a = i / 59; window.dispatchEvent(new PointerEvent('pointermove', { clientX: rc.left + 250 + 900 * a, clientY: rc.top + 300 + 150 * Math.sin(a * 9), bubbles: true })); };
+      const orbit = () => { const rx = c.position.x - tg.x, rz = c.position.z - tg.z, a = 0.02, co = Math.cos(a), si = Math.sin(a);
+        c.position.x = tg.x + rx * co - rz * si; c.position.z = tg.z + rx * si + rz * co; P.controls.update(); };
+      const run = (name, body) => {
+        for (let i = 0; i < 6; i++) { body(i % 2 ? 0 : 1); now += 16.7; pf.step(now); }   // warm-up (JIT, shader compile, first shadow map)
+        const t0 = {}, n0 = PF.ticks, sh0 = PF.shadowPasses; for (const k of PF.names) t0[k] = PF.tot[k];
+        for (let i = 0; i < 60; i++) { body(i); now += 16.7; pf.step(now); }
+        const r = { shadowPasses: PF.shadowPasses - sh0 }, n = PF.ticks - n0; let js = 0;
+        for (const k of PF.names) { r[k] = (PF.tot[k] - t0[k]) / n; if (k !== 'render') js += r[k]; }
+        r.js = js; out[name] = r;
+      };
+      run('mouse', i => mv(i));
+      mv(30);   // park the pointer mid-screen
+      run('camera', () => orbit());
+      return out;
+    });
+    const f = r => ['pick', 'snap', 'preview', 'shadow', 'clip', 'render'].map(k => k + ' ' + r[k].toFixed(2)).join(' | ');
+    for (const k of ['mouse', 'camera']) results.push({ name: 'perf_js_' + k, pass: pf[k].js < 4 && pf[k].shadowPasses <= 2, msg: `${pf[k].js.toFixed(2)} ms JS/frame (target < 4, excl. render): ${f(pf[k])} | shadow maps redrawn ${pf[k].shadowPasses}/60` });
+    results.push({ name: 'perf_gpu', pass: true, msg: `renderer: ${pf.gpu}` }); }
   let bad = 0;
   for (const r of results) { if (!r.pass) bad++; console.log(`${r.pass ? 'PASS' : 'FAIL'} ${r.name.padEnd(24)} ${r.msg}`); }
   await browser.close();

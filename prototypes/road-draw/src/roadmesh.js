@@ -27,7 +27,7 @@ class MB {
   }
 }
 const lin = hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; };
-const COL = { asph: lin('#3c3f44'), pave: lin('#a5a49d'), kerb: lin('#c3c2bb'), verge: [0.30, 0.44, 0.18], hard: lin('#4b4e53'), joint: lin('#7a7872'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#d2d0c9'), concDk: lin('#aeaca5'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0') };
+const COL = { asph: lin('#3c3f44'), pave: lin('#bdbcb7'), kerb: lin('#9d9c96'), verge: [0.24, 0.42, 0.15], hard: lin('#4b4e53'), joint: lin('#7a7872'), soil: lin('#8a8658'), mark: lin('#f2f2f2'), conc: lin('#d2d0c9'), concDk: lin('#aeaca5'), cap: lin('#628443'), tube: lin('#060607'), parapet: lin('#c9c7c0'), wallC: lin('#8a8882'), wallJ: lin('#55534f'), steel: lin('#9aa0a6') };
 const stdMat = (o = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, ...o });
 // Subtle procedural asphalt grain (near-white so vertex colours still drive the tint); uv = world metres / 4.
 const asphTex = (() => {
@@ -77,7 +77,7 @@ function buildRoadGroup(r) {
   const zo = (r.id % 64) * 0.0025, g = new THREE.Group(), RM = roadMats(r.id);
   const B = {}; for (const k of Object.keys(COL)) B[k] = new MB(COL[k]);
   B.tunRoad = new MB(COL.asph);
-  const CB = {}; for (const k of ['wall', 'pier', 'deck', 'abutment', 'parapet', 'portal']) CB[k] = { c: new MB(COL.conc), d: new MB(COL.concDk), j: new MB(COL.joint) };   // concrete buckets per structure kind (meshes tagged userData.kind)
+  const CB = {}; for (const k of ['wall', 'pier', 'deck', 'abutment', 'parapet', 'portal']) CB[k] = k === 'wall' ? { c: new MB(COL.wallC), d: new MB(COL.wallC), j: new MB(COL.wallJ) } : { c: new MB(COL.conc), d: new MB(COL.concDk), j: new MB(COL.joint) };   // concrete buckets per structure kind (meshes tagged userData.kind)
   const P = (k, lat, dz = 0) => latPt(S[k], lat, S[k].z + zo + dz);
   const tunSeg = k => S[k].tu && S[k + 1].tu;
   const lnorm = h => [-Math.sin(h), Math.cos(h), 0], fwd = h => [Math.cos(h), Math.sin(h), 0];
@@ -128,10 +128,16 @@ function buildRoadGroup(r) {
       face(B.kerb, sg * cw, 0, PAVE_H, -sg, pav);
       face(B.kerb, sg * hw, -0.43, PAVE_H, sg, pav);
     } else {       // rural: grass verge (dual/motorway: hard strip first), no kerbs or footways
-      const hs = ty.dual ? (hw - cw) * 0.55 : 0, v0 = cw + hs;
+      const hs = ty.dual ? 1.0 : 0, v0 = cw + hs;
       if (hs) strip(B.hard, sg * cw, sg * v0, -0.02, UP, surf);
       strip(B.verge, sg * v0, sg * hw, -0.03, UP, onGr);
       strip(B.hard, sg * v0, sg * hw, -0.03, UP, k => surf(k) && (S[k].br || S[k + 1].br));   // deck: asphalt right to the parapet
+      if (ty.dual) {   // steel barrier on embankments over 2 m
+        const emb = k => onGr(k) && S[k].z - Math.min(hB(...latPt(S[k], sg * hw, 0)), hB(...latPt(S[k + 1], sg * hw, 0))) > 2;
+        let k0 = 0;
+        while (k0 + 1 < n) { if (!emb(k0)) { k0++; continue; } let k1 = k0; while (k1 + 1 < n - 1 && emb(k1 + 1)) k1++;
+          extrude(k0, k1 + 1, sg * (hw - 0.55), sg * (hw - 0.4), kk => S[kk].z + zo + 0.45, kk => S[kk].z + zo + 0.85, { top: B.steel, side: B.steel }); k0 = k1 + 1; }
+      }
     }
   }
   // Edge lip: 0.4 m downturned verge-coloured face so the ground (0.15 m below the footprint) never shows a gap.
@@ -149,7 +155,7 @@ function buildRoadGroup(r) {
   };
   if (!r.oneWay && !ty.dual) dashed(0);
   else if (ty.lanes > 1) for (let l = 1; l < ty.lanes; l++) dashed(-cw + l * 3.65 + (ty.id === 'motorway' ? 0.7 : 0.5));
-  solid(cw - 0.3); solid(-cw + 0.3);
+  solid(cw - 0.25); solid(-cw + 0.25);   // solid white edge lines (all types)
 
   // Runs of flags.
   const runs = f => { const out = []; let i = 0; while (i < n) { if (!f(S[i])) { i++; continue; } let j = i; while (j + 1 < n && f(S[j + 1])) j++; out.push([i, j]); i = j + 1; } return out; };
@@ -207,7 +213,7 @@ function buildRoadGroup(r) {
   // Wall + coping along a station list: {a:[x,y] inner face point, u:[x,y] outward unit, zb, zt (top of coping)}.
   const wallStations = (st, WB = CB.wall) => {
     if (st.length < 2) return;
-    let acc = 0, nextJ = 8;
+    let acc = 0, nextJ = 3;
     const W3 = (q, off, z) => [q.a[0] + q.u[0] * off, q.a[1] + q.u[1] * off, z];
     const cph = q => Math.min(CAP_H, Math.max(0.05, (q.zt - q.zb) * 0.4)), wt = q => q.zt - cph(q);
     for (let i = 0; i + 1 < st.length; i++) {
@@ -218,7 +224,7 @@ function buildRoadGroup(r) {
         const jq = { zb: p.zb + (q.zb - p.zb) * t, zt: p.zt + (q.zt - p.zt) * t }, zt = wt(jq), o = -0.012;
         const V = (sx, z) => [p.a[0] + (q.a[0] - p.a[0]) * t + p.u[0] * o + d[0] * sx, p.a[1] + (q.a[1] - p.a[1]) * t + p.u[1] * o + d[1] * sx, z];
         if (zt > jq.zb + 0.05) WB.j.quad(V(-1, jq.zb), V(1, jq.zb), V(1, zt), V(-1, zt), lo);
-        nextJ += 8;
+        nextJ += 3;
       }
       acc += sl;
       WB.c.quad(W3(p, 0, p.zb), W3(q, 0, q.zb), W3(q, 0, wt(q)), W3(p, 0, wt(p)), lo);
@@ -276,16 +282,22 @@ function buildRoadGroup(r) {
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
       return Math.max(gAt(q.x, q.y), gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)); });
     const gSm = gHi.map((g, i) => (gHi[Math.max(0, i - 1)] + g + gHi[Math.min(m - 1, i + 1)]) / 3);   // smoothed ground at the wall: ends taper to it
+    const topRaw = [], zbA = [], uA = [];
     for (let i = 0; i < m; i++) {
       const q = rs[i], a = rs[Math.max(0, i - 1)], b = rs[Math.min(m - 1, i + 1)], t = hdir([a.x, a.y], [b.x, b.y]);
       let u = [-t[1] * sg, t[0] * sg];
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
       const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go, hB(q.x, q.y), hB(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)) - 1.0, top = Math.min(q.top, q.zTop + 0.7, Math.max(Math.min(gi, go) + 0.55, zb + 0.1));   // fill wall: barrier-height cap (+0.55 above road level)
-      let zt = top;
-      const tp = d => { const tgt = Math.min(top, gSm[i] - 0.1); return tgt + (top - tgt) * clamp(d / TAPER_L, 0, 1); };   // ends sink into the graded ground
-      if (tapA) zt = Math.min(zt, tp(cum[i]));
-      if (tapB) zt = Math.min(zt, tp(tot - cum[i]));
-      st.push({ a: [q.x, q.y], u, zb, zt: Math.max(zb + 0.05, Math.min(top, zt)) });
+      topRaw.push(top); zbA.push(zb); uA.push(u);
+    }
+    // smooth coping line: ~10 m moving average of the top, then monotone linear tapers into the ground at free ends
+    const HW = 10, topSm = topRaw.map((_, i) => { let sum = 0, c = 0; for (let j = Math.max(0, i - HW); j <= Math.min(m - 1, i + HW); j++) { sum += topRaw[j]; c++; } return sum / c; });
+    const tgtA = Math.min(topSm[0], gSm[0] - 0.1), tgtB = Math.min(topSm[m - 1], gSm[m - 1] - 0.1), TL = Math.min(TAPER_L * 1.5, tot / 2);
+    for (let i = 0; i < m; i++) {
+      let zt = topSm[i];
+      if (tapA) zt = Math.min(zt, tgtA + (topSm[Math.min(m - 1, Math.round(TL * 2))] - tgtA) * clamp(cum[i] / TL, 0, 1));
+      if (tapB) zt = Math.min(zt, tgtB + (topSm[Math.max(0, m - 1 - Math.round(TL * 2))] - tgtB) * clamp((tot - cum[i]) / TL, 0, 1));
+      st.push({ a: [rs[i].x, rs[i].y], u: uA[i], zb: zbA[i], zt: Math.max(zbA[i] + 0.05, zt) });
     }
     wallStations(st);
     }
@@ -346,7 +358,7 @@ function buildRoadGroup(r) {
   const add = (bk, mat, shadow, pick, kind = 'surface') => { const m = bk.mesh(mat, shadow); if (m) { m.userData.road = r; m.userData.pick = pick; m.userData.kind = kind; g.add(m); } };
   add(B.asph, RM.asph, false, true); add(B.tunRoad, RM.asph, false, false);
   add(B.pave, RM.pave, false, true); add(B.verge, RM.verge, false, true); add(B.soil, MAT.soil, false, false); add(B.kerb, RM.kerb, false, false);
-  add(B.mark, RM.mark, false, false); add(B.hard, RM.hard, false, true); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false, 'lining');
+  add(B.mark, RM.mark, false, false); add(B.steel, MAT.conc, true, false, 'barrier'); add(B.hard, RM.hard, false, true); add(B.cap, MAT.cap, false, false); add(B.tube, MAT.tube, false, false, 'lining');
   for (const k of Object.keys(CB)) { add(CB[k].j, MAT.joint, false, false, k); add(CB[k].c, MAT.conc, true, false, k); add(CB[k].d, MAT.conc, true, false, k); }
   return g;
 }
