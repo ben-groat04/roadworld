@@ -22,7 +22,7 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - Ask the person for input often on design and UX decisions; keep reversible choices moving.
 - **Never end a turn with uncommitted changes**: commit and push at the end of every turn without being asked.
 - **Default to parallel agents** split by file/function, each with tight scope and exact function names; continue existing agents via messages instead of spawning new ones for follow-ups.
-- **Verify with `node prototypes/road-draw/tools/scene.mjs --check`** (text invariants, ~8 s) rather than screenshot loops; screenshots only for realism judgement.
+- **Verify with `node prototypes/road-draw/tools/scene.mjs --check`** (text invariants, ~8 s; needs one-time `npm install` in prototypes/road-draw) rather than screenshot loops; screenshots only for realism judgement.
 - **Send the person progress pictures** whenever new visual results exist.
 - **The main session never audits screenshots or code itself**: visual and code review go to cold-read Sonnet agents; the main session reads only their reports.
 - **New session? Read `docs/HANDOFF.md` first.**

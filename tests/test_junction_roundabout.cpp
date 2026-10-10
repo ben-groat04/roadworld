@@ -483,3 +483,21 @@ TEST_CASE("roundabout: the tool on empty ground makes a ring that waits for its 
     CHECK(net.g.edges().size() == 4);
     CHECK(recognise_roundabouts(net.g, *net.region).empty());  // no approach roads yet
 }
+
+#include "scene_fixture.h"
+TEST_CASE("zz debug dump") {
+    std::string err;
+    auto sc = cp::tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE(sc);
+    auto groups = recognise_roundabouts(sc->graph, *sc->region);
+    REQUIRE(groups.size() == 1);
+    auto lay = build_roundabout(groups[0], sc->graph, *sc->region, {});
+    for (auto& c : lay.connectors)
+        std::printf("role %d ring %d  %llu:%d -> %llu:%d  pts=%zu\n", (int)c.role, c.ring_index,
+                    (unsigned long long)c.from_edge.value, c.from_slot, (unsigned long long)c.to_edge.value, c.to_slot, c.path.size());
+    for (auto& [n, j] : lay.ring_junctions) {
+        std::printf("node %llu arms=%zu conns=%zu cls=%d\n", (unsigned long long)n.value, j.arms.size(), j.connectors.size(), (int)j.cls);
+        for (auto& a : j.arms) { std::printf("   arm edge %llu at_a=%d lanes:", (unsigned long long)a.edge.value, a.at_a); for (auto& l : a.lanes) std::printf(" %d%s", l.slot, l.inbound ? "i" : "o"); std::printf("\n"); }
+        for (auto& c : j.connectors) std::printf("   conn a%d l%d -> a%d l%d en=%d\n", c.arm_from, c.lane_from, c.arm_to, c.lane_to, c.enabled);
+    }
+}

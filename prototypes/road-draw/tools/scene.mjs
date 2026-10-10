@@ -7,13 +7,13 @@
 // Loads ../index.html (run `node build.mjs` first), draws the scene through window.__proto.drawRoad,
 // closes help, hides the profile panel, then writes <outDir>/<view>.png at 1400x800.
 // Prints console errors and exits 1 if there are any.
-import { chromium } from '/tmp/claude-0/-home-user-roadworld/60bece6d-438c-5d30-8fba-60a1ef284c2a/scratchpad/node_modules/playwright/index.mjs';
+import { chromium } from 'playwright-core';
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PAGE = 'file://' + resolve(HERE, '..', 'index.html');
+const PAGE = pathToFileURL(resolve(HERE, '..', 'index.html')).href;
 
 // ===================== TWEAKABLE CONSTANTS (world metres; x east, y north; terrain seed 1337) =====================
 // Road type ids: 1 residential, 2 B road, 3 A road dual, 4 motorway.
@@ -72,7 +72,15 @@ for (const n of names) if (!VIEWS[n]) { console.error('unknown view ' + n + '; h
 mkdirSync(outDir, { recursive: true });
 
 const t0 = Date.now();
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+// Prefer an installed Edge/Chrome (no browser download); fall back to Playwright's own chromium if present.
+// Software GL flags are Linux-only (no GPU in cloud boxes); on Windows/macOS the real GPU is used.
+const launchArgs = process.platform === 'linux' ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [];
+let browser = null; const launchErrs = [];
+for (const opt of [{ channel: 'msedge' }, { channel: 'chrome' }, {}]) {
+  try { browser = await chromium.launch({ ...opt, args: launchArgs }); break; } catch (e) { launchErrs.push((opt.channel || 'bundled chromium') + ': ' + String(e.message).split('\n')[0]); }
+}
+if (!browser) { console.error('no usable browser (need Edge, Chrome, or playwright chromium already installed):\n' + launchErrs.join('\n')); process.exit(4); }
+console.error('browser: ' + (browser.version ? browser.version() : '?'));
 const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
 const errors = [];
 page.on('console', m => { if (m.type() === 'error') errors.push('console.error: ' + m.text()); });

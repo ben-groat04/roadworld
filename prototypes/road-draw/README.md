@@ -20,4 +20,6 @@ Cuttings and embankments (1:2 slopes), retaining walls, bridges, tunnels and wat
 
 `node prototypes/road-draw/test-geom.mjs` checks `src/geom.js` directly.
 
+Scene invariants: once, `cd prototypes/road-draw && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install` (uses your installed Edge/Chrome, downloads no browser); then `npm run check` (= `node build.mjs && node tools/scene.mjs --check`). Screenshots: `node tools/scene.mjs <outDir> [view ...]`.
+
 Not production code: findings feed the real tool in Unreal.

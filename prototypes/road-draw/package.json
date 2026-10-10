@@ -1,0 +1,12 @@
+{
+  "name": "road-draw-prototype",
+  "private": true,
+  "description": "Throwaway road-draw UX prototype (see README.md)",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs && node tools/scene.mjs --check"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}

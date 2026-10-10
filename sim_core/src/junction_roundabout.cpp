@@ -495,6 +495,35 @@ double path_length(const std::vector<Vec3>& p) {
     return l;
 }
 
+// Point at fraction f (0..1) of the path's length.
+Vec3 path_at(const std::vector<Vec3>& p, double f) {
+    const double target = path_length(p) * f;
+    double acc = 0;
+    for (std::size_t i = 0; i + 1 < p.size(); ++i) {
+        const double l = std::hypot(p[i + 1].x - p[i].x, p[i + 1].y - p[i].y);
+        if (acc + l >= target || i + 2 == p.size()) {
+            const double t = l > 0 ? std::clamp((target - acc) / l, 0.0, 1.0) : 0.0;
+            return {p[i].x + (p[i + 1].x - p[i].x) * t, p[i].y + (p[i + 1].y - p[i].y) * t,
+                    p[i].z + (p[i + 1].z - p[i].z) * t};
+        }
+        acc += l;
+    }
+    return p.empty() ? Vec3{} : p.back();
+}
+
+// A lane change: starts on `a`, ends on `b` (two lanes of the same ring edge), smoothstep between.
+std::vector<Vec3> blend_paths(const std::vector<Vec3>& a, const std::vector<Vec3>& b) {
+    if (a.size() < 2 || b.size() < 2) return a;
+    const int n = std::clamp(static_cast<int>(path_length(a) / 1.5), 8, 64);
+    std::vector<Vec3> out;
+    for (int i = 0; i <= n; ++i) {
+        const double f = static_cast<double>(i) / n, w = f * f * (3 - 2 * f);
+        const Vec3 p = path_at(a, f), q = path_at(b, f);
+        out.push_back({p.x + (q.x - p.x) * w, p.y + (q.y - p.y) * w, p.z + (q.z - p.z) * w});
+    }
+    return out;
+}
+
 bool segments_cross(Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
     const auto o = [](Vec2 p, Vec2 q, Vec2 r) { return (q - p).cross(r - p); };
     const double d1 = o(a, b, c), d2 = o(a, b, d), d3 = o(c, d, a), d4 = o(c, d, b);
@@ -851,34 +880,39 @@ void apply_roundabouts(JunctionSet& set, const RoadGraph& graph, const RegionPac
                             const int k = entry.to_slot;
                             std::vector<Vec3> path = entry.path;
                             std::size_t m = arm_ring[a];
-                            bool ok = true;
-                            for (std::size_t step = 0; step <= n && ok; ++step) {
+                            for (std::size_t step = 0; step < n; ++step) {
                                 const RoundaboutConnector* rg = find_conn(RoundaboutConnectorRole::Ring,
                                                                           static_cast<int>(m), {}, k, {}, k);
-                                if (!rg) {
-                                    ok = false;
+                                if (!rg) break;
+                                if ((m + 1) % n == arm_ring[b]) {
+                                    // Last ring edge: leave on any ring lane that can exit, changing lane
+                                    // along this edge when it is not the one we entered on.
+                                    for (const RoundaboutConnector& ex : lay.connectors) {
+                                        if (ex.role != RoundaboutConnectorRole::Exit ||
+                                            ex.ring_index != static_cast<int>(arm_ring[b]) ||
+                                            ex.to_edge != rep.arms[b].edge || ex.to_slot != lout.slot)
+                                            continue;
+                                        const RoundaboutConnector* rg2 = find_conn(
+                                            RoundaboutConnectorRole::Ring, static_cast<int>(m), {}, ex.from_slot, {},
+                                            ex.from_slot);
+                                        if (!rg2) continue;
+                                        std::vector<Vec3> cand = path;
+                                        append_path(cand, rg2 == rg ? rg->path : blend_paths(rg->path, rg2->path));
+                                        append_path(cand, ex.path);
+                                        const double len = path_length(cand);
+                                        if (cand.size() >= 2 && (best.empty() || len < best_len - 1e-9)) {
+                                            best = std::move(cand);
+                                            best_len = len;
+                                        }
+                                    }
                                     break;
                                 }
                                 append_path(path, rg->path);
                                 m = (m + 1) % n;
-                                if (m == arm_ring[b]) {
-                                    const RoundaboutConnector* ex = find_conn(
-                                        RoundaboutConnectorRole::Exit, static_cast<int>(m), {}, k,
-                                        rep.arms[b].edge, lout.slot);
-                                    if (!ex) ok = false;
-                                    else append_path(path, ex->path);
-                                    break;
-                                }
                                 const RoundaboutConnector* th = find_conn(RoundaboutConnectorRole::Through,
                                                                           static_cast<int>(m), {}, k, {}, k);
                                 if (th) append_path(path, th->path);
-                                else if (lay.ring_junctions.count(group.nodes[m])) ok = false;
-                            }
-                            if (!ok || path.size() < 2) continue;
-                            const double len = path_length(path);
-                            if (best.empty() || len < best_len - 1e-9) {
-                                best = std::move(path);
-                                best_len = len;
+                                else if (lay.ring_junctions.count(group.nodes[m])) break;
                             }
                         }
                         if (best.empty()) continue;
