@@ -20,3 +20,7 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 ## Working style (from the person)
 - The main session (Opus) plans, asks questions, reviews and coordinates. **All coding is delegated to subagents**, never written by the main session: Sonnet (`model: sonnet`) by default, Haiku (`model: haiku`) only for trivial mechanical edits (renames, doc tweaks, config one-liners) where a wrong result is obvious and cheap to redo.
 - Ask the person for input often on design and UX decisions; keep reversible choices moving.
+- **Never end a turn with uncommitted changes**: commit and push at the end of every turn without being asked.
+- **Default to parallel agents** split by file/function, each with tight scope and exact function names; continue existing agents via messages instead of spawning new ones for follow-ups.
+- **Verify with `node prototypes/road-draw/tools/scene.mjs --check`** (text invariants, ~8 s) rather than screenshot loops; screenshots only for realism judgement.
+- **Send the person progress pictures** whenever new visual results exist.

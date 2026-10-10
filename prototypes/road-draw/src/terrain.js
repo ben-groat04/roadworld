@@ -80,7 +80,7 @@ const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness
 const terrainMat = groundMat.clone(); terrainMat.onBeforeCompile = addMaskDiscard;
 const terrain = new THREE.Mesh(tGeo, terrainMat);
 terrain.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); terrain.customDepthMaterial.onBeforeCompile = addMaskDiscard;
-terrain.receiveShadow = true; terrain.castShadow = true; terrain.frustumCulled = false; scene.add(terrain);
+terrain.userData.kind = 'terrain'; terrain.receiveShadow = true; terrain.castShadow = true; terrain.frustumCulled = false; scene.add(terrain);
 
 const lerp3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 const GRASS_LO = [0.27, 0.43, 0.17], GRASS_HI = [0.5, 0.47, 0.26], ROCK = [0.47, 0.45, 0.42];
@@ -122,7 +122,7 @@ waterMat.onBeforeCompile = shader => {
     if (h > uLevel + 0.2) discard; }`);
 };
 const water = new THREE.Mesh(new THREE.PlaneGeometry(WORLD, WORLD), waterMat);
-water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);
+water.userData.kind = 'water'; water.rotation.x = -Math.PI / 2; water.position.set(WORLD / 2, T.water, -WORLD / 2); water.receiveShadow = true; scene.add(water);
 water.onBeforeRender = () => { if (waterMat.userData.sh) waterMat.userData.sh.uniforms.uLevel.value = water.position.y; };
 // Skirt around the world edge down below the lowest height, dark earth.
 {
@@ -131,7 +131,7 @@ water.onBeforeRender = () => { if (waterMat.userData.sh) waterMat.userData.sh.un
   edge(k => [k * CELL, 0, TH[k]]); edge(k => [k * CELL, WORLD, TH[(N - 1) * N + k]]); edge(k => [0, k * CELL, TH[k * N]]); edge(k => [WORLD, k * CELL, TH[k * N + N - 1]]);
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
   const sk = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x2a2118, roughness: 1, side: THREE.DoubleSide }));
-  sk.frustumCulled = false; sk.receiveShadow = true; scene.add(sk);
+  sk.userData.kind = 'skirt'; sk.frustumCulled = false; sk.receiveShadow = true; scene.add(sk);
 }
 const apron = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), new THREE.MeshStandardMaterial({ color: 0x41522f, roughness: 1 }));
 apron.rotation.x = -Math.PI / 2; apron.position.set(WORLD / 2, 0, -WORLD / 2); apron.receiveShadow = true; scene.add(apron);
