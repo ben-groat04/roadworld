@@ -62,10 +62,7 @@
 #define CPB_LIGHTS 1
 #endif
 #if __has_include("cp/grading.h")
-// grading.h declares its own cp::TileKey, which collides with render_mesh.h's: rename it for this TU.
-#define TileKey GradingTileKey
 #include "cp/grading.h"
-#undef TileKey
 #undef CPB_GRADING
 #define CPB_GRADING 1
 #endif
