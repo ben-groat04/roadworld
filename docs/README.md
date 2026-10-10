@@ -30,6 +30,13 @@ Entry point for a new session: **HANDOFF.md**, then `CLAUDE.md` (repo root), the
 - `research/pcg-city-research.md` – Epic's PCG City Sample; buildings stay in sim_core, PCG for dressing only.
 - `research/mesh-terrain-research.md` – Mesh Terrain: verdict stays "avoid" (editor-only modifiers).
 - `research/pre-research.md` – v0 licence and data pre-research (CGAL ruled out, Clipper2). Historical.
+- `research/reference-claims-audit.md` – 11 Oct 2026 audit of every doc that says what real roads or the reference photos look like: claims, verdicts, files opened, edits, open hits.
 
 ## Progress
 - `progress/2026-10-10-structures/` – first structure and earthwork renders: `INDEX.md` (scenarios) and `REVIEW.md` (cold-read score 4.5/10). Snapshot; later rounds get their own dated folder.
+
+## Reference claims (rule)
+- Any statement about what the reference photos show (colour, wear, proportions, vegetation, light) must name the reference files that were actually opened for it, e.g. "(gsv 180248, street/02)". Text in an INDEX is not an opened reference.
+- Review briefs for cold readers must require this: list the files opened, and mark anything not seen in a photo as "unverified against references".
+- A score or verdict based on fewer than two opened references for that view must say so next to the score.
+- Numbers derived from such claims (albedo, wear percentages, patch densities) carry the same rule; the audit in `research/reference-claims-audit.md` shows what went wrong when it was skipped.

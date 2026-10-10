@@ -29,3 +29,4 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - **Send the person progress pictures** whenever new visual results exist.
 - **The main session never audits screenshots or code itself**: visual and code review go to cold-read Sonnet agents; the main session reads only their reports.
 - **New session? Read `docs/HANDOFF.md` first.**
+- **Reference claims need opened references.** Any statement about what the reference photos show must name the reference files actually opened; review briefs must require this, and a score based on fewer than two opened references per view must say so (see `docs/README.md`, "Reference claims").

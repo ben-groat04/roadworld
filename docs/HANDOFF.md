@@ -54,7 +54,7 @@ All in `CLAUDE.md`, plus these from the person (also in Claude's local memory):
 
 **Assets**: 10 Poly Haven CC0 2K texture sets (`unreal/CityPainter/SourceArt/Textures/PolyHaven/`, LFS); Blender-scripted kit of 67 Nanite-ready pieces (`tools/blender_kit/`, FBX in `SourceArt/Meshes/Kit/`).
 
-**References** (private, gitignored, never commit): `docs/reference/gsv/` (11 Street View shots + `compare/`), `aerial/` (45, CC), `street/` (37, CC), each with an INDEX.
+**References** (private, gitignored, never commit): `docs/reference/gsv/` (12 Street View shots + `compare/`), `aerial/` (45, CC), `street/` (37, CC), each with an INDEX.
 
 ## 4. Decisions (see the planning log; one line each)
 

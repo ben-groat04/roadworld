@@ -1,6 +1,6 @@
 # Cold-read review, round 3 (10 Oct 2026)
 
-Compared r3 against r1 and r2 images and (by INDEX text, nothing copied) reference street/01 (wall 2.5-3.5 m, coping, end) and street/03
+Compared r3 against r1 and r2 images and (by INDEX text only, the images were not opened at the time; street/01 and street/03 were checked against the images on 11 Oct 2026 and the figures below hold: wall about 3.5-4 m at the tall end with stone coping and a curved return; wall end stepping up at roughly 40-45 degrees) reference street/01 (wall 2.5-3.5 m, coping, end) and street/03
 (wall end stepping diagonally into the bank at 35-40 deg). Geometry and engineering plausibility only.
 
 ## Direct answers

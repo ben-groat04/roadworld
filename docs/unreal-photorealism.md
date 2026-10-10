@@ -48,7 +48,7 @@ Context: UE 5.8 shipped 17 Jun 2026 and is reported as the last UE5 release (80.
 - **Verdict:** **adopt for v0** on terrain + road blend; test one 1 km RVT volume.
 
 ### Decals and mesh decals (road markings, cracks, wear)
-- **Realism:** markings, patches, cracks, oil stains, manholes break the "clean mesh" look.
+- **Realism:** markings, patches, cracks, oil stains (oil stains are not visible in any reference photo opened; unverified), manholes break the "clean mesh" look.
 - **Fit:** two approaches. (1) **Generated marking meshes** (thin strips at a small offset, or UV-mapped onto the road mesh using a marking atlas): deterministic, works with Nanite-less runtime roads, cheap, easy to LOD/cull; z-fighting solved with depth bias / polygon offset in material. (2) **Deferred decals** projected on roads: flexible for cracks/patches but cost scales with overlap and number; poor with Nanite VSM interplay; lots of decals are expensive. Recommended: markings as geometry (the sim already generates them from the lane graph), wear/cracks as a **material layer + RVT** and a few decals for hero spots. Mesh decals exist for Nanite-less overlays. 5.8 adds deferred decals on mobile only; no desktop change noted. [5.8 verified for mobile]
 - **Cost:** low for geometry markings; deferred decals ~0.3-1 ms for a few hundred visible.
 - **Maturity:** production.
