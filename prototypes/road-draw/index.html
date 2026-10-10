@@ -1273,8 +1273,12 @@ function buildRoadGroup(r) {
       let u = [-t[1] * sg, t[0] * sg];
       if (q.h !== undefined && u[0] * -Math.sin(q.h) * sg + u[1] * Math.cos(q.h) * sg < 0) u = [-u[0], -u[1]];
       const gi = gAt(q.x, q.y), go = gAt(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T), zb = Math.min(q.zBot, gi, go, hB(q.x, q.y), hB(q.x + u[0] * WALL_T, q.y + u[1] * WALL_T)) - 1.0, top = Math.min(q.top, q.zTop + 0.7, Math.max(Math.min(gi, go) + 0.55, zb + 0.1));   // fill wall: barrier-height cap (+0.55 above road level)
-      topRaw.push(top); zbA.push(zb); uA.push(u);
+      const topC = run.cut ? Math.max(...[0, 0.5, 1.0, 1.5].map(e => gAt(q.x + u[0] * e, q.y + u[1] * e))) + 0.3 : top;   // cut wall: just clear the ACTUAL graded ground (lower than natural where the wall tapers out at a run end)
+      topRaw.push(topC); zbA.push(zb); uA.push(u);
     }
+    // Clean foundation line: moving-min then moving-average of the foot (+-4 m). Never above the per-station foot, so still below the ground everywhere, but no 0.5 m grid sawtooth.
+    { const W = 8, mn = zbA.map((_, i) => { let v = 1e9; for (let j = Math.max(0, i - W); j <= Math.min(m - 1, i + W); j++) v = Math.min(v, zbA[j]); return v; });
+      for (let i = 0; i < m; i++) { let sum = 0, c = 0; for (let j = Math.max(0, i - W); j <= Math.min(m - 1, i + W); j++) { sum += mn[j]; c++; } zbA[i] = sum / c; } }
     // Stepped coping: fixed-length panels (PANEL_L m), each with a level top quantised UP to PANEL_Q m. A panel's required top is the max of the raw tops over its stations (so retained ground / road edge is always covered).
     // Hysteresis: the top rises as soon as a panel needs it, but only steps down when the lower need persists for two panels (no single-panel dip). A step is two stations at one place with a closed vertical face (see wallStations).
     const PANEL_L = 4, PANEL_Q = 0.25, nP = Math.max(1, Math.round(tot / PANEL_L)), pIdx = i => Math.min(nP - 1, Math.floor(cum[i] / (tot / nP) + 1e-9));

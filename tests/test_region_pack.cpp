@@ -26,7 +26,7 @@ TEST_CASE("UK region pack loads from the repo data dir") {
     CHECK(pack->driving_side == DrivingSide::Left);
     CHECK(pack->headroom_m == doctest::Approx(5.3));
     CHECK(pack->lane_types.size() == 7);
-    CHECK(pack->road_types.size() == 4);
+    CHECK(pack->road_types.size() == 5);
 
     const RoadType* res = pack->road_type("residential");
     REQUIRE(res);
@@ -100,4 +100,56 @@ TEST_CASE("region pack validation reports clear errors") {
     CHECK_FALSE(dup);
 
     CHECK_FALSE(load_region_pack_by_id(CP_DATA_DIR, "atlantis"));
+}
+
+TEST_CASE("roundabout ring road type and tunables") {
+    auto pack = load_region_pack_by_id(CP_DATA_DIR, "uk");
+    REQUIRE_MESSAGE(pack, pack.error);
+    int flagged = 0;
+    for (const auto& [id, t] : pack->road_types) {
+        if (!t.roundabout_ring) continue;
+        ++flagged;
+        CHECK(!t.two_way);
+        CHECK(!t.dual);
+        CHECK(id == "roundabout_ring");
+    }
+    CHECK(flagged == 1);
+    const RoadType* ring = pack->road_type("roundabout_ring");
+    REQUIRE(ring);
+    int driving = 0;
+    for (const auto& s : ring->one_way_variant) driving += s.lane_type == "driving" ? 1 : 0;
+    CHECK(driving == 2);
+    CHECK(pack->road_type("b_road")->roundabout_ring == false);
+    const RoundaboutRules& r = pack->roundabout;
+    CHECK(r.max_tool_radius == doctest::Approx(100));
+    CHECK(r.min_tool_radius == doctest::Approx(8));
+    CHECK(r.entry_corner_radius == doctest::Approx(8));
+    CHECK(r.exit_corner_radius == doctest::Approx(12));
+}
+
+TEST_CASE("roundabout_ring validation and fallbacks") {
+    auto lt = parse_lane_types(kLaneTypes);
+    REQUIRE(lt);
+    const std::string two_way_ring = R"({"road_types":[{"id":"r","two_way":true,"roundabout_ring":true,"speed_limit":50,
+      "design_speed_kph":50,"half":[{"lane":"driving","width_m":3.0}],"one_way_variant":[{"lane":"driving","width_m":3.0}],
+      "vertical_k":{"crest":10,"sag":9}}]})";
+    auto bad = parse_region_pack(*lt, kRegion, two_way_ring);
+    CHECK_FALSE(bad);
+    CHECK(bad.error.find("one-way") != std::string::npos);
+
+    // A pack that omits the "roundabout" object gets the RoundaboutRules fallbacks.
+    auto plain = parse_region_pack(*lt, kRegion, road_types(R"({"lane":"driving","width_m":3.0})"));
+    REQUIRE_MESSAGE(plain, plain.error);
+    CHECK(plain->roundabout.max_tool_radius == doctest::Approx(RoundaboutRules{}.max_tool_radius));
+    CHECK(plain->road_type("r")->roundabout_ring == false);
+
+    auto odd = parse_region_pack(*lt, R"({"id":"t","driving_side":"right","speed_unit":"kph",
+        "roundabout":{"max_tool_radius_m":50,"min_tool_radius_m":60}})",
+                                 road_types(R"({"lane":"driving","width_m":3.0})"));
+    CHECK_FALSE(odd);
+    auto set = parse_region_pack(*lt, R"({"id":"t","driving_side":"right","speed_unit":"kph",
+        "roundabout":{"max_tool_radius_m":50}})",
+                                 road_types(R"({"lane":"driving","width_m":3.0})"));
+    REQUIRE_MESSAGE(set, set.error);
+    CHECK(set->roundabout.max_tool_radius == doctest::Approx(50));
 }

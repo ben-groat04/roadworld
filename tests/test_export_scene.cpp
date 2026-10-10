@@ -19,7 +19,7 @@ struct Fixture {
         std::string err;
         scene = build_scene("interchange", CP_DATA_DIR, err);
         REQUIRE_MESSAGE(scene, err);
-        js = scene_junctions(*scene);
+        js = scene_junctions(*scene, &rb);
     }
 };
 
@@ -59,7 +59,7 @@ TEST_CASE("interchange fixture builds with the expected junction kinds") {
     const Fixture& f = fx();
     int merges = 0, diverges = 0, roundabouts = 0, four = 0, three = 0;
     for (const auto& [n, j] : f.js.junctions) {
-        if (j.kind == JunctionKind::Roundabout) ++roundabouts;
+        if (j.kind == JunctionKind::Roundabout) continue;
         else if (j.cls == NodeClass::Merge) ++merges;
         else if (j.cls == NodeClass::Diverge) ++diverges;
         else if (j.arms.size() == 4) ++four;
@@ -87,7 +87,7 @@ TEST_CASE("interchange: every inbound lane has an enabled connector") {
 
 TEST_CASE("interchange: junction polygons are valid") {
     for (const auto& [n, j] : fx().js.junctions) {
-        CHECK_MESSAGE(!j.carriageway.empty(), "node " << n.value);
+        if (j.cls != NodeClass::Joint) CHECK_MESSAGE(!j.carriageway.empty(), "node " << n.value);
         for (const PolygonSet* ps : {&j.carriageway, &j.pavements, &j.gore})
             for (const auto& ring : *ps) CHECK_MESSAGE(ring_valid(ring), "node " << n.value);
         for (const LaneConnector& c : j.connectors) CHECK(c.path.size() >= 2);
@@ -129,4 +129,50 @@ TEST_CASE("interchange: JSON export has the v1 shape") {
                             "\"connectors\"", "\"trims\"", "\"structure\":\"bridge\"", "\"kind\":\"roundabout\"",
                             "\"kind\":\"merge\"", "\"kind\":\"diverge\""})
         CHECK_MESSAGE(j.find(key) != std::string::npos, key);
+}
+
+TEST_CASE("interchange: JSON has the roundabout group, give-way and no export errors") {
+    const Fixture& f = fx();
+    int errors = -1;
+    const std::string j = export_scene_json(*f.scene, f.js, &errors);
+    CHECK(errors == 0);
+    CHECK(j.find("\"roundabouts\":[{\"nodes\":[") != std::string::npos);
+    for (const char* key : {"\"giveWay\":[{", "\"yieldsTo\"", "\"island\":[[[", "\"splitters\"", "\"centre\"", "\"roundaboutProblems\":[]",
+                            "\"exportErrors\":0", "\"ok\":true"})
+        CHECK_MESSAGE(j.find(key) != std::string::npos, key);
+    CHECK(j.find("nan") == std::string::npos);
+    CHECK(j.find("inf") == std::string::npos);
+}
+
+TEST_CASE("JSON helpers: non-finite numbers, escapes and locale independence") {
+    bool finite = true;
+    CHECK(json_number(std::nan(""), 3, &finite) == "null");
+    CHECK_FALSE(finite);
+    finite = true;
+    CHECK(json_number(HUGE_VAL, 3, &finite) == "null");
+    CHECK_FALSE(finite);
+    finite = true;
+    CHECK(json_number(-HUGE_VAL, 3, &finite) == "null");
+    CHECK_FALSE(finite);
+    finite = true;
+    CHECK(json_number(1.5, 3, &finite) == "1.500");
+    CHECK(finite);
+    CHECK(json_number(-0.0, 3) == "0.000");
+    CHECK(json_number(-0.0001, 3) == "0.000");
+    CHECK(json_number(-2.5, 1) == "-2.5");
+    CHECK(json_number(0.12345678, 5) == "0.12346");
+
+    CHECK(json_string("a\"b\c") == "\"a\\\"b\\c\"");
+    CHECK(json_string("l1\nl2\t\r") == "\"l1\nl2\t\r\"");
+    CHECK(json_string(std::string("x\x01y\x1f")) == "\"x\u0001y\u001f\"");
+    CHECK(json_string("plain") == "\"plain\"");
+
+    // A comma-decimal C locale must not leak into the output (skipped if no such locale is installed).
+    const std::string old = std::setlocale(LC_NUMERIC, nullptr);
+    for (const char* name : {"de_DE.UTF-8", "de_DE", "German_Germany.1252", "fr_FR.UTF-8", "fr_FR"}) {
+        if (!std::setlocale(LC_NUMERIC, name)) continue;
+        CHECK(json_number(1.5, 3) == "1.500");
+        break;
+    }
+    std::setlocale(LC_NUMERIC, old.c_str());
 }
