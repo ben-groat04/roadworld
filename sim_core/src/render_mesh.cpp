@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "cp/edge_sampling.h"
+#include "cp/geom.h"
 #include "cp/lanes.h"
 #include "cp/triangulate.h"
 
@@ -28,27 +29,11 @@ constexpr double kSnapLat = 0.02;   // m, lateral tolerance for snapping to kerb
 
 using u32 = std::uint32_t;
 
-Vec3 operator-(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-Vec3 operator+(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-Vec3 operator*(Vec3 a, double s) { return {a.x * s, a.y * s, a.z * s}; }
-Vec3 cross(Vec3 a, Vec3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
-double dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-double length(Vec3 a) { return std::sqrt(dot(a, a)); }
 Vec3 normalized(Vec3 a, Vec3 fallback) {
     const double l = length(a);
     return l > 1e-12 ? a * (1 / l) : fallback;
 }
 
-// splitmix64-based stable hash: the same inputs give the same value on every platform.
-std::uint64_t mix(std::uint64_t z) {
-    z += 0x9E3779B97F4A7C15ull;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-    return z ^ (z >> 31);
-}
-double hash01(std::uint64_t a, std::int64_t b) {
-    return static_cast<double>(mix(mix(a) ^ static_cast<std::uint64_t>(b)) >> 11) * (1.0 / 9007199254740992.0);
-}
 // Smooth stable value in 0..1 that changes every `period` metres along an edge.
 double lowfreq(EdgeId e, double s, double period) {
     const double q = s / period, k = std::floor(q), f = q - k, t = f * f * (3 - 2 * f);
@@ -1012,13 +997,6 @@ bool finite_ring(const std::vector<Vec2>& r) {
     for (const Vec2& p : r)
         if (!std::isfinite(p.x) || !std::isfinite(p.y)) return false;
     return true;
-}
-
-double dist_point_segment(Vec2 p, Vec2 a, Vec2 b) {
-    const Vec2 ab = b - a;
-    const double l2 = ab.dot(ab);
-    const double t = l2 > 0 ? std::clamp((p - a).dot(ab) / l2, 0.0, 1.0) : 0.0;
-    return (p - (a + ab * t)).length();
 }
 
 struct Seg2 {

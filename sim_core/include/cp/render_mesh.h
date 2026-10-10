@@ -4,7 +4,7 @@
 // without further geometry work. Derived data only; rebuilt from the road graph + junctions.
 //
 // Conventions
-//  - Sim frame: metres, x east, y north, z up, right-handed (the plugin converts in CPCoords.h).
+//  - Sim frame: metres, x east, y north, z up, right-handed (the plugin converts in CPRoadMeshBuild.h).
 //  - Winding is counter-clockwise seen from the front face (outward normal), so every upward
 //    facing surface has a +z normal. Kerb faces point toward the carriageway.
 //  - Surface classes are strings: LaneType::surface of the lane that owns a strip ("asphalt",

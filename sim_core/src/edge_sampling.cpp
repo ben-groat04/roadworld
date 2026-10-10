@@ -3,11 +3,22 @@
 #include <algorithm>
 #include <cmath>
 
+#include "cp/geom.h"
+
 namespace cp {
 
-namespace {
+double edge_heading(const Edge& e, double s) {
+    double acc = 0;
+    for (std::size_t i = 0; i < e.horizontal.spans.size(); ++i) {
+        const Clothoid& c = e.horizontal.spans[i];
+        if (s <= acc + c.length || i + 1 == e.horizontal.spans.size())
+            return c.heading(std::clamp(s - acc, 0.0, c.length));
+        acc += c.length;
+    }
+    return 0;
+}
 
-constexpr double kEps = 1e-9;
+namespace {
 
 struct SpanRef {
     const Clothoid* c;

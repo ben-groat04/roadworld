@@ -11,6 +11,7 @@
 
 #include "cp/junction_roundabout.h"
 #include "cp/road_commands.h"
+#include "json_util.h"
 #include "nlohmann/json.hpp"
 
 namespace cp {
@@ -28,13 +29,7 @@ std::string idx(const char* what, std::size_t i) { return std::string(what) + "[
 
 // ---------------------------------------------------------------- parsing
 
-struct Err {
-    std::string msg;
-    bool failed() const { return !msg.empty(); }
-    void set(const std::string& m) {
-        if (msg.empty()) msg = m;
-    }
-};
+using jsonu::Err;
 
 bool ignored_key(const std::string& k) { return (!k.empty() && k[0] == '_') || k == "notes"; }
 
@@ -55,11 +50,7 @@ void check_keys(const json& j, std::initializer_list<const char*> allowed, const
     }
 }
 
-const json* member(const json& j, const char* key) {
-    if (!j.is_object()) return nullptr;
-    auto it = j.find(key);
-    return it == j.end() ? nullptr : &*it;
-}
+using jsonu::member;
 
 const json* need(const json& j, const char* key, const std::string& ctx, Err& err) {
     if (err.failed()) return nullptr;

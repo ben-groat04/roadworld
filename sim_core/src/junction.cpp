@@ -1,6 +1,7 @@
 // Junction orchestration and the small shared pieces: arm collection, classification,
 // major-arm derivation, override resolution. See docs/junctions.md.
 #include "cp/junction.h"
+#include "cp/geom.h"
 #include "cp/junction_roundabout.h"
 
 #include <algorithm>
@@ -271,11 +272,7 @@ std::vector<PocketPlan> plan_pockets(const Junction& j, const RegionPack& region
     return out;
 }
 
-double area2(const std::vector<Vec2>& r) {
-    double a = 0;
-    for (std::size_t i = 0; i < r.size(); ++i) a += r[i].cross(r[(i + 1) % r.size()]);
-    return a;
-}
+double area2(const std::vector<Vec2>& r) { return 2 * signed_area(r); }  // exact: halving then doubling a double
 
 // Pocket lane and hatched ghost island polygons, from the finished flare of the pocket's arm.
 void build_pocket_polygons(const Junction& j, TurnPocket& p) {

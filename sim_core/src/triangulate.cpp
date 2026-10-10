@@ -1,5 +1,7 @@
 #include "cp/triangulate.h"
 
+#include "cp/geom.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -20,13 +22,6 @@ double ring_area(const std::vector<Vec2>& pts, const Ring& r) {
     double a = 0;
     for (std::size_t i = 0; i < r.size(); ++i) a += pts[r[i]].cross(pts[r[(i + 1) % r.size()]]);
     return a / 2;
-}
-
-double dist_point_segment(Vec2 p, Vec2 a, Vec2 b) {
-    const Vec2 ab = b - a;
-    const double l2 = ab.dot(ab);
-    const double t = l2 > 0 ? std::clamp((p - a).dot(ab) / l2, 0.0, 1.0) : 0.0;
-    return (p - (a + ab * t)).length();
 }
 
 bool point_in_ring(Vec2 p, const std::vector<Vec2>& pts, const Ring& r) {

@@ -40,6 +40,10 @@ struct OffsetPolyline {
 // Centreline samples from s = 0 to the edge length (both ends included).
 std::vector<EdgeSample> sample_centreline(const Edge& e, const SamplingParams& p = {});
 
+// Heading of the edge's centreline at arc length s (rad CCW from +x; s outside the edge clamps to the
+// first/last span; 0 for an edge with no spans).
+double edge_heading(const Edge& e, double s);
+
 // Exact ranges (per clothoid span, then merged) where offset * curvature >= 1.
 std::vector<FoldRange> find_folds(const Edge& e, double offset);
 

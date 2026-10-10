@@ -3,20 +3,10 @@
 #include <algorithm>
 #include <cmath>
 
+#include "cp/edge_sampling.h"
+
 namespace cp {
 namespace {
-
-// Heading of the edge's centreline at arc length s.
-double edge_heading(const Edge& e, double s) {
-    double acc = 0;
-    for (std::size_t i = 0; i < e.horizontal.spans.size(); ++i) {
-        const Clothoid& c = e.horizontal.spans[i];
-        if (s <= acc + c.length || i + 1 == e.horizontal.spans.size())
-            return c.heading(std::clamp(s - acc, 0.0, c.length));
-        acc += c.length;
-    }
-    return 0;
-}
 
 // Arc length of each interior control point (spans start at the points).
 std::vector<double> interior_s(const Edge& e) {

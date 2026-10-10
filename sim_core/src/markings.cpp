@@ -17,8 +17,10 @@
 #include <vector>
 
 #include "cp/edge_sampling.h"
+#include "cp/geom.h"
 #include "cp/lanes.h"
 #include "cp/render_mesh.h"
+#include "json_util.h"
 #include "nlohmann/json.hpp"
 
 namespace cp {
@@ -27,7 +29,6 @@ namespace {
 
 using json = nlohmann::json;
 
-constexpr double kEps = 1e-9;
 constexpr double kMinArea = 1e-6;  // m^2, polygons below this are dropped as degenerate
 
 std::uint16_t intern(std::vector<std::string>& v, const std::string& s) {
@@ -261,19 +262,9 @@ const RuleSet* MarkingRules::set(const std::string& id) const {
 
 namespace {
 
-struct Err {
-    std::string msg;
-    bool failed() const { return !msg.empty(); }
-    void set(const std::string& m) {
-        if (msg.empty()) msg = m;
-    }
-};
+using jsonu::Err;
 
-const json* mem(const json& j, const char* key) {
-    if (!j.is_object()) return nullptr;
-    auto it = j.find(key);
-    return it == j.end() ? nullptr : &*it;
-}
+using jsonu::member;
 
 void check_keys(const json& j, std::initializer_list<const char*> allowed, const std::string& ctx, Err& err) {
     if (!j.is_object()) {
@@ -291,7 +282,7 @@ void check_keys(const json& j, std::initializer_list<const char*> allowed, const
 }
 
 double num(const json& j, const char* key, double def, const std::string& ctx, Err& err) {
-    const json* v = mem(j, key);
+    const json* v = member(j, key);
     if (!v) return def;
     if (!v->is_number()) {
         err.set(ctx + ": \"" + key + "\" must be a number");
@@ -311,7 +302,7 @@ int int_num(const json& j, const char* key, int def, int lo, int hi, const std::
 }
 
 std::string str(const json& j, const char* key, const std::string& def, const std::string& ctx, Err& err) {
-    const json* v = mem(j, key);
+    const json* v = member(j, key);
     if (!v) return def;
     if (!v->is_string()) {
         err.set(ctx + ": \"" + key + "\" must be a string");
@@ -321,7 +312,7 @@ std::string str(const json& j, const char* key, const std::string& def, const st
 }
 
 bool flag(const json& j, const char* key, bool def, const std::string& ctx, Err& err) {
-    const json* v = mem(j, key);
+    const json* v = member(j, key);
     if (!v) return def;
     if (!v->is_boolean()) {
         err.set(ctx + ": \"" + key + "\" must be a boolean");
@@ -344,14 +335,14 @@ MarkCond parse_cond(const json* j, double unit, const std::string& ctx, Err& err
     check_keys(*j, {"speed_max", "speed_min", "width_min", "width_max", "lanes_min", "lanes_max", "shoulder", "one_way"},
                ctx + " \"if\"", err);
     if (err.failed()) return c;
-    if (mem(*j, "speed_max")) c.speed_max = num(*j, "speed_max", 0, ctx, err) * unit;
-    if (mem(*j, "speed_min")) c.speed_min = num(*j, "speed_min", 0, ctx, err) * unit;
-    if (mem(*j, "width_min")) c.width_min = num(*j, "width_min", 0, ctx, err);
-    if (mem(*j, "width_max")) c.width_max = num(*j, "width_max", 0, ctx, err);
-    if (mem(*j, "lanes_min")) c.lanes_min = int_num(*j, "lanes_min", 0, 0, 64, ctx, err);
-    if (mem(*j, "lanes_max")) c.lanes_max = int_num(*j, "lanes_max", 0, 0, 64, ctx, err);
-    if (mem(*j, "shoulder")) c.shoulder = flag(*j, "shoulder", false, ctx, err);
-    if (mem(*j, "one_way")) c.one_way = flag(*j, "one_way", false, ctx, err);
+    if (member(*j, "speed_max")) c.speed_max = num(*j, "speed_max", 0, ctx, err) * unit;
+    if (member(*j, "speed_min")) c.speed_min = num(*j, "speed_min", 0, ctx, err) * unit;
+    if (member(*j, "width_min")) c.width_min = num(*j, "width_min", 0, ctx, err);
+    if (member(*j, "width_max")) c.width_max = num(*j, "width_max", 0, ctx, err);
+    if (member(*j, "lanes_min")) c.lanes_min = int_num(*j, "lanes_min", 0, 0, 64, ctx, err);
+    if (member(*j, "lanes_max")) c.lanes_max = int_num(*j, "lanes_max", 0, 0, 64, ctx, err);
+    if (member(*j, "shoulder")) c.shoulder = flag(*j, "shoulder", false, ctx, err);
+    if (member(*j, "one_way")) c.one_way = flag(*j, "one_way", false, ctx, err);
     return c;
 }
 
@@ -370,8 +361,8 @@ StyleSel parse_style_sel(const json* j, double unit, const std::string& ctx, Err
         check_keys(e, {"if", "style"}, ctx, err);
         if (err.failed()) return sel;
         StyleChoice c;
-        c.when = parse_cond(mem(e, "if"), unit, ctx, err);
-        const json* s = mem(e, "style");
+        c.when = parse_cond(member(e, "if"), unit, ctx, err);
+        const json* s = member(e, "style");
         if (!s || !s->is_string()) {
             err.set(ctx + ": a style choice needs a string \"style\"");
             return sel;
@@ -397,8 +388,8 @@ ValueSel parse_value_sel(const json* j, double unit, const std::string& ctx, Err
         check_keys(e, {"if", "value"}, ctx, err);
         if (err.failed()) return sel;
         ValueChoice c;
-        c.when = parse_cond(mem(e, "if"), unit, ctx, err);
-        const json* v = mem(e, "value");
+        c.when = parse_cond(member(e, "if"), unit, ctx, err);
+        const json* v = member(e, "value");
         if (!v || !v->is_number()) {
             err.set(ctx + ": a value choice needs a numeric \"value\"");
             return sel;
@@ -453,7 +444,7 @@ std::vector<std::vector<Vec2>> mirrored(std::vector<std::vector<Vec2>> polys) {
 }
 
 void parse_styles(const json& root, MarkingRules& r, Err& err) {
-    const json* st = mem(root, "styles");
+    const json* st = member(root, "styles");
     if (!st || !st->is_object()) {
         err.set("marking rules: missing \"styles\" object");
         return;
@@ -471,7 +462,7 @@ void parse_styles(const json& root, MarkingRules& r, Err& err) {
         ls.min_mark = num(e, "min_mark_m", 0, ctx, err);
         ls.source = str(e, "source", "", ctx, err);
         if (ls.colour.empty()) err.set(ctx + ": missing \"colour\"");
-        const json* sa = mem(e, "strands");
+        const json* sa = member(e, "strands");
         if (sa) {
             if (!sa->is_array() || sa->empty()) err.set(ctx + ": \"strands\" must be a non-empty list");
             else
@@ -497,7 +488,7 @@ void parse_styles(const json& root, MarkingRules& r, Err& err) {
 }
 
 void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
-    const json* ss = mem(root, "sets");
+    const json* ss = member(root, "sets");
     if (!ss || !ss->is_object()) {
         err.set("marking rules: missing \"sets\" object");
         return;
@@ -509,7 +500,7 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
         if (err.failed()) return;
         RuleSet rs;
         rs.id = it.key();
-        if (const json* bs = mem(it.value(), "boundaries")) {
+        if (const json* bs = member(it.value(), "boundaries")) {
             if (!bs->is_array()) err.set(sctx + ": \"boundaries\" must be a list");
             else
                 for (const json& b : *bs) {
@@ -528,11 +519,11 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
                     else if (rel == "opposing") br.relation = BoundaryRule::Relation::Opposing;
                     else if (rel == "same") br.relation = BoundaryRule::Relation::Same;
                     else err.set(ctx + ": relation must be any, opposing or same");
-                    br.style = parse_style_sel(mem(b, "style"), unit, ctx, err);
+                    br.style = parse_style_sel(member(b, "style"), unit, ctx, err);
                     br.inset_m = num(b, "inset_m", 0, ctx, err);
                     br.source = str(b, "source", "", ctx, err);
                     if (br.source.empty()) err.set(ctx + ": missing \"source\"");
-                    if (const json* zs = mem(b, "zones")) {
+                    if (const json* zs = member(b, "zones")) {
                         if (!zs->is_array()) err.set(ctx + ": \"zones\" must be a list");
                         else
                             for (const json& z : *zs) {
@@ -544,11 +535,11 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
                                 if (kind == "approach") zr.kind = ZoneRule::Kind::Approach;
                                 else if (kind == "curvature") zr.kind = ZoneRule::Kind::Curvature;
                                 else err.set(ctx + ": zone kind must be approach or curvature");
-                                zr.distance_m = parse_value_sel(mem(z, "distance_m"), unit, ctx, err);
-                                zr.min_marks = parse_value_sel(mem(z, "min_marks"), unit, ctx, err);
+                                zr.distance_m = parse_value_sel(member(z, "distance_m"), unit, ctx, err);
+                                zr.min_marks = parse_value_sel(member(z, "min_marks"), unit, ctx, err);
                                 zr.min_curvature = num(z, "min_curvature", 0, ctx, err);
                                 zr.min_length_m = num(z, "min_length_m", 0, ctx, err);
-                                zr.style = parse_style_sel(mem(z, "style"), unit, ctx, err);
+                                zr.style = parse_style_sel(member(z, "style"), unit, ctx, err);
                                 zr.source = str(z, "source", "", ctx, err);
                                 if (zr.kind == ZoneRule::Kind::Curvature && !(zr.min_curvature > 0))
                                     err.set(ctx + ": a curvature zone needs min_curvature > 0");
@@ -559,7 +550,7 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
                     rs.boundaries.push_back(std::move(br));
                 }
         }
-        if (const json* bs = mem(it.value(), "bays")) {
+        if (const json* bs = member(it.value(), "bays")) {
             if (!bs->is_array()) err.set(sctx + ": \"bays\" must be a list");
             else
                 for (const json& b : *bs) {
@@ -567,7 +558,7 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
                     if (err.failed()) return;
                     BayRule br;
                     br.lane_type = str(b, "lane_type", "", sctx, err);
-                    br.length_m = parse_value_sel(mem(b, "length_m"), unit, sctx, err);
+                    br.length_m = parse_value_sel(member(b, "length_m"), unit, sctx, err);
                     br.style = str(b, "style", "", sctx, err);
                     br.keepout_m = num(b, "keepout_m", 0, sctx, err);
                     br.edge_clear_m = num(b, "edge_clear_m", 0.06, sctx, err);
@@ -577,7 +568,7 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
                     rs.bays.push_back(std::move(br));
                 }
         }
-        if (const json* gt = mem(it.value(), "give_way_triangle")) {
+        if (const json* gt = member(it.value(), "give_way_triangle")) {
             if (!gt->is_string()) err.set(sctx + ": give_way_triangle must be a string");
             else if (gt->get<std::string>() == "always") rs.give_way_triangle = TriangleMode::Always;
             else if (gt->get<std::string>() == "never") rs.give_way_triangle = TriangleMode::Never;
@@ -590,11 +581,11 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
 }
 
 void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
-    const json* jn = mem(root, "junction");
+    const json* jn = member(root, "junction");
     if (!jn) return;
     check_keys(*jn, {"give_way", "stop_line", "zebra", "roundabout_entry", "gore", "arrows", "mouth_edge", "splitter"}, "junction", err);
     if (err.failed()) return;
-    if (const json* g = mem(*jn, "give_way")) {
+    if (const json* g = member(*jn, "give_way")) {
         check_keys(*g, {"style", "setback_m", "line_gap_m", "triangle", "equal_class", "equal_class_max_deviation_deg", "source"}, "give_way", err);
         {
             const std::string eq = str(*g, "equal_class", "straightest_pair_has_priority", "give_way", err);
@@ -604,11 +595,11 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
             r.give_way.equal_class_max_deviation_deg = num(*g, "equal_class_max_deviation_deg", 30, "give_way", err);
         }
         r.give_way.enabled = true;
-        r.give_way.style = parse_style_sel(mem(*g, "style"), unit, "give_way", err);
+        r.give_way.style = parse_style_sel(member(*g, "style"), unit, "give_way", err);
         r.give_way.setback_m = num(*g, "setback_m", 0.5, "give_way", err);
         r.give_way.line_gap_m = num(*g, "line_gap_m", 0.3, "give_way", err);
         r.give_way.source = str(*g, "source", "", "give_way", err);
-        if (const json* t = mem(*g, "triangle")) {
+        if (const json* t = member(*g, "triangle")) {
             check_keys(*t, {"style", "mode", "major_speed_at_least", "major_class_at_least", "gap_from_line_m", "base_m", "height_m", "stroke_m"}, "give_way triangle", err);
             r.give_way.triangle = true;
             r.give_way.triangle_style = str(*t, "style", "", "give_way triangle", err);
@@ -621,14 +612,14 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
             else if (mode == "never") r.give_way.triangle_mode = TriangleMode::Never;
             else if (mode == "conditional") r.give_way.triangle_mode = TriangleMode::Conditional;
             else err.set("give_way triangle: mode must be always, never or conditional");
-            if (mem(*t, "major_speed_at_least")) r.give_way.triangle_major_speed_min = num(*t, "major_speed_at_least", 0, "give_way triangle", err) * unit;
-            if (mem(*t, "major_class_at_least")) r.give_way.triangle_major_class_min = int_num(*t, "major_class_at_least", 0, 0, 100000, "give_way triangle", err);
+            if (member(*t, "major_speed_at_least")) r.give_way.triangle_major_speed_min = num(*t, "major_speed_at_least", 0, "give_way triangle", err) * unit;
+            if (member(*t, "major_class_at_least")) r.give_way.triangle_major_class_min = int_num(*t, "major_class_at_least", 0, 0, 100000, "give_way triangle", err);
             if (r.give_way.triangle_mode == TriangleMode::Conditional && !r.give_way.triangle_major_speed_min &&
                 !r.give_way.triangle_major_class_min)
                 err.set("give_way triangle: conditional needs major_speed_at_least or major_class_at_least");
         }
     }
-    if (const json* g = mem(*jn, "stop_line")) {
+    if (const json* g = member(*jn, "stop_line")) {
         check_keys(*g, {"style", "setback_m", "line_gap_m", "source"}, "stop_line", err);
         r.stop_line.enabled = true;
         r.stop_line.style = str(*g, "style", "", "stop_line", err);
@@ -636,7 +627,7 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         r.stop_line.line_gap_m = num(*g, "line_gap_m", 0.3, "stop_line", err);
         r.stop_line.source = str(*g, "source", "", "stop_line", err);
     }
-    if (const json* g = mem(*jn, "zebra")) {
+    if (const json* g = member(*jn, "zebra")) {
         check_keys(*g, {"style", "stripe_width_m", "gap_m", "band_width_m", "clear_m", "give_way_style",
                         "give_way_gap_m", "min_start_gap_m", "source"}, "zebra", err);
         ZebraRule& z = r.zebra;
@@ -652,15 +643,15 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         z.source = str(*g, "source", "", "zebra", err);
         if (!(z.stripe_width_m > 0) || !(z.band_width_m > 0) || z.gap_m < 0) err.set("zebra: widths must be positive");
     }
-    if (const json* g = mem(*jn, "roundabout_entry")) {
+    if (const json* g = member(*jn, "roundabout_entry")) {
         check_keys(*g, {"style", "setback_m", "line_gap_m", "source"}, "roundabout_entry", err);
         r.roundabout_entry.enabled = true;
-        r.roundabout_entry.style = parse_style_sel(mem(*g, "style"), unit, "roundabout_entry", err);
+        r.roundabout_entry.style = parse_style_sel(member(*g, "style"), unit, "roundabout_entry", err);
         r.roundabout_entry.setback_m = num(*g, "setback_m", 0.5, "roundabout_entry", err);
         r.roundabout_entry.line_gap_m = num(*g, "line_gap_m", 0.3, "roundabout_entry", err);
         r.roundabout_entry.source = str(*g, "source", "", "roundabout_entry", err);
     }
-    if (const json* g = mem(*jn, "gore")) {
+    if (const json* g = member(*jn, "gore")) {
         check_keys(*g, {"style", "stripe_width_m", "pitch_m", "angle_deg", "chevron", "same_direction", "opposing", "border_style", "min_area_m2", "edge_style", "edge_inset_m", "source"},
                    "gore", err);
         GoreRule& z = r.gore;
@@ -674,7 +665,7 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         z.chevron.stripe_width_m = z.stripe_width_m;
         z.chevron.pitch_m = z.pitch_m;
         z.chevron.angle_deg = 35;
-        if (const json* c = mem(*g, "chevron")) {
+        if (const json* c = member(*g, "chevron")) {
             check_keys(*c, {"style", "stripe_width_m", "pitch_m", "angle_deg"}, "gore chevron", err);
             z.chevron.style = str(*c, "style", z.style, "gore chevron", err);
             z.chevron.stripe_width_m = num(*c, "stripe_width_m", z.stripe_width_m, "gore chevron", err);
@@ -688,25 +679,25 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         z.opposing = str(*g, "opposing", "diagonal", "gore", err);
         for (const std::string* m : {&z.same_direction, &z.opposing})
             if (*m != "chevron" && *m != "diagonal" && *m != "none") err.set("gore: patterns are chevron, diagonal or none");
-        z.border_style = parse_style_sel(mem(*g, "border_style"), unit, "gore", err);
-        z.edge_style = parse_style_sel(mem(*g, "edge_style"), unit, "gore", err);
+        z.border_style = parse_style_sel(member(*g, "border_style"), unit, "gore", err);
+        z.edge_style = parse_style_sel(member(*g, "edge_style"), unit, "gore", err);
         z.edge_inset_m = num(*g, "edge_inset_m", 0.225, "gore", err);
         z.source = str(*g, "source", "", "gore", err);
         if (!(z.stripe_width_m > 0) || !(z.pitch_m > z.stripe_width_m)) err.set("gore: need 0 < stripe_width_m < pitch_m");
     }
-    if (const json* g = mem(*jn, "mouth_edge")) {
+    if (const json* g = member(*jn, "mouth_edge")) {
         check_keys(*g, {"style", "max_deviation_deg", "source"}, "mouth_edge", err);
         r.mouth_edge.enabled = true;
-        r.mouth_edge.style = parse_style_sel(mem(*g, "style"), unit, "mouth_edge", err);
+        r.mouth_edge.style = parse_style_sel(member(*g, "style"), unit, "mouth_edge", err);
         r.mouth_edge.max_deviation_deg = num(*g, "max_deviation_deg", 30, "mouth_edge", err);
         r.mouth_edge.source = str(*g, "source", "", "mouth_edge", err);
     }
-    if (const json* g = mem(*jn, "splitter")) {
+    if (const json* g = member(*jn, "splitter")) {
         check_keys(*g, {"outline_style", "outline_gap_m", "hatch_style", "hatch_length_m", "hatch_width_m", "stripe_width_m", "pitch_m",
                         "angle_deg", "source"}, "splitter", err);
         SplitterRule& s = r.splitter;
         s.enabled = true;
-        s.outline_style = parse_style_sel(mem(*g, "outline_style"), unit, "splitter", err);
+        s.outline_style = parse_style_sel(member(*g, "outline_style"), unit, "splitter", err);
         s.outline_gap_m = num(*g, "outline_gap_m", 0.15, "splitter", err);
         s.hatch_style = str(*g, "hatch_style", "", "splitter", err);
         s.hatch_length_m = num(*g, "hatch_length_m", 12, "splitter", err);
@@ -717,16 +708,16 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         s.source = str(*g, "source", "", "splitter", err);
         if (!(s.pitch_m > s.stripe_width_m) || !(s.stripe_width_m > 0)) err.set("splitter: need 0 < stripe_width_m < pitch_m");
     }
-    if (const json* g = mem(*jn, "arrows")) {
+    if (const json* g = member(*jn, "arrows")) {
         check_keys(*g, {"min_inbound_lanes", "distances_m", "length_m", "width_m", "style", "glyphs", "source"}, "arrows", err);
         ArrowRule& a = r.arrows;
         a.enabled = true;
         a.min_inbound_lanes = int_num(*g, "min_inbound_lanes", 2, 0, 64, "arrows", err);
-        a.length_m = parse_value_sel(mem(*g, "length_m"), unit, "arrows", err);
+        a.length_m = parse_value_sel(member(*g, "length_m"), unit, "arrows", err);
         a.width_m = num(*g, "width_m", 1.0, "arrows", err);
         a.style = str(*g, "style", "", "arrows", err);
         a.source = str(*g, "source", "", "arrows", err);
-        if (const json* d = mem(*g, "distances_m")) {
+        if (const json* d = member(*g, "distances_m")) {
             if (!d->is_array()) err.set("arrows: distances_m must be a list");
             else
                 for (const json& v : *d) {
@@ -734,7 +725,7 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
                     else a.distances_m.push_back(v.get<double>());
                 }
         }
-        const json* gl = mem(*g, "glyphs");
+        const json* gl = member(*g, "glyphs");
         if (!gl || !gl->is_object()) err.set("arrows: missing \"glyphs\"");
         else {
             for (auto it = gl->begin(); it != gl->end() && !err.failed(); ++it) {
@@ -747,7 +738,7 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
             }
             for (auto it = gl->begin(); it != gl->end() && !err.failed(); ++it) {
                 if (!it.value().is_object()) continue;
-                const json* parts = mem(it.value(), "parts");
+                const json* parts = member(it.value(), "parts");
                 if (!parts || !parts->is_array()) {
                     err.set("glyph \"" + it.key() + "\": expected polygons or {\"parts\": [...]}");
                     break;
@@ -837,12 +828,12 @@ Loaded<MarkingRules> parse_marking_rules(const std::string& text) {
     if (r.speed_unit.empty()) err.set("marking rules: missing \"speed_unit\" (mph, kph or ms)");
     const double unit = unit_to_ms(r.speed_unit, err);
     r.min_mark_m = num(root, "min_mark_m", 0.3, "marking rules", err);
-    if (const json* cs = mem(root, "colours")) {
+    if (const json* cs = member(root, "colours")) {
         if (!cs->is_object()) err.set("marking rules: \"colours\" must be an object");
         else
             for (auto it = cs->begin(); it != cs->end(); ++it) {
                 if (!it.key().empty() && it.key()[0] == '_') continue;
-                const json* rgb = mem(it.value(), "rgb");
+                const json* rgb = member(it.value(), "rgb");
                 MarkingColour c;
                 if (!rgb || !rgb->is_array() || rgb->size() != 3) err.set("colour \"" + it.key() + "\": rgb must be [r, g, b]");
                 else
@@ -855,7 +846,7 @@ Loaded<MarkingRules> parse_marking_rules(const std::string& text) {
     } else {
         err.set("marking rules: missing \"colours\"");
     }
-    if (const json* w = mem(root, "wear")) {
+    if (const json* w = member(root, "wear")) {
         check_keys(*w, {"strength", "patch_period_m", "patch_weight", "wheel_boost", "wheel_offset_m", "wheel_half_width_m", "source"}, "wear", err);
         WearRule& wr = r.wear;
         wr.strength = num(*w, "strength", 0.3, "wear", err);
@@ -867,7 +858,7 @@ Loaded<MarkingRules> parse_marking_rules(const std::string& text) {
         wr.source = str(*w, "source", "", "wear", err);
         if (!(wr.patch_period_m > 0) || wr.strength < 0 || wr.strength > 1) err.set("wear: need patch_period_m > 0 and 0 <= strength <= 1");
     }
-    if (const json* sh = mem(root, "shoulder_lane_types")) {
+    if (const json* sh = member(root, "shoulder_lane_types")) {
         if (!sh->is_array()) err.set("marking rules: shoulder_lane_types must be a list");
         else
             for (const json& v : *sh) {
@@ -975,14 +966,7 @@ bool stroke_ring(const std::vector<Vec3>& in, double width, std::vector<Vec3>& r
     return true;
 }
 
-// Deterministic hashing for the wear value (no std distributions: identical on every library).
-std::uint64_t mix64(std::uint64_t z) {
-    z += 0x9E3779B97F4A7C15ull;
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-    return z ^ (z >> 31);
-}
-double hash01(std::uint64_t z) { return static_cast<double>(mix64(z) >> 11) * (1.0 / 9007199254740992.0); }
+// Deterministic hashing for the wear value (mix64/hash01 from cp/geom.h; no std distributions: identical on every library).
 
 // Smooth 2D value noise in [0, 1] with unit lattice spacing.
 double value_noise(double x, double y, std::uint64_t seed) {

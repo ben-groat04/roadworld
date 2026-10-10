@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <set>
 
+#include "cp/edge_sampling.h"
+#include "cp/geom.h"
+
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4702)  // unreachable code inside the vendored Clipper2 header
@@ -34,12 +37,6 @@ constexpr double kSampleStep = 0.25;  // m, scan step of the tool along crossing
 
 // ---------------------------------------------------------------- small geometry helpers
 
-double signed_area(const Ring& r) {
-    double a = 0;
-    for (std::size_t i = 0; i < r.size(); ++i) a += r[i].cross(r[(i + 1) % r.size()]);
-    return a / 2;
-}
-
 Clipper2Lib::PathD to_path(const Ring& r) {
     Clipper2Lib::PathD p;
     p.reserve(r.size());
@@ -58,17 +55,6 @@ PolygonSet from_paths(const Clipper2Lib::PathsD& ps) {
         out.push_back(std::move(r));
     }
     return out;
-}
-
-double edge_heading(const Edge& e, double s) {
-    double acc = 0;
-    for (std::size_t i = 0; i < e.horizontal.spans.size(); ++i) {
-        const Clothoid& c = e.horizontal.spans[i];
-        if (s <= acc + c.length || i + 1 == e.horizontal.spans.size())
-            return c.heading(std::clamp(s - acc, 0.0, c.length));
-        acc += c.length;
-    }
-    return 0;
 }
 
 // Arc length of each interior control point (spans start at the points).

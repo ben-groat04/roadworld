@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "cp/edge_sampling.h"
+#include "cp/geom.h"
 #include "cp/lanes.h"
 
 namespace cp {
@@ -21,12 +22,6 @@ namespace {
 using u32 = std::uint32_t;
 constexpr double kInf = std::numeric_limits<double>::infinity();
 
-Vec3 operator+(Vec3 a, Vec3 b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-Vec3 operator-(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-Vec3 operator*(Vec3 a, double s) { return {a.x * s, a.y * s, a.z * s}; }
-double dot(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-Vec3 cross(Vec3 a, Vec3 b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
-double length(Vec3 a) { return std::sqrt(dot(a, a)); }
 Vec3 normalized(Vec3 a) {
     const double l = length(a);
     return l > 1e-12 ? a * (1.0 / l) : Vec3{1, 0, 0};

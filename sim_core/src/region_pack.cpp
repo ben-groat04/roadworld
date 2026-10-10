@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "json_util.h"
 #include "nlohmann/json.hpp"
 
 namespace cp {
@@ -15,13 +16,7 @@ namespace {
 
 using json = nlohmann::json;
 
-struct Err {
-    std::string msg;
-    bool failed() const { return !msg.empty(); }
-    void set(const std::string& m) {
-        if (msg.empty()) msg = m;
-    }
-};
+using jsonu::Err;
 
 // Returns the member, or nullptr after recording "missing".
 const json* require(const json& j, const char* key, const std::string& ctx, Err& err) {
@@ -38,11 +33,7 @@ const json* require(const json& j, const char* key, const std::string& ctx, Err&
     return &*it;
 }
 
-const json* optional_member(const json& j, const char* key) {
-    if (!j.is_object()) return nullptr;
-    auto it = j.find(key);
-    return it == j.end() ? nullptr : &*it;
-}
+using jsonu::member;
 
 std::string get_string(const json& j, const char* key, const std::string& ctx, Err& err) {
     const json* v = require(j, key, ctx, err);
@@ -65,11 +56,11 @@ double get_number(const json& j, const char* key, const std::string& ctx, Err& e
 }
 
 double opt_number(const json& j, const char* key, double def, const std::string& ctx, Err& err) {
-    return optional_member(j, key) ? get_number(j, key, ctx, err) : def;
+    return member(j, key) ? get_number(j, key, ctx, err) : def;
 }
 
 bool get_bool(const json& j, const char* key, bool def, const std::string& ctx, Err& err) {
-    const json* v = optional_member(j, key);
+    const json* v = member(j, key);
     if (!v) return def;
     if (!v->is_boolean()) {
         err.set(ctx + ": \"" + key + "\" must be a boolean");
@@ -116,7 +107,7 @@ LaneTypeTable do_parse_lane_types(const std::string& text, Err& err) {
         const std::string ctx = "lane type \"" + lt.id + "\"";
         if (lt.id.empty()) err.set("lane type: empty id");
         if (out.count(lt.id)) err.set("duplicate lane type id \"" + lt.id + "\"");
-        if (const json* users = optional_member(e, "users")) {
+        if (const json* users = member(e, "users")) {
             if (!users->is_array()) err.set(ctx + ": \"users\" must be an array");
             else
                 for (const json& u : *users) {
@@ -126,8 +117,8 @@ LaneTypeTable do_parse_lane_types(const std::string& text, Err& err) {
         }
         lt.may_park = get_bool(e, "may_park", false, ctx, err);
         lt.connects_at_junctions = get_bool(e, "connects_at_junctions", false, ctx, err);
-        if (optional_member(e, "surface")) lt.surface = get_string(e, "surface", ctx, err);
-        if (optional_member(e, "profile")) {
+        if (member(e, "surface")) lt.surface = get_string(e, "surface", ctx, err);
+        if (member(e, "profile")) {
             lt.profile = get_string(e, "profile", ctx, err);
             if (lt.profile != "carriageway" && lt.profile != "kerb" && lt.profile != "raised" &&
                 lt.profile != "verge")
@@ -175,7 +166,7 @@ std::vector<CrossSectionSlot> parse_slots(const json* arr, const std::string& ct
             err.set(sctx + ": width_m must be positive, got " + std::to_string(s.width));
             return out;
         }
-        if (optional_member(e, "dir")) {
+        if (member(e, "dir")) {
             const std::string d = get_string(e, "dir", sctx, err);
             if (d == "forward") s.dir = TravelDir::Forward;
             else if (d == "backward") s.dir = TravelDir::Backward;
@@ -186,7 +177,7 @@ std::vector<CrossSectionSlot> parse_slots(const json* arr, const std::string& ct
             for (const auto& u : lt->second.users) car = car || u == "car";
             s.dir = (car && !lt->second.may_park) ? TravelDir::Forward : TravelDir::None;
         }
-        if (optional_member(e, "side")) {
+        if (member(e, "side")) {
             const std::string d = get_string(e, "side", sctx, err);
             if (d == "nearside") s.side = SlotSide::Nearside;
             else if (d == "offside") s.side = SlotSide::Offside;
@@ -211,8 +202,8 @@ void parse_street_lights(const json& j, RoadType& rt, const std::string& ctx, Er
     r.mounting_height = opt_number(j, "mounting_height_m", r.mounting_height, ctx, err);
     r.outreach = opt_number(j, "outreach_m", r.outreach, ctx, err);
     r.island_min_radius = opt_number(j, "island_min_radius_m", r.island_min_radius, ctx, err);
-    if (optional_member(j, "style")) r.style = get_string(j, "style", ctx, err);
-    if (optional_member(j, "arrangement")) {
+    if (member(j, "style")) r.style = get_string(j, "style", ctx, err);
+    if (member(j, "arrangement")) {
         const std::string a = get_string(j, "arrangement", ctx, err);
         if (a == "single_side") r.arrangement = LightArrangement::SingleSide;
         else if (a == "staggered") r.arrangement = LightArrangement::Staggered;
@@ -238,7 +229,7 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     if (err.failed()) return rt;
     const std::string ctx = "road type \"" + rt.id + "\"";
     if (rt.id.empty()) err.set("road type: empty id");
-    if (optional_member(e, "name")) rt.name = get_string(e, "name", ctx, err);
+    if (member(e, "name")) rt.name = get_string(e, "name", ctx, err);
     rt.two_way = get_bool(e, "two_way", false, ctx, err);
     rt.dual = get_bool(e, "dual", false, ctx, err);
     if (rt.two_way && rt.dual) err.set(ctx + ": cannot be both two_way and dual");
@@ -273,9 +264,9 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     if (rt.min_radius < 0) err.set(ctx + ": min_radius_m must not be negative");
     rt.advisory_max_grade = opt_number(e, "advisory_max_grade_pct", 0, ctx, err) / 100.0;
     if (rt.advisory_max_grade < 0) err.set(ctx + ": advisory_max_grade_pct must not be negative");
-    if (optional_member(e, "markings")) rt.markings = get_string(e, "markings", ctx, err);
+    if (member(e, "markings")) rt.markings = get_string(e, "markings", ctx, err);
     const auto opt_shape = [&](const char* key, std::optional<double>& out, double hi) {
-        if (!optional_member(e, key)) return;
+        if (!member(e, key)) return;
         const double v = get_number(e, key, ctx, err);
         if (!err.failed() && !(v >= 0 && v <= hi))
             err.set(ctx + ": " + key + " must be between 0 and " + std::to_string(hi));
@@ -288,7 +279,7 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     rt.roundabout_ring = get_bool(e, "roundabout_ring", false, ctx, err);
     if (rt.roundabout_ring && (rt.two_way || rt.dual))
         err.set(ctx + ": roundabout_ring types must be one-way (neither two_way nor dual)");
-    if (const json* sl = optional_member(e, "street_lights")) parse_street_lights(*sl, rt, ctx + ".street_lights", err);
+    if (const json* sl = member(e, "street_lights")) parse_street_lights(*sl, rt, ctx + ".street_lights", err);
     return rt;
 }
 
@@ -304,7 +295,7 @@ std::vector<SpeedFactor> parse_speed_table(const json* arr, const char* value_ke
     for (const json& row : *arr) {
         const std::string rctx = ctx + "[" + std::to_string(index++) + "]";
         SpeedFactor f;
-        if (optional_member(row, "max_speed_kph")) f.max_speed = get_number(row, "max_speed_kph", rctx, err) / 3.6;
+        if (member(row, "max_speed_kph")) f.max_speed = get_number(row, "max_speed_kph", rctx, err) / 3.6;
         f.factor = get_number(row, value_key, rctx, err);
         if (err.failed()) return out;
         if (!(f.factor > 0)) {
@@ -323,10 +314,10 @@ std::vector<SpeedFactor> parse_speed_table(const json* arr, const char* value_ke
 void parse_roundabout_extras(const json& rb, RoundaboutRules& r, Err& err) {
     const std::string c = "region.roundabout";
     r.apron_island_radius_max = opt_number(rb, "apron_island_radius_max_m", r.apron_island_radius_max, c, err);
-    if (optional_member(rb, "apron_surface")) r.apron_surface = get_string(rb, "apron_surface", c, err);
-    r.splitter_speed_factors = parse_speed_table(optional_member(rb, "splitter_speed_factors"), "factor",
+    if (member(rb, "apron_surface")) r.apron_surface = get_string(rb, "apron_surface", c, err);
+    r.splitter_speed_factors = parse_speed_table(member(rb, "splitter_speed_factors"), "factor",
                                                  c + ".splitter_speed_factors", err);
-    if (const json* sc = optional_member(rb, "size_classes")) {
+    if (const json* sc = member(rb, "size_classes")) {
         if (!sc->is_array()) {
             err.set(c + ".size_classes: expected an array");
             return;
@@ -339,7 +330,7 @@ void parse_roundabout_extras(const json& rb, RoundaboutRules& r, Err& err) {
             k.exit_corner_radius = r.exit_corner_radius;
             k.splitter_length = r.splitter_length;
             k.splitter_width = r.splitter_width;
-            if (optional_member(row, "max_radius_m")) k.max_radius = get_number(row, "max_radius_m", rctx, err);
+            if (member(row, "max_radius_m")) k.max_radius = get_number(row, "max_radius_m", rctx, err);
             k.entry_corner_radius = opt_number(row, "entry_corner_radius_m", k.entry_corner_radius, rctx, err);
             k.exit_corner_radius = opt_number(row, "exit_corner_radius_m", k.exit_corner_radius, rctx, err);
             k.splitter_length = opt_number(row, "splitter_length_m", k.splitter_length, rctx, err);
@@ -363,7 +354,7 @@ void parse_roundabout_extras(const json& rb, RoundaboutRules& r, Err& err) {
 
 void parse_junction_rules(const json& jr, JunctionRules& r, Err& err) {
     const std::string c = "region.junction";
-    if (const json* tab = optional_member(jr, "corner_radius_by_class")) {
+    if (const json* tab = member(jr, "corner_radius_by_class")) {
         if (!tab->is_array()) {
             err.set(c + ".corner_radius_by_class: expected an array");
             return;
@@ -385,13 +376,13 @@ void parse_junction_rules(const json& jr, JunctionRules& r, Err& err) {
             r.corner_radius.push_back(k);
         }
     }
-    if (const json* sk = optional_member(jr, "skew_factor")) {
+    if (const json* sk = member(jr, "skew_factor")) {
         r.skew_min = opt_number(*sk, "min", r.skew_min, c + ".skew_factor", err);
         r.skew_max = opt_number(*sk, "max", r.skew_max, c + ".skew_factor", err);
         if (!err.failed() && (!(r.skew_min > 0.1) || r.skew_max < r.skew_min || r.skew_max > 4))
             err.set(c + ".skew_factor: need 0.1 < min <= max <= 4");
     }
-    if (const json* tp = optional_member(jr, "turn_pockets")) {
+    if (const json* tp = member(jr, "turn_pockets")) {
         TurnPocketRules& t = r.turn_pockets;
         const std::string tc = c + ".turn_pockets";
         t.enabled = get_bool(*tp, "enabled", t.enabled, tc, err);
@@ -403,8 +394,8 @@ void parse_junction_rules(const json& jr, JunctionRules& r, Err& err) {
         t.max_minor_angle = opt_number(*tp, "max_minor_angle_rad", t.max_minor_angle, tc, err);
         t.min_taper_ratio = opt_number(*tp, "min_taper_ratio", t.min_taper_ratio, tc, err);
         t.min_storage = opt_number(*tp, "min_storage_m", t.min_storage, tc, err);
-        t.taper_ratio = parse_speed_table(optional_member(*tp, "taper_ratio"), "ratio", tc + ".taper_ratio", err);
-        t.storage = parse_speed_table(optional_member(*tp, "storage"), "length_m", tc + ".storage", err);
+        t.taper_ratio = parse_speed_table(member(*tp, "taper_ratio"), "ratio", tc + ".taper_ratio", err);
+        t.storage = parse_speed_table(member(*tp, "storage"), "length_m", tc + ".storage", err);
         if (!err.failed() && (!(t.lane_width > 1.5 && t.lane_width < 6) || t.max_bend < 0 || t.min_minor_angle < 0 ||
                               t.max_minor_angle < t.min_minor_angle || !(t.min_taper_ratio >= 1) || t.min_storage < 0))
             err.set(tc + ": a value is out of range");
@@ -428,7 +419,7 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
     const double speed_to_mps = err.failed() ? 1.0 : speed_unit_to_mps(unit, err);
     pack.headroom_m = opt_number(rj, "headroom_m", 0, "region", err);
     pack.plan_crossing_junction_dz_m = opt_number(rj, "plan_crossing_junction_dz_m", 0, "region", err);
-    if (const json* rb = optional_member(rj, "roundabout")) {
+    if (const json* rb = member(rj, "roundabout")) {
         RoundaboutRules& r = pack.roundabout;
         const std::string c = "region.roundabout";
         r.entry_corner_radius = opt_number(*rb, "entry_corner_radius_m", r.entry_corner_radius, c, err);
@@ -442,8 +433,8 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
         r.max_tool_radius = opt_number(*rb, "max_tool_radius_m", r.max_tool_radius, c, err);
         r.splitter_length = opt_number(*rb, "splitter_length_m", r.splitter_length, c, err);
         r.splitter_width = opt_number(*rb, "splitter_width_m", r.splitter_width, c, err);
-        if (optional_member(*rb, "central_island_surface")) r.central_island_surface = get_string(*rb, "central_island_surface", c, err);
-        if (optional_member(*rb, "splitter_surface")) r.splitter_surface = get_string(*rb, "splitter_surface", c, err);
+        if (member(*rb, "central_island_surface")) r.central_island_surface = get_string(*rb, "central_island_surface", c, err);
+        if (member(*rb, "splitter_surface")) r.splitter_surface = get_string(*rb, "splitter_surface", c, err);
         r.island_kerb_upstand = opt_number(*rb, "island_kerb_upstand_m", r.island_kerb_upstand, c, err);
         if (r.island_kerb_upstand < 0) err.set(c + ": island_kerb_upstand_m must not be negative");
         if (!err.failed() && (!(r.max_arc > 0.1) || !(r.min_tool_radius > 0) || r.max_tool_radius < r.min_tool_radius ||
@@ -452,8 +443,8 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
             err.set(c + ": a value is out of range");
         if (!err.failed()) parse_roundabout_extras(*rb, r, err);
     }
-    if (const json* jr = optional_member(rj, "junction")) parse_junction_rules(*jr, pack.junction, err);
-    if (const json* gr = optional_member(rj, "grading")) {
+    if (const json* jr = member(rj, "junction")) parse_junction_rules(*jr, pack.junction, err);
+    if (const json* gr = member(rj, "grading")) {
         GradingRules& g = pack.grading;
         const std::string c = "region.grading";
         g.formation_drop = opt_number(*gr, "formation_drop_m", g.formation_drop, c, err);
@@ -468,7 +459,7 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
                               !(g.wall_start > 0) || !(g.wall_cap > 0) || g.wall_slack < 0 || !(g.tunnel_clear_height > 0)))
             err.set(c + ": a value is out of range");
     }
-    if (const json* sr = optional_member(rj, "structures")) {
+    if (const json* sr = member(rj, "structures")) {
         StructureRules& s = pack.structures;
         const std::string c = "region.structures";
         s.parapet_height = opt_number(*sr, "parapet_height_m", s.parapet_height, c, err);

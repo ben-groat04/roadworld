@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "clipper2/clipper.h"
+#include "cp/geom.h"
 #include "cp/junction.h"
 
 namespace cp {
@@ -163,12 +164,6 @@ Solve solve_fillet(const JunctionArm& ak, const JunctionArm& aj, double a, doubl
 }
 
 int arc_segments(double sweep) { return std::max(2, static_cast<int>(std::ceil(std::fabs(sweep) / kFilletStep))); }
-
-double signed_area(const std::vector<Vec2>& r) {
-    double a = 0;
-    for (std::size_t i = 0; i < r.size(); ++i) a += r[i].cross(r[(i + 1) % r.size()]);
-    return a / 2;
-}
 
 int sgn(double v) { return v > 1e-9 ? 1 : (v < -1e-9 ? -1 : 0); }
 
