@@ -31,6 +31,17 @@ function mainCheckout() {
 }
 const main = mainCheckout();
 const refRoot = path.join(main, 'docs', 'reference');
+// The hand-in's own worktree root (so prototype screenshots / spec docs under docs/progress/... resolve).
+function worktreeRoot() {
+  const abs = path.resolve(folder);
+  const fwd = abs.split(path.sep).join('/');
+  const k = fwd.toLowerCase().indexOf('/docs/progress/');
+  if (k >= 0) return fwd.slice(0, k);
+  try { return execSync("git rev-parse --show-toplevel", { cwd: fs.existsSync(abs) ? abs : process.cwd(), stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return main; }
+}
+const wtRoot = worktreeRoot();
+// An opened reference resolves if it is (a) an absolute path that exists, (b) relative to the main checkout or the hand-in's worktree, or (c) a name under docs/reference.
+const refBases = [refRoot, main, wtRoot];
 const fails = [];
 const read = (f) => {
   const p = path.join(folder, f);
@@ -70,13 +81,13 @@ if (status === null) {
   if (!cases.length) fails.push('STATUS.md: no "Case: <name> | Opened: <file>, <file>, <file>" lines');
   for (const c of cases) {
     const files = [...new Set(c[2].split(',').map((x) => x.trim()).filter(Boolean))];
-    const ok = files.filter((f) => findFile(f, [refRoot, main]));
+    const ok = files.filter((f) => findFile(f, refBases));
     const bad = files.filter((f) => !ok.includes(f));
     if (ok.length < 3) {
       fails.push(`STATUS.md: case "${c[1]}" names ${ok.length} existing reference files, need at least 3` +
-        (bad.length ? ` (not found under ${refRoot}: ${bad.join(', ')})` : ''));
+        (bad.length ? ` (not found as absolute path, under ${wtRoot}, ${main} or ${refRoot}: ${bad.join(', ')})` : ''));
     } else if (bad.length) {
-      fails.push(`STATUS.md: case "${c[1]}": files not found under ${refRoot}: ${bad.join(', ')}`);
+      fails.push(`STATUS.md: case "${c[1]}": files not found (absolute, under ${wtRoot}, ${main} or ${refRoot}): ${bad.join(', ')}`);
     }
   }
 }
@@ -114,10 +125,21 @@ if (noVisual) { /* skipped */ } else if (compare === null) {
     const [kase, render, ref, comp, before] = cells;
     const bases = [folder, path.join(refRoot, '_compare'), refRoot, main];
     if (!findFile(render, bases)) fails.push(`COMPARE.md row "${kase}": render not found: ${render}`);
-    if (!findFile(ref, [refRoot, main])) fails.push(`COMPARE.md row "${kase}": reference not found: ${ref}`);
+    if (!findFile(ref, refBases)) fails.push(`COMPARE.md row "${kase}": reference not found: ${ref}`);
     if (!findFile(comp, bases)) fails.push(`COMPARE.md row "${kase}": composite not found (expected under docs/reference/_compare/<topic>/): ${comp}`);
     if (!findFile(before, bases)) fails.push(`COMPARE.md row "${kase}": before image not found: ${before}`);
   });
+}
+
+// Canary (tools/hooks/notice_lib.mjs): loud warning on stderr when gate.log suggests the hooks are not running.
+// Does not change the exit code (the hand-in is judged on its own); skipped when the hand-in gate itself calls this.
+if (!process.env.CP_FROM_HOOK) {
+  try {
+    const nl = await import('./hooks/notice_lib.mjs');
+    const rep = nl.canaryReport(path.join(main, '.claude', 'state'));
+    // only the canary: pending gate notices are the main session's business, not the agent's
+    if (rep.problems.length) console.error('\n!!! HOOK CANARY: the enforcement hooks may NOT be running (say so in your report) !!!\n' + rep.problems.map((p) => ' - ' + p).join('\n') + '\n');
+  } catch { /* the canary must never break the check */ }
 }
 
 if (fails.length) {
