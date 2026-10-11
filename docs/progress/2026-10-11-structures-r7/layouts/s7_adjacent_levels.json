@@ -1,0 +1,4 @@
+{ "format": "cp-test-layout", "version": 1, "name": "s7_adjacent_levels", "region": "uk", "driving_side": "left",
+  "roads": [
+ {"type":"a_road_rural","points":[[-150,0,2],[150,0,2]]},
+ {"type":"a_road_rural","points":[[-150,16,7.5],[150,16,7.5]]} ] }

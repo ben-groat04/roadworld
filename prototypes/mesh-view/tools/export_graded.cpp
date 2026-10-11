@@ -56,6 +56,7 @@ struct GradedGround final : GroundSampler {
     double x0 = 0, y0 = 0, res = 0.5;
     int nx = 0, ny = 0;
     std::vector<float> h;
+    std::vector<std::uint8_t> fp;  // 1 footprint / wall solid, 2 rock-cut face
     GroundFn natural;
     double at(int i, int j) const { return h[static_cast<std::size_t>(std::clamp(j, 0, ny - 1)) * nx + std::clamp(i, 0, nx - 1)]; }
     double height(double x, double y) const override {
@@ -151,9 +152,13 @@ int main(int argc, char** argv) {
     gg->nx = static_cast<int>(std::ceil((bx1 - bx0) / 0.5)) + 1;
     gg->ny = static_cast<int>(std::ceil((by1 - by0) / 0.5)) + 1;
     const TileSpec t{bx0, by0, gg->nx, gg->ny, 0.5};
-    std::vector<float> nat = sample_natural_tile(natural, t);
-    gg->h.assign(nat.size(), 0.f);
-    grade_tile_into(prepared, p, t, nat.data(), gg->h.data(), nullptr);
+    const std::size_t NT = static_cast<std::size_t>(gg->nx) * static_cast<std::size_t>(gg->ny);
+    gg->h.assign(NT, 0.f);
+    gg->fp.assign(NT, 0);
+    {
+        GradeWorkspace ws;
+        grade_tile_smooth_into(prepared, p, t, natural, gg->h.data(), gg->fp.data(), ws);  // the smoothed ground (constrained relaxation)
+    }
     std::printf("graded %d x %d texels (%.0f x %.0f m), %zu roads\n", gg->nx, gg->ny, gg->nx * 0.5, gg->ny * 0.5, roads.size());
 
     // ---- walls + structures on the graded ground
@@ -203,7 +208,14 @@ int main(int argc, char** argv) {
     const int stride = std::max(1, static_cast<int>(std::lround(step / 0.5)));
     const int cx = (gg->nx - 1) / stride + 1, cy = (gg->ny - 1) / stride + 1;
     WorldMesh tm;
-    std::vector<char> inbore(static_cast<std::size_t>(cx) * cy, 0);
+    std::vector<char> inbore(static_cast<std::size_t>(cx) * cy, 0), cell_rock(static_cast<std::size_t>(cx) * cy, 0), cell_needs(static_cast<std::size_t>(cx) * cy, 0);
+    // needs_structure stretches: ground within (half width + 30 m) of their stations on their side, not a footprint
+    struct NeedsSt { double x, y, h, hw; int sg; };
+    std::vector<NeedsSt> needs;
+    for (const auto& r : roads)
+        for (const SurfaceRun& sr : surface_runs(r))
+            if (sr.needs_structure)
+                for (int k = sr.first; k <= sr.last; ++k) needs.push_back({r.samples[static_cast<std::size_t>(k)].x, r.samples[static_cast<std::size_t>(k)].y, r.samples[static_cast<std::size_t>(k)].h, r.half_width, sr.side == 'L' ? 1 : -1});
     for (int j = 0; j < cy; ++j)
         for (int i = 0; i < cx; ++i) {
             const double x = gg->x0 + i * stride * 0.5, y = gg->y0 + j * stride * 0.5, z = gg->at(i * stride, j * stride);
@@ -214,15 +226,33 @@ int main(int argc, char** argv) {
             tm.normals.push_back({-dzx / l, -dzy / l, 1 / l});
             tm.uv.push_back({x, y});
             if (rows > 0 && in_bore(table.data(), tw, rows, x, y, z, p)) inbore[static_cast<std::size_t>(j) * cx + i] = 1;
+            const std::size_t ci = static_cast<std::size_t>(j) * cx + i;
+            if (gg->fp[static_cast<std::size_t>(j * stride) * gg->nx + static_cast<std::size_t>(i * stride)] == 2) cell_rock[ci] = 1;
+            else if (gg->fp[static_cast<std::size_t>(j * stride) * gg->nx + static_cast<std::size_t>(i * stride)] == 0)
+                for (const NeedsSt& n : needs) {
+                    const double dx = x - n.x, dy = y - n.y, d = std::hypot(dx, dy);
+                    if (d > n.hw + 30 || d < n.hw - 0.2) continue;
+                    if ((-std::sin(n.h) * dx + std::cos(n.h) * dy) * n.sg > 0) { cell_needs[ci] = 1; break; }
+                }
         }
+    WorldMesh tr = tm, tn = tm;  // same vertices, separate triangle lists: rock-cut cells and needs_structure cells (viewer colours)
+    tr.indices.clear();
+    tn.indices.clear();
     for (int j = 0; j + 1 < cy; ++j)
         for (int i = 0; i + 1 < cx; ++i) {
             const std::uint32_t a = static_cast<std::uint32_t>(j * cx + i), b = a + 1, c = a + static_cast<std::uint32_t>(cx), d = c + 1;
             if (inbore[a] || inbore[b] || inbore[c] || inbore[d]) continue;
-            for (const std::uint32_t v : {a, b, d, a, d, c}) tm.indices.push_back(v);
+            WorldMesh& dst = (cell_rock[a] + cell_rock[b] + cell_rock[c] + cell_rock[d] >= 2) ? tr : (cell_needs[a] + cell_needs[b] + cell_needs[c] + cell_needs[d] >= 2) ? tn : tm;
+            for (const std::uint32_t v : {a, b, d, a, d, c}) dst.indices.push_back(v);
         }
     const std::string tfile = fixture + "_terrain.obj";
-    if (!write(tfile, tm)) return 1;
+    // grass cells keep tm's vertex list; the rock / needs meshes reuse it (unused vertices are harmless)
+    {
+        WorldMesh grass = tm;
+        if (!write(tfile, grass)) return 1;
+        if (!tr.indices.empty() && !write(fixture + "_terrain_rock.obj", tr)) return 1;
+        if (!tn.indices.empty() && !write(fixture + "_terrain_needs.obj", tn)) return 1;
+    }
     // remove the flat-ground structure files of the export_mesh run, then write the graded ones
     for (const auto& e : std::filesystem::directory_iterator(out_dir)) {
         const std::string fn = e.path().filename().string();
@@ -251,6 +281,8 @@ int main(int argc, char** argv) {
             if (fn.rfind("markings_", 0) == 0) { kind = "marking"; id = fn.substr(9, fn.size() - 13); }
             else if (fn.rfind(fixture + "_structure_", 0) == 0) { kind = "structure"; id = fn.substr(fixture.size() + 11, fn.size() - fixture.size() - 15); }
             else if (fn == tfile) { kind = "terrain"; id = "grass"; }
+            else if (fn == fixture + "_terrain_rock.obj") { kind = "terrain"; id = "rock"; }
+            else if (fn == fixture + "_terrain_needs.obj") { kind = "terrain"; id = "needs"; }
             else id = fn.substr(fixture.size() + 1, fn.size() - fixture.size() - 5);
             if (!files.empty()) files += ",\n";
             files += "    {\"file\": \"" + fn + "\", \"kind\": \"" + kind + "\", \"id\": \"" + id + "\", \"triangles\": " + std::to_string(count_tris(std::filesystem::path(out_dir) / fn)) + "}";
