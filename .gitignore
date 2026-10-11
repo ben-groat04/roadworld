@@ -26,3 +26,6 @@ docs/reference/_compare/
 
 # Hook state and gate log (per machine)
 .claude/state/
+
+# Stray logs at the repo root (build logs, downloads)
+/*.log

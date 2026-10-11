@@ -43,7 +43,7 @@ if (missing.length) {
   process.exit(1);
 }
 const round = opt('round');
-const worktree = opt('worktree', path.join(path.dirname(root), 'roadworld-wt-' + round)); // matches new_agent_worktree.ps1
+const worktree = opt('worktree', path.join(path.dirname(root), 'roadworld-wt', round)); // matches new_agent_worktree.ps1 (new worktrees live under ..\roadworld-wt\<name>)
 const handinDir = path.join(path.resolve(worktree), 'docs', 'progress', round);
 const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '');
 const fill = {

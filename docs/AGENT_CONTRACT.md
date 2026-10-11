@@ -11,7 +11,7 @@ The photo is the target. The list of faults in your brief is a starting list, no
 5. **Never mark an item "not done" without having tried it.** Say what blocked it. Stop when the residual list holds only things you cannot fix, or after 3 passes.
 6. **Skipped, refused, failed or unverified items go in the FIRST lines of your report and under the first heading of `STATUS.md`.** Nothing fails silently.
 7. **Hand in** the files named in the brief (see `docs/templates/STATUS.md`), then run `node tools/check_handin.mjs <progress-folder>` and fix what it reports.
-8. **Work in your own git worktree and branch**, with your own build dir and CLEAN builds. Commit after every verified step. Do not stop early because of a usage warning: finish the current verified step, commit, update `STATUS.md`, then carry on. The owner: "It's max 5x so don't rush a stop".
+8. **Work in your own git worktree and branch**, with ONE build dir (`<worktree>\build`, no other `build-*` dirs; scratch goes to `..\roadworld-scratch\<slug>`) and CLEAN builds. Commit after every verified step. Do not stop early because of a usage warning: finish the current verified step, commit, update `STATUS.md`, then carry on. The owner: "It's max 5x so don't rush a stop".
 9. **Never kill processes you did not start** (compilers, Unreal, other agents). Unreal is a single lane: one editor or plugin build at a time.
 10. **Never ask the owner to open Unreal or playtest.** You launch, drive, screenshot and close it yourself.
 11. **Mute any video** you play in a browser. The owner hears it.
