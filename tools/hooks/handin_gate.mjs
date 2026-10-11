@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // SubagentStop hook: a subagent whose brief carries "HANDIN_DIR: <abs path>" may not stop until
 // `node tools/check_handin.mjs <HANDIN_DIR>` passes (with --no-visual if the brief has the line "HANDIN: no-visual").
-// Also usable as a PreToolUse hook on the SubagentHandback tool (same logic, deny with exit 2) if live testing shows
-// that is the point at which the agent can still be turned back; see docs/research/rules-audit-2026-10-11.md.
+// ALSO wired as a PreToolUse hook on the SubagentHandback tool (same logic, deny with exit 2): live test showed that for
+// agents running with SubagentHandback (auto mode) the report is delivered BEFORE SubagentStop, so only this one turns them back.
 //
 // Flow: find the brief in the agent's own transcript (agent_transcript_path; JSONL, first "user" line) -> no HANDIN_DIR
 // (and no BRIEF-FILE that has one): allow. Check fails: block with the failure list as the reason, at most 3 times per

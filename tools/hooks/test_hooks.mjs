@@ -121,6 +121,28 @@ fs.renameSync(path.join(root, 'tools/check_handin.mjs'), path.join(root, 'tools/
 r = stop('c1', visTp); t('check_handin.mjs missing (node exits 1): fail open, NOT a block', r.code === 0 && r.out === '' && /FAIL-OPEN: check_handin/.test(lastLog().reason), r.out);
 fs.renameSync(path.join(root, 'tools/check_handin.bak'), path.join(root, 'tools/check_handin.mjs'));
 
+// ---- check_handin: references that are not under docs/reference (prototype screenshots, spec documents)
+console.log('check_handin non-photo references');
+{
+  const shotsRoot = path.join(wt, 'shots');
+  const shotDir = path.join(shotsRoot, 'docs', 'progress', '2026-10-11-prototype-ui');
+  fs.mkdirSync(shotDir, { recursive: true });
+  const names = Array.from({ length: 26 }, (_, i) => `s${String(i + 1).padStart(2, '0')}.png`);
+  names.forEach((n) => fs.writeFileSync(path.join(shotDir, n), 'x'));
+  const handin = path.join(shotsRoot, 'docs', 'progress', 'shots');
+  fs.mkdirSync(handin, { recursive: true });
+  const status = (files, opened) => `## Skipped, refused or failed\n\nNothing skipped; not verified in the live editor.\n\nReferences opened: ${opened} of ${opened} listed\n\n## Reference files opened\n\nCase: ui | Opened: ${files.join(', ')}\n`;
+  const check = () => spawnSync(process.execPath, [path.join(root, 'tools/check_handin.mjs'), handin, '--main', root, '--no-visual'], { cwd: elsewhere, encoding: 'utf8' });
+  fs.writeFileSync(path.join(handin, 'STATUS.md'), status(names.map((n) => 'docs/progress/2026-10-11-prototype-ui/' + n), 26));
+  let c = check(); t('26 screenshot paths relative to the hand-in worktree: passes', c.status === 0, c.stderr);
+  fs.writeFileSync(path.join(handin, 'STATUS.md'), status(names.map((n) => path.join(shotDir, n)), 26));
+  c = check(); t('26 absolute screenshot paths: passes', c.status === 0, c.stderr);
+  fs.writeFileSync(path.join(handin, 'STATUS.md'), status([...names.slice(0, 25), 'docs/progress/2026-10-11-prototype-ui/missing_shot.png'].map((n) => n.includes('/') || n.includes('\\') ? n : 'docs/progress/2026-10-11-prototype-ui/' + n), 26));
+  c = check(); t('one non-existent path: fails and names the file', c.status === 1 && /missing_shot\.png/.test(c.stderr), c.stderr);
+  fs.writeFileSync(path.join(handin, 'STATUS.md'), status(['docs/progress/2026-10-11-prototype-ui/s01.png', 'docs/progress/2026-10-11-prototype-ui/s02.png'], 2));
+  c = check(); t('only 2 existing files in a case: still fails (needs 3)', c.status === 1 && /need at least 3/.test(c.stderr), c.stderr);
+}
+
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (!process.env.KEEP_HOOKTEST) fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(fail ? 1 : 0);
