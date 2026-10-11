@@ -241,8 +241,8 @@ public:
                 auto h = [&](u64 k) { return hash01(mix64(key ^ k) + mix64(static_cast<u64>(cx) * 0x9E3779B1ull) + static_cast<u64>(cy)); };
                 const Vec2 pos{(static_cast<double>(cx) + h(1)) * F, (static_cast<double>(cy) + h(2)) * F};
                 if (pos.x < lo.x || pos.x >= hi.x || pos.y < lo.y || pos.y >= hi.y) continue;
-                const double ws = wood_share(pos);
-                if (ws <= 0.0 || h(3) >= prob * ws) continue;
+                if (h(3) >= prob) continue;
+                if (ground_at(pos).land != LandClass::Wood) continue;          // only where this source says woodland
                 if (base_->ground_at(pos).land == LandClass::Wood) continue;  // the base already plants this
                 if (std::fabs(w_->valley_distance(pos.x, pos.y)) < p_.wet_half_width_m) continue;
                 double u = h(4) * wsum;

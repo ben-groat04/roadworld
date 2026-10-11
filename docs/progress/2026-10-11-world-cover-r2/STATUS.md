@@ -1,8 +1,5 @@
-# Status (checkpoint)
-- Item 1 fields (warped Voronoi, per-block scale/aspect/angle, terrain axis hint): done. Cell-size caveat: uk data said 300x180 m (150x110 is only the C++ default), x/y jitter 0.25 gave the measured 250-400 m.
-- Item 2 woodland (ribbons, belts, copses, blocks, plantation cells; CoverGround::land): done.
-- Item 3 hedges (3-8 m, gateways, decayed stretches, 70 percent share, trees 30 percent): done.
-- Item 4 terrain (rolling detail, tilt, rotated valley, spurs): done, spurs weak (foot wanders 13 m).
-- Item 5 per-seed variety: done.
-- gcc suite 341/341 pass. MSVC clean build was still running; golden heights not yet confirmed on MSVC.
-- Next: check MSVC build and suite, strengthen spurs, straighten-less ribbons, then merge.
+# Status (final for this session)
+- Items 1-5 done; round 3 rebuilt item 1-3 on the block / grain / cut-tree model (see INDEX.md, REFERENCE_NOTES_R3.md).
+- Fetched 14 vertical aerials, Oxfordshire 25 cm, 46-59 in docs/reference/aerial (private, not committed); all opened.
+- Suite: gcc 341/341 and MSVC (Release, clean-ish rebuild) 341/341; terrain goldens identical on both.
+- Left: acute wedge fields, straight through-lines, no lanes, hedge look uniform, stream not a field boundary. Next: curved/sinuous through-lines, cut snapping to avoid wedges, merge.

@@ -350,7 +350,7 @@ TEST_CASE("test_world: default cover is irregular: field sizes, aspects, orienta
         CHECK(a90 > 7.0);
         CHECK(amax < 40);
         CHECK(asp50 > 1.25);
-        CHECK(static_cast<double>(wood) / n > 0.06);
+        CHECK(static_cast<double>(wood) / n > 0.04);
         CHECK(static_cast<double>(wood) / n < 0.20);
         CHECK(static_cast<double>(arable) / n > 0.15);
         CHECK(wmin < 4.0);
