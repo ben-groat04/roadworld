@@ -53,14 +53,14 @@ No renders (engine work). The claims rest on the 45 prototype screenshots and th
 
 ## Suite and checks
 
-Commit cfd59ce plus a comment-only edit in  (committed after the runs; no code change). Clean builds in fresh directories ( Ninja + g++ 16.1 Release,  Visual Studio 18 MSVC 19.51 Release), no warnings in any file of this round on either compiler.
+Commit cfd59ce plus a comment-only edit in `road_tool.h` (committed after the runs; no code change). Clean builds in fresh directories (`build-rt3-gcc`: Ninja + g++ 16.1 Release; `build-rt3-msvc`: Visual Studio 18, MSVC 19.51 Release), no warnings in any file of this round on either compiler.
 
 | Compiler | Test cases | Assertions |
 |---|---|---|
 | gcc 16.1 (clean build) | 433 of 433 passed, 1 skipped | 3490418, 2 failed (the known should_fail interchange-bridge pier case) |
 | MSVC 19.51 (clean build) | 433 of 433 passed, 1 skipped | 3490418, 2 failed (same two) |
 
-Baseline before this round (same base, gcc): 400 cases, 400 passed, 1 skipped, 2 failed assertions. New cases: 33 (); changed cases: 3 in  and 1 in  (listed in INDEX.md). : HAND-IN CHECK PASSED. Not run:  (the prototype is not part of this change), Unreal plugin build.
+Baseline before this round (same base, gcc): 400 cases, 400 passed, 1 skipped, 2 failed assertions. New cases: 33 (`tests/test_tool_ui.cpp`); changed cases: 3 in `tests/test_road_tool.cpp` and 1 in `tests/test_edit_tool.cpp` (listed in INDEX.md). `node tools/check_handin.mjs docs/progress/roadtool3 --no-visual`: HAND-IN CHECK PASSED. Not run: `prototypes/road-draw/tools/scene.mjs --check` (the prototype is not part of this change), Unreal plugin build.
 
 ## Next step
 
