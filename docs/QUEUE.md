@@ -8,7 +8,10 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Earthworks round 9: disturbance view and cross-sections first, then a hard bound on changed ground on every scene, plus round 8 leftovers | `agent/grade-r9`, `..\roadworld-wt-grade-r9` | `agent/grading-r6` 2aff581 + main | `tools/check_handin.mjs` passes on `docs/progress/2026-10-11-structures-r9`; main session opens the disturbance views and sections |
 | Integration: merge, in order, world cover r4 (`agent/world-cover-r2` 0da3c74), junction markings (`agent/junction-markings` d611346), earthworks r7+r8 (`agent/grading-r6` 2aff581), road tool gaps (`agent/road-tool-2` d7dfc99), then main | `integ/2026-10-11`, `..\roadworld-wt-integ` | main | clean builds, full suite on gcc and MSVC after each merge; then fast-forward main |
 | Unreal milestone 2: merge main into it, build, automation tests, M1 playtest still 37/37, M2 scenarios, pictures of every drawing state beside the 26 prototype screenshots, fix what belongs to M2 (previous agent built it but never ran it; tip 905df6b) | `agent/unreal-m2`, `../roadworld-wt-m2` (holds the Unreal lane) | 905df6b + main | hand-in in `docs/progress/2026-10-11-unreal-m2-run`; main session opens the composites; then fast-forward main |
-| Gate notices: gate failures (FAIL-OPEN), hand-ins released after 3 refusals and exemptions used reach the main session by themselves every turn until acknowledged with what was done; canary for hooks not running at all (owner: "concerns me with its vagueness") | `agent/rules-fix`, `../roadworld-wt-rules` | main | finish gate passes; main session merges and tests live |
+| Gate notices: BUILT (agent/rules-fix 24f60aa, 110 hook tests by its count, hand-in check passed). Not merged: waits for its auditor | `agent/rules-fix`, `../roadworld-wt-rules` | main | auditor AUDIT.md says accept; then main session merges, reads the 3 existing log items, acks |
+| AUDITOR: gate notices and hooks (own tests, full docs page, background-agent case the builder did not test) | writes AUDIT.md in `../roadworld-wt-rules/docs/progress/2026-10-11-gate-notices` | - | AUDIT.md with verdict |
+| AUDITOR: junction markings d611346 (own fault list from opened photos before reading the builder; checks the tests) | writes AUDIT.md in `../roadworld-wt-junc/docs/progress/2026-10-11-junction-markings` | - | AUDIT.md with verdict and items for the roundabout brief |
+| Audit gate mechanism: auditor briefs (`make_brief --audit`), finish gate refuses builder = auditor, an audit-owed notice on every prompt until AUDIT.md exists, `check_handin --accept` | `agent/auditgate`, `../roadworld-wt-auditgate` | agent/rules-fix 24f60aa | hand-in passes; then its own auditor |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
 ## Audit step (part of every round, not support)
@@ -18,10 +21,10 @@ Auditors owed:
 - Unreal milestone 2 run, when it hands in: composites against the 26 prototype screenshots, and whether the playtest script really exercises what it says it checks.
 - Vegetation kit round 2, when it hands in.
 - Integration, when it hands in: an independent clean build and suite run on both compilers of the merged tip (not the merger's own count).
-- Gate notices and the hooks already merged: an independent live test (the hooks were built and tested by one agent).
-- Junction markings (`agent/junction-markings` d611346): finished with no independent audit; audit now feeds the roundabout brief. Starts in the first free slot.
+- Gate notices and hooks: auditor RUNNING. Audit gate mechanism: auditor owed when it hands in.
+- Junction markings: auditor RUNNING.
 - Road tool round 2 (`agent/road-tool-2` d7dfc99): the read-only 45-screenshot check counts as its audit (different agent); nothing more owed.
-Tool change owed (after gate notices merges; same files): `check_handin.mjs --accept` fails without `AUDIT.md`, and the launch gate refuses an auditor brief that hands over the builder's FAULTS.md up front. Build by one agent, test by another.
+Auditors are not capped and never wait for a slot (owner, 11 Oct: "wdym \"free slot\" just keep adding them as needed"). The mechanism that makes this automatic is being built (Running: audit gate).
 
 ## Next, by priority (start when its blocker clears)
 Priority rule (owner, Round 50): the photorealism comes from the road builder placed in the Unreal sandbox. Order = what gets a drawn road, with everything it generates, on screen in the game soonest; then what makes that road look right; everything else is support. A new idea goes where it belongs in this order, not at the top because it was said last.
