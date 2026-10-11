@@ -258,6 +258,8 @@ console.log('gate_notice, gate_ack, canary');
   const rW = mkRoot('mainW'); fs.rmSync(path.join(rW, '.git'), { recursive: true }); fs.writeFileSync(path.join(rW, '.git'), 'gitdir: elsewhere');
   fs.writeFileSync(path.join(rW, '.claude/state/gate.log'), old(60, { gate: 'make_brief', round: 'x' }));
   b = brief(rW, 'w1'); t('worktree checkout (.git is a file): canary skipped and no log line written', b.status === 0 && !/CANARY/.test(b.stderr) && fs.readFileSync(path.join(rW, '.claude/state/gate.log'), 'utf8').trim().split('\n').length === 1, b.stderr);
+  const aw = ack('worktree ack must be refused although the text is long enough', rW);
+  t('gate_ack from a worktree copy (.git is a file): refused, exit 1, log untouched', aw.status === 1 && /worktree/.test(aw.stderr) && !fs.readFileSync(path.join(rW, '.claude/state/gate.log'), 'utf8').includes('"gate":"ack"'), aw.stderr);
   // check_handin prints the canary but keeps its own exit code
   const hdC = path.join(tmp, 'wtC', 'docs', 'progress', 'cc'); fs.mkdirSync(hdC, { recursive: true });
   fs.writeFileSync(path.join(rC, '.claude/state/gate.log'), old(30, { gate: 'make_brief', round: 'old' }) + old(1, { gate: 'notice', reason: 'ran' }));
@@ -265,6 +267,9 @@ console.log('gate_notice, gate_ack, canary');
   t('check_handin: loud canary warning on stderr, exit code still 1 for the missing STATUS.md', ch.status === 1 && /HOOK CANARY/.test(ch.stderr) && /HAND-IN CHECK FAILED/.test(ch.stderr), ch.stderr);
   ch = spawnSync(process.execPath, [path.join(rC, 'tools/check_handin.mjs'), hdC, '--main', rC, '--no-visual'], { cwd: elsewhere, encoding: 'utf8', env: { ...process.env, CP_FROM_HOOK: '1' } });
   t('check_handin called by the hand-in gate (CP_FROM_HOOK): no canary text', ch.status === 1 && !/CANARY/.test(ch.stderr));
+  fs.writeFileSync(path.join(rC, '.claude/state/gate.log'), old(0, { gate: 'brief', decision: 'allow', reason: 'FAIL-OPEN: x' }));
+  ch = spawnSync(process.execPath, [path.join(rC, 'tools/check_handin.mjs'), hdC, '--main', rC, '--no-visual'], { cwd: elsewhere, encoding: 'utf8' });
+  t('check_handin does not show pending gate notices to the agent (canary only)', !/GATE NOTICE/.test(ch.stderr) && !/CANARY/.test(ch.stderr));
   fs.writeFileSync(path.join(rC, '.claude/state/gate.log'), '');
   ch = spawnSync(process.execPath, [path.join(rC, 'tools/check_handin.mjs'), hdC, '--main', rC, '--no-visual'], { cwd: elsewhere, encoding: 'utf8' });
   t('check_handin with an empty gate.log: no canary text', !/CANARY/.test(ch.stderr));

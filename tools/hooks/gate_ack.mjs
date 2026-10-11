@@ -5,8 +5,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { log, STATE_DIR } from './lib.mjs';
-import { readGateLog, pendingItems, MIN_ACK_CHARS } from './notice_lib.mjs';
+import { readGateLog, pendingItems, isMainCheckout, MIN_ACK_CHARS } from './notice_lib.mjs';
 
+if (!isMainCheckout()) {
+  console.error('REFUSED: this copy of gate_ack.mjs is in a git worktree, whose .claude/state/gate.log is not the one the hooks write. Run it from the main checkout (the roadworld repository root).');
+  process.exit(1);
+}
 const text = process.argv.slice(2).join(' ').trim();
 if (text.length < MIN_ACK_CHARS) {
   console.error(`REFUSED: the acknowledgement needs at least ${MIN_ACK_CHARS} characters saying what was done about the notice (got ${text.length}).\nUsage: node tools/hooks/gate_ack.mjs "<what was done about it>"`);

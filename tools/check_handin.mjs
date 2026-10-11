@@ -137,7 +137,8 @@ if (!process.env.CP_FROM_HOOK) {
   try {
     const nl = await import('./hooks/notice_lib.mjs');
     const rep = nl.canaryReport(path.join(main, '.claude', 'state'));
-    if (rep.text) console.error('\n' + rep.text + '\n');
+    // only the canary: pending gate notices are the main session's business, not the agent's
+    if (rep.problems.length) console.error('\n!!! HOOK CANARY: the enforcement hooks may NOT be running (say so in your report) !!!\n' + rep.problems.map((p) => ' - ' + p).join('\n') + '\n');
   } catch { /* the canary must never break the check */ }
 }
 
