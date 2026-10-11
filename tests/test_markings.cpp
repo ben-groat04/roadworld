@@ -9,6 +9,7 @@
 
 #include "doctest/doctest.h"
 #include "cp/markings.h"
+#include "cp/render_mesh.h"
 #include "cp/road_commands.h"
 #include "portable_rng.h"
 #include "scene_fixture.h"
@@ -1360,6 +1361,28 @@ TEST_CASE("markings: splitter islands get an outline and approach hatching when 
     MarkingResult cache = without;
     rebuild_dirty_markings(cache, n.g, *n.region, uk_rules(), plain, {rr.layouts[0].group.nodes[0]}, {}, p);
     CHECK(cache.splitters.size() == 1);
+}
+
+TEST_CASE("markings: roundabout entry lines at the ring edge are on the junction surface, not buried under it") {
+    std::string err;
+    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE_MESSAGE(sc, err);
+    RoundaboutResult rr;
+    const JunctionSet js = tools::scene_junctions(*sc, &rr);
+    MarkingParams p;
+    p.roundabouts = &rr;
+    const MarkingSet s = generate_markings(sc->graph, *sc->region, uk_rules(), js, p).merged();
+    int entries = 0;
+    for (const Marking* m : of(s, MarkingCategory::RoundaboutEntry)) {
+        const Junction* j = js.find(m->node);
+        REQUIRE(j);
+        for (const Vec3& q : s.points(*m)) {
+            const double surf = junction_surface_z(sc->graph, *sc->region, *j, q.xy(), true);
+            CHECK_MESSAGE(std::fabs(q.z - surf) < 0.02, "entry mark at ", q.x, ",", q.y, " z ", q.z, " surface ", surf);
+        }
+        ++entries;
+    }
+    CHECK(entries >= 5);
 }
 
 TEST_CASE("markings: splitter paint: ladder bars lie in the gap round the island, none on the kerbed island") {

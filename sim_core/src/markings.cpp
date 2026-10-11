@@ -1926,6 +1926,9 @@ struct JGen {
     Builder b;
     std::vector<ArmLayout> layout;
     const JunctionSurface* surface = nullptr;
+    // True when the caller gave no surface_height callback: marks deep inside a junction then follow the junction's
+    // blended render surface (a caller-supplied callback is the contract and is never overridden).
+    bool follow_junction_surface = false;
 
     // Surface height inside the junction: the render mesh's blend of the arms' profiles; the nearest
     // connector / arm point when that is unavailable.
@@ -1961,7 +1964,12 @@ struct JGen {
                 lo += shift;
                 hi += shift;
             }
+            const std::size_t first_vertex = b.out.vertices.size();
             emit_transverse(b, rules, cat, *L.style, arm, L.line_s0, lo, hi);
+            // An entry line sits deep inside a ring node's junction, where the render mesh blends the arms'
+            // surfaces: follow that surface, or the line is buried under it by 10-25 cm.
+            if (L.entry && follow_junction_surface)
+                for (std::size_t vi = first_vertex; vi < b.out.vertices.size(); ++vi) b.out.vertices[vi].z = surface_z(b.out.vertices[vi].xy());
             if (L.give_way && L.triangle)
                 for (const LaneRef& lane : arm.lanes)
                     if (lane.inbound) triangle(arm, L, lane.lateral - lane.width / 2, lane.lateral + lane.width / 2);
@@ -2404,6 +2412,7 @@ MarkingSet generate_junction_markings(const RoadGraph& graph, const RegionPack& 
     const MarkingParams params = with_mesh_surface(params_in, region, graph, edges);
     const JunctionSurface surface(graph, region, junction);
     JGen g{graph, region, rules, junction, params, Builder{out, rules, params, EdgeId{}, junction.node}, {}, &surface};
+    g.follow_junction_surface = !params_in.surface_height;
     g.layout = compute_arm_layout(graph, region, rules, junction, params);
     g.give_way_and_stop();
     g.zebras();

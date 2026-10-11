@@ -1,0 +1,47 @@
+{
+ "id": "celandine_01",
+ "res": "2k",
+ "name": "Celandine 01",
+ "authors": {
+  "Rob Tuytel": "Photography",
+  "Rico Cilliers": "modeling"
+ },
+ "dimensions_api": [
+  3492.500424385071,
+  933.4844052791595,
+  934.6956610679626
+ ],
+ "polycount_api": 1746764,
+ "files": [
+  {
+   "path": "celandine_01_2k.fbx",
+   "bytes": 361836,
+   "sha256": "240068db21c154d09c25b62e52717c946fe52f02d8aadc48fec4db3f4ce978b7",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/fbx/2k/celandine_01/celandine_01_2k.fbx"
+  },
+  {
+   "path": "textures/celandine_01_alpha_2k.png",
+   "bytes": 631611,
+   "sha256": "432b365cb400044ccfd51965084f68b67b05e64f5a4ee3722d16111c946865b5",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/2k/celandine_01/celandine_01_alpha_2k.png"
+  },
+  {
+   "path": "textures/celandine_01_diff_2k.jpg",
+   "bytes": 1245607,
+   "sha256": "2f602608fcc2d00da1ba65043c6c125f93db226b952db22add1e9396fde3c60e",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/celandine_01/celandine_01_diff_2k.jpg"
+  },
+  {
+   "path": "textures/celandine_01_nor_gl_2k.exr",
+   "bytes": 2762821,
+   "sha256": "1b429d535bd1e34653cd8429e986469f6d204a752368c4ce2139470feca1560f",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/2k/celandine_01/celandine_01_nor_gl_2k.exr"
+  },
+  {
+   "path": "textures/celandine_01_rough_2k.exr",
+   "bytes": 2058006,
+   "sha256": "e096117e3e816396fde5dc26f6754865cebd25a3c197df47b0fed2108be4e6d5",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/2k/celandine_01/celandine_01_rough_2k.exr"
+  }
+ ]
+}

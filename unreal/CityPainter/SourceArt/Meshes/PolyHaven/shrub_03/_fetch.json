@@ -1,0 +1,46 @@
+{
+ "id": "shrub_03",
+ "res": "2k",
+ "name": "Shrub 03",
+ "authors": {
+  "Rico Cilliers": "All"
+ },
+ "dimensions_api": [
+  1366.9319450855255,
+  151.20302885770798,
+  402.78380597010255
+ ],
+ "polycount_api": 16955,
+ "files": [
+  {
+   "path": "shrub_03_2k.fbx",
+   "bytes": 290956,
+   "sha256": "1ca8b2e70ea6e79976636ec2765ae66cb77f9d6200b2ff1d3fc712dadb1f1282",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/fbx/2k/shrub_03/shrub_03_2k.fbx"
+  },
+  {
+   "path": "textures/shrub_03_alpha_2k.png",
+   "bytes": 183836,
+   "sha256": "250606877093a81e791cc52e434f271a843838e6bed460a1c88a1955f52af50c",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/2k/shrub_03/shrub_03_alpha_2k.png"
+  },
+  {
+   "path": "textures/shrub_03_diff_2k.jpg",
+   "bytes": 1520137,
+   "sha256": "66290b6c5366dd0259f5a2a7d84deaac1dfe35f6be661c97752d98dbcdb427ed",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/shrub_03/shrub_03_diff_2k.jpg"
+  },
+  {
+   "path": "textures/shrub_03_rough_2k.exr",
+   "bytes": 931451,
+   "sha256": "c35c354227c7cc367f758eb9f6fac29b3ed500eb9be14c3cec3417e5be796f54",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/2k/shrub_03/shrub_03_rough_2k.exr"
+  },
+  {
+   "path": "textures/shrub_03_nor_gl_2k.exr",
+   "bytes": 2885663,
+   "sha256": "b08fdc361b7b63db0cc6c708c414e95470a636aa0a11789ee3c40d9ed36920ec",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/2k/shrub_03/shrub_03_nor_gl_2k.exr"
+  }
+ ]
+}

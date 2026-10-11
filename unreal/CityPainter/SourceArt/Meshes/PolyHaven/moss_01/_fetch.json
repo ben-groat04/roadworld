@@ -1,0 +1,46 @@
+{
+ "id": "moss_01",
+ "res": "2k",
+ "name": "Moss 01",
+ "authors": {
+  "Rob Tuytel": "All"
+ },
+ "dimensions_api": [
+  838.9523178339005,
+  300.28730630874634,
+  298.94982278347015
+ ],
+ "polycount_api": 246170,
+ "files": [
+  {
+   "path": "moss_01_2k.fbx",
+   "bytes": 51484,
+   "sha256": "8557968c4cd581591d2a081fc9cd5d11872a22aff7f60bdf06de1c9a62f3279b",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/fbx/2k/moss_01/moss_01_2k.fbx"
+  },
+  {
+   "path": "textures/moss_01_alpha_2k.png",
+   "bytes": 167941,
+   "sha256": "43b8d86ec306f39bc9c896906d16aadfb20d00c1c773c9bcdc3122b6eff8a6d0",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/2k/moss_01/moss_01_alpha_2k.png"
+  },
+  {
+   "path": "textures/moss_01_diff_2k.jpg",
+   "bytes": 511727,
+   "sha256": "75acf965b37418e1f35401a307d759bb2f7171f231e88e0c327f94d142d2499a",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/moss_01/moss_01_diff_2k.jpg"
+  },
+  {
+   "path": "textures/moss_01_nor_gl_2k.exr",
+   "bytes": 3625820,
+   "sha256": "13792b9699824eb86188deabb6d71df99721c699eef478cec473ff33ae20b253",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/2k/moss_01/moss_01_nor_gl_2k.exr"
+  },
+  {
+   "path": "textures/moss_01_rough_2k.exr",
+   "bytes": 1621872,
+   "sha256": "8a89a210140aeeddd71d25646f09fdb7e96566a5cc14dd959c7abd1d54c7dc6a",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/2k/moss_01/moss_01_rough_2k.exr"
+  }
+ ]
+}

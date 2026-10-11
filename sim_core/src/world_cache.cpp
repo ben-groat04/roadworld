@@ -89,8 +89,10 @@ std::set<TileKey> junction_foot(const Junction& j, double ts) {
 std::set<TileKey> roundabout_foot(const RoundaboutLayout& l, double ts) {
     Box b;
     b.add(l.island);
-    for (const SplitterIsland& s : l.splitters)
+    for (const SplitterIsland& s : l.splitters) {
         for (const Vec2& p : s.polygon) b.add(p);
+        for (const Vec2& p : s.paint) b.add(p);  // the painted gap (lane edge lines, ladder bars) runs past the island's nose
+    }
     b.grow(2);
     return box_foot(b, ts);
 }

@@ -301,6 +301,9 @@ struct MouthEdgeRule {
     std::string source;
 };
 
+// Unknown keys in marking_rules.json (and region.json) are errors on purpose (check_keys): a data file newer than the
+// binary that reads it fails loudly instead of silently ignoring a rule. An older plugin build therefore rejects a
+// newer file (e.g. splitter.ladder_pitch_m): rebuild the plugin with the matching sim_core.
 // Roundabout splitter islands: outline round the island and diagonal hatching on the approach ahead of
 // its nose. Needs MarkingParams::roundabouts; skipped cleanly without it.
 struct SplitterRule {

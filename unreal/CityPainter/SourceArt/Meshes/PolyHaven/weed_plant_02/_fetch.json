@@ -1,0 +1,47 @@
+{
+ "id": "weed_plant_02",
+ "res": "2k",
+ "name": "Weed Plant 02",
+ "authors": {
+  "Rob Tuytel": "Photography",
+  "Rico Cilliers": "Modeling"
+ },
+ "dimensions_api": [
+  2125.253051519394,
+  290.9194082021713,
+  75.0729264691472
+ ],
+ "polycount_api": 17062,
+ "files": [
+  {
+   "path": "weed_plant_02_2k.fbx",
+   "bytes": 377244,
+   "sha256": "a52bc1420f3adc88574c07cd8c48bbbcb072164516204bf34fcd2a44a5f1744e",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/fbx/2k/weed_plant_02/weed_plant_02_2k.fbx"
+  },
+  {
+   "path": "textures/weed_plant_02_nor_gl_2k.exr",
+   "bytes": 5631811,
+   "sha256": "4942276b9529857d9e3e592f212be73022d0268f419504621486ca88a8c56b69",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/2k/weed_plant_02/weed_plant_02_nor_gl_2k.exr"
+  },
+  {
+   "path": "textures/weed_plant_02_alpha_2k.png",
+   "bytes": 420666,
+   "sha256": "8349b29915497305b2e69b45a5f663e37f6c398379514dfb7ffd3003b07827a9",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/2k/weed_plant_02/weed_plant_02_alpha_2k.png"
+  },
+  {
+   "path": "textures/weed_plant_02_rough_2k.exr",
+   "bytes": 1980037,
+   "sha256": "e04e614e765a0d79f84923f403bf51e58ea2a62c34814db700a71cff0cf0d5e0",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/2k/weed_plant_02/weed_plant_02_rough_2k.exr"
+  },
+  {
+   "path": "textures/weed_plant_02_diff_2k.jpg",
+   "bytes": 1566453,
+   "sha256": "25e4190cddce367d0e161b24de44873425c2179862faf7878aea49cbdc72c0e7",
+   "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/2k/weed_plant_02/weed_plant_02_diff_2k.jpg"
+  }
+ ]
+}

@@ -89,6 +89,34 @@ EXTRA_VIEWS = {
 
 VIEWS = INTERCHANGE_VIEWS
 
+# Diagnostic configurations (argument `diag`, or `diag:<name>,<name>`): each is a list of console commands applied on top
+# of DIAG_RESET, then the views named by `view:<substr>` (default look_08 and look_02) are shot as diag_<config>__<view>.
+# Used for the fourth-run black-shadow diagnosis (docs/progress/2026-10-11-unreal-fourth/LUMEN_FINDINGS.md).
+DIAG_RESET = ["ShowFlag.VisualizeLumen 0", "ShowFlag.LightingOnlyOverride 0", "ShowFlag.DynamicShadows 1", "ShowFlag.Tonemapper 1", "r.Lumen.Visualize.ViewMode 0",
+              "r.Lumen.DiffuseIndirect.Allow 1", "r.SkylightIntensityMultiplier 1", "r.DistanceFieldAO 1",
+              "r.Shadow.Virtual.Enable 1", "r.Lumen.HardwareRayTracing 0", "r.Lumen.HardwareRayTracing.LightingMode 0",
+              "r.RayTracing.Geometry.ProceduralMeshes 1"]
+DIAG_CONFIGS = {
+    "baseline": [],
+    "lightingonly": ["ShowFlag.LightingOnlyOverride 1"],
+    "lumenscene": ["ShowFlag.VisualizeLumen 1", "r.Lumen.Visualize.ViewMode LumenScene"],
+    "surfacecache": ["ShowFlag.VisualizeLumen 1", "r.Lumen.Visualize.ViewMode SurfaceCache"],
+    "geomnormals": ["ShowFlag.VisualizeLumen 1", "r.Lumen.Visualize.ViewMode GeometryNormals"],
+    "no_dynshadows": ["ShowFlag.DynamicShadows 0"],
+    "lightingonly_noshadows": ["ShowFlag.LightingOnlyOverride 1", "ShowFlag.DynamicShadows 0"],
+    "hwrt_lightingonly": ["r.Lumen.HardwareRayTracing 1", "ShowFlag.LightingOnlyOverride 1"],
+    "no_tonemapper": ["ShowFlag.Tonemapper 0"],
+    "no_gi": ["r.Lumen.DiffuseIndirect.Allow 0"],
+    "no_sky": ["r.SkylightIntensityMultiplier 0"],
+    "sky_x3": ["r.SkylightIntensityMultiplier 3"],
+    "no_dfao": ["r.DistanceFieldAO 0"],
+    "cascaded_shadows": ["r.Shadow.Virtual.Enable 0"],
+    "hwrt": ["r.Lumen.HardwareRayTracing 1"],
+    "hwrt_hitlighting": ["r.Lumen.HardwareRayTracing 1", "r.Lumen.HardwareRayTracing.LightingMode 1"],
+    "hwrt_no_pmc": ["r.Lumen.HardwareRayTracing 1", "r.RayTracing.Geometry.ProceduralMeshes 0"],
+}
+DIAG_WARMUP = 300      # frames after switching configuration (Lumen settles over a few seconds)
+
 WARMUP_FIRST = 600   # frames before the first shot (shader compile / Lumen settling)
 WARMUP_NEXT = 120
 SHOT_TIMEOUT = 900   # frames to wait for a file after requesting
@@ -216,6 +244,8 @@ def request_shot(path, mult):
 def tick(delta):
     s = STATE
     s["frame"] += 1
+    if s.get("phase") == "warm":
+        s.setdefault("bench", []).append(delta)   # per-frame wall time during warm-up (diag runs log the mean of the last 60)
     try:
         step(s)
     except Exception as e:  # noqa
@@ -244,7 +274,15 @@ def step(s):
             cp.log("screenshots written: %s" % ", ".join(os.path.join(OUT_DIR, n + ".png") for n in done))
             cp.finish(True)
             return
-        name, eye, target, focal = VIEWS[s["i"]]
+        name, eye, target, focal = VIEWS[s["i"]][:4]
+        cfg = VIEWS[s["i"]][4] if len(VIEWS[s["i"]]) > 4 else None
+        if cfg is not None and cfg != s.get("cfg"):
+            for c in DIAG_RESET + DIAG_CONFIGS[cfg]:
+                unreal.SystemLibrary.execute_console_command(None, c)
+            s["cfg"] = cfg
+            s["wait"] = DIAG_WARMUP
+            s["bench"] = []
+            cp.log("diag config %s: %s" % (cfg, DIAG_CONFIGS[cfg]))
         set_camera(eye, target, focal, s["pie"])
         s["phase"] = "warm"
         return
@@ -293,6 +331,12 @@ def step(s):
             s["phase"] = "probe"
             return
         name = VIEWS[s["i"]][0]
+        if len(VIEWS[s["i"]]) > 4:
+            name = "diag_%s__%s" % (VIEWS[s["i"]][4], name)
+        if s.get("bench"):
+            b = s["bench"][-60:]
+            cp.log("FRAMETIME %s: mean %.1f ms, max %.1f ms over %d frames" % (name, 1000.0 * sum(b) / len(b), 1000.0 * max(b), len(b)))
+            s["bench"] = []
         path = os.path.join(OUT_DIR, name + ".png")
         if os.path.exists(path):
             os.remove(path)  # deterministic: overwrite
@@ -327,6 +371,15 @@ def main():
     if "old" in args:
         raise cp.ScriptError("the 'old' argument was removed together with CPRoadNetworkActor; run without it for the interchange views")
     VIEWS = list(INTERCHANGE_VIEWS) + [v for k, v in EXTRA_VIEWS.items() if k in args]
+    for a in args:
+        if a == "diag" or a.startswith("diag:"):
+            names = a[5:].split(",") if a.startswith("diag:") else list(DIAG_CONFIGS)
+            filt = [x[5:] for x in args if x.startswith("view:")] or ["look_08", "look_02"]
+            base = [v for v in INTERCHANGE_VIEWS if any(f in v[0] for f in filt)]
+            VIEWS = [v + (n,) for n in names for v in base]
+    for a in args:
+        if a.startswith("only:"):
+            VIEWS = [v for v in VIEWS if a[5:] in v[0]]
     mult = 1
     for a in args:
         if a.isdigit():
@@ -343,6 +396,9 @@ def main():
     unreal.EditorPythonScripting.set_keep_python_script_alive(True)
 
     for a in args:
+        if a.startswith("cmd:"):   # arbitrary console command, "_" stands for a space (e.g. cmd:r.Foo_1)
+            unreal.SystemLibrary.execute_console_command(None, a[4:].replace("_", " "))
+            cp.log("console: %s" % a[4:])
         if a.startswith("cvar:"):   # e.g. cvar:r.Lumen.HardwareRayTracing=1 (several allowed, comma-free)
             k, v = a[5:].split("=", 1)
             unreal.SystemLibrary.execute_console_command(None, "%s %s" % (k, v))
