@@ -104,11 +104,14 @@ inline double shade(const cp::Heightfield& hf, double x, double y) {
 }
 
 inline Rgb ground_colour(const cp::CoverGround& g, const cp::VegetationRules& r) {
-    const auto& w = r.world_cover;
-    if (g.type_id.empty()) return {196, 170, 120};                                 // arable
-    if (g.type_id == w.woodland_floor_type && g.density == w.woodland_density) return {58, 92, 52};  // woodland
-    if (g.type_id == w.rough_grass_type) return {128, 138, 78};                    // rough / wet
-    return {130, 170, 84};                                                         // pasture
+    (void)r;
+    switch (g.land) {
+        case cp::LandClass::Arable: return {196, 170, 120};
+        case cp::LandClass::Wood: return {58, 92, 52};
+        case cp::LandClass::Rough: return {128, 138, 78};
+        case cp::LandClass::Pasture: break;
+    }
+    return {130, 170, 84};
 }
 
 // Top-down images. `px` metres per pixel.
@@ -199,6 +202,40 @@ inline Img cover_map(const cp::TestWorld& tw, const cp::Heightfield& hf, const c
         px_of(p.pos, i, j);
         im.put(i, j, 20, 48, 24);
     }
+    return im;
+}
+
+// Top-down crop of the cover (north up): ground classes, hedges drawn at their width, tree crowns as discs.
+inline Img cover_crop(const cp::TestWorld& tw, const cp::Heightfield& hf, const cp::WorldCoverSource& src,
+                      const cp::VegetationRules& rules, cp::Vec2 origin, double w_m, double h_m, double px) {
+    (void)tw;
+    const int W = static_cast<int>(w_m / px), H = static_cast<int>(h_m / px);
+    Img im(W, H);
+    for (int j = 0; j < H; ++j)
+        for (int i = 0; i < W; ++i) {
+            const double x = origin.x + (i + 0.5) * px, y = origin.y + (H - 1 - j + 0.5) * px;
+            const Rgb c = ground_colour(src.ground_at({x, y}), rules);
+            const double s = 0.75 + 0.25 * shade(hf, x, y);
+            im.put(i, j, c.r * s, c.g * s, c.b * s);
+        }
+    auto disc = [&](cp::Vec2 p, double r, double cr, double cg, double cb) {
+        const int ci = static_cast<int>((p.x - origin.x) / px), cj = H - 1 - static_cast<int>((p.y - origin.y) / px);
+        const int ri = std::max(1, static_cast<int>(r / px));
+        for (int dj = -ri; dj <= ri; ++dj)
+            for (int di = -ri; di <= ri; ++di)
+                if (di * di + dj * dj <= ri * ri) im.put(ci + di, cj + dj, cr, cg, cb);
+    };
+    std::vector<cp::CoverLine> lines;
+    src.lines_touching(origin, {origin.x + w_m, origin.y + h_m}, lines);
+    for (const auto& l : lines)
+        for (std::size_t k = 0; k + 1 < l.points.size(); ++k) {
+            const cp::Vec2 a = l.points[k], b = l.points[k + 1];
+            const int steps = std::max(1, static_cast<int>((b - a).length() / (px * 0.5)));
+            for (int s = 0; s <= steps; ++s) disc(a + (b - a) * (static_cast<double>(s) / steps), 0.5 * l.width, 34, 70, 30);
+        }
+    std::vector<cp::CoverPoint> pts;
+    src.points_in(origin, {origin.x + w_m, origin.y + h_m}, pts);
+    for (const auto& p : pts) disc(p.pos, 3.0 * p.scale, 26, 56, 26);
     return im;
 }
 

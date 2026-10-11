@@ -4,7 +4,7 @@
 //   1. small helpers (hashing, geometry, polyline cutting and tile splitting)
 //   2. region data parser (VegetationRules)
 //   3. cross-section reading and the CorridorModel (the clearing mask shared by both layers)
-//   4. the default WorldCoverSource (jittered / warped field grid)
+//   4. the default WorldCoverSource (warped Voronoi fields, woodland shapes, hedges)
 //   5. output assembly (VegetationTile, equality)
 //   6. the three WorldLayers: veg_corridor, world_cover, vegetation (road edge)
 #include "cp/vegetation.h"
@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -372,25 +374,50 @@ void parse_island(const json& j, IslandRule& r, const std::string& ctx, Err& err
 }
 
 void parse_cover(const json& j, WorldCoverRules& w, const std::string& ctx, Err& err) {
-    w.field_size_x = num(j, "field_size_x_m", w.field_size_x, ctx, err);
-    w.field_size_y = num(j, "field_size_y_m", w.field_size_y, ctx, err);
-    w.field_jitter = num(j, "field_jitter", w.field_jitter, ctx, err);
-    w.warp_m = num(j, "warp_m", w.warp_m, ctx, err);
-    w.warp_wavelength_m = num(j, "warp_wavelength_m", w.warp_wavelength_m, ctx, err);
+    w.field_area_ha = num(j, "field_area_ha", w.field_area_ha, ctx, err);
+    w.block_m = num(j, "block_m", w.block_m, ctx, err);
+    range(j, "block_scale", w.block_scale_min, w.block_scale_max, ctx, err);
+    w.smallholding_share = num(j, "smallholding_share", w.smallholding_share, ctx, err);
+    w.smallholding_scale = num(j, "smallholding_scale", w.smallholding_scale, ctx, err);
+    range(j, "field_aspect", w.aspect_min, w.aspect_max, ctx, err);
+    w.block_angle_var = num(j, "block_angle_var", w.block_angle_var, ctx, err);
+    w.site_jitter = num(j, "site_jitter", w.site_jitter, ctx, err);
+    w.regional_warp_m = num(j, "regional_warp_m", w.regional_warp_m, ctx, err);
+    w.regional_warp_wavelength_m = num(j, "regional_warp_wavelength_m", w.regional_warp_wavelength_m, ctx, err);
+    w.boundary_wobble_m = num(j, "boundary_wobble_m", w.boundary_wobble_m, ctx, err);
+    w.boundary_wobble_wavelength_m = num(j, "boundary_wobble_wavelength_m", w.boundary_wobble_wavelength_m, ctx, err);
     w.woodland_share = num(j, "woodland_share", w.woodland_share, ctx, err);
     w.woodland_edge_ragged_m = num(j, "woodland_edge_ragged_m", w.woodland_edge_ragged_m, ctx, err);
     w.arable_share = num(j, "arable_share", w.arable_share, ctx, err);
     w.rough_share = num(j, "rough_share", w.rough_share, ctx, err);
+    w.arable_cluster = num(j, "arable_cluster", w.arable_cluster, ctx, err);
+    w.arable_cluster_wavelength_m = num(j, "arable_cluster_wavelength_m", w.arable_cluster_wavelength_m, ctx, err);
+    w.ribbon_band = num(j, "ribbon_band", w.ribbon_band, ctx, err);
+    w.ribbon_wavelength_m = num(j, "ribbon_wavelength_m", w.ribbon_wavelength_m, ctx, err);
+    w.ribbon_gate = num(j, "ribbon_gate", w.ribbon_gate, ctx, err);
+    w.belt_share = num(j, "belt_share", w.belt_share, ctx, err);
+    range(j, "belt_width_m", w.belt_width_min, w.belt_width_max, ctx, err);
+    w.belt_length_m = num(j, "belt_length_m", w.belt_length_m, ctx, err);
+    w.belt_gate = num(j, "belt_gate", w.belt_gate, ctx, err);
+    w.copse_per_km2 = num(j, "copse_per_km2", w.copse_per_km2, ctx, err);
+    range(j, "copse_area_ha", w.copse_area_min_ha, w.copse_area_max_ha, ctx, err);
+    w.wood_block_per_km2 = num(j, "wood_block_per_km2", w.wood_block_per_km2, ctx, err);
+    range(j, "wood_block_area_ha", w.wood_block_area_min_ha, w.wood_block_area_max_ha, ctx, err);
+    w.wood_ragged = num(j, "wood_ragged", w.wood_ragged, ctx, err);
     w.hedge_share = num(j, "hedge_share", w.hedge_share, ctx, err);
     w.hedge_overgrown_share = num(j, "hedge_overgrown_share", w.hedge_overgrown_share, ctx, err);
     w.hedge_trimmed_type = str(j, "hedge_trimmed_type", w.hedge_trimmed_type, ctx, err);
     w.hedge_overgrown_type = str(j, "hedge_overgrown_type", w.hedge_overgrown_type, ctx, err);
+    range(j, "hedge_width_m", w.hedge_width_min, w.hedge_width_max, ctx, err);
     w.hedge_tree_share = num(j, "hedge_tree_share", w.hedge_tree_share, ctx, err);
     w.hedge_tree_spacing = num(j, "hedge_tree_spacing_m", w.hedge_tree_spacing, ctx, err);
     w.hedge_tree_jitter = num(j, "hedge_tree_jitter", w.hedge_tree_jitter, ctx, err);
     w.hedge_gap_per_km = num(j, "hedge_gap_per_km", w.hedge_gap_per_km, ctx, err);
     range(j, "hedge_gap_m", w.hedge_gap_min, w.hedge_gap_max, ctx, err);
+    w.hedge_decay_per_km = num(j, "hedge_decay_per_km", w.hedge_decay_per_km, ctx, err);
+    range(j, "hedge_decay_m", w.hedge_decay_min, w.hedge_decay_max, ctx, err);
     w.scatter_trees_per_ha = num(j, "scatter_trees_per_ha", w.scatter_trees_per_ha, ctx, err);
+    w.arable_tree_factor = num(j, "arable_tree_factor", w.arable_tree_factor, ctx, err);
     w.woodland_trees_per_ha = num(j, "woodland_trees_per_ha", w.woodland_trees_per_ha, ctx, err);
     classes(j, "tree_classes", w.tree_classes, ctx, err);
     classes(j, "woodland_classes", w.woodland_classes, ctx, err);
@@ -559,8 +586,11 @@ Loaded<VegetationRules> parse_vegetation_rules(const std::string& json_text, con
     for (const TreeClass& c : w.tree_classes) check(c.type, "world_cover tree_classes");
     for (const TreeClass& c : w.woodland_classes) check(c.type, "world_cover woodland_classes");
     if (r.blend_band <= 0 || r.clear_margin < 0 || r.clear_margin + r.blend_band > 40) err.set("vegetation corridor: need 0 < blend_band and clear_margin + blend_band <= 40 m");
-    if (w.field_jitter < 0 || w.field_jitter >= 0.5) err.set("vegetation world_cover: field_jitter must be in [0, 0.5)");
-    if (w.field_size_x <= 0 || w.field_size_y <= 0 || w.ground_cell <= 0 || w.min_cell <= 0) err.set("vegetation world_cover: sizes must be positive");
+    if (w.site_jitter < 0 || w.site_jitter >= 0.5) err.set("vegetation world_cover: site_jitter must be in [0, 0.5)");
+    if (w.field_area_ha <= 0 || w.block_m < 100 || w.aspect_min < 1 || w.aspect_max < w.aspect_min || w.block_scale_min <= 0 ||
+        w.block_scale_max < w.block_scale_min || w.ground_cell <= 0 || w.min_cell <= 0 || w.regional_warp_wavelength_m <= 0 ||
+        w.boundary_wobble_wavelength_m <= 0 || w.ribbon_wavelength_m <= 0 || w.belt_length_m <= 0 || w.arable_cluster_wavelength_m <= 0)
+        err.set("vegetation world_cover: sizes, wavelengths and scales must be positive (aspect >= 1, block_m >= 100)");
     return finish_rules(std::move(r), err);
 }
 
@@ -1003,26 +1033,44 @@ namespace {
 
 // ================================================================== 4. the default world cover source
 
+// Irregular fields: the Voronoi cells of sites that come from per-block rotated, stretched, jittered lattices, in a space
+// that is warped by a smooth displacement (so the pattern bends) plus a short-wavelength wobble (so boundaries are not
+// ruler-straight). Woodland is NOT tied to the field cells except for a few plantation cells: it is made of valley-side
+// ribbons (value-noise isolines), shelter belts along boundaries, copses and larger lobed blocks, each a pure function
+// of position. Everything uses only + - * / sqrt floor and integer hashing, so it is identical on every compiler.
 enum class Land { Wood, Arable, Rough, Pasture };
+
+double len2d(Vec2 v) { return std::sqrt(v.x * v.x + v.y * v.y); }
+u64 edge_key(u64 a, u64 b) { return a < b ? mix64(a ^ mix64(b + 0x51ED)) : mix64(b ^ mix64(a + 0x51ED)); }
 
 class DefaultCover final : public WorldCoverSource {
 public:
-    DefaultCover(std::shared_ptr<const VegetationRules> rules, u64 seed) : r_(std::move(rules)), w_(r_->world_cover), seed_(seed) {}
+    DefaultCover(std::shared_ptr<const VegetationRules> rules, u64 seed, CoverHints hints)
+        : r_(std::move(rules)), w_(r_->world_cover), seed_(seed), hints_(std::move(hints)) {
+        Vec2 d{hu(100) - 0.5, hu(101) - 0.5};
+        double l = len2d(d);
+        if (l < 1e-3) { d = {1, 0}; l = 1; }
+        dir0_ = d * (1.0 / l);
+        const double area_max = w_.field_area_ha * 1e4 * w_.block_scale_max * w_.block_scale_max;
+        rmax_ = std::max(0.9 * std::sqrt(area_max * w_.aspect_max), 0.6 * w_.block_m);
+        dmax_ = w_.regional_warp_m + w_.boundary_wobble_m + 1.0;
+    }
 
     CoverGround ground_at(Vec2 p) const override {
         CoverGround g;
-        switch (land_at(p)) {
+        const Land land = land_at(p);
+        switch (land) {
             case Land::Wood:
-                g = {w_.woodland_floor_type, w_.woodland_density, static_cast<std::uint8_t>(w_.woodland_height_class)};
+                g = {w_.woodland_floor_type, w_.woodland_density, static_cast<std::uint8_t>(w_.woodland_height_class), LandClass::Wood};
                 break;
             case Land::Rough:
-                g = {w_.rough_grass_type, w_.rough_density, static_cast<std::uint8_t>(w_.rough_height_class)};
+                g = {w_.rough_grass_type, w_.rough_density, static_cast<std::uint8_t>(w_.rough_height_class), LandClass::Rough};
                 break;
             case Land::Pasture:
-                g = {w_.open_grass_type, w_.open_density, static_cast<std::uint8_t>(w_.open_height_class)};
+                g = {w_.open_grass_type, w_.open_density, static_cast<std::uint8_t>(w_.open_height_class), LandClass::Pasture};
                 break;
             case Land::Arable:
-                g = {"", 0, 0};  // no instances: the renderer's ground material shows soil / crop
+                g = {"", 0, 0, LandClass::Arable};  // no instances: the renderer's ground material shows soil / crop
                 break;
         }
         return g;
@@ -1030,23 +1078,23 @@ public:
 
     void points_in(Vec2 lo, Vec2 hi, std::vector<CoverPoint>& out) const override {
         // Hedge trees.
-        for_segments(lo, hi, [&](const Seg& s) {
-            if (!s.present || ha(18, s.axis, s.i, s.j) >= w_.hedge_tree_share) return;
+        for_edges(lo, hi, [&](const Seg& s) {
+            if (!s.present || he(s.key, 18) >= w_.hedge_tree_share) return;
             const double len = s.s.back();
             const double sp = std::max(1.0, w_.hedge_tree_spacing);
             for (int k = 0; (k + 0.5) * sp < len; ++k) {
-                const double sk = (k + 0.5) * sp + (ha(19, s.axis, s.i, static_cast<i64>(k) + 1000 * s.j) - 0.5) * 2 * w_.hedge_tree_jitter * sp;
+                const double sk = (k + 0.5) * sp + (he(s.key, 19, static_cast<u64>(k)) - 0.5) * 2 * w_.hedge_tree_jitter * sp;
                 if (sk <= 0 || sk >= len) continue;
                 bool in_gap = false;
                 for (const auto& g : s.gaps) in_gap = in_gap || (sk > g.first - 1.5 && sk < g.second + 1.5);
                 if (in_gap) continue;
                 const Vec2 pos = point_at(s.pts, s.s, sk);
                 if (pos.x < lo.x || pos.x >= hi.x || pos.y < lo.y || pos.y >= hi.y) continue;
-                const TreeClass* c = pick_class(w_.tree_classes, ha(20, s.axis, s.i, static_cast<i64>(k) + 1000 * s.j));
-                if (c) out.push_back(make_point(*c, pos, key3(seed_, 21, ui(s.axis * 2 + 1) ^ ui(s.i), ui(s.j), ui(k))));
+                const TreeClass* c = pick_class(w_.tree_classes, he(s.key, 20, static_cast<u64>(k)));
+                if (c) out.push_back(make_point(*c, pos, key3(seed_, 21, s.key, static_cast<u64>(k))));
             }
         });
-        // Scattered trees in open and rough fields: coarse lattice.
+        // Scattered trees in open and rough fields: coarse lattice (arable thinned).
         {
             const double C = 20;
             const double prob = w_.scatter_trees_per_ha * C * C / 1e4;
@@ -1055,7 +1103,9 @@ public:
                     if (h(30, ui(cx), ui(cy)) >= prob) continue;
                     const Vec2 pos{(static_cast<double>(cx) + h(31, ui(cx), ui(cy))) * C, (static_cast<double>(cy) + h(32, ui(cx), ui(cy))) * C};
                     if (pos.x < lo.x || pos.x >= hi.x || pos.y < lo.y || pos.y >= hi.y) continue;
-                    if (land_at(pos) == Land::Wood) continue;
+                    const Land land = land_at(pos);
+                    if (land == Land::Wood) continue;
+                    if (land == Land::Arable && h(35, ui(cx), ui(cy)) >= w_.arable_tree_factor) continue;
                     const TreeClass* c = pick_class(w_.tree_classes, h(33, ui(cx), ui(cy)));
                     if (c) out.push_back(make_point(*c, pos, key3(seed_, 34, ui(cx), ui(cy))));
                 }
@@ -1078,28 +1128,59 @@ public:
         }
     }
 
+    // Areas (ha) and long : short extent ratios of the field cells whose site lies in [lo, hi) and that are not clipped.
+    void cell_stats(Vec2 lo, Vec2 hi, std::vector<double>& area_ha, std::vector<double>& aspect) const {
+        std::vector<std::shared_ptr<const Block>> blocks;
+        gather_box(lo, hi, blocks);
+        for (const auto& b : blocks)
+            for (const Site& s : b->sites) {
+                if (s.p.x < lo.x || s.p.x >= hi.x || s.p.y < lo.y || s.p.y >= hi.y) continue;
+                const Cell c = cell_of(s);
+                bool clipped = c.v.size() < 3;
+                for (u64 l : c.label) clipped = clipped || l == kClip;
+                if (clipped) continue;
+                double a2 = 0;
+                for (std::size_t i = 0; i < c.v.size(); ++i) a2 += c.v[i].cross(c.v[(i + 1) % c.v.size()]);
+                area_ha.push_back(std::fabs(a2) * 0.5 / 1e4);
+                // principal-axis extent ratio from the vertex covariance about the centroid of the vertices
+                Vec2 m{0, 0};
+                for (const Vec2& v : c.v) m = m + v * (1.0 / static_cast<double>(c.v.size()));
+                double sxx = 0, syy = 0, sxy = 0;
+                for (const Vec2& v : c.v) { sxx += (v.x - m.x) * (v.x - m.x); syy += (v.y - m.y) * (v.y - m.y); sxy += (v.x - m.x) * (v.y - m.y); }
+                const double tr = sxx + syy, det = sxx * syy - sxy * sxy;
+                const double disc = std::sqrt(std::max(0.0, tr * tr / 4 - det));
+                const double l1 = tr / 2 + disc, l2 = std::max(1e-9, tr / 2 - disc);
+                aspect.push_back(std::sqrt(l1 / l2));
+            }
+    }
+
     void lines_touching(Vec2 lo, Vec2 hi, std::vector<CoverLine>& out) const override {
-        for_segments(lo, hi, [&](const Seg& s) {
+        for_edges(lo, hi, [&](const Seg& s) {
             if (!s.present) return;
             std::vector<std::pair<double, double>> keep;  // arc intervals between gaps
             double a = 0;
             const double len = s.s.back();
             for (const auto& g : s.gaps) {
                 if (g.first - a >= 2.0) keep.push_back({a, g.first});
-                a = g.second;
+                a = std::max(a, g.second);
             }
             if (len - a >= 2.0) keep.push_back({a, len});
-            const bool over = ha(12, s.axis, s.i, s.j) < w_.hedge_overgrown_share;
+            const bool over = he(s.key, 12) < w_.hedge_overgrown_share;
             const std::string& tid = over ? w_.hedge_overgrown_type : w_.hedge_trimmed_type;
             const VegTypeDef* def = r_->type(tid);
-            const u64 base = key3(seed_, 20, ui(s.axis), ui(s.i), ui(s.j));
+            const u64 base = key3(seed_, 20, s.key);
+            const double u1 = he(s.key, 14), u2 = he(s.key, 15);
+            double edge_w;
+            if (w_.hedge_width_max > 0) edge_w = lerp(w_.hedge_width_min, w_.hedge_width_max, u2 * std::sqrt(u2)) * (over ? 1.15 : 1.0);
+            else edge_w = def ? lerp(def->width_min, def->width_max, u2) : 1.0;
             for (std::size_t k = 0; k < keep.size(); ++k) {
                 CoverLine l;
                 l.type_id = tid;
                 l.style = over ? HedgeStyle::Overgrown : HedgeStyle::Trimmed;
-                const double u1 = ha(14, s.axis, s.i, s.j), u2 = ha(15, s.axis, s.i, s.j);
                 l.height = static_cast<float>(def ? lerp(def->height_min, def->height_max, u1) : 1.5);
-                l.width = static_cast<float>(def ? lerp(def->width_min, def->width_max, u2) : 1.0);
+                double wd = edge_w * (0.85 + 0.3 * he(s.key, 22, static_cast<u64>(k)));
+                if (w_.hedge_width_max > 0) wd = std::clamp(wd, w_.hedge_width_min, w_.hedge_width_max);
+                l.width = static_cast<float>(wd);
                 l.seed = mix64(base + k);
                 const double sa = keep[k].first, sb = keep[k].second;
                 l.points.push_back(point_at(s.pts, s.s, sa));
@@ -1119,50 +1200,216 @@ public:
     }
 
 private:
+    struct Site {
+        Vec2 p;
+        u64 id = 0;
+    };
+    struct Block {
+        std::vector<Site> sites;
+    };
+    struct Probe {
+        Site s, n;        // nearest site and the neighbour whose bisector is nearest
+        double db = 1e9;  // distance to that bisector
+        bool has_n = false, ok = false;
+    };
     struct Seg {
         bool present = false;
-        int axis = 0;
-        i64 i = 0, j = 0;
+        u64 key = 0;
         std::vector<Vec2> pts;
         std::vector<double> s;
-        std::vector<std::pair<double, double>> gaps;
+        std::vector<std::pair<double, double>> gaps;  // sorted, disjoint
     };
 
+    // ---- hashing helpers
+    double hu(u64 salt) const { return hash01(mix64(seed_ ^ mix64(salt + 991))); }
     double h(u64 salt, u64 a, u64 b = 0, u64 c = 0) const { return h01(seed_ ^ mix64(salt + 77), a, b, c); }
-    double ha(u64 salt, int axis, i64 i, i64 j) const { return h(salt, ui(axis), ui(i), ui(j)); }
+    static double he(u64 key, u64 salt, u64 extra = 0) { return hash01(mix64(key ^ mix64(salt * 0x9E3779B97F4A7C15ull + extra + 5))); }
+    static double hk(u64 key, u64 salt) { return hash01(mix64(key + salt * 0x9E3779B97F4A7C15ull)); }
+    double vn(u64 salt, double x, double y) const { return vnoise2(seed_ ^ salt, x, y); }
 
-    double line_x(i64 i) const { return static_cast<double>(i) * w_.field_size_x + (h(1, ui(i)) - 0.5) * 2 * w_.field_jitter * w_.field_size_x; }
-    double line_y(i64 j) const { return static_cast<double>(j) * w_.field_size_y + (h(2, ui(j)) - 0.5) * 2 * w_.field_jitter * w_.field_size_y; }
-    double wx(double y) const { return w_.warp_m * vnoise1(seed_ ^ 0x3, y / w_.warp_wavelength_m); }
-    double wy(double x) const { return w_.warp_m * vnoise1(seed_ ^ 0x4, x / w_.warp_wavelength_m); }
+    // ---- the warp: q = p + D(p); the inverse is a fixed-point iteration (|grad D| < 0.5 for the shipped data)
+    Vec2 disp(Vec2 p) const {
+        const double Lr = w_.regional_warp_wavelength_m, Lw = w_.boundary_wobble_wavelength_m;
+        return {w_.regional_warp_m * (2 * vn(0x31, p.x / Lr, p.y / Lr) - 1) + w_.boundary_wobble_m * (2 * vn(0x33, p.x / Lw, p.y / Lw) - 1),
+                w_.regional_warp_m * (2 * vn(0x32, p.x / Lr, p.y / Lr) - 1) + w_.boundary_wobble_m * (2 * vn(0x34, p.x / Lw, p.y / Lw) - 1)};
+    }
+    Vec2 to_q(Vec2 p) const { return p + disp(p); }
+    Vec2 to_p(Vec2 q) const {
+        Vec2 p = q - disp(q);
+        for (int i = 0; i < 14; ++i) p = q - disp(p);
+        return p;
+    }
 
-    Land kind_of(i64 i, i64 j) const {
-        if (h(5, ui(i), ui(j)) < w_.woodland_share) return Land::Wood;
-        const double r = h(6, ui(i), ui(j));
-        if (r < w_.arable_share) return Land::Arable;
-        if (r < w_.arable_share + w_.rough_share) return Land::Rough;
+    // ---- sites
+    std::shared_ptr<const Block> block(i64 bi, i64 bj) const {
+        const std::pair<i64, i64> k{bi, bj};
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            const auto it = cache_.find(k);
+            if (it != cache_.end()) return it->second;
+        }
+        auto b = std::make_shared<Block>(make_block(bi, bj));
+        std::lock_guard<std::mutex> lk(mu_);
+        if (cache_.size() > 20000) cache_.clear();
+        return cache_.emplace(k, b).first->second;
+    }
+
+    Block make_block(i64 bi, i64 bj) const {
+        Block out;
+        const double B = w_.block_m;
+        const Vec2 centre{(static_cast<double>(bi) + 0.5) * B, (static_cast<double>(bj) + 0.5) * B};
+        const u64 bk = key3(seed_, 200, ui(bi), ui(bj));
+        const double scale = hk(bk, 1) < w_.smallholding_share ? w_.smallholding_scale : lerp(w_.block_scale_min, w_.block_scale_max, hk(bk, 2));
+        const double aspect = lerp(w_.aspect_min, w_.aspect_max, hk(bk, 3));
+        Vec2 d = dir0_;
+        Vec2 hint;
+        const bool hinted = hints_.field_axis && hints_.field_axis(centre, hint) && len2d(hint) > 0.5;
+        if (hinted) d = hint * (1.0 / len2d(hint));
+        const double t = (hk(bk, 4) - 0.5) * 2 * (hinted ? 0.25 * w_.block_angle_var : w_.block_angle_var);
+        const Vec2 d2 = d + Vec2{-d.y, d.x} * t;
+        d = d2 * (1.0 / len2d(d2));
+        const Vec2 pp{-d.y, d.x};
+        const double A = w_.field_area_ha * 1e4 * scale * scale;
+        const double a = std::sqrt(A / aspect), b = a * aspect;  // spacing across (a) and along (b) the long axis
+        const double ph_u = hk(bk, 5), ph_v = hk(bk, 6);
+        const double ext = B * 0.7072;
+        const i64 M = static_cast<i64>(std::ceil(ext / b)) + 1, N = static_cast<i64>(std::ceil(ext / a)) + 1;
+        const double x0 = static_cast<double>(bi) * B, y0 = static_cast<double>(bj) * B;
+        for (i64 m = -M; m <= M; ++m)
+            for (i64 n = -N; n <= N; ++n) {
+                const u64 sk = key3(bk, 7, ui(m), ui(n));
+                const double ju = (hk(sk, 1) - 0.5) * 2 * w_.site_jitter, jv = (hk(sk, 2) - 0.5) * 2 * w_.site_jitter;
+                const double lu = (static_cast<double>(m) + ph_u + ju) * b, lv = (static_cast<double>(n) + ph_v + jv) * a;
+                const Vec2 pos = centre + d * lu + pp * lv;
+                if (pos.x < x0 || pos.x >= x0 + B || pos.y < y0 || pos.y >= y0 + B) continue;
+                out.sites.push_back({pos, sk});
+            }
+        return out;
+    }
+
+    // The blocks that cover [lo, hi]; returned so they stay alive.
+    void gather_box(Vec2 lo, Vec2 hi, std::vector<std::shared_ptr<const Block>>& blocks) const {
+        const double B = w_.block_m;
+        const i64 i0 = static_cast<i64>(std::floor(lo.x / B)), i1 = static_cast<i64>(std::floor(hi.x / B));
+        const i64 j0 = static_cast<i64>(std::floor(lo.y / B)), j1 = static_cast<i64>(std::floor(hi.y / B));
+        for (i64 j = j0; j <= j1; ++j)
+            for (i64 i = i0; i <= i1; ++i) blocks.push_back(block(i, j));
+    }
+
+    Land site_land(const Site& s) const {
+        if (hk(s.id, 11) < w_.woodland_share) return Land::Wood;
+        const double Lc = w_.arable_cluster_wavelength_m;
+        const double ab = w_.arable_share + w_.arable_cluster * (2 * vn(0xC1, s.p.x / Lc, s.p.y / Lc) - 1);
+        const double r = hk(s.id, 12);
+        if (r < ab) return Land::Arable;
+        if (r < ab + w_.rough_share) return Land::Rough;
         return Land::Pasture;
     }
 
+    Probe probe(Vec2 q) const {
+        std::vector<std::shared_ptr<const Block>> blocks;
+        double reach = w_.block_m;
+        Probe pr;
+        for (int pass = 0; pass < 3; ++pass) {
+            blocks.clear();
+            gather_box({q.x - reach, q.y - reach}, {q.x + reach, q.y + reach}, blocks);
+            double d1 = 1e300;
+            const Site* best = nullptr;
+            for (const auto& b : blocks)
+                for (const Site& s : b->sites) {
+                    const double d = (s.p.x - q.x) * (s.p.x - q.x) + (s.p.y - q.y) * (s.p.y - q.y);
+                    if (d < d1) { d1 = d; best = &s; }
+                }
+            if (best && std::sqrt(d1) <= reach * 0.95) {
+                pr.s = *best;
+                pr.ok = true;
+                for (const auto& b : blocks)
+                    for (const Site& t : b->sites) {
+                        if (t.id == best->id) continue;
+                        const double l = len2d(t.p - best->p);
+                        if (l < 1e-6) continue;
+                        const double dt = (t.p.x - q.x) * (t.p.x - q.x) + (t.p.y - q.y) * (t.p.y - q.y);
+                        const double db = (dt - d1) / (2 * l);
+                        if (db < pr.db) { pr.db = db; pr.n = t; pr.has_n = true; }
+                    }
+                return pr;
+            }
+            reach *= 2;
+        }
+        return pr;  // no sites at all (cannot happen with sane data)
+    }
+
+    // ---- woodland shapes that do not depend on the field cells
+    bool ribbon(Vec2 p) const {
+        if (w_.ribbon_band <= 0) return false;
+        const double L = w_.ribbon_wavelength_m;
+        double n = vn(0xD1, p.x / L, p.y / L);
+        n += 0.012 * (2 * vn(0xD2, p.x / 35, p.y / 35) - 1);
+        if (std::fabs(n - 0.5) >= w_.ribbon_band) return false;
+        return vn(0xD3, p.x / (1.6 * L), p.y / (1.6 * L)) > w_.ribbon_gate;
+    }
+
+    // Rounded / lobed woods on a jittered lattice of `cell` m: one per cell with probability per_km2 * cell^2.
+    bool blob_hit(Vec2 p, double cell, u64 salt, double per_km2, double amin_ha, double amax_ha, double aspect_max) const {
+        const double prob = per_km2 * cell * cell / 1e6;
+        if (prob <= 0) return false;
+        const i64 cx0 = static_cast<i64>(std::floor(p.x / cell)), cy0 = static_cast<i64>(std::floor(p.y / cell));
+        for (i64 cy = cy0 - 1; cy <= cy0 + 1; ++cy)
+            for (i64 cx = cx0 - 1; cx <= cx0 + 1; ++cx) {
+                const u64 ck = key3(seed_, salt, ui(cx), ui(cy));
+                if (hk(ck, 1) >= prob) continue;
+                const Vec2 c{(static_cast<double>(cx) + 0.25 + 0.5 * hk(ck, 2)) * cell, (static_cast<double>(cy) + 0.25 + 0.5 * hk(ck, 3)) * cell};
+                const double area = lerp(amin_ha, amax_ha, hk(ck, 4)) * 1e4;
+                const double asp = 1 + (aspect_max - 1) * hk(ck, 5);
+                const double r = std::sqrt(area / kPi);
+                const double ea = r * std::sqrt(asp), eb = r / std::sqrt(asp);
+                const Vec2 dp = p - c;
+                if (dp.x * dp.x + dp.y * dp.y > 2.3 * ea * ea) continue;
+                Vec2 d{hk(ck, 6) - 0.5, hk(ck, 7) - 0.5};
+                double l = len2d(d);
+                if (l < 1e-3) { d = {1, 0}; l = 1; }
+                d = d * (1.0 / l);
+                const double u = dp.dot(d) / ea, v = dp.dot(Vec2{-d.y, d.x}) / eb;
+                const double rho = std::sqrt(u * u + v * v);
+                const double rag = w_.wood_ragged * (2 * vn(0xE1, p.x / (0.5 * r), p.y / (0.5 * r)) - 1) +
+                                   0.5 * w_.wood_ragged * (2 * vn(0xE2, p.x / (0.18 * r), p.y / (0.18 * r)) - 1);
+                if (rho < 1 + rag) return true;
+            }
+        return false;
+    }
+    bool copse(Vec2 p) const { return blob_hit(p, 220, 301, w_.copse_per_km2, w_.copse_area_min_ha, w_.copse_area_max_ha, 2.0); }
+    bool wood_block(Vec2 p) const { return blob_hit(p, 700, 302, w_.wood_block_per_km2, w_.wood_block_area_min_ha, w_.wood_block_area_max_ha, 2.0); }
+    bool free_wood(Vec2 p) const { return ribbon(p) || copse(p) || wood_block(p); }
+
+    bool belt_edge(u64 ekey) const { return hk(ekey, 0xB1) < w_.belt_share; }
+    bool belt_gate_on(Vec2 q) const {
+        const double L = w_.belt_length_m;
+        return vn(0xB2, q.x / L, q.y / L) > w_.belt_gate;
+    }
+
     Land land_at(Vec2 p) const {
-        const double u = p.x - wx(p.y), v = p.y - wy(p.x);
-        i64 i = static_cast<i64>(std::floor(u / w_.field_size_x)), j = static_cast<i64>(std::floor(v / w_.field_size_y));
-        while (line_x(i + 1) <= u) ++i;
-        while (line_x(i) > u) --i;
-        while (line_y(j + 1) <= v) ++j;
-        while (line_y(j) > v) --j;
-        const double dxl = u - line_x(i), dxh = line_x(i + 1) - u, dyl = v - line_y(j), dyh = line_y(j + 1) - v;
-        const Land own = kind_of(i, j);
+        const Vec2 q = to_q(p);
+        const Probe pr = probe(q);
+        if (!pr.ok) return Land::Pasture;
+        const Land own = site_land(pr.s);
         const double rg = w_.woodland_edge_ragged_m;
         if (own == Land::Wood) {
-            const double t = rg * (2 * vnoise2(seed_ ^ 0x7, p.x / 15, p.y / 15) - 1);
-            if (std::min({dxl, dxh, dyl, dyh}) > t) return Land::Wood;
+            const double t = rg * (2 * vn(0x7, p.x / 15, p.y / 15) - 1);
+            if (pr.db > t) return Land::Wood;
             return Land::Rough;  // eroded fringe
         }
-        const double t2 = rg * vnoise2(seed_ ^ 0x8, p.x / 15, p.y / 15);
-        if ((dxl < t2 && kind_of(i - 1, j) == Land::Wood) || (dxh < t2 && kind_of(i + 1, j) == Land::Wood) ||
-            (dyl < t2 && kind_of(i, j - 1) == Land::Wood) || (dyh < t2 && kind_of(i, j + 1) == Land::Wood))
-            return Land::Wood;
+        if (pr.has_n && site_land(pr.n) == Land::Wood) {
+            const double t2 = rg * vn(0x8, p.x / 15, p.y / 15);
+            if (pr.db < t2) return Land::Wood;
+        }
+        if (free_wood(p)) return Land::Wood;
+        if (pr.has_n) {
+            const u64 ek = edge_key(pr.s.id, pr.n.id);
+            if (belt_edge(ek)) {
+                const double hw = 0.5 * lerp(w_.belt_width_min, w_.belt_width_max, hk(ek, 0xB3)) * (0.8 + 0.4 * vn(0xB4, p.x / 30, p.y / 30));
+                if (pr.db < hw && belt_gate_on(q)) return Land::Wood;
+            }
+        }
         return own;
     }
 
@@ -1175,56 +1422,150 @@ private:
         return pts[k - 1] + (pts[k] - pts[k - 1]) * t;
     }
 
-    Seg make_seg(int axis, i64 i, i64 j) const {
-        Seg s;
-        s.axis = axis;
-        s.i = i;
-        s.j = j;
-        if (ha(10, axis, i, j) >= w_.hedge_share) return s;
-        Land a, b;
-        if (axis == 0) {
-            a = kind_of(i - 1, j);
-            b = kind_of(i, j);
-        } else {
-            a = kind_of(i, j - 1);
-            b = kind_of(i, j);
+    // ---- Voronoi cell polygon of a site (in q space), clipped to a square of half-size rmax_ around the site.
+    struct Cell {
+        std::vector<Vec2> v;
+        std::vector<u64> label;  // label[i]: neighbour id across the edge v[i] -> v[i+1], or kClip
+        std::vector<Site> nb;    // neighbours used (for their land)
+    };
+    static constexpr u64 kClip = ~0ull;
+
+    Cell cell_of(const Site& s) const {
+        Cell c;
+        const double B = w_.block_m;
+        const double R2 = 2 * rmax_;
+        std::vector<std::shared_ptr<const Block>> blocks;
+        gather_box({s.p.x - R2 - B, s.p.y - R2 - B}, {s.p.x + R2 + B, s.p.y + R2 + B}, blocks);
+        std::vector<std::pair<double, const Site*>> nbs;
+        for (const auto& b : blocks)
+            for (const Site& t : b->sites) {
+                if (t.id == s.id) continue;
+                const double d = len2d(t.p - s.p);
+                if (d < R2 && d > 1e-6) nbs.push_back({d, &t});
+            }
+        std::sort(nbs.begin(), nbs.end(), [](const auto& a, const auto& b) { return a.first < b.first || (a.first == b.first && a.second->id < b.second->id); });
+        c.v = {{s.p.x - rmax_, s.p.y - rmax_}, {s.p.x + rmax_, s.p.y - rmax_}, {s.p.x + rmax_, s.p.y + rmax_}, {s.p.x - rmax_, s.p.y + rmax_}};
+        c.label.assign(4, kClip);
+        double maxr = rmax_ * 1.4143;
+        for (const auto& nd : nbs) {
+            const double d = nd.first;
+            const Site* t = nd.second;
+            if (d * 0.5 > maxr) break;
+            // keep the half plane nearer to s: f(x) = (x - mid) . n <= 0, n = t - s
+            const Vec2 n = t->p - s.p;
+            const Vec2 mid = (s.p + t->p) * 0.5;
+            std::vector<Vec2> nv;
+            std::vector<u64> nl;
+            const std::size_t m = c.v.size();
+            for (std::size_t i = 0; i < m; ++i) {
+                const Vec2 a = c.v[i], b = c.v[(i + 1) % m];
+                const double fa = (a - mid).dot(n), fb = (b - mid).dot(n);
+                const u64 la = c.label[i];
+                if (fa <= 0) {
+                    nv.push_back(a);
+                    nl.push_back(la);
+                    if (fb > 0) {
+                        const double tt = fa / (fa - fb);
+                        nv.push_back(a + (b - a) * tt);
+                        nl.push_back(t->id);
+                    }
+                } else if (fb <= 0) {
+                    const double tt = fa / (fa - fb);
+                    nv.push_back(a + (b - a) * tt);
+                    nl.push_back(la);
+                }
+            }
+            c.v.swap(nv);
+            c.label.swap(nl);
+            c.nb.push_back(*t);
+            if (c.v.size() < 3) break;
+            maxr = 0;
+            for (const Vec2& x : c.v) maxr = std::max(maxr, len2d(x - s.p));
         }
-        if (a == Land::Wood && b == Land::Wood) return s;
-        const double t0 = axis == 0 ? line_y(j) : line_x(i), t1 = axis == 0 ? line_y(j + 1) : line_x(i + 1);
-        const int n = std::max(1, static_cast<int>(std::ceil((t1 - t0) / 2.0)));
-        for (int k = 0; k <= n; ++k) {
-            const double t = lerp(t0, t1, static_cast<double>(k) / n);
-            s.pts.push_back(axis == 0 ? Vec2{line_x(i) + wx(t), t} : Vec2{t, line_y(j) + wy(t)});
-        }
-        s.s.push_back(0);
-        for (std::size_t k = 1; k < s.pts.size(); ++k) s.s.push_back(s.s.back() + (s.pts[k] - s.pts[k - 1]).length());
+        return c;
+    }
+
+    // Intervals [a, b] of arc length along the edge removed from the hedge: gateways, decayed stretches, and wherever a
+    // wood (ribbon, copse, block, belt) stands on it.
+    void make_gaps(Seg& s, bool belt) const {
+        std::vector<std::pair<double, double>> g;
         const double len = s.s.back();
-        const int ng = std::min(3, static_cast<int>(std::floor(len / 1000.0 * w_.hedge_gap_per_km + ha(16, axis, i, j))));
-        for (int g = 0; g < ng; ++g) {
-            const double c = len * (g + 0.15 + 0.7 * ha(17, axis, i, j * 7 + g)) / ng;
-            const double gw = lerp(w_.hedge_gap_min, w_.hedge_gap_max, ha(9, axis, i, j * 7 + g));
-            s.gaps.push_back({std::max(0.0, c - gw / 2), std::min(len, c + gw / 2)});
+        const int ng = std::min(3, static_cast<int>(std::floor(len / 1000.0 * w_.hedge_gap_per_km + he(s.key, 16))));
+        for (int k = 0; k < ng; ++k) {
+            const double c = len * (k + 0.15 + 0.7 * he(s.key, 17, static_cast<u64>(k))) / ng;
+            const double gw = lerp(w_.hedge_gap_min, w_.hedge_gap_max, he(s.key, 9, static_cast<u64>(k)));
+            g.push_back({std::max(0.0, c - gw / 2), std::min(len, c + gw / 2)});
         }
-        s.present = true;
-        return s;
+        const int nd = std::min(3, static_cast<int>(std::floor(len / 1000.0 * w_.hedge_decay_per_km + he(s.key, 23))));
+        for (int k = 0; k < nd; ++k) {
+            const double c = len * (k + 0.15 + 0.7 * he(s.key, 24, static_cast<u64>(k))) / nd;
+            const double gw = lerp(w_.hedge_decay_min, w_.hedge_decay_max, he(s.key, 25, static_cast<u64>(k)));
+            g.push_back({std::max(0.0, c - gw / 2), std::min(len, c + gw / 2)});
+        }
+        // Wood standing on the edge: sample every ~4 m.
+        const int ns = std::max(1, static_cast<int>(std::ceil(len / 4.0)));
+        double start = -1;
+        for (int k = 0; k <= ns; ++k) {
+            const double sv = len * k / ns;
+            const Vec2 p = point_at(s.pts, s.s, sv);
+            const bool wood = free_wood(p) || (belt && belt_gate_on(to_q(p)));
+            if (wood && start < 0) start = sv;
+            if (!wood && start >= 0) { g.push_back({start, sv}); start = -1; }
+        }
+        if (start >= 0) g.push_back({start, len});
+        std::sort(g.begin(), g.end());
+        for (const auto& x : g) {
+            if (!s.gaps.empty() && x.first <= s.gaps.back().second) s.gaps.back().second = std::max(s.gaps.back().second, x.second);
+            else s.gaps.push_back(x);
+        }
     }
 
     template <class F>
-    void for_segments(Vec2 lo, Vec2 hi, F f) const {
-        const double mx = w_.warp_m + w_.field_jitter * std::max(w_.field_size_x, w_.field_size_y) + 4;
-        const i64 i0 = static_cast<i64>(std::floor((lo.x - mx) / w_.field_size_x)) - 1, i1 = static_cast<i64>(std::floor((hi.x + mx) / w_.field_size_x)) + 1;
-        const i64 j0 = static_cast<i64>(std::floor((lo.y - mx) / w_.field_size_y)) - 1, j1 = static_cast<i64>(std::floor((hi.y + mx) / w_.field_size_y)) + 1;
-        for (i64 i = i0; i <= i1; ++i)
-            for (i64 j = j0; j <= j1; ++j) {
-                for (int axis = 0; axis < 2; ++axis) {
-                    // Cheap reject by the segment's box.
-                    const double xa = axis == 0 ? line_x(i) - w_.warp_m : line_x(i), xb = axis == 0 ? line_x(i) + w_.warp_m : line_x(i + 1);
-                    const double ya = axis == 0 ? line_y(j) : line_y(j) - w_.warp_m, yb = axis == 0 ? line_y(j + 1) : line_y(j) + w_.warp_m;
-                    if (xb < lo.x - 4 || xa > hi.x + 4 || yb < lo.y - 4 || ya > hi.y + 4) continue;
-                    const Seg s = make_seg(axis, i, j);
-                    if (s.present) f(s);
+    void for_edges(Vec2 lo, Vec2 hi, F f) const {
+        const double m = rmax_ + dmax_ + 4;
+        std::vector<std::shared_ptr<const Block>> blocks;
+        gather_box({lo.x - m, lo.y - m}, {hi.x + m, hi.y + m}, blocks);
+        std::vector<Site> sites;
+        for (const auto& b : blocks)
+            for (const Site& s : b->sites)
+                if (s.p.x >= lo.x - m && s.p.x < hi.x + m && s.p.y >= lo.y - m && s.p.y < hi.y + m) sites.push_back(s);
+        for (const Site& s : sites) {
+            const Cell c = cell_of(s);
+            const std::size_t n = c.v.size();
+            if (n < 3) continue;
+            for (std::size_t i = 0; i < n; ++i) {
+                const u64 t = c.label[i];
+                if (t == kClip || !(s.id < t)) continue;  // each shared edge is built by the lower id only
+                const Vec2 qa = c.v[i], qb = c.v[(i + 1) % n];
+                const double L = len2d(qb - qa);
+                if (L < 3.0) continue;
+                const u64 ekey = edge_key(s.id, t);
+                // Cheap reject on the endpoints' box (the edge is straight in q space; the warp adds at most dmax_).
+                if (std::max(qa.x, qb.x) + dmax_ + 4 < lo.x || std::min(qa.x, qb.x) - dmax_ - 4 > hi.x ||
+                    std::max(qa.y, qb.y) + dmax_ + 4 < lo.y || std::min(qa.y, qb.y) - dmax_ - 4 > hi.y)
+                    continue;
+                if (hk(ekey, 10) >= w_.hedge_share) continue;
+                Land lb = Land::Pasture;
+                for (const Site& x : c.nb)
+                    if (x.id == t) lb = site_land(x);
+                if (site_land(s) == Land::Wood && lb == Land::Wood) continue;
+                Seg seg;
+                seg.key = ekey;
+                const int np = std::max(1, static_cast<int>(std::ceil(L / 5.0)));
+                Aabb2 bx;
+                for (int k = 0; k <= np; ++k) {
+                    const Vec2 p = to_p(qa + (qb - qa) * (static_cast<double>(k) / np));
+                    seg.pts.push_back(p);
+                    box_add(bx, p);
                 }
+                if (!box_hit(bx, Aabb2{{lo.x - 4, lo.y - 4}, {hi.x + 4, hi.y + 4}})) continue;
+                seg.s.push_back(0);
+                for (std::size_t k = 1; k < seg.pts.size(); ++k) seg.s.push_back(seg.s.back() + len2d(seg.pts[k] - seg.pts[k - 1]));
+                make_gaps(seg, belt_edge(ekey));
+                seg.present = true;
+                f(seg);
             }
+        }
     }
 
     CoverPoint make_point(const TreeClass& c, Vec2 pos, u64 seed) const {
@@ -1243,6 +1584,11 @@ private:
     std::shared_ptr<const VegetationRules> r_;
     const WorldCoverRules& w_;
     u64 seed_;
+    CoverHints hints_;
+    Vec2 dir0_{1, 0};
+    double rmax_ = 500, dmax_ = 65;
+    mutable std::mutex mu_;
+    mutable std::map<std::pair<i64, i64>, std::shared_ptr<const Block>> cache_;
 };
 
 // ================================================================== 5. tile assembly and equality
@@ -1329,8 +1675,13 @@ bool same_content(const VegetationTile& a, const VegetationTile& b) {
     return true;
 }
 
-std::shared_ptr<const WorldCoverSource> make_default_cover_source(std::shared_ptr<const VegetationRules> rules, std::uint64_t world_seed) {
-    return std::make_shared<DefaultCover>(std::move(rules), world_seed);
+void default_cover_field_stats(const WorldCoverSource& src, Vec2 lo, Vec2 hi, std::vector<double>& area_ha, std::vector<double>& aspect) {
+    if (const auto* d = dynamic_cast<const DefaultCover*>(&src)) d->cell_stats(lo, hi, area_ha, aspect);
+}
+
+std::shared_ptr<const WorldCoverSource> make_default_cover_source(std::shared_ptr<const VegetationRules> rules, std::uint64_t world_seed,
+                                                                  CoverHints hints) {
+    return std::make_shared<DefaultCover>(std::move(rules), world_seed, std::move(hints));
 }
 
 namespace {

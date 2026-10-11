@@ -46,12 +46,24 @@ double lattice(u64 key, long long ix, long long iy) {
     return hash01(h) * 2.0 - 1.0;
 }
 
+double len2(double x, double y) { return std::sqrt(x * x + y * y); }
+
 }  // namespace
 
 TestWorld::TestWorld(TestWorldParams p) : p_(p) {
     axis_x0_ = (hash01(mix64(p_.seed) ^ 0x71) - 0.5) * 300.0;
-    scarp_y_ = (hash01(mix64(p_.seed) ^ 0x72) - 0.5) * 0.3 * p_.size_m;
     side_ = hash01(mix64(p_.seed) ^ 0x73) < 0.5 ? -1 : 1;
+    // Valley direction: (s, c) with s/c = tan in [-max, max]; scarp position along the valley.
+    const double tn = (hash01(mix64(p_.seed) ^ 0x74) * 2.0 - 1.0) * p_.valley_angle_max_tan;
+    c_ = 1.0 / std::sqrt(1.0 + tn * tn);
+    s_ = tn * c_;
+    scarp_t_ = (hash01(mix64(p_.seed) ^ 0x72) - 0.5) * 0.3 * p_.size_m;
+    // Regional tilt direction: a unit vector from two hashes.
+    double tx = hash01(mix64(p_.seed) ^ 0x75) - 0.5, ty = hash01(mix64(p_.seed) ^ 0x76) - 0.5;
+    double tl = len2(tx, ty);
+    if (tl < 1e-3) { tx = 1; ty = 0; tl = 1; }
+    tilt_x_ = p_.tilt * tx / tl;
+    tilt_y_ = p_.tilt * ty / tl;
 }
 
 double TestWorld::noise(int channel, double x, double y, double wl, int rot) const {
@@ -72,48 +84,62 @@ double TestWorld::noise(int channel, double x, double y, double wl, int rot) con
 double TestWorld::rolling(double x, double y) const {
     const double wx = x + p_.warp_m * noise(10, x, y, 700, 1);
     const double wy = y + p_.warp_m * noise(11, x, y, 700, 2);
-    static constexpr double wl[5] = {1100, 520, 240, 110, 60};
-    static constexpr double amp[5] = {4.5, 4.5, 2.4, 0.9, 0.3};
+    static constexpr double wl[7] = {1100, 520, 240, 110, 60, 90, 40};
+    static constexpr double amp[7] = {4.5, 4.5, 2.4, 0.9, 0.3, 0.9, 0.5};
     double sum = 0;
-    for (int k = 0; k < 5; ++k) sum += amp[k] * noise(20 + k, wx, wy, wl[k], k + 1);
+    for (int k = 0; k < 7; ++k) sum += amp[k] * (k >= 5 ? p_.detail_amp : 1.0) * noise(20 + k, wx, wy, wl[k], k + 1);
     return sum * p_.rolling_amp;
 }
 
-double TestWorld::valley_axis_x(double y) const {
-    const double n = noise(1, 0, y, 1400, 0) + 0.5 * noise(2, 0, y, 600, 0);
+double TestWorld::axis_cross(double t) const {
+    const double n = noise(1, 0, t, 1400, 0) + 0.5 * noise(2, 0, t, 600, 0);
     return axis_x0_ + p_.valley_meander_m * (n / 1.5);
 }
 
-double TestWorld::valley_distance(double x, double y) const {
-    const double dxdy = (valley_axis_x(y + 2) - valley_axis_x(y - 2)) / 4.0;
-    const double k = 1.0 / std::sqrt(1.0 + dxdy * dxdy);
-    return (x - valley_axis_x(y)) * k * side_;
+Vec2 TestWorld::valley_axis_point(double t) const {
+    const double a = axis_cross(t);
+    return {t * s_ + a * c_, t * c_ - a * s_};
 }
 
-double TestWorld::scarp_weight(double y) const {
-    const double ay = std::fabs(y - scarp_y_);
-    return 1.0 - smoothstep((ay - 0.5 * p_.scarp_stretch_m) / std::max(p_.scarp_fade_m, 1e-6));
+double TestWorld::valley_distance(double x, double y) const {
+    const double t = valley_t(x, y);
+    const double xr = c_ * x - s_ * y;
+    const double dadt = (axis_cross(t + 2) - axis_cross(t - 2)) / 4.0;
+    const double k = 1.0 / std::sqrt(1.0 + dadt * dadt);
+    return (xr - axis_cross(t)) * k * side_;
+}
+
+double TestWorld::valley_floor_half_width(double t) const { return p_.valley_floor_half_width_m * (1.0 + 0.3 * noise(31, 0, t, 900, 0)); }
+
+double TestWorld::scarp_weight(double t) const {
+    const double at = std::fabs(t - scarp_t_);
+    return 1.0 - smoothstep((at - 0.5 * p_.scarp_stretch_m) / std::max(p_.scarp_fade_m, 1e-6));
 }
 
 double TestWorld::height(double x, double y) const {
     // The valley edge wobbles (distance perturbed by a 320 m noise) and its floor width varies along its length, so the
     // sides are not parallel bands; the perturbation is small enough to add at most ~20 % to a slope.
+    const double t = valley_t(x, y);
     const double d = valley_distance(x, y) + p_.edge_wobble_m * noise(30, x, y, 320, 3);
-    const double floor_w = p_.valley_floor_half_width_m * (1.0 + 0.3 * noise(31, 0, y, 900, 0));
-    const double e = std::max(std::fabs(d) - floor_w, 0.0);
+    const double floor_w = valley_floor_half_width(t);
     double rise, len;
+    double shift = 0;
     if (d > 0) {
-        const double w = scarp_weight(y);
+        const double w = scarp_weight(t);
         rise = lerp(p_.scarp_side_gentle_rise_m, p_.scarp_rise_m, w);
         len = lerp(p_.scarp_side_gentle_len_m, p_.scarp_len_m, w);
+        // Spurs and re-entrants: the foot of the steep side wanders along the valley, and its run varies.
+        shift = w * p_.spur_amp_m * noise(40, 0, t, p_.spur_wavelength_m, 0);
+        len *= 1.0 + w * p_.scarp_len_var * noise(41, 0, t, 420, 0);
     } else {
         rise = p_.gentle_rise_m;
         len = p_.gentle_len_m;
     }
+    const double e = std::max(std::fabs(d) - floor_w + shift, 0.0);
     const double valley = rise * rise_profile(e / len);
     const double roll_scale = p_.floor_roughness + (1.0 - p_.floor_roughness) * smoothstep(e / 150.0);
-    const double drain = p_.drainage_fall_m * (y + 0.5 * p_.size_m) / p_.size_m;
-    return valley + rolling(x, y) * roll_scale - drain;
+    const double drain = p_.drainage_fall_m * (t + 0.5 * p_.size_m) / p_.size_m;
+    return valley + rolling(x, y) * roll_scale - drain + tilt_x_ * x + tilt_y_ * y;
 }
 
 double TestWorld::slope(double x, double y) const {
@@ -121,6 +147,30 @@ double TestWorld::slope(double x, double y) const {
     const double gx = (height(x + h, y) - height(x - h, y)) / (2 * h);
     const double gy = (height(x, y + h) - height(x, y - h)) / (2 * h);
     return std::sqrt(gx * gx + gy * gy);
+}
+
+bool TestWorld::valley_ribbon(double x, double y) const {
+    const double t = valley_t(x, y);
+    if (noise(51, 0, t, 420, 0) <= p_.ribbon_gate) return false;
+    const double e = std::fabs(valley_distance(x, y)) - valley_floor_half_width(t);
+    const double width = p_.ribbon_width_m * (0.6 + 0.6 * noise(50, 0, t, 200, 0)) * (1.0 + 0.5 * noise(52, x, y, 70, 2));
+    return e > -4.0 && e < width;
+}
+
+bool TestWorld::field_axis(Vec2 p, Vec2& dir) const {
+    constexpr double h = 6.0;
+    const double gx = (height(p.x + h, p.y) - height(p.x - h, p.y)) / (2 * h);
+    const double gy = (height(p.x, p.y + h) - height(p.x, p.y - h)) / (2 * h);
+    const double g = len2(gx, gy);
+    if (g > p_.field_axis_slope) {
+        dir = {-gy / g, gx / g};  // along the contour
+        return true;
+    }
+    if (std::fabs(valley_distance(p.x, p.y)) < valley_floor_half_width(valley_t(p.x, p.y)) + 160) {
+        dir = valley_dir();
+        return true;
+    }
+    return false;
 }
 
 Heightfield TestWorld::make_heightfield() const {
@@ -141,27 +191,27 @@ public:
     TestWorldCover(std::shared_ptr<const TestWorld> w, std::shared_ptr<const VegetationRules> r, std::shared_ptr<const WorldCoverSource> b)
         : w_(std::move(w)), r_(std::move(r)), base_(std::move(b)), p_(w_->params()), wc_(r_->world_cover) {}
 
+    // 1 where woodland is wanted: steep ground (ramp over the slope range) and the valley ribbons.
     double wood_share(Vec2 p) const {
+        if (w_->valley_ribbon(p.x, p.y)) return 1.0;
         return smoothstep((w_->slope(p.x, p.y) - p_.wood_slope_lo) / std::max(p_.wood_slope_hi - p_.wood_slope_lo, 1e-6));
     }
     // 1 on the valley floor, 0 beyond floor half width + 60 m.
     double floor_factor(Vec2 p) const {
         const double a = std::fabs(w_->valley_distance(p.x, p.y));
-        return 1.0 - smoothstep((a - p_.valley_floor_half_width_m) / 60.0);
-    }
-    // The base source does not expose its land class; woodland is recognised by its ground type + density.
-    bool base_is_wood(const CoverGround& g) const {
-        return g.type_id == wc_.woodland_floor_type && g.density == wc_.woodland_density;
+        return 1.0 - smoothstep((a - w_->valley_floor_half_width(w_->valley_t(p.x, p.y))) / 60.0);
     }
 
     CoverGround ground_at(Vec2 p) const override {
         CoverGround g = base_->ground_at(p);
         const double a = std::fabs(w_->valley_distance(p.x, p.y));
-        if (a < p_.wet_half_width_m) return {wc_.rough_grass_type, wc_.rough_density, static_cast<std::uint8_t>(wc_.rough_height_class)};
+        if (a < p_.wet_half_width_m)
+            return {wc_.rough_grass_type, wc_.rough_density, static_cast<std::uint8_t>(wc_.rough_height_class), LandClass::Rough};
         const double ws = wood_share(p);
-        if (ws >= 0.5) return {wc_.woodland_floor_type, wc_.woodland_density, static_cast<std::uint8_t>(wc_.woodland_height_class)};
-        if (g.type_id.empty() && ws > 0.0)  // arable on a steep field: grass instead
-            return {wc_.open_grass_type, wc_.open_density, static_cast<std::uint8_t>(wc_.open_height_class)};
+        if (ws >= 0.5)
+            return {wc_.woodland_floor_type, wc_.woodland_density, static_cast<std::uint8_t>(wc_.woodland_height_class), LandClass::Wood};
+        if (g.land == LandClass::Arable && ws > 0.3)  // arable on a steep field: grass instead
+            return {wc_.open_grass_type, wc_.open_density, static_cast<std::uint8_t>(wc_.open_height_class), LandClass::Pasture};
         return g;
     }
 
@@ -170,13 +220,13 @@ public:
         base_->points_in(lo, hi, pts);
         for (const CoverPoint& c : pts) {
             const double ff = floor_factor(c.pos);
-            if (ff > 0.0 && base_is_wood(base_->ground_at(c.pos))) {
+            if (ff > 0.0 && base_->ground_at(c.pos).land == LandClass::Wood) {
                 const double keep = lerp(1.0, p_.valley_wood_keep, ff);
                 if (hash01(c.seed ^ 0x5EEDull) >= keep) continue;
             }
             out.push_back(c);
         }
-        // Extra woodland on steep ground, on a fine lattice (same construction as the default's woodland).
+        // Extra woodland on steep ground and valley ribbons, on a fine lattice (same construction as the default's woodland).
         const double F = 5;
         const double prob = std::min(1.0, wc_.woodland_trees_per_ha * F * F / 1e4);
         const std::vector<TreeClass>& cl = wc_.woodland_classes.empty() ? wc_.tree_classes : wc_.woodland_classes;
@@ -192,7 +242,7 @@ public:
                 if (pos.x < lo.x || pos.x >= hi.x || pos.y < lo.y || pos.y >= hi.y) continue;
                 const double ws = wood_share(pos);
                 if (ws <= 0.0 || h(3) >= prob * ws) continue;
-                if (base_is_wood(base_->ground_at(pos))) continue;  // the base already plants this
+                if (base_->ground_at(pos).land == LandClass::Wood) continue;  // the base already plants this
                 if (std::fabs(w_->valley_distance(pos.x, pos.y)) < p_.wet_half_width_m) continue;
                 double u = h(4) * wsum;
                 const TreeClass* pick = &cl.back();
@@ -239,7 +289,23 @@ TestWorldBundle make_test_world(const TestWorldParams& params, std::shared_ptr<c
     b.ground_height = [hf](double x, double y) { return hf->height(x, y); };
     b.world_min = b.world->world_min();
     b.world_max = b.world->world_max();
-    if (rules) b.cover = make_test_world_cover_source(b.world, rules, make_default_cover_source(rules, params.seed));
+    if (rules) {
+        // Per-seed variation of the region's cover rules, within the stated fractions.
+        auto varied = std::make_shared<VegetationRules>(*rules);
+        WorldCoverRules& wc = varied->world_cover;
+        const u64 k = mix64(params.seed ^ 0xC0FFEE5ull);
+        auto u = [&](u64 s) { return hash01(mix64(k ^ s)) * 2.0 - 1.0; };
+        wc.field_area_ha *= 1.0 + params.field_area_var * u(1);
+        wc.wood_block_per_km2 *= 1.0 + params.wood_var * u(2);
+        wc.copse_per_km2 *= 1.0 + params.wood_var * u(3);
+        wc.belt_share *= 1.0 + params.wood_var * u(4);
+        wc.ribbon_band *= 1.0 + 0.5 * params.wood_var * u(5);
+        b.rules = varied;
+        auto world = b.world;
+        CoverHints hints;
+        hints.field_axis = [world](Vec2 p, Vec2& d) { return world->field_axis(p, d); };
+        b.cover = make_test_world_cover_source(b.world, b.rules, make_default_cover_source(b.rules, params.seed, std::move(hints)));
+    }
     return b;
 }
 
