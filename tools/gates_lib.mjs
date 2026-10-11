@@ -13,6 +13,7 @@
 // Internal errors never refuse: callers log FAIL-OPEN and carry on (a gate that blocks wrongly would trap the agent).
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 export const METRICS = ['scene_check', 'ctest failed_assertions', 'ctest failed_tests'];
@@ -135,27 +136,38 @@ const KIND_RE = [
 const TOL_RE = /\b(k\w*(?:Tol|Eps|Tolerance)\w*|\w*_(?:tol|eps|tolerance|epsilon)\w*|(?:tol|eps|epsilon|tolerance|TOL|EPS|Tol|Eps)\w*)\s*(?:=|\{)\s*([0-9]*\.?[0-9]+(?:[eE][-+]?\d+)?)/;
 const testName = (l) => { const m = l.match(/^\s*(?:DOCTEST_)?TEST_CASE(?:_TEMPLATE)?\s*\(\s*"((?:[^"\\]|\\.)*)"/); return m ? m[1] : null; };
 
+// What the guard looks for (the forms real waivers took in tests/test_grading.cpp and prototypes/road-draw/tools/scene.mjs):
+//   should_fail / doctest::skip / may_fail / WILL_FAIL / WARN added; a name added to is_rough() or more GRADE_CHECK(is_rough(...)); a loosened or
+//   new tolerance constant; a loosened numeric threshold on an edited line (< 0.3 -> < 0.5); fewer CHECK/REQUIRE assertions than before; `#if 0`;
+//   a test case or scene check deleted or renamed; a test source dropped from tests/CMakeLists.txt; a scene check with a hard-coded `pass: true`.
 // diffText: unified diff (-U0) of the guarded paths plus untracked guarded files appended as pure additions.
+const ASSERT_RE = /\b(?:GRADE_CHECK|(?:DOCTEST_)?(?:CHECK|REQUIRE)(?:_MESSAGE|_EQ|_NE|_FALSE|_THROWS\w*|_NOTHROW)?)\s*\(/;
+const numbers = (l) => [...l.matchAll(/(?<![\w.])(\d+\.?\d*(?:[eE][-+]?\d+)?)(?![\w.])/g)].map((m) => Number(m[1]));
+const skeleton = (l) => l.replace(/(?<![\w.])\d+\.?\d*(?:[eE][-+]?\d+)?(?![\w.])/g, '#').replace(/\s+/g, ' ').trim();
 export function waiverFindings(diffText, allowed = []) {
   const findings = [];
-  let file = '', addedLines = [], removedLines = [];
   const files = [];
+  let cur = null, oldName = '', hunk = null;
   for (const line of String(diffText).split('\n')) {
-    const h = line.match(/^\+\+\+ b\/(.*)$/);
-    if (h) { if (file) files.push({ file, add: addedLines, rem: removedLines }); file = h[1]; addedLines = []; removedLines = []; continue; }
-    if (line.startsWith('---') || line.startsWith('@@') || line.startsWith('diff ') || line.startsWith('index ')) continue;
-    if (line.startsWith('+')) addedLines.push(line.slice(1)); else if (line.startsWith('-')) removedLines.push(line.slice(1));
+    if (line.startsWith('--- ')) { oldName = line.slice(4).replace(/^a\//, ''); continue; }
+    const h = line.match(/^\+\+\+ (?:b\/)?(.*)$/);
+    if (h) { cur = { file: h[1] === '/dev/null' ? oldName : h[1], add: [], rem: [], hunks: [] }; files.push(cur); hunk = null; continue; }
+    if (!cur) continue;
+    if (line.startsWith('@@')) { hunk = { rem: [], add: [] }; cur.hunks.push(hunk); continue; }
+    if (line.startsWith('diff ') || line.startsWith('index ')) continue;
+    if (!hunk) { hunk = { rem: [], add: [] }; cur.hunks.push(hunk); }
+    if (line.startsWith('+')) { cur.add.push(line.slice(1)); hunk.add.push(line.slice(1)); } else if (line.startsWith('-')) { cur.rem.push(line.slice(1)); hunk.rem.push(line.slice(1)); }
   }
-  if (file) files.push({ file, add: addedLines, rem: removedLines });
   const addedTests = new Set(files.flatMap((f) => f.add.map(testName).filter(Boolean)));
   const addedJsNames = new Set(files.flatMap((f) => f.add.map((l) => (l.match(/name:\s*'([^']+)'/) || [])[1]).filter(Boolean)));
   const add = (key, file, what) => findings.push({ key, file, what });
-  for (const { file: f, add: A, rem: R } of files) {
+  for (const { file: f, add: A, rem: R, hunks } of files) {
     // keyword waivers: more occurrences than before in the file
     for (const [kind, re] of KIND_RE) {
       const a = A.filter((l) => re.test(l)), r = R.filter((l) => re.test(l));
       if (a.length > r.length) for (const l of a.slice(r.length)) add(`${kind}:${testName(l) || (l.match(/["']([\w ./-]{3,60})["']/) || [])[1] || l.trim().slice(0, 40)}`, f, `${kind} added: ${l.trim().slice(0, 110)}`);
     }
+    if (A.filter((l) => /^\s*#\s*if\s+0\b/.test(l)).length > R.filter((l) => /^\s*#\s*if\s+0\b/.test(l)).length) add('if0:' + path.basename(f), f, '"#if 0" added: code (a test?) is switched off');
     // is_rough(...) list and more softened checks
     const roughNames = (L) => new Set(L.filter((l) => /is_rough|n\s*==\s*"/.test(l)).flatMap((l) => [...l.matchAll(/"([\w]+)"/g)].map((x) => x[1])));
     const oldR = roughNames(R); for (const n of roughNames(A)) if (!oldR.has(n)) add(`is_rough:${n}`, f, `is_rough() waiver list gained "${n}" (turns EVERY GRADE_CHECK(is_rough(name),...) for that case into a warning, not just the check you describe)`);
@@ -166,6 +178,26 @@ export function waiverFindings(diffText, allowed = []) {
     const tolOf = (L) => { const m = new Map(); for (const l of L) { const t = l.match(TOL_RE); if (t) m.set(t[1], Number(t[2])); } return m; };
     const oldT = tolOf(R), newT = tolOf(A);
     for (const [n, v] of newT) { if (!oldT.has(n)) add(`tolerance:${n}`, f, `new tolerance constant ${n} = ${v}`); else if (v > oldT.get(n)) add(`tolerance:${n}`, f, `tolerance ${n} loosened ${oldT.get(n)} -> ${v}`); }
+    // a threshold loosened on an edited line: same line shape, one number moved the easy way (these are 1:1 edits inside one hunk)
+    for (const hk of hunks) {
+      if (!hk.rem.length || hk.rem.length !== hk.add.length) continue;
+      hk.rem.forEach((ol, i) => {
+        const nl = hk.add[i];
+        if (ol === nl || skeleton(ol) !== skeleton(nl) || !/[<>]/.test(nl)) return;
+        const on = numbers(ol), nn = numbers(nl);
+        // "x < N" loosens when N grows, "x > N" when N shrinks (a line with both, or with template brackets only, is left alone)
+        const lessThan = /[^<]<=?[^<=]/.test(nl), greater = /[^->]>=?[^>=]/.test(nl) && !/\w<[\w:]+>/.test(nl);
+        for (let j = 0; j < on.length; j++) {
+          if ((lessThan && nn[j] > on[j]) || (greater && !lessThan && nn[j] < on[j])) { add(`threshold:${path.basename(f)}:${skeleton(nl).slice(0, 50)}`, f, `a threshold was loosened on an edited line: "${ol.trim().slice(0, 70)}" -> "${nl.trim().slice(0, 70)}"`); break; }
+        }
+      });
+    }
+    // fewer assertions than before (a CHECK commented out or deleted, outside a deleted test case)
+    const nA = A.filter((l) => ASSERT_RE.test(l) && !/^\s*\/\//.test(l)).length, nR = R.filter((l) => ASSERT_RE.test(l) && !/^\s*\/\//.test(l)).length;
+    const deletedHere = R.filter((l) => testName(l) && !addedTests.has(testName(l))).length;
+    if (!/CMakeLists/.test(f) && nR > nA && !deletedHere) add('fewer_checks:' + path.basename(f), f, `${nR - nA} fewer CHECK/REQUIRE assertion line(s) than before in this file (a check removed or commented out)`);
+    // a test source dropped from the test build
+    if (/CMakeLists\.txt$/.test(f)) for (const l of R) { const m = l.match(/([\w./-]+\.cpp)/); if (m && !A.some((x) => x.includes(m[1]))) add('deleted_file:' + m[1], f, `${m[1]} was removed from the test build`); }
     // scene.mjs: hard-coded pass
     if (/scene\.mjs$/.test(f)) {
       const pt = (L) => L.filter((l) => /pass:\s*true\b/.test(l));
@@ -173,7 +205,7 @@ export function waiverFindings(diffText, allowed = []) {
       for (const l of R) { const n = (l.match(/name:\s*'([^']+)'/) || [])[1]; if (n && !addedJsNames.has(n) && /results\.push/.test(l)) add(`deleted_check:${n}`, f, `scene check "${n}" removed`); }
     }
     // deleted test cases
-    for (const l of R) { const n = testName(l); if (n && !addedTests.has(n)) add(`deleted_test:${n}`, f, `test case "${n}" was deleted (or renamed)`); }
+    for (const l of R) { const n = testName(l); if (n && !addedTests.has(n)) add(`deleted_test:${n}`, f, `test case "${n}" was deleted (or renamed: a renamed test whose expectation changed needs the same allow_waiver line)`); }
   }
   const ok = (fd) => allowed.some((a) => a === fd.key || a === fd.key.split(':').slice(1).join(':'));
   return { findings, refused: findings.filter((f) => !ok(f)), allowedHits: findings.filter(ok) };
@@ -227,6 +259,13 @@ export function pictureProblems(folder, compareText, opts = {}) {
     if (s.diagnostic) { if (compareBases.has(b)) problems.push(`view "${b}" is declared diagnostic but is listed as a COMPARE.md render: a compared render must be a real view of the subject`); continue; }
     const px = s.width * s.height;
     if (!(px > 0) || typeof s.road_px !== 'number') { problems.push(`${b}.stats.json: no pixel counts`); continue; }
+    // the record is bound to the picture bytes: a record made for another render (or typed by hand) does not match this PNG
+    if (typeof s.png_sha1 !== 'string') { problems.push(`${b}.stats.json has no png_sha1: it was not written by the current prototypes/mesh-view/render.mjs; render the view again`); continue; }
+    const pngFile = path.join(folder, b + '.png');
+    if (fs.existsSync(pngFile)) {
+      const sha = crypto.createHash('sha1').update(fs.readFileSync(pngFile)).digest('hex');
+      if (sha !== s.png_sha1) { problems.push(`${b}.stats.json was not made for ${b}.png (picture hash differs): the stats must come from rendering exactly this picture; run render.mjs again and do not edit the PNG afterwards`); continue; }
+    }
     const roadFrac = s.road_px / px, dbg = (s.debug_px || 0) / px;
     if (roadFrac < minRoad) problems.push(`view "${b}": road surface covers ${(roadFrac * 100).toFixed(2)}% of the frame (need at least ${(minRoad * 100).toFixed(1)}%): the subject is not in the picture. If this is deliberately a close-up of ground only, declare it "diagnostic": true in the views json and keep it out of COMPARE.md`);
     if (dbg > maxDebug) problems.push(`view "${b}": ${(dbg * 100).toFixed(2)}% of the frame is in debug colours (${Object.entries(s.debug_by_class || {}).map(([k, v]) => k + ' ' + v + ' px').join(', ')}; allowed ${(maxDebug * 100).toFixed(2)}%): a placeholder "needs structure" or rock-cut surface is on screen where a structure or ground should be`);
@@ -240,8 +279,8 @@ export function pictureProblems(folder, compareText, opts = {}) {
 }
 
 // ---------- D: STATUS reading ----------
-const USAGE_RE = /usage\s+(?:limit|window|warning)|token\s+budget|out\s+of\s+(?:time|tokens|context)|running\s+out\s+of\s+(?:time|tokens|context)|context\s+(?:limit|window)|rate\s+limit|ran\s+out\s+of\s+(?:time|tokens)|no\s+time\s+left|time\s+limit/i;
-const NOT_ATTEMPTED_RE = /\bnot\s+attempted\b|\bnot\s+tried\b|\b(?:did|have|had)\s+not\s+(?:attempt|try)|\bdidn'?t\s+(?:attempt|try)|\bnever\s+(?:attempted|tried)|\bleft\s+(?:undone|for\s+later)\b|\bwas\s+not\s+attempted\b/i;
+const USAGE_RE = /usage\s+(?:limit|window|warning)|session\s+limit|token\s+(?:budget|limit)|\bquota\b|out\s+of\s+(?:time|tokens|context)|running\s+(?:out\s+of|low\s+on)\s+(?:time|tokens|context)|context\s+(?:limit|window)|rate\s+limit|ran\s+out\s+of\s+(?:time|tokens)|no\s+time\s+left|time\s+limit|(?:short|low)\s+on\s+time|ran\s+short\s+of\s+time|limited\s+time|time\s+constraints?/i;
+const NOT_ATTEMPTED_RE = /\bnot\s+(?:attempted|tried|started|done)\b|\b(?:did|have|had)\s+not\s+(?:attempt|try|get\s+to)|\bdidn'?t\s+(?:attempt|try|get\s+to)|\bnever\s+(?:attempted|tried)|\bleft\s+(?:undone|for\s+later)\b|\bdeferred\b|\bpostponed\b|\bfor\s+the\s+next\s+round\b/i;
 export function statusProblems(statusText, faultsText) {
   const problems = [];
   const lines = String(statusText || '').replace(/<!--[\s\S]*?-->/g, '').split('\n');
@@ -252,7 +291,10 @@ export function statusProblems(statusText, faultsText) {
   const f = String(faultsText || '').replace(/<!--[\s\S]*?-->/g, '');
   f.split('\n').forEach((l, i) => { if (USAGE_RE.test(l)) problems.push(`FAULTS.md line ${i + 1}: a usage/time limit is given as a reason ("${l.trim().slice(0, 100)}")`); });
   if (faultsText !== null && faultsText !== undefined) {
-    const passes = [...f.matchAll(/^##\s+Pass\s+\d+/gim)].length;
+    // a "## Pass N" heading with no body is not a pass (a builder in a hurry writes the headings only)
+    const passBodies = [...f.matchAll(/^##\s+Pass\s+\d+[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/gim)].map((m) => m[1].trim());
+    const passes = passBodies.filter((b) => b.length >= 12).length;
+    if (passBodies.length > passes) problems.push('FAULTS.md: ' + (passBodies.length - passes) + ' "## Pass N" section(s) are empty or under 12 characters: write the faults found in that pass');
     if (passes < 3) {
       const ro = f.match(/^[ \t]*Residual only unfixable:[ \t]*(.{40,})$/im);
       if (!ro) problems.push(`FAULTS.md: ${passes} self-audit pass(es), need 3 unless the residual list holds only unfixable items: then add a line "Residual only unfixable: <for each residual item, why it cannot be fixed>" (40+ characters)`);

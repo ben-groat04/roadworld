@@ -180,7 +180,7 @@ const gateNotes = [];
 if (gatesV2) {
   let GL = null, hooksLib = null;
   try { GL = await import('./gates_lib.mjs'); hooksLib = await import('./hooks/lib.mjs'); } catch (e) { console.error('FAIL-OPEN: gates_lib could not be loaded: ' + (e && e.message)); }
-  const failOpen = (what, e) => { const m = 'FAIL-OPEN: gate "' + what + '" did not run: ' + String((e && e.message) || e).slice(0, 300); console.error(m); try { hooksLib && hooksLib.log({ gate: 'handin_gates', decision: 'allow', reason: m, handin_dir: folder }); } catch { /* log only */ } };
+  const failOpen = (what, e) => { if (accept) fails.push('GATE could not be measured (' + what + '): ' + String((e && e.message) || e).slice(0, 300) + ' (--accept does not fail open: measure it or say why not)'); const m = 'FAIL-OPEN: gate "' + what + '" did not run: ' + String((e && e.message) || e).slice(0, 300); console.error(m); try { hooksLib && hooksLib.log({ gate: 'handin_gates', decision: 'allow', reason: m, handin_dir: folder }); } catch { /* log only */ } };
   if (GL) {
     let lines = gateLines;
     if (taskArg) {

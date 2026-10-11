@@ -45,6 +45,7 @@ if (!auditMode && !get('waiting')) missing.push('"## Waiting" (items not launche
 if (/time-box|whole task/i.test(text.replace(get("owner's words"), ''))) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
 // ---- gates v2 (tools/gates_lib.mjs). Builder briefs only; `GATES-VERSION: 2` switches the measured checks on in check_handin.
 const gateLines = [];
+let overrideLog = null;
 if (!auditMode) {
   const noVisualFlag = args.includes('--no-visual');
   // Engine-only briefs without HANDIN: no-visual made two builders write placeholder COMPARE tables to get through.
@@ -73,7 +74,7 @@ if (!auditMode) {
   const mc = methodChangeProblem(rounds);
   const ov = opt('override');
   if (mc && !(ov && ov.length >= 20)) missing.push('METHOD REVIEW FIRST: ' + mc);
-  else if (mc) console.error('make_brief: method-change rule overridden: ' + ov);
+  else if (mc) { console.error('make_brief: method-change rule overridden: ' + ov); overrideLog = ov; }
 }
 if (missing.length) {
   console.error('REFUSED. Fix the task file:\n - ' + missing.join('\n - '));
@@ -138,7 +139,7 @@ try {
     const rep = nl.canaryReport(lib.STATE_DIR);
     if (rep.text) console.error('\n' + rep.text + '\n');
     if (rep.problems.length) canaryExit = 3;
-    lib.log({ gate: 'make_brief', round: opt('round'), handin_dir: handinDir });
+    lib.log({ gate: 'make_brief', round: opt('round'), handin_dir: handinDir, ...(overrideLog ? { method_override: overrideLog } : {}) });
   }
 } catch (e) { console.error('make_brief: canary check could not run (' + (e && e.message) + ')'); }
 process.exitCode = canaryExit;

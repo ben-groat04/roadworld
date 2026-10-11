@@ -554,9 +554,9 @@ console.log('hand-in freshness, counter reset, owner quotes, COMPARE relevance, 
   // COMPARE relevance: subject/type, scale, viewpoint
   const cmpDir = path.join(wt, 'cmp', 'docs', 'progress', 'cmp'); fs.mkdirSync(cmpDir, { recursive: true });
   for (const f of ['r.png', 'c.png', 'b.png']) fs.writeFileSync(path.join(cmpDir, f), 'x');
-  fs.writeFileSync(path.join(cmpDir, 'r.stats.json'), JSON.stringify({ view: 'r', width: 100, height: 100, diagnostic: false, road_px: 900, debug_px: 0 }));
+  fs.writeFileSync(path.join(cmpDir, 'r.stats.json'), JSON.stringify({ view: 'r', width: 100, height: 100, diagnostic: false, road_px: 900, debug_px: 0, png_sha1: '11f6ad8ec52a2984abaafd7c3b516503785c2072' }));
   fs.writeFileSync(path.join(cmpDir, 'STATUS.md'), goodStatus);
-  fs.writeFileSync(path.join(cmpDir, 'FAULTS.md'), '## Pass 1\n\nx\n\n## Pass 2\n\ny\n\n## Pass 3\n\nz\n\n## Residual\n\nnone, all fixed\n');
+  fs.writeFileSync(path.join(cmpDir, 'FAULTS.md'), '## Pass 1\n\nthe kerb stops 4 m short of the island\n\n## Pass 2\n\nthe give-way line is a stub, not a span\n\n## Pass 3\n\nthe hatching bars cross the kerb line\n\n## Residual\n\nnone, all fixed\n');
   const cmp = (rows) => { fs.writeFileSync(path.join(cmpDir, 'COMPARE.md'), '| case | render | reference | composite | before | subject/type | scale | viewpoint |\n|---|---|---|---|---|---|---|---|\n' + rows + '\n'); return spawnSync(process.execPath, [path.join(root, 'tools/check_handin.mjs'), cmpDir, '--main', root, '--gates-version', '2'], { cwd: elsewhere, encoding: 'utf8' }); };
   const okRow = '| A | r.png | aerial/a.jpg | c.png | b.png | two-lane road, same junction type | both about 40 m across | top-down, both |';
   let cc = cmp(okRow); t('COMPARE row with subject/type, scale and viewpoint statements: passes', cc.status === 0, cc.stderr);
@@ -671,7 +671,7 @@ console.log('measured gates through the finish hook');
   const brief = mkg('gh');
   t('make_brief wrote GATES-VERSION and the GATE line into the brief the hook reads', /^GATES-VERSION: 2$/m.test(brief) && /^GATE: scene_check >= 20\/21/m.test(brief));
   const tp = transcript('gh', brief); fs.mkdirSync(hd('gh'), { recursive: true }); fs.writeFileSync(path.join(hd('gh'), 'STATUS.md'), goodStatus);
-  fs.writeFileSync(path.join(hd('gh'), 'FAULTS.md'), '## Pass 1\nx\n## Pass 2\ny\n## Pass 3\nz\n## Residual\nnone, all fixed\n');
+  fs.writeFileSync(path.join(hd('gh'), 'FAULTS.md'), '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Pass 3\nthe hatching bars cross the kerb line\n## Residual\nnone, all fixed\n');
   scene('gh', 17, 21);
   let g = stop('gb1', tp);
   t('hook: the brief\'s GATE line is passed to check_handin; 17/21 measured: stop BLOCKED with the measured number', J(g.out).decision === 'block' && /measured 17\/21/.test(J(g.out).reason), g.out + g.err);
@@ -683,7 +683,7 @@ console.log('measured gates through the finish hook');
   g = stop('gb2', tpOld);
   t('hook: a brief WITHOUT GATES-VERSION (agent started before gates v2) is not measured: 3/21 on disk does not block it', g.code === 0 && g.out === '' && lastLog().reason === 'hand-in check passed', g.out + g.err);
   const bfFile = path.join(tmp, 'gh3_brief.txt'); fs.writeFileSync(bfFile, mkg('gh3'));
-  const tp3 = transcript('gh3', `Your brief is in the file.\nBRIEF-FILE: ${bfFile}`); fs.mkdirSync(hd('gh3'), { recursive: true }); fs.writeFileSync(path.join(hd('gh3'), 'STATUS.md'), goodStatus); fs.writeFileSync(path.join(hd('gh3'), 'FAULTS.md'), '## Pass 1\nx\n## Pass 2\ny\n## Pass 3\nz\n## Residual\nnone\n');
+  const tp3 = transcript('gh3', `Your brief is in the file.\nBRIEF-FILE: ${bfFile}`); fs.mkdirSync(hd('gh3'), { recursive: true }); fs.writeFileSync(path.join(hd('gh3'), 'STATUS.md'), goodStatus); fs.writeFileSync(path.join(hd('gh3'), 'FAULTS.md'), '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Pass 3\nthe hatching bars cross the kerb line\n## Residual\nnone\n');
   scene('gh3', 15, 21); g = stop('gb3', tp3);
   t('hook: gates in a BRIEF-FILE are read as well', J(g.out).decision === 'block' && /measured 15\/21/.test(J(g.out).reason), g.out + g.err);
 }

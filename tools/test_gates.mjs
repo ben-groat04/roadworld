@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -66,7 +67,7 @@ t('empty diff: nothing found', GL.waiverFindings('').findings.length === 0);
 
 // ======================================================= STATUS reading
 console.log('status reading');
-const good3 = '## Pass 1\nx\n## Pass 2\ny\n## Pass 3\nz\n## Residual\nnone, all fixed\n';
+const good3 = '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Pass 3\nthe hatching bars cross the kerb line\n## Residual\nnone, all fixed\n';
 t('clean STATUS and 3 passes: no problems', GL.statusProblems('## Skipped, refused or failed\n\nNothing skipped.\n', good3).length === 0);
 let sp = GL.statusProblems('## Skipped, refused or failed\n- Not attempted: wall curl at road ends\n', good3); t('"Not attempted" item: refused', sp.length === 1 && /not attempted/i.test(sp[0]), sp.join('|'));
 sp = GL.statusProblems('- I did not attempt a fix of the pit\n', good3); t('"did not attempt": refused', sp.length === 1);
@@ -75,9 +76,9 @@ sp = GL.statusProblems('- wall curl: tried a ramp, blocked by the crossing road 
 for (const phrase of ['Pass 3 not done (usage window)', 'stopped because of the usage limit', 'ran out of tokens', 'running out of time', 'context window nearly full', 'hit the rate limit', 'token budget', 'no time left']) {
   sp = GL.statusProblems('- ' + phrase + '\n', good3); t('usage/time reason refused: "' + phrase + '"', sp.some((x) => /usage\/time limit/.test(x)), sp.join('|'));
 }
-sp = GL.statusProblems('ok\n', '## Pass 1\nx\n## Pass 2\ny\n## Residual\nthe pit remains\n'); t('2 passes, no residual-only line: refused', sp.length === 1 && /3 unless/.test(sp[0]), sp.join('|'));
-sp = GL.statusProblems('ok\n', '## Pass 1\nx\n## Pass 2\ny\n## Residual\nthe pit remains\nResidual only unfixable: the pit needs a tunnel the engine cannot model and I tried a bridge and a wall.\n'); t('2 passes + a residual-only-unfixable line: allowed', sp.length === 0, sp.join('|'));
-sp = GL.statusProblems('ok\n', '## Pass 1\nx\n## Pass 2\ny\n## Residual\nResidual only unfixable: none\n'); t('residual-only line too short (under 40 chars): refused', sp.length === 1);
+sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Residual\nthe pit remains\n'); t('2 passes, no residual-only line: refused', sp.length === 1 && /3 unless/.test(sp[0]), sp.join('|'));
+sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Residual\nthe pit remains\nResidual only unfixable: the pit needs a tunnel the engine cannot model and I tried a bridge and a wall.\n'); t('2 passes + a residual-only-unfixable line: allowed', sp.length === 0, sp.join('|'));
+sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Residual\nResidual only unfixable: none\n'); t('residual-only line too short (under 40 chars): refused', sp.length === 1);
 sp = GL.statusProblems('ok\n', good3 + '\nPass 4 skipped, usage window\n'); t('usage wording in FAULTS.md: refused', sp.some((x) => /^FAULTS/.test(x)));
 t('usage words inside an HTML comment (the template) are not read', GL.statusProblems('<!-- e.g. "usage window" -->\nok\n', good3).length === 0);
 
@@ -97,7 +98,7 @@ t('parseRounds reads "k=v" and "k v" and P/T values', pr.length === 2 && pr[0].v
 // ======================================================= picture sanity
 console.log('picture sanity');
 const pf = path.join(tmp, 'pic'); fs.mkdirSync(pf);
-const stats = (name, o) => w(path.join(pf, name + '.stats.json'), JSON.stringify({ view: name, width: 1600, height: 900, diagnostic: false, road_px: 60000, debug_px: 0, debug_by_class: { needs: 0, rock: 0 }, ...o }));
+const stats = (name, o) => w(path.join(pf, name + '.stats.json'), JSON.stringify({ view: name, width: 1600, height: 900, diagnostic: false, road_px: 60000, debug_px: 0, png_sha1: 'abc', debug_by_class: { needs: 0, rock: 0 }, ...o }));
 const cmpText = (...views) => '| case | render |\n|---|---|\n' + views.map((v) => `| c | ${v}.png | r | c | b | x | y | z |`).join('\n') + '\n';
 stats('ok_aerial', {}); stats('ok_street', {});
 let pp = GL.pictureProblems(pf, cmpText('ok_aerial')); t('road in frame, no debug colour: passes', pp.problems.length === 0, pp.problems.join('|'));
@@ -112,7 +113,7 @@ pp = GL.pictureProblems(pf, cmpText('ghost')); t('a COMPARE.md render with no st
 w(path.join(pf, 'x_aerial.png'), 'png'); pp = GL.pictureProblems(pf, cmpText('ok_aerial')); t('an *_aerial.png with no stats file is refused even when COMPARE.md does not list it', pp.problems.some((x) => /x_aerial/.test(x)), pp.problems.join('|'));
 fs.rmSync(path.join(pf, 'x_aerial.png'));
 const pf2 = path.join(tmp, 'pic2'); fs.mkdirSync(pf2);
-for (const n of ['a', 'b', 'c', 'd']) w(path.join(pf2, n + '.stats.json'), JSON.stringify({ width: 100, height: 100, diagnostic: n !== 'a', road_px: 0, debug_px: 9000 }));
+for (const n of ['a', 'b', 'c', 'd']) w(path.join(pf2, n + '.stats.json'), JSON.stringify({ width: 100, height: 100, diagnostic: n !== 'a', road_px: 0, debug_px: 9000, png_sha1: 'abc' }));
 pp = GL.pictureProblems(pf2, cmpText('a')); t('a diagnostic flag on 3 of 4 views: refused (cannot be the way past)', pp.problems.some((x) => /3 of 4 views are declared diagnostic/.test(x)), pp.problems.join('|'));
 pp = GL.pictureProblems(pf, cmpText('ok_aerial'), { minRoad: 0.5 }); t('picture_min_road override applies', pp.problems.some((x) => /need at least 50/.test(x)));
 
@@ -139,7 +140,7 @@ const fakeScene = (passed, total, failing = []) => {
 fs.mkdirSync(path.join(wt, 'prototypes/road-draw/node_modules'), { recursive: true });
 const folder = path.join(wt, 'docs/progress/x');
 const statusBase = (skip = 'Nothing skipped, refused or failed. I did not verify the Unreal side (not part of this round).') => `## Skipped, refused or failed\n\n${skip}\n\nReferences opened: 3 of 3 listed\n\n## Reference files opened\n\nCase: A | Opened: aerial/a.jpg, street/b.jpg, gsv/c.jpg\n`;
-const faults3 = '## Pass 1\nx\n## Pass 2\ny\n## Pass 3\nz\n## Residual\nnone, all fixed\n';
+const faults3 = '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Pass 3\nthe hatching bars cross the kerb line\n## Residual\nnone, all fixed\n';
 w(path.join(folder, 'STATUS.md'), statusBase()); w(path.join(folder, 'FAULTS.md'), faults3);
 const check = (flags = [], extra = {}) => spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), folder, '--main', main, '--worktree', wt, '--no-visual', ...flags], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' }, ...extra });
 const SC = ['--gates-version', '2', '--gate', 'scene_check >= 20/21 (baseline 20/21, target 21/21)'];
@@ -193,7 +194,7 @@ git(wt, 'reset', '-q', '--hard', 'HEAD~1');
 
 // STATUS reading in a hand-in
 w(path.join(folder, 'STATUS.md'), statusBase('- Not attempted: the S-curl at wall ends.\n- Self-audit: 2 passes, not 3 (usage window).'));
-w(path.join(folder, 'FAULTS.md'), '## Pass 1\nx\n## Pass 2\ny\n## Residual\nthe curl\n');
+w(path.join(folder, 'FAULTS.md'), '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Residual\nthe curl\n');
 c = check(WG); t('hand-in with "not attempted", 2 passes and a usage-window reason: refused for all three', c.status === 1 && /not attempted/i.test(c.stderr) && /usage\/time limit/.test(c.stderr) && /3 unless/.test(c.stderr), c.stderr);
 fs.rmSync(path.join(folder, 'FAULTS.md')); w(path.join(folder, 'STATUS.md'), statusBase());
 c = check(WG); t('v2 engine-only hand-in without FAULTS.md: refused (v1 does not ask)', c.status === 1 && /FAULTS\.md is missing/.test(c.stderr), c.stderr);
@@ -207,9 +208,10 @@ const row = '| case | render | reference | composite | before | subject/type mat
 w(path.join(vf, 'COMPARE.md'), row);
 const checkV = (flags = []) => spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), vf, '--main', main, '--worktree', wt, ...flags], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } });
 c = checkV(['--gates-version', '2']); t('visible v2 hand-in whose COMPARE render has no stats record: refused', c.status === 1 && /s6_street/.test(c.stderr) && /stats\.json/.test(c.stderr), c.stderr);
-w(path.join(vf, 's6_street.stats.json'), JSON.stringify({ width: 1600, height: 900, diagnostic: false, road_px: 0, debug_px: 0 }));
+const shaX = crypto.createHash('sha1').update('x').digest('hex');
+w(path.join(vf, 's6_street.stats.json'), JSON.stringify({ width: 1600, height: 900, diagnostic: false, road_px: 0, debug_px: 0, png_sha1: shaX }));
 c = checkV(['--gates-version', '2']); t('...stats say no road in frame (round 9 s6 street): refused with the percentage', c.status === 1 && /covers 0\.00% of the frame/.test(c.stderr), c.stderr);
-w(path.join(vf, 's6_street.stats.json'), JSON.stringify({ width: 1600, height: 900, diagnostic: false, road_px: 60000, debug_px: 0 }));
+w(path.join(vf, 's6_street.stats.json'), JSON.stringify({ width: 1600, height: 900, diagnostic: false, road_px: 60000, debug_px: 0, png_sha1: shaX }));
 c = checkV(['--gates-version', '2']); t('...with road in frame and no debug colour: passes', c.status === 0 && /picture s6_street: road 4\.2%/.test(c.stdout), c.stderr + c.stdout);
 c = checkV(); t('the same folder under v1: 8-column COMPARE accepted too, no picture gate (older briefs unaffected)', c.status === 0 && !/picture/.test(c.stdout), c.stderr);
 w(path.join(vf, 'COMPARE.md'), '| case | render | reference | composite | before |\n|---|---|---|---|---|\n| s6 | s6_street.png | aerial/a.jpg | comp.png | before.png |\n');
@@ -248,6 +250,50 @@ b = mb(tf('Previous round: r9\n## Rounds\nr8: scene_check=18\nr9: scene_check=20
 b = mb(tf('Previous round: r9\n## Rounds\nr8: scene_check=18\nr9: prose only\n')); t('a Rounds line with no numbers: refused', b.status === 1 && /no numbers/.test(b.stderr), b.stderr);
 t('the brief text mentions no usage limit to agents (scripts and templates are clean)', !/usage (limit|window)|token budget/i.test(b.stdout + fs.readFileSync(path.join(src, 'docs/templates/BRIEF.md'), 'utf8') + fs.readFileSync(path.join(src, 'tools/make_brief.mjs'), 'utf8').replace(/.*USAGE_RE.*\n/g, '')));
 b = mb(tf()); t('the brief template tells the agent how to pass the gates (--gates-version 2, 8 columns, 3 passes, at most 3 cases)', /--gates-version 2/.test(b.stdout) && /3 passes/.test(b.stdout) && /at most 3 per round/.test(b.stdout), b.stdout.slice(0, 200));
+
+// ======================================================= second pass: holes found in the self-audit
+console.log('self-audit hardening');
+{
+  const kk = (d, allowed = []) => GL.waiverFindings(d, allowed).refused.map((f) => f.key);
+  const dd = (file, removed, added) => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n${removed.map((l) => '-' + l).join('\n')}${removed.length ? '\n' : ''}${added.map((l) => '+' + l).join('\n')}\n`;
+  let q = kk(dd('tests/test_grading.cpp', ['    CHECK(worst < 0.3);'], ['    CHECK(worst < 0.5);']));
+  t('a threshold edited on a CHECK line (worst < 0.3 -> 0.5): found', q.some((x) => x.startsWith('threshold:')), JSON.stringify(q));
+  t('a threshold tightened (< 0.3 -> < 0.1): not found', kk(dd('tests/test_grading.cpp', ['    CHECK(worst < 0.3);'], ['    CHECK(worst < 0.1);'])).length === 0);
+  q = kk(dd('tests/test_grading.cpp', ['    CHECK(cover > 0.9);'], ['    CHECK(cover > 0.5);'])); t('a ">" threshold lowered (> 0.9 -> 0.5): found', q.some((x) => x.startsWith('threshold:')), JSON.stringify(q));
+  q = kk(dd('prototypes/road-draw/tools/scene.mjs', ["    results.push({ name: 'median_flat', pass: worst < 0.05, msg });"], ["    results.push({ name: 'median_flat', pass: worst < 1.5, msg });"])); t('scene.mjs: median_flat bound 0.05 -> 1.5: found', q.some((x) => x.startsWith('threshold:')), JSON.stringify(q));
+  t('a line that changes shape (not a pure number edit) is not a "threshold" finding', kk(dd('tests/test_a.cpp', ['    CHECK(a < 3);'], ['    CHECK(b < 5);'])).length === 0);
+  q = kk(dd('tests/test_markings.cpp', ['    CHECK(a == 1);', '    CHECK(b == 2);', '    REQUIRE(c);'], ['    CHECK(a == 1);'])); t('two CHECK/REQUIRE lines deleted from a test: found as fewer_checks', q.includes('fewer_checks:test_markings.cpp'), JSON.stringify(q));
+  t('a CHECK moved within the file (same count): not found', kk(dd('tests/test_markings.cpp', ['    CHECK(a == 1);'], ['    CHECK(a == 1); // moved'])).length === 0);
+  q = kk(dd('tests/test_markings.cpp', ['    CHECK(a == 1);'], ['    // CHECK(a == 1);'])); t('a CHECK commented out: found', q.includes('fewer_checks:test_markings.cpp'), JSON.stringify(q));
+  q = kk(dd('tests/test_markings.cpp', [], ['#if 0', 'TEST_CASE("x") {}', '#endif'])); t('#if 0 added: found', q.some((x) => x.startsWith('if0:')), JSON.stringify(q));
+  q = kk(dd('tests/CMakeLists.txt', ['    test_markings.cpp', '    test_lanes.cpp'], ['    test_lanes.cpp'])); t('a test source dropped from tests/CMakeLists.txt: found', q.includes('deleted_file:test_markings.cpp'), JSON.stringify(q));
+  q = kk(`diff --git a/tests/test_gone.cpp b/tests/test_gone.cpp\ndeleted file mode 100644\n--- a/tests/test_gone.cpp\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-TEST_CASE("gone one") {}\n-TEST_CASE("gone two") {}\n`);
+  t('a whole test file deleted (+++ /dev/null): both test cases found, attributed to the file', q.includes('deleted_test:gone one') && q.includes('deleted_test:gone two') && GL.waiverFindings('--- a/tests/test_gone.cpp\n+++ /dev/null\n@@ -1 +0,0 @@\n-TEST_CASE("g") {}\n').findings[0].file === 'tests/test_gone.cpp', JSON.stringify(q));
+  // STATUS reading: wording a builder in a hurry would use instead
+  const ok3 = '## Pass 1\nthe kerb stops 4 m short\n## Pass 2\nthe line is a stub\n## Pass 3\nthe bars cross the kerb\n## Residual\nnone\n';
+  for (const phrase of ['not done: the curl', 'deferred to a later round', 'postponed', 'I did not get to the pit', 'for the next round', 'not started', 'ran short of time', 'session limit reached', 'token limit', 'low on time']) {
+    t('STATUS wording refused: "' + phrase + '"', GL.statusProblems('- ' + phrase + '\n', ok3).length >= 1, GL.statusProblems('- ' + phrase + '\n', ok3).join('|'));
+  }
+  t('ordinary words are not mistaken: "the work was not done by hand", only if it says so? (tolerated: "not done" is refused on purpose)', GL.statusProblems('- the wall height is rounded\n', ok3).length === 0);
+  let sp = GL.statusProblems('ok\n', '## Pass 1\n\n## Pass 2\n\n## Pass 3\n\n## Residual\nnone\n'); t('three EMPTY "## Pass N" headings are not three passes', sp.some((x) => /empty or under 12/.test(x)) && sp.some((x) => /need 3/.test(x)), sp.join('|'));
+  // stats bound to the picture bytes
+  const pf3 = path.join(tmp, 'pic3'); fs.mkdirSync(pf3);
+  w(path.join(pf3, 'v_aerial.png'), 'real picture bytes');
+  const sha = (s) => crypto.createHash('sha1').update(s).digest('hex');
+  const st = (o) => w(path.join(pf3, 'v_aerial.stats.json'), JSON.stringify({ width: 100, height: 100, diagnostic: false, road_px: 900, debug_px: 0, ...o }));
+  st({ png_sha1: sha('real picture bytes') }); let pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('stats with the hash of the PNG next to it: passes', pp2.problems.length === 0, pp2.problems.join('|'));
+  st({ png_sha1: sha('another picture') }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('stats made for another picture (hash differs): refused, says to render again', pp2.problems.some((x) => /not made for v_aerial\.png/.test(x)), pp2.problems.join('|'));
+  st({}); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('a hand-typed stats file without png_sha1: refused', pp2.problems.some((x) => /no png_sha1/.test(x)), pp2.problems.join('|'));
+  w(path.join(pf3, 'v_aerial.png'), 'edited picture after rendering'); st({ png_sha1: sha('real picture bytes') }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('the PNG edited after the stats were written: refused', pp2.problems.some((x) => /hash differs/.test(x)), pp2.problems.join('|'));
+  // --accept does not fail open
+  fakeScene(21, 21);
+  fs.rmSync(path.join(wt, 'prototypes/road-draw/node_modules'), { recursive: true });
+  let ca = check([...SC, '--accept', '--builder', 'nobody']); t('--accept: a gate that could not be measured (no node_modules) is a refusal, not a FAIL-OPEN', ca.status === 1 && /GATE could not be measured \(scene_check\)/.test(ca.stderr), ca.stderr);
+  fs.mkdirSync(path.join(wt, 'prototypes/road-draw/node_modules'));
+  // method override is logged where the main session can see it (make_brief writes gate.log only in a main checkout, covered by the hook tests)
+  const mbSrc = fs.readFileSync(path.join(src, 'tools/make_brief.mjs'), 'utf8'); t('make_brief logs the method-change override into gate.log', /method_override/.test(mbSrc));
+}
+
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 process.exit(fail ? 1 : 0);

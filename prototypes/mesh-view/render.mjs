@@ -12,6 +12,7 @@
 import http from 'node:http';
 import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync, createReadStream } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { resolve, join, extname, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -101,7 +102,7 @@ try {
     try {
       const st = await page.evaluate('window.statsPass()');
       const c = st.counts, debugBy = { needs: c.needs || 0, rock: c.rock || 0 };
-      writeFileSync(join(resolve(outDir), v.name + '.stats.json'), JSON.stringify({ view: v.name, width: st.width, height: st.height, diagnostic: !!v.diagnostic,
+      writeFileSync(join(resolve(outDir), v.name + '.stats.json'), JSON.stringify({ view: v.name, png_sha1: createHash('sha1').update(readFileSync(file)).digest('hex'), width: st.width, height: st.height, diagnostic: !!v.diagnostic,
         road_px: c.road || 0, marking_px: c.marking || 0, ground_px: c.ground || 0, debug_px: debugBy.needs + debugBy.rock, debug_by_class: debugBy, written_by: 'prototypes/mesh-view/render.mjs' }, null, 1));
     } catch (e) { console.error('stats pass failed for ' + v.name + ': ' + e.message); }
     if (compare && v.photo && existsSync(join(photoDir, v.photo))) {
