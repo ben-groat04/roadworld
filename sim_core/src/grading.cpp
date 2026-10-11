@@ -1279,12 +1279,41 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     const double res = t.res, x0 = t.x0, y0 = t.y0, bt = p.batter, fd = p.formation_drop, verge = p.verge;
     const double d_d = p.toe_ditch_depth, d_w = p.toe_ditch_width, e_b = p.end_taper_batter > 0 ? p.end_taper_batter : bt;
     const double hb = p.round_hinge, rk = p.round_daylight / (2 * bt);  // hinge run; vertical half-width of the daylight roll-over
-    // verge -> slope hinge: parabola over hb, then the straight slope shifted out by hb / 2
+    // per-texel rounding: the hinge and the daylight roll-over never take more than a third of the slope's length each (short banks are not all rounding)
+    double hbc = hb, rkc = rk;
+    // verge -> slope hinge: parabola over hbc, then the straight slope shifted out by hbc / 2
     auto sv = [&](double e) {
-        return e <= verge ? 0.0 : hb > 0 ? (e < verge + hb ? (e - verge) * (e - verge) / (2 * hb) : e - verge - hb / 2) : e - verge;
+        return e <= verge ? 0.0 : hbc > 0 ? (e < verge + hbc ? (e - verge) * (e - verge) / (2 * hbc) : e - verge - hbc / 2) : e - verge;
     };
     // smooth max(d, 0) over +-rk: rolls a slope over into natural ground
-    auto smax = [&](double d) { return d >= rk ? d : d <= -rk ? 0.0 : (d + rk) * (d + rk) / (4 * rk); };
+    auto smax = [&](double d, double k) { return d >= k ? d : d <= -k ? 0.0 : (d + k) * (d + k) / (4 * k); };
+    // displacement a recorded cut / fill surface causes at base b (weight r): across roads the winner moves the ground most, not the one that is highest
+    auto dC = [&](double v, double b, double r, double k) { return v >= 1e8 ? 0.0 : r * (k > 0 ? smax(b - v, k) : std::max(0.0, b - v)); };
+    auto dF = [&](double v, double b, double r, double k) { return v <= -1e8 ? 0.0 : r * (k > 0 ? smax(v - b, k) : std::max(0.0, v - b)); };
+    // best candidate (cut_m / e / r) + the second-best weighted displacement (d2) + the largest unweighted one (u): where a structure tapers
+    // out and a neighbour's own slope fades in, the two weighted displacements ADD (a crossfade), capped by the largest full one
+    auto recC = [&](std::size_t o, double v, double e, double b, double r) {
+        const double d = dC(v, b, r, rkc), u = dC(v, b, 1, rkc), c = dC(ws.cut_m[o], b, ws.cut_r[o], ws.cut_k2[o]);
+        if (u > ws.cut_u[o]) ws.cut_u[o] = static_cast<float>(u);
+        if (d > c) {
+            if (c > ws.cut_d2[o]) ws.cut_d2[o] = static_cast<float>(c);
+            ws.cut_m[o] = static_cast<float>(v); ws.cut_e[o] = static_cast<float>(e); ws.cut_r[o] = static_cast<float>(r); ws.cut_k2[o] = static_cast<float>(rkc);
+            return true;
+        }
+        if (d > ws.cut_d2[o]) ws.cut_d2[o] = static_cast<float>(d);
+        return false;
+    };
+    auto recF = [&](std::size_t o, double v, double e, double b, double r) {
+        const double d = dF(v, b, r, rkc), u = dF(v, b, 1, rkc), c = dF(ws.fill_m[o], b, ws.fill_r[o], ws.fill_k2[o]);
+        if (u > ws.fill_u[o]) ws.fill_u[o] = static_cast<float>(u);
+        if (d > c) {
+            if (c > ws.fill_d2[o]) ws.fill_d2[o] = static_cast<float>(c);
+            ws.fill_m[o] = static_cast<float>(v); ws.fill_e[o] = static_cast<float>(e); ws.fill_r[o] = static_cast<float>(r); ws.fill_k2[o] = static_cast<float>(rkc);
+            return true;
+        }
+        if (d > ws.fill_d2[o]) ws.fill_d2[o] = static_cast<float>(d);
+        return false;
+    };
     // wall band: texels with e <= wall_thickness - res take the inside (formation) value, so the
     // one-texel ramp to natural lies inside the solid
     const double wall_t = p.wall_thickness, half = wall_t - res;
@@ -1296,6 +1325,12 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     ws.cut_r.assign(N, 1.0f);
     ws.cut_k.assign(N, 0);
     ws.fill_r.assign(N, 1.0f);
+    ws.cut_d2.assign(N, 0.0f);
+    ws.cut_k2.assign(N, 0.0f);
+    ws.fill_k2.assign(N, 0.0f);
+    ws.fill_d2.assign(N, 0.0f);
+    ws.cut_u.assign(N, 0.0f);
+    ws.fill_u.assign(N, 0.0f);
     ws.rq_d.assign(N, 1e9f);  // per road: nearest-station formation (reset after each road); across roads: lowest wins
     for (std::vector<float>* v : {&ws.rq_ww, &ws.rq_z, &ws.cut_e, &ws.fill_e, &ws.rq_ex, &ws.rq_ey, &ws.rq_bt, &ws.rq_fw, &ws.rq_al, &ws.rq_fs, &ws.rq_sp, &ws.rq_sv})
         if (v->size() < N) v->resize(N);
@@ -1305,7 +1340,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     if (ws.rq_p.size() < N) ws.rq_p.resize(N);
     std::vector<float> &fp_d = ws.fp_d, &fp_z = ws.fp_z, &cut_m = ws.cut_m, &fill_m = ws.fill_m, &rq_ww = ws.rq_ww,
                        &rq_d = ws.rq_d, &rq_z = ws.rq_z, &cut_e = ws.cut_e, &fill_e = ws.fill_e, &rq_ex = ws.rq_ex,
-                       &rq_ey = ws.rq_ey, &rq_bt = ws.rq_bt, &rq_fw = ws.rq_fw, &rq_al = ws.rq_al, &rq_fs = ws.rq_fs, &rq_sp = ws.rq_sp, &rq_sv = ws.rq_sv, &cut_r = ws.cut_r, &fill_r = ws.fill_r;
+                       &rq_ey = ws.rq_ey, &rq_bt = ws.rq_bt, &rq_fw = ws.rq_fw, &rq_al = ws.rq_al, &rq_fs = ws.rq_fs, &rq_sp = ws.rq_sp, &rq_sv = ws.rq_sv, &cut_r = ws.cut_r, &fill_r = ws.fill_r, &cut_d2 = ws.cut_d2, &fill_d2 = ws.fill_d2, &cut_u = ws.cut_u, &fill_u = ws.fill_u;
     std::vector<std::uint8_t>& cut_k = ws.cut_k;
     std::vector<std::uint8_t>& rq_w = ws.rq_w;
     std::vector<std::uint8_t>& rq_fl = ws.rq_fl;
@@ -1473,6 +1508,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             }
             if (rq_sp[o] >= 1) continue;  // the neighbour's structure reaches this road: no earthworks of its own on this side (they fade back in as the structure tapers)
             const double e = dd - hw, b = base[o];
+            { const double h3 = std::abs(b - zf) / 3; hbc = hb > 0 ? std::max(0.05, std::min(hb, h3 * bt)) : 0.0; rkc = rk > 0 ? std::max(0.01, std::min(rk, h3)) : 0.0; }  // rounding bound: each end at most a third of the slope (height H: length H * batter)
             const bool cut_t = b > zf;
             auto blk = [&]() {  // evaluated only when a slope would be recorded
                 return blocked(o, static_cast<int>(o % static_cast<std::size_t>(nx)), static_cast<int>(o / static_cast<std::size_t>(nx)), dd);
@@ -1541,11 +1577,9 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                     rr = rfs * (u <= 0 ? 1.0 : u >= 1 ? 0.0 : 1 - u * u * (3 - 2 * u));
                 }
                 if (ev.kind == 2) {
-                    if (rr > 0 && v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); cut_r[o] = static_cast<float>(rr); cut_k[o] = pl->stairs && pl->kind == 1; }
-                } else if (rr > 0 && v > b - rk && v > fill_m[o] && !blk()) {
-                    fill_m[o] = static_cast<float>(v);
-                    fill_e[o] = static_cast<float>(e);
-                    fill_r[o] = static_cast<float>(rr);
+                    if (rr > 0 && v < b + rk && dC(v, b, rr, rkc) > cut_d2[o] && !blk()) { if (recC(o, v, e, b, rr)) cut_k[o] = pl->stairs && pl->kind == 1; }
+                } else if (rr > 0 && v > b - rk && dF(v, b, rr, rkc) > fill_d2[o] && !blk()) {
+                    recF(o, v, e, b, rr);
                 }
                 continue;
             }
@@ -1561,7 +1595,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                     continue;
                 }
                 const double v = zfw + (e - verge) / bt;
-                if (rfs > 0 && v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); cut_r[o] = static_cast<float>(rfs); }
+                if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cut_d2[o] && !blk()) recC(o, v, e, b, rfs);
                 continue;
             }
             if (wf == 2) {
@@ -1572,7 +1606,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 }
                 const double zff = zf - ww * (zf - b);
                 const double v = e <= wall_t ? zff : zff - (e - verge) / bt;
-                if (rfs > 0 && v > b - rk && v > fill_m[o] && !blk()) { fill_m[o] = static_cast<float>(v); fill_e[o] = static_cast<float>(e); fill_r[o] = static_cast<float>(rfs); }
+                if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fill_d2[o] && !blk()) recF(o, v, e, b, rfs);
                 continue;
             }
             if (cut_t) {  // toe ditch between verge and slope (fades out in shallow cuts), then the slope
@@ -1581,10 +1615,10 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                     const double u = std::sin(3.14159265358979323846 * (e - verge) / d_w);
                     v -= d_d * std::min(1.0, b - zf) * u * u;
                 }
-                if (rfs > 0 && v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); cut_r[o] = static_cast<float>(rfs); }
+                if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cut_d2[o] && !blk()) recC(o, v, e, b, rfs);
             } else {
                 const double v = zf - sv(e) / bte;
-                if (rfs > 0 && v > b - rk && v > fill_m[o] && !blk()) { fill_m[o] = static_cast<float>(v); fill_e[o] = static_cast<float>(e); fill_r[o] = static_cast<float>(rfs); }
+                if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fill_d2[o] && !blk()) recF(o, v, e, b, rfs);
             }
         }
         for (int jj = rj0; jj <= rj1; ++jj)  // reset the touched rectangle for the next road
@@ -1597,11 +1631,14 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
         } else {
             g = base[o];
             // dip below natural (cut) / rise above it (fill), rounded near daylight
-            const double dc = cut_m[o] < 1e8f ? (rk > 0 ? smax(g - cut_m[o]) : std::max(0.0, g - cut_m[o])) * cut_r[o] : 0.0;
-            const double df = fill_m[o] > -1e8f ? (rk > 0 ? smax(fill_m[o] - g) : std::max(0.0, fill_m[o] - g)) * fill_r[o] : 0.0;
-            // never cross the base to the wrong side: take the nearer of a cut and a fill slope
-            if (dc > 0 && df > 0) g = cut_e[o] <= fill_e[o] ? g - dc : g + df;
-            else if (dc > 0) g -= dc;
+            const double dc = cut_m[o] < 1e8f ? std::min(dC(cut_m[o], g, cut_r[o], ws.cut_k2[o]) + cut_d2[o], std::max(static_cast<double>(cut_u[o]), dC(cut_m[o], g, cut_r[o], ws.cut_k2[o]))) : 0.0;
+            const double df = fill_m[o] > -1e8f ? std::min(dF(fill_m[o], g, fill_r[o], ws.fill_k2[o]) + fill_d2[o], std::max(static_cast<double>(fill_u[o]), dF(fill_m[o], g, fill_r[o], ws.fill_k2[o]))) : 0.0;
+            // a cut slope and a fill slope of two roads meet: blend their displacements, each weighted by its size over
+            // its distance to its own road (one continuous surface; a nearer-wins switch left a pit)
+            if (dc > 0 && df > 0) {
+                const double wc = dc / (static_cast<double>(cut_e[o]) + 1), wf = df / (static_cast<double>(fill_e[o]) + 1);
+                g = g + (df * wf - dc * wc) / (wc + wf);
+            } else if (dc > 0) g -= dc;
             else if (df > 0) g += df;
         }
         out[o] = static_cast<float>(g);

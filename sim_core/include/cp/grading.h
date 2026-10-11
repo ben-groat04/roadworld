@@ -293,7 +293,7 @@ std::vector<float> sample_natural_tile(const GroundFn& ground, const TileSpec& t
 // Scratch arrays of grade_tile_into, reusable between calls (no allocation after the first call
 // of a given size). One workspace per worker thread; never share one between threads.
 struct GradeWorkspace {
-    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey, rq_bt, rq_fw, rq_al, rq_fs, rq_sp, rq_sv, cut_r, fill_r;
+    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey, rq_bt, rq_fw, rq_al, rq_fs, rq_sp, rq_sv, cut_r, fill_r, cut_d2, fill_d2, cut_u, fill_u, cut_k2, fill_k2;
     std::vector<std::uint8_t> rq_w, rq_fl, rq_by, cut_k;
     std::vector<const WallPlan*> rq_p;
 };
