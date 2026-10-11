@@ -13,14 +13,25 @@
 // `pts` indices). Handles 0 and n+1 are junction / end NODES: moving one moves every road attached to it
 // (make_move_node). Interior handles move only their road (make_move_interior_point).
 //
+// A "road" is what the user drew, not one engine edge: a road through a junction is several edges (the stroke is
+// split at every junction it makes), and the prototype's road is the whole stroke. Selecting, the handles, the
+// profile, the length in the HUD and Delete all work on the road chain: the edges that continue each other
+// straight through their nodes (same type and one-way flag, tangents within RoadToolRules::chain_max_turn_deg,
+// each the other's best continuation). A road that bends sharply at a junction is two roads.
+//
+// Like the prototype, an edit that lands the road across another road at the same level makes a junction there
+// (JS commitHandleEdit -> conformRoad): the command then replaces the edited edge by the drawn stroke through its
+// new control points (the same code as drawing, so a T or a crossing is a real junction), still ONE undo step.
+//
 // Differences from the prototype (on purpose, see docs/unreal-ui-parity.md section E):
 //   - the nearest handle in reach wins (the prototype took the last one in index order);
 //   - a drag is checked before it is committed with the same errors / advisories / profile as drawing, and a
 //     refused drag returns the reason instead of snapping back silently;
-//   - moves do not create junctions where the edited road now crosses another at the same level (the prototype
-//     conformed the edited road like a new one); the preview flags it as an advisory (CrossingAtGrade).
+//   - hovering any road thing (node, interior point, road) says which road to light up (EditPreview::hover_chain),
+//     so a host highlights the road only, as the prototype did, while the pick kind stays available.
 //
 // Units: metres, doubles, x east, y north, z up.
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -45,6 +56,13 @@ struct EditParams {
     double profile_step = 2.0;       // NEW: station spacing of the profile series (m)
     bool profile_series = true;      // build EditPreview::profile
     bool crossing_feedback = true;   // test the edited road against the others (a refused crossing refuses the edit)
+    // JS commitHandleEdit -> conformRoad: an edit that makes the road cross another at the same level makes a
+    // junction there (one undo step). Off: the edit is allowed and only advised (IssueCode::CrossingAtGrade).
+    // Applies to interior handles and to free road ends; dragging a node shared by several roads only advises.
+    bool make_junctions = true;
+    // A click selects the whole road (the road chain), not one engine edge (JS: one polyline per road).
+    bool chain_selection = true;
+    std::optional<double> water_level;  // ProfileSeries::water_level (tuning panel "Water level m")
 };
 
 enum class EditHoverKind {
@@ -70,7 +88,32 @@ struct Handle {
     std::size_t index = 0;     // 0 = node a, 1..n = interior[index - 1], n + 1 = node b
     NodeId node;               // set for the two ends
     Vec3 pos;
+    std::size_t position = 0;  // order along the road (0 = its first control point); a junction node appears once
     bool is_node() const { return node.valid(); }
+};
+
+// The edges that make one drawn road, in order along it. reversed[i]: edges[i] runs against that order.
+struct RoadChain {
+    std::vector<EdgeId> edges;
+    std::vector<bool> reversed;
+    double length = 0;  // m, along the centreline
+    bool empty() const { return edges.empty(); }
+};
+// The road chain of an edge (see the header); a single-element chain when nothing continues it. max_turn_deg:
+// RoadToolRules::chain_max_turn_deg. An unknown edge gives an empty chain.
+RoadChain road_chain_of(const RoadGraph& g, EdgeId id, double max_turn_deg);
+
+// What the HUD says about the selected road.
+struct EditSelection {
+    bool valid = false;
+    EdgeId edge;                   // the edge that was clicked (anchor of the chain)
+    RoadChain chain;               // the whole road
+    int number = 0;                // the "#N": the lowest edge id in the chain
+    double length = 0;             // m, whole road (the HUD's "200 m")
+    std::string road_type;         // the road's own type (the prototype's header showed the draw tool's; the selected road's is the right one)
+    std::string road_type_name;    // RoadType::hud_name()
+    bool one_way = false;
+    bool dual_type = false;
 };
 
 // The geometry a changed road would have (for drawing the ghost while dragging).
@@ -88,7 +131,11 @@ struct EditPreview {
     // The road the profile panel shows: while dragging the edited road with its new geometry, else the selected
     // road, else the hovered one (JS renderProfile). Invalid when there is none.
     EdgeId profile_edge;
-    ProfileSeries profile;
+    ProfileSeries profile;          // the whole road chain (joined), with the dragged edge's new geometry while dragging
+    EditSelection selection;        // the selected road (valid == false: none): HUD line, type name, length
+    // The road to light up for this hover, whatever was picked (a node or interior point of a road lights that road;
+    // the selected road's handle lights the selected road). Empty when nothing is hovered.
+    std::vector<EdgeId> hover_chain;
     // Dragging only: everything below describes the road being edited AS IT WOULD BE after the move.
     std::vector<EditGhost> ghosts;  // every road the move changes (a node drag changes all roads at the node)
     std::vector<Ribbon> ribbons;    // the edited road's ghost ribbon (one; dual types are edited carriageway by carriageway)
@@ -104,6 +151,11 @@ struct EditResult {
     std::string error;
     IssueCode error_code = IssueCode::CannotFit;
     std::vector<Issue> advisories;  // allowed, but worth saying (as for drawing)
+    // The edit made junctions where the road now crosses others (EditParams::make_junctions): the edited edge is
+    // replaced by new edges, so its id (and the selection) is gone after the command executes. select_at(anchor)
+    // re-selects the road.
+    bool made_junction = false;
+    Vec3 anchor;  // where the edit happened (the handle's new position)
     bool ok() const { return command != nullptr; }
 };
 
@@ -115,10 +167,16 @@ public:
     EditParams& params() { return params_; }
 
     // ---- selection ----
-    EdgeId selected() const;  // invalid when nothing is selected or the road no longer exists
+    EdgeId selected() const;  // the clicked edge; invalid when nothing is selected or the road no longer exists
     void select(EdgeId id);
     void clear_selection() { sel_ = {}; }
-    // The selected road's control points (the white handles).
+    // Select the road under a point (after a command replaced the edge, or from a host's own pick); false when none.
+    bool select_at(Vec3 point, double radius = 3.0);
+    // The selected road as the HUD shows it.
+    EditSelection selection() const;
+    // The road chain of any edge (the whole road with chain_selection, else just that edge).
+    RoadChain road_chain(EdgeId id) const;
+    // The selected road's control points (the white handles), in order along the road.
     std::vector<Handle> handles() const;
     // A road's fitted centreline, sampled about every `step` metres (the hover / selection line).
     std::vector<Vec3> centreline(EdgeId id, double step = 2.0) const;
@@ -133,7 +191,7 @@ public:
     // ---- drag ----
     // Start dragging the handle under the pointer (it must be a Handle of the selected road). The handle then
     // moves in the horizontal plane through its height, keeping its height above the ground (JS dzT).
-    bool begin_drag(const PointerInput& in);
+    bool begin_drag(const PointerInput& in);  // a handle of the selected road (any edge of its chain)
     bool dragging() const { return drag_.has_value(); }
     // The live preview of the drag at this pointer position (== hover() while dragging).
     EditPreview drag_to(const PointerInput& in) { return hover(in); }
@@ -174,10 +232,12 @@ private:
     Ground resolve(const PointerInput& in) const;
     EditHover pick(const PointerInput& in, const Ground& gr);
     bool drag_position(const PointerInput& in, Vec3& out) const;
-    Trial evaluate(EdgeId edge, std::size_t handle, Vec3 to) const;
-    EditResult commit_move(EdgeId edge, std::size_t handle, Vec3 to) const;
+    Trial evaluate(EdgeId edge, std::size_t handle, Vec3 to);
+    EditResult commit_move(EdgeId edge, std::size_t handle, Vec3 to);
     void ensure_index();
     ProfileSeries cached_profile(EdgeId id);
+    ProfileSeries chain_profile(const RoadChain& chain, const std::map<EdgeId, ProfileSeries>& moved);
+    double chain_turn_deg() const;
 
     const RoadGraph& graph_;
     const Heightfield& ground_;
@@ -189,10 +249,10 @@ private:
     bool index_valid_ = false;
     std::uint64_t fingerprint_ = 0;
     struct ProfileCache {
-        EdgeId id;
         std::uint64_t key = 0;
         ProfileSeries series;
-    } profile_cache_;
+    };
+    std::map<EdgeId, ProfileCache> profile_cache_;
 };
 
 }  // namespace cp

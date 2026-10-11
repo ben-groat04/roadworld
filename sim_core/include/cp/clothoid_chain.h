@@ -23,6 +23,8 @@ struct ClothoidChain {
     double length() const;
 };
 
+// nullopt when no sane chain exists: two points on top of each other, or a stroke whose spans would need to be
+// more than 20 times their chord (it doubles back onto an earlier point; the G1 solve then spirals for ever).
 std::optional<ClothoidChain> fit_clothoid_chain(const std::vector<Vec2>& points, ChainEnd start = {},
                                                 ChainEnd end = {});
 

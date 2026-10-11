@@ -381,10 +381,11 @@ TEST_CASE("EditSession: a drag over another road is refused in the height band, 
     }
 }
 
-TEST_CASE("EditSession: a drag across another road at the same level is allowed and advised: an edit makes no junction") {
+TEST_CASE("EditSession: a drag across another road at the same level makes junctions there (JS conformRoad), one undo step") {
     Rig rig;
     rig.road({0, 100, 0}, {}, {200, 100, 0});
     const EdgeId mine = rig.road({0, 0, 0}, {{100, 40, 0}}, {200, 0, 0});
+    const Snap before = snap(rig.g);
     EditSession es(rig.g, rig.hf);
     es.select(mine);
     REQUIRE(es.begin_drag(through({100, 40, 0.5})));
@@ -392,13 +393,45 @@ TEST_CASE("EditSession: a drag across another road at the same level is allowed 
     CHECK(pv.ok());
     REQUIRE_FALSE(pv.crossings.empty());
     CHECK(pv.crossings[0].verdict == CrossingVerdict::Join);
-    CHECK(has_issue(pv.advisories, IssueCode::CrossingAtGrade));
+    REQUIRE(has_issue(pv.advisories, IssueCode::CrossingAtGrade));
+    CHECK(pv.advisories.back().text.find("becomes a junction") != std::string::npos);
     EditResult r = es.end_drag(at(100, 170));
     REQUIRE(r.ok());
-    CHECK_FALSE(r.advisories.empty());
+    CHECK(r.made_junction);
+    CHECK(r.anchor.x == doctest::Approx(100));
     REQUIRE(rig.st.execute(std::move(r.command)));
-    CHECK(rig.g.edges().size() == 2);  // no junction was made
-    CHECK(rig.g.nodes().size() == 4);
+    // the road crosses the other twice: both roads are cut in three, joined at two four-way junctions
+    CHECK(rig.g.edges().size() == 6);
+    CHECK(rig.g.nodes().size() == 6);
+    std::size_t four_way = 0;
+    for (const auto& [id, n] : rig.g.nodes()) four_way += rig.g.edges_at(id).size() == 4;
+    CHECK(four_way == 2);
+    es.invalidate();
+    CHECK_FALSE(es.selected().valid());  // the edited edge is gone ...
+    CHECK(es.select_at({100, 170, 0}));  // ... and the road is found again by where the edit happened
+    CHECK(es.selection().chain.edges.size() == 3);  // the three pieces are one road
+    REQUIRE(rig.st.undo());
+    CHECK(snap(rig.g) == before);  // one undo step restores the roads exactly
+    REQUIRE(rig.st.redo());
+    CHECK(rig.g.edges().size() == 6);
+    CHECK(rig.st.undo_depth() == 3);
+    // with junction making off, the old behaviour: allowed and advised, no junction
+    REQUIRE(rig.st.undo());
+    {
+        EditParams p;
+        p.make_junctions = false;
+        EditSession plain(rig.g, rig.hf, p);
+        plain.select(mine);
+        REQUIRE(plain.begin_drag(through({100, 40, 0.5})));
+        const EditPreview pv2 = plain.drag_to(at(100, 170));
+        CHECK(pv2.advisories.back().text.find("without a junction") != std::string::npos);
+        EditResult r2 = plain.end_drag(at(100, 170));
+        REQUIRE(r2.ok());
+        CHECK_FALSE(r2.made_junction);
+        REQUIRE(rig.st.execute(std::move(r2.command)));
+        CHECK(rig.g.edges().size() == 2);
+        CHECK(rig.g.nodes().size() == 4);
+    }
 }
 
 TEST_CASE("EditSession: point height, node and interior, as one undoable command each") {
