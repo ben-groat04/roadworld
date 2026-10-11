@@ -40,6 +40,7 @@
 
     "give_way_low":  { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 0.6, "gap_m": 0.3 } ], "source": "estimate: give way line (diagram 1003), 200 mm broken, 600/300 (Chapter 3 not extracted)" },
     "give_way_high": { "colour": "white", "strands": [ { "width_m": 0.30, "mark_m": 1.0, "gap_m": 0.5 } ], "source": "estimate: give way line on faster roads, 300 mm broken, 1000/500" },
+    "give_way_ring": { "colour": "white", "strands": [ { "width_m": 0.30, "mark_m": 0.9, "gap_m": 0.6 } ], "source": "photos aerial 41, 09, GSV Brynich 180326: roundabout entry line is a broken line of roughly equal marks and gaps, about 0.3 m wide; chosen 0.9 m mark / 0.6 m gap (TSRGD 1003 gives 0.6/0.3 to 1.0/0.5 by speed; Chapter 3 not extracted)" },
     "stop_line":     { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 1.0, "gap_m": 0.0 } ], "source": "estimate: stop line (diagram 1002), 200 mm continuous" },
     "zebra_give_way": { "colour": "white", "strands": [ { "width_m": 0.20, "mark_m": 0.6, "gap_m": 0.3 } ], "source": "estimate: zebra approach give way line" },
 
@@ -75,7 +76,7 @@
                        "source": "DfT TSM Ch5: lane lines become warning lines on approaches to give way lines, signals and roundabouts" } ],
           "source": "DfT TSM Ch5: lane line between same-direction lanes" },
         { "id": "bay_line", "category": "parking_bay", "left": "driving", "right": "parking", "relation": "any",
-          "style": "bay_line", "source": "estimate: continuous line along the parking lane" }
+          "style": "bay_line", "keepout_m": 10.0, "source": "estimate: continuous line along the parking lane; stops 10 m short of a junction (Highway Code rule 243), photo aerial 42 shows kerbside bays ending about 2.5 lane widths short of the mouth" }
       ],
       "bays": [
         { "lane_type": "parking", "length_m": 6.0, "style": "bay_divider", "keepout_m": 10.0, "edge_clear_m": 0.06,
@@ -178,10 +179,11 @@
       "outline_style": [ { "if": { "speed_min": 40 }, "style": "edge_150" }, { "style": "edge_100" } ],
       "outline_gap_m": 0.15,
       "hatch_style": "fill_white", "hatch_length_m": 12, "hatch_width_m": 1.4, "stripe_width_m": 0.3, "pitch_m": 1.0, "angle_deg": 60, "ladder_pitch_m": 2.0,
+      "taper_length_m": [ { "if": { "speed_max": 30 }, "value": 6 }, { "if": { "speed_max": 40 }, "value": 8 }, { "if": { "speed_max": 50 }, "value": 10 }, { "value": 12 } ], "taper_max_island_ratio": 0.6,
       "source": "estimate (photos: GSV Brynich 'ladder bars approx 2 m apart', street 28, aerial 09): solid outline round the kerbed island, a solid line along the inner edge of each lane, and ladder bars (perpendicular to the road, 2 m apart) across the painted gap round and beyond the island's nose. hatch_length_m / hatch_width_m / pitch_m / angle_deg are for the diagonal triangle used only on dual-carriageway median splitters"
     },
     "roundabout_entry": {
-      "style": [ { "if": { "speed_max": 30 }, "style": "give_way_low" }, { "style": "give_way_high" } ],
+      "style": "give_way_ring",
       "setback_m": 0.5, "line_gap_m": 0.3,
       "source": "estimate: give way line across the entering lanes (roundabout markings not extracted from the Manual)"
     },

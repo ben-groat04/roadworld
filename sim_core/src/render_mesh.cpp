@@ -902,7 +902,8 @@ std::vector<Vec2> simplify_ring(const std::vector<Vec2>& ring, std::vector<char>
     return out.size() >= 3 ? out : ring;
 }
 
-double junction_edge_length(const RenderMeshParams& P) { return std::clamp(100 * P.chord_tolerance + 4.0, 4.0, 30.0); }
+// Junction triangle edge cap: about 2 m at the default 1 cm chord tolerance (was 5 m: coarse "slab grid" facets), coarser for LODs.
+double junction_edge_length(const RenderMeshParams& P) { return std::clamp(100 * P.chord_tolerance + 1.0, 2.0, 30.0); }
 
 // ---------------------------------------------------------------- junction meshes
 

@@ -1,0 +1,9 @@
+[
+  { "name": "A_roundabout_aerial60", "pos": [0, 30, 75], "target": [0, 82, 0], "fov": 50, "near": 1, "shadow": 90, "exposure": 0.9 },
+  { "name": "B_roundabout_south_arm_aerial", "pos": [0, -5, 38], "target": [0, 55, 0], "fov": 45, "near": 1, "shadow": 90, "exposure": 0.9 },
+  { "name": "C_roundabout_south_arm_low", "rel": true, "pos": [0, 18, 2.2], "target": [0, 70, 0.3], "fov": 60, "near": 0.2, "shadow": 80, "exposure": 0.9 },
+  { "name": "D_tee_mouth_aerial", "pos": [20, 205, 38], "target": [4, 230, 0], "fov": 50, "near": 1, "shadow": 80, "exposure": 0.9 },
+  { "name": "E_tee_mouth_low", "rel": true, "pos": [30, 212, 2.0], "target": [4, 229, 0.3], "fov": 60, "near": 0.2, "shadow": 80, "exposure": 0.9 },
+  { "name": "F_slip_gore_aerial", "pos": [-235, -25, 60], "target": [-228, 8, 0], "fov": 50, "near": 1, "shadow": 100, "exposure": 0.9 },
+  { "name": "G_slip_gore_low", "rel": true, "pos": [-295, 4.5, 2.5], "target": [-225, 9, 0.3], "fov": 60, "near": 0.2, "shadow": 100, "exposure": 0.9 }
+]
