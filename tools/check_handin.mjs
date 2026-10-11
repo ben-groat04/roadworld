@@ -1,18 +1,20 @@
 #!/usr/bin/env node
-// Hand-in check. Usage: node tools/check_handin.mjs <progress-folder> [--main <main-checkout>]
+// Hand-in check. Usage: node tools/check_handin.mjs <progress-folder> [--main <main-checkout>] [--no-visual]
 // Fails (exit 1) with a list unless: STATUS.md starts with the "Skipped, refused or failed" heading with a body;
 // STATUS.md names >=3 existing reference files per "Case:" line; FAULTS.md has >=2 "Pass" sections and a Residual
-// section; COMPARE.md has a table whose files exist (composites under <main>/docs/reference/_compare/).
+// section; STATUS.md has "References opened: N of M" (N < M needs a "not opened" line with a file name in the Skipped section);
+// --no-visual skips the FAULTS.md and COMPARE.md checks (engine-only work); COMPARE.md has a table whose files exist (composites under <main>/docs/reference/_compare/).
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync } from 'node:child_process';
 
 const args = process.argv.slice(2);
+const noVisual = args.includes('--no-visual');
 const mi = args.indexOf('--main');
 const mainArg = mi >= 0 ? args[mi + 1] : null;
 const folder = args.find((a, i) => !a.startsWith('--') && !(mi >= 0 && i === mi + 1));
 if (!folder) {
-  console.error('usage: node tools/check_handin.mjs <progress-folder> [--main <path>]');
+  console.error('usage: node tools/check_handin.mjs <progress-folder> [--main <path>] [--no-visual]');
   process.exit(2);
 }
 
@@ -55,7 +57,15 @@ if (status === null) {
   } else {
     const start = heads[0].index + heads[0][0].length;
     const end = heads[1] ? heads[1].index : s.length;
-    if (s.slice(start, end).trim().length < 10) fails.push('STATUS.md: "Skipped, refused or failed" section is empty');
+    const skipBody = s.slice(start, end);
+    if (skipBody.trim().length < 10) fails.push('STATUS.md: "Skipped, refused or failed" section is empty');
+    const ro = s.match(/References opened:s*(d+)s+ofs+(d+)/i);
+    if (!ro) fails.push('STATUS.md: no "References opened: N of M" line (integers)');
+    else if (+ro[1] < +ro[2]) {
+      const lines = skipBody.split('
+').filter((l) => /not opened/i.test(l) && /[w-]+.w{2,5}/.test(l));
+      if (!lines.length) fails.push(`STATUS.md: References opened ${ro[1]} of ${ro[2]}: the Skipped section needs a "not opened" line naming each unopened file with a reason`);
+    }
   }
   const cases = [...s.matchAll(/^\s*Case:\s*(.*?)\s*\|\s*Opened:\s*(.*)$/gim)];
   if (!cases.length) fails.push('STATUS.md: no "Case: <name> | Opened: <file>, <file>, <file>" lines');
@@ -73,8 +83,8 @@ if (status === null) {
 }
 
 // FAULTS.md
-const faults = read('FAULTS.md');
-if (faults === null) {
+const faults = noVisual ? '' : read('FAULTS.md');
+if (noVisual) { /* skipped */ } else if (faults === null) {
   fails.push('FAULTS.md is missing');
 } else {
   const passes = [...faults.matchAll(/^##\s+Pass\s+\d+/gim)].length;
@@ -91,8 +101,8 @@ if (faults === null) {
 }
 
 // COMPARE.md
-const compare = read('COMPARE.md');
-if (compare === null) {
+const compare = noVisual ? '' : read('COMPARE.md');
+if (noVisual) { /* skipped */ } else if (compare === null) {
   fails.push('COMPARE.md is missing');
 } else {
   const rows = compare.split('\n')

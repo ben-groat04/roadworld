@@ -1,4 +1,4 @@
-# Usage: powershell -File tools\new_agent_worktree.ps1 <name> [-Base <branch>]
+# Usage: powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name> [-Base <branch>]
 # Creates ..\roadworld-wt-<name> on a new branch agent/<name> from the CURRENT tip of the base branch
 # (default: the branch checked out in the main checkout) and links the main checkout's docs\reference into it
 # with a directory junction, so agents can open the (gitignored, private) reference photos.
