@@ -8,7 +8,7 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Earthworks round 9: disturbance view and cross-sections first, then a hard bound on changed ground on every scene, plus round 8 leftovers | `agent/grade-r9`, `..\roadworld-wt-grade-r9` | `agent/grading-r6` 2aff581 + main | `tools/check_handin.mjs` passes on `docs/progress/2026-10-11-structures-r9`; main session opens the disturbance views and sections |
 | Integration: merge, in order, world cover r4 (`agent/world-cover-r2` 0da3c74), junction markings (`agent/junction-markings` d611346), earthworks r7+r8 (`agent/grading-r6` 2aff581), road tool gaps (`agent/road-tool-2` d7dfc99), then main | `integ/2026-10-11`, `..\roadworld-wt-integ` | main | clean builds, full suite on gcc and MSVC after each merge; then fast-forward main |
 | Unreal milestone 2 code (click-click road drawing, undo), compile only | `agent/unreal-m2`, `..\roadworld-wt-m2` | main 269fa1e | compiles; then merge and playtest (below) |
-| Road tool vs ALL prototype screenshots: read-only check, every image opened against the code (the builder opened only 3) | reads `..oadworld-wt-tool2` | - | gap list in its report; main session adds each gap to item 4 below |
+| Road tool vs ALL prototype screenshots: read-only check, every image opened against the code (the builder opened only 3) | reads `../roadworld-wt-tool2` | - | gap list in its report; main session adds each gap to item 4 below |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
 ## Next, in order (start when its blocker clears)
@@ -19,14 +19,20 @@ Updated by the main session every time an agent is started, an agent reports, or
 5. **Unreal: build the unbuilt wrapper** `Wrap_edit_tool.cpp` with the next plugin build; wire `gore_length` region table and `JunctionOverrides::gore_length`; confirm the dark slot on the raised roundabout arm is gone. Unreal lane.
 6. **Unreal background visuals** (world is only a backdrop, planning log Round 50): ground material per field land use from the new `CoverGround` fields, kit hedges and trees instanced; fix tile grid on grass, heavy cloud-shadow blotches from high up, dark blue horizon band, hills barely reading from the ground. Unreal lane, after M2 playtest.
 7. **Grading and structures as WorldCache layers with a dirty path** (so a drawn road gets earthworks in the sandbox). Blocked by: earthworks round 9 and integration.
-8. **Milestone 3 onward** per `docs/unreal-game-plan.md` (prototype UI parity: profile panel, readouts, warnings, edit tool).
+8. **Road-generated content in the Unreal sandbox**: lighting columns instanced (sim_core street-light layer and kit columns exist), verge and road-edge scatter, vegetation kit and approved Poly Haven pieces imported and instanced. Unreal lane, after item 6.
+9. **Cold-read reviews** (fresh Sonnet, at least 3 opened photos per case, layout scored apart from look, the open question "what would never be built?") of: earthworks after round 9, roundabout after its round, the M2 playtest pictures. Start each as its hand-in passes the check.
+10. **Refresh `docs/HANDOFF.md`** sections 2, 6, 7, 8, 9, 12 to today (they describe the state before the playtest, rounds 8/4, the rules fix and Round 50). After the integration lands.
+11. **Milestone 3 onward** per `docs/unreal-game-plan.md` (prototype UI parity: profile panel, readouts, warnings, edit tool).
 
 ## Small fixes (batch into the next docs/tools agent)
 - `tools/new_agent_worktree.ps1`: usage line must say `powershell -NoProfile -ExecutionPolicy Bypass -File ...` (plain invocation is blocked on this machine); CLAUDE.md gate text likewise.
 - Playtest harness: about 4 in 11 runs lose all synthetic mouse input; cause not found. Rerun before believing a regression. Do not run a UBT build in another worktree while a playtest starts (mutex wait, once hung 24 min).
 - World cover round 4 composites were written to `C:\Users\bgbg0\cp_scratch\pairs\` (outside the repo); move to `docs/reference/_compare/world-cover-r4/` and remove the outside folder with the owner's OK.
-- Old worktrees and branches to remove once merged: `-wt-grade`, `-wt-junc`, `-wt-cover`, `-wt-tool2`, `-wt-rules`; leftover `unreal/CityPainter/Plugins/CityPainterSim` folder.
-- Pier clearance 0.3 -> 0.2 m as region data.
+- Old worktrees and branches to remove once merged: `-wt-grade`, `-wt-junc`, `-wt-cover`, `-wt-tool2`, `-wt-rules`, `-wt-tool`, `-wt-world`; leftover `unreal/CityPainter/Plugins/CityPainterSim` folder.
+- Pier clearance 0.3 -> 0.2 m as region data (the interchange-bridge pier test stays should_fail until then).
+- Carried over from the handoff, not started: street-light incremental limit for close unconnected roads; world-cache road-mesh rebuild cost and re-measuring the 190 ms WorldCache update (milestone 4); `RoadGraph` mutators still public; big files not split (`markings.cpp`, `structure_mesh.cpp`, `render_mesh.cpp`); about 40 structure dimensions not yet in region data (`docs/repo-health-review.md`).
+- Reference photos still missing: a close retaining-wall end in a soil cutting on a highway, a machined benched rock cut, UK kerbside parking near a junction, T-junction ghost island, slip gore close-ups. Toe ditch on soil cuts has no photo support.
+- `agent/unreal-m2` shows no commits after several hours (tip still 269fa1e): check its working tree and STATUS when it reports; it may hold everything uncommitted.
 - Markings drawn in the road material from lane UVs: spike (idea from the Road Creator Pro research).
 
 ## Waiting on the owner (not blocking)
