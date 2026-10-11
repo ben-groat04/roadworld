@@ -11,7 +11,7 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Gate notices: BUILT (agent/rules-fix 24f60aa, 110 hook tests by its count, hand-in check passed). Not merged: waits for its auditor | `agent/rules-fix`, `../roadworld-wt-rules` | main | auditor AUDIT.md says accept; then main session merges, reads the 3 existing log items, acks |
 | AUDITOR: gate notices and hooks (own tests, full docs page, background-agent case the builder did not test) | writes AUDIT.md in `../roadworld-wt-rules/docs/progress/2026-10-11-gate-notices` | - | AUDIT.md with verdict |
 | Audit gate mechanism: auditor briefs (`make_brief --audit`), finish gate refuses builder = auditor, an audit-owed notice on every prompt until AUDIT.md exists, `check_handin --accept` | `agent/auditgate`, `../roadworld-wt-auditgate` | agent/rules-fix 24f60aa | hand-in passes; then its own auditor |
-| Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
+| Vegetation kit round 2: HANDED IN (agent/veg-kit-r2 80bd4d4, check passed, 24 of 30 references opened, long residual list). AUDITOR running; not accepted until AUDIT.md | `agent/veg-kit-r2`, `..oadworld-wt-veg` | main | AUDIT.md verdict; then main session opens the matched composites |
 
 | Matched junction reference set (owner, 11 Oct: "it isn't even getting relevant ref images!!!"): at least 3 UK photos per case AND view that match our junction type, size and a reproducible camera; `docs/reference/MATCHED.md` with measurements and the render camera per photo; existing photos classified usable / not usable | research agent, writes only under `docs/reference` | - | MATCHED.md exists; main session opens the photos; BLOCKS every junction builder |
 
@@ -23,7 +23,6 @@ Owner, 11 Oct: "is one earthworks agent creating AND auditing? that's wrong. and
 Auditors owed:
 - Earthworks round 9, when it hands in: also check the section sheets and disturbance views against the height data they claim to show.
 - Unreal milestone 2 run, when it hands in: composites against the 26 prototype screenshots, and whether the playtest script really exercises what it says it checks.
-- Vegetation kit round 2, when it hands in.
 - Integration, when it hands in: an independent clean build and suite run on both compilers of the merged tip (not the merger's own count).
 - Gate notices and hooks: auditor RUNNING. Audit gate mechanism: auditor owed when it hands in.
 - Junction markings: AUDITED, verdict send back (AUDIT.md be59b50 in ../roadworld-wt-junc/docs/progress/2026-10-11-junction-markings; 14 items with the test each needs). The roundabout, T-junction and slip rounds below are briefed from that file, not from the older lists here.
