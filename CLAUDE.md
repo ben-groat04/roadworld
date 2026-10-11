@@ -27,7 +27,7 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - **Default to parallel agents** split by file/function, each with tight scope and exact function names; continue existing agents via messages instead of spawning new ones for follow-ups.
 - **Verify with `node prototypes/road-draw/tools/scene.mjs --check`** (text invariants, ~8 s; needs one-time `npm install` in prototypes/road-draw) rather than screenshot loops; screenshots only for realism judgement.
 - **Send the person progress pictures** whenever new visual results exist.
-- **The main session never audits screenshots or code itself**: visual and code review go to cold-read Sonnet agents; the main session reads only their reports.
+- **Review is done by cold-read Sonnet agents; the main session is the final check, not the first.** Detailed visual and code review goes to agents. But when an agent (builder or reviewer) says a visible result is good, fixed or done, the main session opens the headline images itself to confirm before telling the person or building on it. It does not audit work in progress or code line by line.
 - **New session? Read `docs/HANDOFF.md` first.**
 - **Reference claims need opened references.** Any statement about what the reference photos show must name the reference files actually opened; review briefs must require this, and a score based on fewer than two opened references per view must say so (see `docs/README.md`, "Reference claims").
 - **Unreal is a single lane**: one agent at a time builds the plugin or runs the editor; queue Unreal work. Prefer the live editor via MCP over cold-start scripts.
