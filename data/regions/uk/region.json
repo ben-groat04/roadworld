@@ -46,7 +46,11 @@
     "fill_steep_batter": 1.5,
     "corridor_max_m": 90,
     "wall_vis_min_m": 0.35,
-    "reach_fade_m": 8.0
+    "reach_fade_m": 8.0,
+    "relax_iterations": 16,
+    "relax_strength": 0.8,
+    "relax_margin_m": 8.0,
+    "relax_max_delta_m": 1.0
   },
   "structures": {
     "_comment": "Structure dimensions (cp::StructureRules); engineering defaults tuned by eye.",

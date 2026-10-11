@@ -132,6 +132,10 @@ GradingParams parse_params(const json& j) {
     p.toe_ditch_width = j["toeDitchWidth"];
     p.end_taper_batter = j["endTaperBatter"];
     p.reach_fade = j["reachFade"];
+    p.relax_iters = j["relaxIters"];
+    p.relax_strength = j["relaxStrength"];
+    p.relax_margin = j["relaxMargin"];
+    p.relax_max_delta = j["relaxMaxDelta"];
     const json& t = j["tunnel"];
     p.tunnel.lining = t["lining"];
     p.tunnel.margin = t["margin"];
@@ -278,7 +282,7 @@ Graded grade_region(const Case& c, double margin = 45) {
     g.t.nx = static_cast<int>(std::ceil((x1 + margin - g.t.x0) * 2)) + 1;
     g.t.ny = static_cast<int>(std::ceil((y1 + margin - g.t.y0) * 2)) + 1;
     g.base = sample_natural_tile(c.ground, g.t);
-    g.h = grade_tile(c.prepared, c.params, g.t, g.base).height;
+    g.h = grade_tile_smooth(c.prepared, c.params, g.t, c.ground).height;
     return g;
 }
 
@@ -364,7 +368,7 @@ TEST_CASE("grading: graded tiles match the prototype within 0.15 mm") {
         for (const json& tj : c->g["tiles"]) {
             const TileSpec t = golden_tile(tj);
             const std::vector<float> nat = sample_natural_tile(c->ground, t);
-            const GradedTile gt = grade_tile(c->prepared, c->params, t, nat);
+            const GradedTile gt = grade_tile_smooth(c->prepared, c->params, t, c->ground);
             REQUIRE(gt.height.size() == tj["h"].size());
             for (std::size_t o = 0; o < gt.height.size(); ++o) {
                 const double d = std::abs(static_cast<double>(gt.height[o]) - tj["h"][o].get<double>() * 1e-4);
@@ -458,7 +462,7 @@ TEST_CASE("grading: result does not depend on how the world is cut into tiles") 
     const double res = 0.5;
     // a 40 x 40 texel tile at an arbitrary integer offset inside the region
     const TileSpec t{big.t.x0 + 71 * res, big.t.y0 + 33 * res, 40, 40, res};
-    const GradedTile small = grade_tile(c->prepared, c->params, t, sample_natural_tile(c->ground, t));
+    const GradedTile small = grade_tile_smooth(c->prepared, c->params, t, c->ground);
     int bad = 0;
     for (int j = 0; j < t.ny; ++j)
         for (int i = 0; i < t.nx; ++i)
@@ -488,7 +492,7 @@ TEST_CASE("grading: no roads leaves natural ground untouched and tile call is de
 TEST_CASE("grading: footprint mask covers the carriageway and nothing far from roads") {
     auto c = make_case("straight_crossfall");
     const Graded g = grade_region(*c);
-    const GradedTile gt = grade_tile(c->prepared, c->params, g.t, g.base);
+    const GradedTile gt = grade_tile_smooth(c->prepared, c->params, g.t, c->ground);
     const SampledRoad& r = c->roads[0];
     for (std::size_t i = 4; i + 4 < r.samples.size(); i += 5) {
         const RoadSample& s = r.samples[i];
@@ -542,7 +546,8 @@ TEST_CASE("grading: slope tops and toes are rolled over, daylight does not move 
     GradingParams sharp = c->params;
     sharp.round_daylight = 0;
     sharp.round_hinge = 0;
-    const GradedTile gs = grade_tile(c->prepared, sharp, g.t, g.base);
+    sharp.relax_iters = 0;
+    const GradedTile gs = grade_tile_smooth(c->prepared, sharp, g.t, c->ground);
     double max_dip = 0, max_diff_far = 0;
     std::size_t differ = 0;
     for (std::size_t o = 0; o < g.h.size(); ++o) {
@@ -553,7 +558,7 @@ TEST_CASE("grading: slope tops and toes are rolled over, daylight does not move 
     }
     CHECK(differ > 100);                                   // something is rounded
     CHECK(max_dip < c->params.round_daylight / 2 + 0.3);   // by well under a metre
-    CHECK(max_diff_far < 0.4);   // natural ground only dips/rises within a few decimetres at the roll-over
+    CHECK(max_diff_far < c->params.relax_max_delta + 0.4);   // natural ground only dips/rises within a few decimetres at the roll-over
     // rounded top of a cutting: the profile across the slope has no crease (second difference stays small)
     const SampledRoad& r = c->roads[0];
     const RoadSample& s = r.samples[r.samples.size() / 2];
@@ -784,7 +789,7 @@ TEST_CASE("grading invariants: wall height cap, ground hidden by walls, no bare 
                                 for (const RoadSample& q : c->roads[o].samples)
                                     if (std::abs(q.x - x) < 45 && std::abs(q.y - y) < 45 && std::hypot(q.x - x, q.y - y) < c->roads[o].half_width + 12) { near_other = true; break; }
                             }
-                            if (!near_other && std::abs(gg - c->ground(x, y)) > 0.25) hidden.bad(std::abs(gg - c->ground(x, y)), "ramp outside the outer face at e=" + std::to_string(e));
+                            if (!near_other && std::abs(gg - c->ground(x, y)) > 0.25) hidden.bad(std::abs(gg - c->ground(x, y)), "ramp outside the outer face at e=" + std::to_string(e) + " x=" + std::to_string(x) + " y=" + std::to_string(y) + " g=" + std::to_string(gg) + " nat=" + std::to_string(c->ground(x, y)) + " top=" + std::to_string(p.top) + " zTop=" + std::to_string(p.zTop) + " zBot=" + std::to_string(p.zBot));
                         }
                     }
                 }
@@ -825,6 +830,7 @@ TEST_CASE("grading invariants: wall height cap, ground hidden by walls, no bare 
                     const double x = g.t.x0 + (i + di / 2.0) * 0.5, y = g.t.y0 + (j + dj / 2.0) * 0.5;
                     if (in_wall(x, y) || in_struct_zone(x, y)) continue;
                     bare.bad(st, "bare step at " + std::to_string(x) + "," + std::to_string(y));
+                    if (std::getenv("CP_DUMP_STEPS")) std::fprintf(stderr, "STEP %s %.2f %.2f %.2f\n", name, x, y, st);
                 }
             }
         steps_checked += bare.total;
@@ -987,14 +993,14 @@ TEST_CASE("grading adapter: graph roads grade with the region pack and honour au
     const std::vector<GradingRoad> prepared = prepare_grading_roads(roads, ground, p);
     REQUIRE(prepared.size() == 1);
     const TileSpec t{40, -20, 64, 64, 0.5};
-    const GradedTile gt = grade_tile(prepared, p, t, sample_natural_tile(GroundFn(ground), t));
+    const GradedTile gt = grade_tile_smooth(prepared, p, t, GroundFn(ground));
     const std::size_t o = static_cast<std::size_t>(32 * 64 + 20);  // (x = 50, y = -4)... inside the carriageway
     CHECK(gt.footprint[o] == 1);
     CHECK(gt.height[o] == doctest::Approx(20 - p.formation_drop).epsilon(1e-6));
     // under the bridge the ground is untouched (natural), well inside the span
     const TileSpec tb{110, -10, 40, 40, 0.5};
     const std::vector<float> nb = sample_natural_tile(GroundFn(ground), tb);
-    const GradedTile gb = grade_tile(prepared, p, tb, nb);
+    const GradedTile gb = grade_tile_smooth(prepared, p, tb, GroundFn(ground));
     const std::size_t m = static_cast<std::size_t>(20 * 40 + 20);
     CHECK(gb.height[m] == doctest::Approx(nb[m]));
     // a graph without a region pack, or with unknown road types, yields no roads
@@ -1140,7 +1146,7 @@ TEST_CASE("grading: an embankment ends in a run-out along the road, not a steep 
     GradingParams steep = c->params;
     steep.end_taper_batter = steep.batter;
     const std::vector<GradingRoad> prep2 = prepare_grading_roads(c->roads, c->ground, steep);
-    const std::vector<float> h2 = grade_tile(prep2, steep, g.t, g.base).height;
+    const std::vector<float> h2 = grade_tile_smooth(prep2, steep, g.t, c->ground).height;
     Graded g2 = g;
     g2.h = h2;
     CHECK(g2.at(end.x + 24, end.y) - c->ground(end.x + 24, end.y) < 0.2);
@@ -1163,7 +1169,7 @@ TEST_CASE("grading: a cutting has a shallow ditch at its toe; width / depth 0 di
     CHECK(g.at(mid->x, mid->y + hw + c->params.verge + c->params.toe_ditch_width + 3.0) > zf + 0.8);
     GradingParams none = c->params;
     none.toe_ditch_depth = 0;
-    const std::vector<float> h0 = grade_tile(c->prepared, none, g.t, g.base).height;
+    const std::vector<float> h0 = grade_tile_smooth(c->prepared, none, g.t, c->ground).height;
     Graded g0 = g;
     g0.h = h0;
     CHECK(g0.at(mid->x, y) >= zf - 0.02);
@@ -1260,3 +1266,17 @@ TEST_CASE("grading: shares cp::TileKey with render_mesh.h and structure_mesh.h")
     CHECK(t.y0 == -192.0);
 }
 
+
+TEST_CASE("zz debug column") {
+    auto c = make_case("wall_steep_side");
+    const Graded g = grade_region(*c);
+    GradingParams raw = c->params;
+    raw.relax_iters = 0;
+    const GradedTile gr = grade_tile_smooth(c->prepared, raw, g.t, c->ground);
+    const GradedTile gs = grade_tile_smooth(c->prepared, c->params, g.t, c->ground);
+    for (double y = -4; y >= -10; y -= 0.5) {
+        const int i = static_cast<int>(std::lround((86 - g.t.x0) / 0.5)), j = static_cast<int>(std::lround((y - g.t.y0) / 0.5));
+        const std::size_t o = static_cast<std::size_t>(j) * g.t.nx + i;
+        MESSAGE("y=" << y << " raw=" << gr.height[o] << " fp=" << int(gr.footprint[o]) << " smooth=" << gs.height[o] << " nat=" << c->ground(86, y));
+    }
+}
