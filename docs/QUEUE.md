@@ -8,7 +8,6 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Earthworks round 9: disturbance view and cross-sections first, then a hard bound on changed ground on every scene, plus round 8 leftovers | `agent/grade-r9`, `..\roadworld-wt-grade-r9` | `agent/grading-r6` 2aff581 + main | `tools/check_handin.mjs` passes on `docs/progress/2026-10-11-structures-r9`; main session opens the disturbance views and sections |
 | Integration: merge, in order, world cover r4 (`agent/world-cover-r2` 0da3c74), junction markings (`agent/junction-markings` d611346), earthworks r7+r8 (`agent/grading-r6` 2aff581), road tool gaps (`agent/road-tool-2` d7dfc99), then main | `integ/2026-10-11`, `..\roadworld-wt-integ` | main | clean builds, full suite on gcc and MSVC after each merge; then fast-forward main |
 | Unreal milestone 2: merge main into it, build, automation tests, M1 playtest still 37/37, M2 scenarios, pictures of every drawing state beside the 26 prototype screenshots, fix what belongs to M2 (previous agent built it but never ran it; tip 905df6b) | `agent/unreal-m2`, `../roadworld-wt-m2` (holds the Unreal lane) | 905df6b + main | hand-in in `docs/progress/2026-10-11-unreal-m2-run`; main session opens the composites; then fast-forward main |
-| Hooks: build and test `brief_gate` (refuse a brief without the contract), `handin_gate` (refuse an agent finishing while the hand-in check fails, 3 tries), contract injection at agent start; table of what they close and what they cannot (owner approved 11 Oct) | `agent/rules-fix`, `../roadworld-wt-rules` | main db2d757 | hand-in passes the check; main session reads the diff, merges, runs the live test in this session |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
 ## Next, by priority (start when its blocker clears)
@@ -52,6 +51,7 @@ Priority rule (owner, Round 50): the photorealism comes from the road builder pl
 - **Refresh `docs/HANDOFF.md`** sections 2, 6, 7, 8, 9, 12 to today (they describe the state before the playtest, rounds 8/4, the rules fix and Round 50). After the integration lands.
 
 ## Machine notes
+- Enforcement hooks are LIVE in the main checkout since the evening of 11 Oct (`.claude/settings.json`, `tools/hooks/`): a launch without the contract, `HANDIN_DIR` and the owner`s words is refused unless it carries `NO-CONTRACT: <reason>`; the contract is injected into every agent; an agent with a `HANDIN_DIR` cannot finish while `tools/check_handin.mjs` fails (3 tries, then `HANDIN_FAILED.txt`). Log: `.claude/state/gate.log` (grep FAIL-OPEN to see a gate that did not run). Confirmed live in the session: refusal and injection. Agents started before the merge carry no `HANDIN_DIR`, so the finish gate does not apply to them: run the check by hand on their hand-ins.
 - The owner stopped the CFD job on the evening of 11 Oct, so more RAM is free. The one-editor-at-a-time rule stays (builds wait on the UBT mutex anyway); heavier parallel compiles are fine.
 
 ## Small fixes (batch into the next docs/tools agent)
