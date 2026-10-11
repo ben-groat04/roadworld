@@ -84,7 +84,7 @@ INTERCHANGE_VIEWS = [
 ]
 # Kept available by name, not in the default set: pass the argument `underside` to shoot it as well.
 EXTRA_VIEWS = {
-    "underside": ("look_07_underside", sim(150, -5.5, -600), sim(150, 5.5, 0), 24.0),  # 6 m below the dual looking up (road is back-face culled)
+    "underside": ("look_07_underside", sim(150, -5.5, -6.0), sim(150, 5.5, 0), 24.0),  # 6 m below the dual looking up (z is metres: was -600 = 600 m underground; road is back-face culled)
 }
 
 VIEWS = INTERCHANGE_VIEWS

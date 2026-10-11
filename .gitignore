@@ -16,3 +16,6 @@ docs/reference/gsv/
 docs/reference/aerial/
 docs/reference/street/
 tools/blender_kit/preview/
+
+__pycache__/
+*.pyc

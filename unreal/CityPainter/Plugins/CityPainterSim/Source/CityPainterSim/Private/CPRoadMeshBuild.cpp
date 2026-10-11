@@ -363,7 +363,13 @@ FOutput BuildRender(FWorld& W, const FSettings& S)
 	// Markings.
 	if (S.bGenerateMarkings && W.Rules)
 	{
-		cp::MarkingParams MP;  // defaults: no placed crossings, no stop lines
+		// Defaults: no placed crossings, no stop lines. Mirrors sim_core/tools/export_mesh.cpp and the world cache:
+		// roundabouts give splitter outlines, ladder bars and approach hatching; surface_height is left empty on
+		// purpose (generate_markings then follows the render mesh cross-section itself, with_mesh_surface in
+		// markings.cpp); use_roundabout_give_way stays false (neither reference sets it: every non-ring approach
+		// arm gets an entry line); chord tolerance matches the mesh (MarkingParams::for_mesh_tolerance).
+		cp::MarkingParams MP = cp::MarkingParams::for_mesh_tolerance(S.ChordToleranceM);
+		MP.roundabouts = &Roundabouts;
 		const cp::MarkingSet Set = cp::generate_markings(W.Graph, Region, *W.Rules, Junctions, MP).merged();
 		for (const std::string& Warn : Set.warnings)
 		{
@@ -406,6 +412,7 @@ FOutput BuildRender(FWorld& W, const FSettings& S)
 				Sec.Rgb[2] = CIt->second[2];
 			}
 			const auto Base = static_cast<std::int32_t>(Sec.Position.size());
+			const auto WearByte = static_cast<std::uint8_t>(std::lround(std::clamp(static_cast<double>(M.wear), 0.0, 1.0) * 255.0));
 			for (const cp::Vec3& P : Pts)
 			{
 				// Relative in double, then to float: precision comes from the tile origin.
@@ -415,7 +422,7 @@ FOutput BuildRender(FWorld& W, const FSettings& S)
 				Sec.TangentX.push_back({0.f, 1.f, 0.f});
 				Sec.TangentFlipY.push_back(0);
 				Sec.UV0.push_back({static_cast<float>(P.x - O.x), static_cast<float>(P.y - O.y)});
-				Sec.Colour.push_back({0, 0, 0, 255});  // R = wear (0 = new paint); the sim has no marking wear yet
+				Sec.Colour.push_back({WearByte, 0, 0, 255});  // R = wear (0 = new paint), Marking::wear as the world cache
 			}
 			for (std::size_t i = 0; i + 2 < Tri.size(); i += 3)
 			{
