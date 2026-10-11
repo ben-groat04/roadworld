@@ -19,6 +19,8 @@ public:
 
 	/** Creates or replaces one section. The data is positioned by Data.OriginUeCm. */
 	virtual void SetSection(int32 SectionIndex, const FCPMeshSection& Data, UMaterialInterface* Material) = 0;
+	/** Removes one section (no-op when it does not exist); the other sections stay. */
+	virtual void ClearSection(int32 SectionIndex) = 0;
 	virtual void Clear() = 0;
 
 	/** A tile mesh owned by `Owner` (the component lives and dies with that actor). */

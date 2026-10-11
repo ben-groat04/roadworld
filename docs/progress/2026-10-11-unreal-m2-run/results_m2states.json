@@ -1,0 +1,165 @@
+{
+	"checks_total": 15,
+	"checks_failed": 0,
+	"checks": [
+		{
+			"control": "cursor: shown, not locked",
+			"expected": "bShowMouseCursor, lock mode DoNotLock",
+			"observed": "show=1 lock=0 capture=3",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "states: R0 drawn",
+			"expected": "2 nodes, 1 edges",
+			"observed": "2 nodes, 1 edges",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "states: second road finished",
+			"expected": "4 nodes, 2 edges",
+			"observed": "4 nodes, 2 edges",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "states: everything undone",
+			"expected": "0 nodes, 0 edges",
+			"observed": "0 nodes, 0 edges",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "A: straight road, 2 clicks + Enter",
+			"expected": "2 nodes, 1 edges",
+			"observed": "2 nodes, 1 edges",
+			"pass": true,
+			"image": "10_m2_03_a_done.png"
+		},
+		{
+			"control": "S: S-curve, 4 clicks + Enter",
+			"expected": "4 nodes, 2 edges",
+			"observed": "4 nodes, 2 edges",
+			"pass": true,
+			"image": "10_m2_05_s_done.png"
+		},
+		{
+			"control": "T: click on road A finishes the road and splits A (2 new nodes, A becomes 2 edges + T)",
+			"expected": "6 nodes, 4 edges",
+			"observed": "6 nodes, 4 edges",
+			"pass": true,
+			"image": "10_m2_07_t_done.png"
+		},
+		{
+			"control": "undo 1 (T)",
+			"expected": "4 nodes, 2 edges",
+			"observed": "4 nodes, 2 edges",
+			"pass": true,
+			"image": "10_m2_08_undo1.png"
+		},
+		{
+			"control": "undo 2 (S)",
+			"expected": "2 nodes, 1 edges",
+			"observed": "2 nodes, 1 edges",
+			"pass": true,
+			"image": "10_m2_09_undo2.png"
+		},
+		{
+			"control": "undo 3 (A)",
+			"expected": "0 nodes, 0 edges",
+			"observed": "0 nodes, 0 edges",
+			"pass": true,
+			"image": "10_m2_10_undo3.png"
+		},
+		{
+			"control": "redo 1 (A)",
+			"expected": "2 nodes, 1 edges",
+			"observed": "2 nodes, 1 edges",
+			"pass": true,
+			"image": "10_m2_11_redo1.png"
+		},
+		{
+			"control": "redo 2 (S)",
+			"expected": "4 nodes, 2 edges",
+			"observed": "4 nodes, 2 edges",
+			"pass": true,
+			"image": "10_m2_12_redo2.png"
+		},
+		{
+			"control": "right-click without a drag finishes the road",
+			"expected": "6 nodes, 3 edges",
+			"observed": "6 nodes, 3 edges",
+			"pass": true,
+			"image": "10_m2_13_right_click_finish.png"
+		},
+		{
+			"control": "right-drag rotates the camera and does not finish the road",
+			"expected": "6 nodes, 3 edges and the azimuth changed",
+			"observed": "6 nodes, 3 edges, azimuth moved 0.838 rad",
+			"pass": true,
+			"image": "10_m2_14_right_drag.png"
+		},
+		{
+			"control": "Esc cancels the open stroke",
+			"expected": "6 nodes, 3 edges",
+			"observed": "6 nodes, 3 edges",
+			"pass": true,
+			"image": ""
+		}
+	],
+	"metrics":
+	{
+	},
+	"notes":
+	{
+		"viewport": "1600x900"
+	},
+	"screenshots": [
+		"00_start.png",
+		"20_st_s02_idle.png",
+		"20_st_s03_hover_free.png",
+		"20_st_s05_snap_end.png",
+		"20_st_s06_snap_road.png",
+		"20_st_s07_snap_extension_guide.png",
+		"20_st_s08_snap_offset_guide.png",
+		"20_st_s08b_snap_offset_guide_other.png",
+		"20_st_s09_hover_free_second.png",
+		"20_st_s04_midstroke.png",
+		"20_st_s10_snap_angle_length.png",
+		"20_st_s11_shift_snap_off.png",
+		"20_st_s12_error_min_span.png",
+		"20_st_s13_error_too_tight.png",
+		"20_st_s14_advisory_radius.png",
+		"20_st_s15_advisory_grade.png",
+		"20_st_s16_advisory_bridge.png",
+		"20_st_s17_advisory_tunnel.png",
+		"20_st_s18_type3_dual_ghost.png",
+		"20_st_s19_type4_motorway_ghost.png",
+		"20_st_s20_type3_single_carriageway_O.png",
+		"20_st_s21_type1_oneway.png",
+		"20_st_s22_type2_b_road_ghost.png",
+		"20_st_s26_stroke_3pts_before_finish.png",
+		"20_st_s27_finished_road_idle.png",
+		"20_st_s27b_finished_topdown.png",
+		"20_st_s27c_finished_low_oblique.png",
+		"20_st_s28_error_crossing_too_close.png",
+		"20_st_s30_road_on_slope.png",
+		"20_st_s31_road_on_slope_low.png",
+		"10_m2_00_empty.png",
+		"10_m2_01_a_first_point.png",
+		"10_m2_02_a_ghost.png",
+		"10_m2_03_a_done.png",
+		"10_m2_04_s_ghost.png",
+		"10_m2_05_s_done.png",
+		"10_m2_06_t_snap_to_road.png",
+		"10_m2_07_t_done.png",
+		"10_m2_08_undo1.png",
+		"10_m2_09_undo2.png",
+		"10_m2_10_undo3.png",
+		"10_m2_11_redo1.png",
+		"10_m2_12_redo2.png",
+		"10_m2_13_right_click_finish.png",
+		"10_m2_14_right_drag.png"
+	]
+}

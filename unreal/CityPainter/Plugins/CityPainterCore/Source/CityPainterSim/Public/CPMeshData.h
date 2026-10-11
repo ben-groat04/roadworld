@@ -19,6 +19,8 @@ struct FCPMeshSection
 	std::vector<std::array<float, 3>> TangentX;
 	bool bTangentFlipY = true;                     // FProcMeshTangent::bFlipTangentY for the whole section
 	std::vector<std::array<float, 2>> UV0;         // sim metres (east, north), absolute, so tiles share one texture frame
+	std::vector<std::array<float, 2>> UV1;         // optional (empty = none). Road surfaces: x = metres from lane centre, y = lane width
+	std::vector<std::array<std::uint8_t, 4>> Colour;  // optional (empty = white). Road surfaces: R wear, G edge dirt, B variation; markings: R wear
 	std::vector<std::int32_t> Indices;
 
 	std::size_t TriangleCount() const { return Indices.size() / 3; }

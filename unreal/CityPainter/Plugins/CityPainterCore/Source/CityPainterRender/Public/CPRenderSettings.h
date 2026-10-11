@@ -21,6 +21,10 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Ground")
 	TSoftObjectPtr<UMaterialInterface> GroundMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/CityPainter/Materials/MI_Ground_Floor.MI_Ground_Floor")));
 
+	/** Translucent unlit material of the road tool's ghost ribbon; it needs a vector parameter named Color whose alpha is the opacity (the engine's M_SimpleUnlitTranslucent has a Color parameter; check the alpha wiring on first run). */
+	UPROPERTY(Config, EditAnywhere, Category = "Tools")
+	TSoftObjectPtr<UMaterialInterface> GhostMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/CityPainter/Materials/M_Ghost.M_Ghost")));
+
 	/** Heightfield cells per terrain mesh tile side (cell size comes from the world settings: 64 x 4 m = 256 m tiles). */
 	UPROPERTY(Config, EditAnywhere, Category = "Ground", meta = (ClampMin = "8", ClampMax = "255"))
 	int32 TerrainTileCells = 64;

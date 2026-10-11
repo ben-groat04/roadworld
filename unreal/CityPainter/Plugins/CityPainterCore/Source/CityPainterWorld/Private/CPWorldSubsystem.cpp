@@ -51,6 +51,7 @@ void UCPWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	Config.Seed = static_cast<uint64>(Settings->WorldSeed);
 	Config.SizeM = Settings->WorldSizeM;
 	Config.CellM = Settings->CellSizeM;
+	Config.bVegetationLayers = Settings->bRegisterVegetationLayers;
 
 	const double T0 = FPlatformTime::Seconds();
 	std::string Error, Warning;
@@ -67,6 +68,60 @@ void UCPWorldSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	const FCPTerrainGrid& G = Sim->TerrainGrid();
 	UE_LOG(LogCPWorld, Log, TEXT("Sim world started in %.0f ms: seed %lld, %.0f m square, %dx%d samples at %.1f m, region '%s', data '%hs'"),
 		(FPlatformTime::Seconds() - T0) * 1000.0, Settings->WorldSeed, G.MaxX - G.MinX, G.Nx, G.Ny, G.CellM, *Settings->RegionId, Config.DataDir.c_str());
+	if (Sim->HasRoads())
+	{
+		UE_LOG(LogCPWorld, Log, TEXT("Roads ready: %d road types, first world-cache build %.0f ms"), static_cast<int32>(Sim->RoadTypes().size()), Sim->PrimeMs());
+	}
+	else
+	{
+		UE_LOG(LogCPWorld, Warning, TEXT("Roads unavailable: %hs"), Sim->RoadsUnavailableReason().c_str());
+	}
+}
+
+FCPEditResult UCPWorldSubsystem::Submit(FCPCommandHandle Command)
+{
+	if (!Sim)
+	{
+		FCPEditResult R;
+		R.Error = "no sim world";
+		return Publish(TEXT("submit"), MoveTemp(R));
+	}
+	const FString Name = CPToolBridge::ToFString(CPCommandName(Command));
+	return Publish(*FString::Printf(TEXT("submit '%s'"), *Name), Sim->Submit(MoveTemp(Command)));
+}
+
+FCPEditResult UCPWorldSubsystem::Undo()
+{
+	return Publish(TEXT("undo"), Sim ? Sim->Undo() : FCPEditResult{false, "no sim world", {}, {}, 0.0});
+}
+
+FCPEditResult UCPWorldSubsystem::Redo()
+{
+	return Publish(TEXT("redo"), Sim ? Sim->Redo() : FCPEditResult{false, "no sim world", {}, {}, 0.0});
+}
+
+FCPEditResult UCPWorldSubsystem::Publish(const TCHAR* What, FCPEditResult Result)
+{
+	if (!Result.bOk)
+	{
+		UE_LOG(LogCPWorld, Warning, TEXT("Edit '%s' failed: %hs"), What, Result.Error.c_str());
+		return Result;
+	}
+	for (const std::string& Warning : Result.Changes.Warnings)
+	{
+		UE_LOG(LogCPWorld, Warning, TEXT("Edit '%s': %hs"), What, Warning.c_str());
+	}
+	UE_LOG(LogCPWorld, Log, TEXT("Edit '%s': world v%llu, %d nodes %d edges, road tiles +%d ~%d -%d, marking tiles +%d ~%d -%d, %.1f ms"), What,
+		static_cast<unsigned long long>(Result.Changes.WorldVersion), static_cast<int32>(Result.Graph.Nodes), static_cast<int32>(Result.Graph.Edges),
+		static_cast<int32>(Result.Changes.Count(CPLayer::RoadMesh, ECPTileChange::Added)), static_cast<int32>(Result.Changes.Count(CPLayer::RoadMesh, ECPTileChange::Changed)),
+		static_cast<int32>(Result.Changes.Count(CPLayer::RoadMesh, ECPTileChange::Removed)), static_cast<int32>(Result.Changes.Count(CPLayer::Markings, ECPTileChange::Added)),
+		static_cast<int32>(Result.Changes.Count(CPLayer::Markings, ECPTileChange::Changed)), static_cast<int32>(Result.Changes.Count(CPLayer::Markings, ECPTileChange::Removed)),
+		Result.UpdateMs);
+	if (!Result.Changes.IsEmpty())
+	{
+		TilesChanged.Broadcast(Result.Changes);
+	}
+	return Result;
 }
 
 void UCPWorldSubsystem::Deinitialize()

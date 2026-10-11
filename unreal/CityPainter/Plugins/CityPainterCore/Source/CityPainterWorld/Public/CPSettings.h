@@ -38,6 +38,14 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Test world", meta = (ClampMin = "0.5"))
 	double CellSizeM = 4.0;
 
+	/** Registers the world_cover and vegetation sim layers (nothing draws them yet). Turn off if the first world build is too slow. */
+	UPROPERTY(Config, EditAnywhere, Category = "Test world")
+	bool bRegisterVegetationLayers = true;
+
+	/** Road type ids of the region pack that keys 1, 2, 3, 4 select (the prototype's order). Stand-in until the region pack defines a tool palette. */
+	UPROPERTY(Config, EditAnywhere, Category = "Tools")
+	TArray<FString> RoadTypePalette = {TEXT("residential"), TEXT("b_road"), TEXT("a_road_dual"), TEXT("motorway")};
+
 	/** Maps whose package path starts with this get a City Painter world (the subsystems do nothing elsewhere). */
 	UPROPERTY(Config, EditAnywhere, Category = "Maps")
 	FString MapPathPrefix = TEXT("/Game/CityPainter/Maps/");

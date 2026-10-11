@@ -25,12 +25,19 @@ void UCPHudWidget::NativeOnInitialized()
 	Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Readout"));
 	Text->SetColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.92f, 0.9f, 1.f)));
 	Text->SetText(FText::FromString(TEXT("City Painter")));
+	{
+		FSlateFontInfo Font = Text->GetFont();
+		Font.Size = 12;
+		Text->SetFont(Font);
+	}
 	Panel->SetContent(Text);
 
 	if (UCanvasPanelSlot* CanvasSlot = Canvas->AddChildToCanvas(Panel))
 	{
 		CanvasSlot->SetAutoSize(true);
-		CanvasSlot->SetPosition(FVector2D(16.0, 16.0));
+		CanvasSlot->SetAnchors(FAnchors(0.f, 1.f, 0.f, 1.f));   // bottom left, above the key hint: the top left belongs to the road tool HUD (as the prototype)
+		CanvasSlot->SetAlignment(FVector2D(0.0, 1.0));
+		CanvasSlot->SetPosition(FVector2D(16.0, -84.0));
 	}
 }
 
