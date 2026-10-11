@@ -7,7 +7,9 @@ Updated by the main session every time an agent is started, an agent reports, or
 |---|---|---|---|
 | Earthworks round 9: disturbance view and cross-sections first, then a hard bound on changed ground on every scene, plus round 8 leftovers | `agent/grade-r9`, `..\roadworld-wt-grade-r9` | `agent/grading-r6` 2aff581 + main | `tools/check_handin.mjs` passes on `docs/progress/2026-10-11-structures-r9`; main session opens the disturbance views and sections |
 | Integration: merge, in order, world cover r4 (`agent/world-cover-r2` 0da3c74), junction markings (`agent/junction-markings` d611346), earthworks r7+r8 (`agent/grading-r6` 2aff581), road tool gaps (`agent/road-tool-2` d7dfc99), then main | `integ/2026-10-11`, `..\roadworld-wt-integ` | main | clean builds, full suite on gcc and MSVC after each merge; then fast-forward main |
-| Unreal milestone 2: merge main into it, build, automation tests, M1 playtest still 37/37, M2 scenarios, pictures of every drawing state beside the 26 prototype screenshots, fix what belongs to M2 (previous agent built it but never ran it; tip 905df6b) | `agent/unreal-m2`, `../roadworld-wt-m2` (holds the Unreal lane) | 905df6b + main | hand-in in `docs/progress/2026-10-11-unreal-m2-run`; main session opens the composites; then fast-forward main |
+| Unreal milestone 2: HANDED IN (agent/unreal-m2 62368f3, playtest 51/51 by its count, check passed, 26 of 26 screenshots). Known failure: finished roads on sloping ground lose their asphalt under the terrain (no earthworks in the game yet; the grading layer fixes it). AUDITOR running (holds the Unreal lane for one playtest run) | `agent/unreal-m2`, `../roadworld-wt-m2` | - | AUDIT.md verdict; main session opens composites; then merge to main |
+| Free assets, vegetation (owner, 11 Oct: "search far and wide for the best free assets you can. for everything"): research licences, download no-account ones to `SourceArt/Meshes/Free` (untracked), composites against matched photos, list what needs the owner's account | research agent | - | `docs/research/free-assets-vegetation.md` |
+| Free assets, roads and world (surfaces, decals, kerbs, furniture, ground, rock, skies) | research agent | - | `docs/research/free-assets-roads-world.md` |
 | Audit gate mechanism: auditor briefs (`make_brief --audit`), finish gate refuses builder = auditor, an audit-owed notice on every prompt until AUDIT.md exists, `check_handin --accept` | `agent/auditgate`, `../roadworld-wt-auditgate` | agent/rules-fix 24f60aa | hand-in passes; then its own auditor |
 
 | Matched junction reference set (owner, 11 Oct: "it isn't even getting relevant ref images!!!"): at least 3 UK photos per case AND view that match our junction type, size and a reproducible camera; `docs/reference/MATCHED.md` with measurements and the render camera per photo; existing photos classified usable / not usable | research agent, writes only under `docs/reference` | - | MATCHED.md exists; main session opens the photos; BLOCKS every junction builder |
@@ -22,7 +24,6 @@ A comparison pair is valid only when photo and render show the same junction typ
 Owner, 11 Oct: "is one earthworks agent creating AND auditing? that's wrong. and elsewhere, that's just an expample". Builder and auditor are never the same agent (rule text in CLAUDE.md, Main session). No item above or below is accepted, merged to main or reported as done until a fresh auditor has written `AUDIT.md` in its progress folder. An auditor is started the moment a hand-in passes `check_handin.mjs`, ahead of any new build work.
 Auditors owed:
 - Earthworks round 9, when it hands in: also check the section sheets and disturbance views against the height data they claim to show.
-- Unreal milestone 2 run, when it hands in: composites against the 26 prototype screenshots, and whether the playtest script really exercises what it says it checks.
 - Integration, when it hands in: an independent clean build and suite run on both compilers of the merged tip (not the merger's own count).
 - Gate notices and hooks: AUDITED accept (84a6cb8), merged to main, live (first notice seen and acknowledged). Its faults 1, 2, 4, 5, 10 sent to the audit gate builder. Audit gate mechanism: auditor owed when it hands in.
 - Roundabout, grading layer, road tool follow-up: auditors owed when each hands in.
@@ -84,7 +85,7 @@ Priority rule (owner, Round 50): the photorealism comes from the road builder pl
 - Markings drawn in the road material from lane UVs: spike (idea from the Road Creator Pro research).
 
 ## Waiting on the owner (not blocking)
-- Vegetation: round 2 audited, sent back (AUDIT.md 12a4645 in ../roadworld-wt-veg/docs/progress/2026-10-11-vegetation-kit-r2, 11 items with matched photos). Scripted trees are not converging; proposal: free scanned/library trees instead (needs download approval), scripted kit kept for hedges and verge only. No further vegetation round until the owner answers; not on the critical path before item 6.
+- Vegetation: owner answered 11 Oct: use the best free assets, for everything (two asset agents running). Scripted kit stops; no round 3.
 - (Hooks: approved by the owner 11 Oct, now under Running.)
 - Agents still running on briefs written before the contract: Unreal M2 and vegetation kit (both were sent the new requirements by message). Their hand-ins get the check like any other; if it fails they go back.
 - Confirm the five settled contradictions in planning log Round 49 (fresh agent per round; decision split; 3 photos per case; parallel within 3-4 agents and one editor; stop rule replaces time-boxes).
