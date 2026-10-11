@@ -1,0 +1,4 @@
+{ "format": "cp-test-layout", "version": 1, "name": "s3_tunnel_portal", "region": "uk", "driving_side": "left",
+  "roads": [
+ {"type":"a_road_rural","points":[[-220,0,8],[220,0,8]],
+  "structures":[{"kind":"tunnel","at":[0,0],"length":130}]} ] }
