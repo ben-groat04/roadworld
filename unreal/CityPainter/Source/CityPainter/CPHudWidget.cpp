@@ -1,0 +1,58 @@
+#include "CPHudWidget.h"
+
+#include "Blueprint/WidgetTree.h"
+#include "Components/Border.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
+#include "Components/TextBlock.h"
+
+void UCPHudWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+	if (!WidgetTree || WidgetTree->RootWidget)
+	{
+		return;
+	}
+	UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("Canvas"));
+	WidgetTree->RootWidget = Canvas;
+
+	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
+	Panel->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.025f, 0.78f));
+	Panel->SetPadding(FMargin(12.f, 8.f));
+
+	Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Readout"));
+	Text->SetColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.92f, 0.9f, 1.f)));
+	Text->SetText(FText::FromString(TEXT("City Painter")));
+	Panel->SetContent(Text);
+
+	if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(Panel))
+	{
+		Slot->SetAutoSize(true);
+		Slot->SetPosition(FVector2D(16.0, 16.0));
+	}
+}
+
+void UCPHudWidget::SetData(const FCPHudData& D)
+{
+	if (!Text)
+	{
+		return;
+	}
+	FString Line1;
+	if (D.bCursorOnGround)
+	{
+		const double Deg = FMath::RadiansToDegrees(FMath::Atan(D.SlopeRiseRun));
+		Line1 = FString::Printf(TEXT("x %.1f m   y %.1f m   height %.1f m   slope %.1f %% (%.1f deg)"), D.SimX, D.SimY, D.HeightM, D.SlopeRiseRun * 100.0, Deg);
+	}
+	else
+	{
+		Line1 = TEXT("cursor not over the ground");
+	}
+	const FString Line2 = FString::Printf(TEXT("frame %.1f ms (%.0f fps)"), D.FrameMs, D.FrameMs > 0.0 ? 1000.0 / D.FrameMs : 0.0);
+	Text->SetText(FText::FromString(Line1 + TEXT("\n") + Line2));
+}
+
+FString UCPHudWidget::GetShownText() const
+{
+	return Text ? Text->GetText().ToString() : FString();
+}

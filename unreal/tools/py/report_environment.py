@@ -107,7 +107,7 @@ def main():
         cp.log("%-36s : %s" % (label, "LOADED" if ok else "not loaded"))
 
     cp.log("--- City Painter ---")
-    cls = cp.load_class("/Script/CityPainterSim.CPRoadMeshActor")
+    cls = cp.load_class("/Script/CityPainterLegacy.CPRoadMeshActor")
     module_ok = cls is not None
     cp.log("CityPainterSim module loaded / CPRoadMeshActor class: %s" % ("YES" if module_ok else "NO"))
     cp.log("python attribute unreal.CPRoadMeshActor: %s" % ("present" if hasattr(unreal, "CPRoadMeshActor") else "absent"))

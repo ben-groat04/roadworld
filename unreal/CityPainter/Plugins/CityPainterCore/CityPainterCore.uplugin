@@ -1,19 +1,18 @@
 {
 	"FileVersion": 3,
-	"Version": 1,
-	"VersionName": "0.1",
-	"FriendlyName": "City Painter Sim",
-	"Description": "Thin Unreal front end for the engine-agnostic sim_core library.",
+	"Version": 2,
+	"VersionName": "0.2",
+	"FriendlyName": "City Painter Core",
+	"Description": "Unreal host for the engine-agnostic sim_core library: Sim facade, World subsystem, Render layers.",
 	"Category": "Other",
 	"CanContainContent": false,
 	"IsBetaVersion": true,
 	"Installed": false,
 	"Modules": [
-		{
-			"Name": "CityPainterSim",
-			"Type": "Runtime",
-			"LoadingPhase": "Default"
-		}
+		{ "Name": "CityPainterSim", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "CityPainterWorld", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "CityPainterRender", "Type": "Runtime", "LoadingPhase": "Default" },
+		{ "Name": "CityPainterLegacy", "Type": "Runtime", "LoadingPhase": "Default" }
 	],
 	"Plugins": [
 		{ "Name": "ProceduralMeshComponent", "Enabled": true }

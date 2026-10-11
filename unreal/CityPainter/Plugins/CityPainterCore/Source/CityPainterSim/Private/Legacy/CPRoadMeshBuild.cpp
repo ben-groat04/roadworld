@@ -4,7 +4,8 @@
 #pragma warning(push)
 #pragma warning(disable : 4244 4267 4100 4189 4456 4457 4458 4459 4668 4996 5038 4127 4702 4530 4577)
 #endif
-#include "CPRoadMeshBuild.h"
+#include "Legacy/CPRoadMeshBuild.h"
+#include "CPFrame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -114,12 +115,11 @@ std::vector<std::array<double, 3>> NodePositions(const FWorld& World)
 namespace
 {
 
-constexpr double MetresToCm = 100.0;
-
-// sim metres -> UE cm (the swap documented in the header).
+// sim metres -> UE cm: CPFrame.h is the single definition.
 std::array<double, 3> SimToUE(double X, double Y, double Z)
 {
-	return {Y * MetresToCm, X * MetresToCm, Z * MetresToCm};
+	const CPFrame::FD3 P = CPFrame::SimToUE({X, Y, Z});
+	return {P.X, P.Y, P.Z};
 }
 
 std::array<double, 3> SimToUE(const cp::Vec3& P)
@@ -178,9 +178,8 @@ void ConvertBuffers(const cp::MeshBuffers& Src, FSection& Dst)
 	for (std::size_t i = 0; i < N; ++i)
 	{
 		const cp::Float3& P = Src.positions[i];
-		Dst.Position[i] = {static_cast<float>(static_cast<double>(P.y) * MetresToCm),
-						   static_cast<float>(static_cast<double>(P.x) * MetresToCm),
-						   static_cast<float>(static_cast<double>(P.z) * MetresToCm)};
+		const CPFrame::FD3 U = CPFrame::SimToUE({static_cast<double>(P.x), static_cast<double>(P.y), static_cast<double>(P.z)});
+		Dst.Position[i] = {static_cast<float>(U.X), static_cast<float>(U.Y), static_cast<float>(U.Z)};
 		const cp::Float3& Nrm = Src.normals[i];
 		Dst.Normal[i] = {Nrm.y, Nrm.x, Nrm.z};
 		const cp::Float4& T = Src.tangents[i];
@@ -416,8 +415,8 @@ FOutput BuildRender(FWorld& W, const FSettings& S)
 			for (const cp::Vec3& P : Pts)
 			{
 				// Relative in double, then to float: precision comes from the tile origin.
-				Sec.Position.push_back({static_cast<float>((P.y - O.y) * MetresToCm), static_cast<float>((P.x - O.x) * MetresToCm),
-										static_cast<float>(P.z * MetresToCm + S.MarkingLiftCm)});
+				const CPFrame::FD3 U = CPFrame::SimToUE({P.x - O.x, P.y - O.y, P.z});
+				Sec.Position.push_back({static_cast<float>(U.X), static_cast<float>(U.Y), static_cast<float>(U.Z + S.MarkingLiftCm)});
 				Sec.Normal.push_back({0.f, 0.f, 1.f});
 				Sec.TangentX.push_back({0.f, 1.f, 0.f});
 				Sec.TangentFlipY.push_back(0);
