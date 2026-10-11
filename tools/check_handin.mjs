@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Hand-in check. Usage: node tools/check_handin.mjs <progress-folder> [--main <main-checkout>] [--no-visual]
+// Hand-in check. Usage: node tools/check_handin.mjs <progress-folder> [--main <main-checkout>] [--no-visual] [--accept [--builder <agent-id>]]
+// --accept (the main session, before accepting a round): ALSO fails unless a valid AUDIT.md by an agent other than the recorded
+// builder exists (tools/hooks/audit_lib.mjs; builder id from .claude/state/builders of the main checkout, or --builder). Builders never pass it.
 // Fails (exit 1) with a list unless: STATUS.md starts with the "Skipped, refused or failed" heading with a body;
 // STATUS.md names >=3 existing reference files per "Case:" line; FAULTS.md has >=2 "Pass" sections and a Residual
 // section; STATUS.md has "References opened: N of M" (N < M needs a "not opened" line with a file name in the Skipped section);
@@ -11,10 +13,13 @@ import { execSync } from 'node:child_process';
 const args = process.argv.slice(2);
 const noVisual = args.includes('--no-visual');
 const mi = args.indexOf('--main');
+const accept = args.includes('--accept');
+const bi = args.indexOf('--builder');
+const builderArg = bi >= 0 ? args[bi + 1] : null;
 const mainArg = mi >= 0 ? args[mi + 1] : null;
-const folder = args.find((a, i) => !a.startsWith('--') && !(mi >= 0 && i === mi + 1));
+const folder = args.find((a, i) => !a.startsWith('--') && !(mi >= 0 && i === mi + 1) && !(bi >= 0 && i === bi + 1));
 if (!folder) {
-  console.error('usage: node tools/check_handin.mjs <progress-folder> [--main <path>] [--no-visual]');
+  console.error('usage: node tools/check_handin.mjs <progress-folder> [--main <path>] [--no-visual] [--accept [--builder <id>]]');
   process.exit(2);
 }
 
@@ -129,6 +134,23 @@ if (noVisual) { /* skipped */ } else if (compare === null) {
     if (!findFile(comp, bases)) fails.push(`COMPARE.md row "${kase}": composite not found (expected under docs/reference/_compare/<topic>/): ${comp}`);
     if (!findFile(before, bases)) fails.push(`COMPARE.md row "${kase}": before image not found: ${before}`);
   });
+}
+
+// --accept: the builder/auditor split (tools/hooks/audit_lib.mjs)
+if (accept) {
+  try {
+    const al = await import('./hooks/audit_lib.mjs');
+    const stateDir = path.join(main, '.claude', 'state');
+    const rec = al.readBuilder(folder, stateDir);
+    const builderId = builderArg || (rec && rec.agent_id);
+    if (!builderId) {
+      fails.push('--accept: no builder record for this folder (.claude/state/builders of ' + main + ') and no --builder <id>: independence of the auditor cannot be shown. Pass --builder <the builder agent id> if the hand-in predates the audit gate.');
+    } else {
+      const probs = al.auditProblems(path.resolve(folder), { agent_id: builderId, passed_at: rec && rec.passed_at }, main);
+      for (const p of probs) fails.push('--accept: AUDIT.md: ' + p);
+      if (!probs.length) console.log('AUDIT.md present and independent of builder ' + builderId + ' for ' + folder);
+    }
+  } catch (e) { fails.push('--accept: the audit check could not run (' + (e && e.message) + ')'); }
 }
 
 // Canary (tools/hooks/notice_lib.mjs): loud warning on stderr when gate.log suggests the hooks are not running.

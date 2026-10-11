@@ -8,10 +8,15 @@
 // Allowed: exempt types (Explore, Plan, claude-code-guide, statusline-setup); a prompt that passes checkBrief();
 // a prompt with a "NO-CONTRACT: <reason, >= 20 chars>" line (research, merges, read-only checks);
 // a prompt with "BRIEF-FILE: <absolute path>" whose file passes checkBrief().
+// a prompt (or BRIEF-FILE) with "AUDIT-OF: <absolute progress folder>" is an auditor launch (tools/make_brief.mjs --audit):
+// allowed without NO-CONTRACT, but refused when the folder is not absolute, when it also carries HANDIN_DIR (an auditor is not a builder),
+// or when it pastes the builder's fault list (the auditor writes its own list first).
 // Denied: exit 2 with the list of what is missing on stderr (the main session sees it as the tool error).
 // Every decision is one JSON line in .claude/state/gate.log of the main checkout.
 import fs from 'node:fs';
+import path from 'node:path';
 import { log, readStdin, parseJson, checkBrief, noContractReason, briefFileOf, EXEMPT_TYPES } from './lib.mjs';
+import { auditOfIn, pastedFaultList } from './audit_lib.mjs';
 
 async function main() {
   const raw = await readStdin();
@@ -28,6 +33,22 @@ async function main() {
     return 0;
   }
   const prompt = typeof ti.prompt === 'string' ? ti.prompt : '';
+  // auditor launch: AUDIT-OF in the prompt or in its BRIEF-FILE
+  let auditText = prompt;
+  let ao = auditOfIn(prompt);
+  if (!ao && briefFileOf(prompt)) { try { auditText = fs.readFileSync(briefFileOf(prompt), 'utf8'); ao = auditOfIn(auditText); } catch { /* handled below as a normal brief */ } }
+  if (ao) {
+    const why = [];
+    if (!path.win32.isAbsolute(ao) && !path.posix.isAbsolute(ao)) why.push(`AUDIT-OF must be an absolute path (got "${ao}")`);
+    if (/^HANDIN_DIR:/m.test(auditText)) why.push('an AUDIT-OF brief must not also carry HANDIN_DIR (an auditor is not a builder; make the brief with make_brief.mjs --audit)');
+    const pasted = why.length ? null : pastedFaultList(auditText + '\n' + prompt, ao);
+    if (pasted) why.push(`the brief pastes the builder's fault list (${pasted}); the auditor writes its own list BEFORE reading the builder's FAULTS.md`);
+    if (!why.length) { log({ ...base, decision: 'allow', reason: 'AUDIT-OF', audit_of: ao }); return 0; }
+    log({ ...base, decision: 'deny', reason: 'AUDIT-OF refused', missing: why });
+    process.stderr.write('LAUNCH REFUSED by the brief gate (AUDIT-OF launch):\n - ' + why.join('\n - ') +
+      '\nBuild the auditor brief with `node tools/make_brief.mjs <task-file> --audit <progress-folder>`.\n');
+    return 2;
+  }
   const nc = noContractReason(prompt);
   if (nc) {
     log({ ...base, decision: 'allow', reason: 'NO-CONTRACT', no_contract_reason: nc });

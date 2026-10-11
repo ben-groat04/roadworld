@@ -13,8 +13,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hooktest-'));
 const root = path.join(tmp, 'main');
 const wt = path.join(tmp, 'wt');
 const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); };
-['tools/hooks/lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
-  'tools/check_handin.mjs', 'tools/make_brief.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md'].forEach(cp);
+['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
+  'tools/check_handin.mjs', 'tools/make_brief.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
 for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'x'); }
 fs.mkdirSync(path.join(root, '.git'), { recursive: true }); // main-checkout marker for make_brief's canary
@@ -144,6 +144,201 @@ console.log('check_handin non-photo references');
   c = check(); t('only 2 existing files in a case: still fails (needs 3)', c.status === 1 && /need at least 3/.test(c.stderr), c.stderr);
 }
 
+// ---- audit gate: builder and auditor are never the same agent
+console.log('audit gate');
+{
+  const al = await import(pathToFileURL(path.join(src, 'tools/hooks/audit_lib.mjs')).href);
+  const stateDir = path.join(root, '.claude/state');
+  const auditText = (id, o = {}) => `Auditor agent: ${id}\nVerdict: ${o.verdict || 'accept'}\nReferences opened: ${o.n ?? 3} of ${o.m ?? 3} listed\n\n## Own fault list\n\nfrom the photos alone, before reading the builder files\n\n## Faults, ranked\n\n${o.faults ?? '1. The kerb line in render r3.png misses the photo by about one lane width.'}\n${o.extra || ''}`;
+  const mkAudit = (folder, { owner, flags = [] } = {}) => {
+    const tf = path.join(tmp, 'audit_task_' + path.basename(folder) + '.md');
+    fs.writeFileSync(tf, `# T audit\n## Owner's words\n${owner ?? '"The photo is the target." (11 Oct)'}\n## Cases\ncase A | ${path.join(root, 'docs/reference/aerial/a.jpg')} ${path.join(root, 'docs/reference/street/b.jpg')} docs/reference/gsv/c.jpg\n`);
+    return spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tf, '--audit', folder, ...flags], { cwd: elsewhere, encoding: 'utf8' });
+  };
+  const noticeCtx = (rt = root) => ptxtA(spawnSync(process.execPath, [path.join(rt, 'tools/hooks/gate_notice.mjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's9', prompt: 'hi', cwd: elsewhere }), cwd: elsewhere, encoding: 'utf8' }).stdout);
+  function ptxtA(o) { return (J(o).hookSpecificOutput || {}).additionalContext || ''; }
+  const folderP = hd('pass');
+
+  // -- the auditor brief (make_brief --audit)
+  let ab = mkAudit(folderP);
+  t('make_brief --audit: exit 0', ab.status === 0, ab.stderr);
+  t('audit brief carries the AUDIT-OF marker line with the absolute folder', new RegExp('^AUDIT-OF: ' + folderP.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&') + '$', 'm').test(ab.stdout), ab.stdout.slice(0, 300));
+  t('audit brief carries the contract, the owner words and the cases', /AGENT-CONTRACT-MARKER: v1/.test(ab.stdout) && /The photo is the target/.test(ab.stdout) && /case A \|/.test(ab.stdout));
+  t('audit brief has no HANDIN_DIR (an auditor is not a builder) and no builder fault list', !/^HANDIN_DIR:/m.test(ab.stdout) && !/none known/.test(ab.stdout) && !/Known faults/.test(ab.stdout));
+  t('audit brief counts the reference files for "N of M" (3 named)', /M = 3 distinct files/.test(ab.stdout), ab.stdout.match(/M = \d+/));
+  t('audit brief orders the work: own fault list BEFORE the builder files; checks the measuring tools; names AUDIT.md first lines', /BEFORE opening the builder's FAULTS\.md/.test(ab.stdout) && /measuring tools/.test(ab.stdout) && /Auditor agent: <your agent id>/.test(ab.stdout) && /Verdict: accept \| send back/.test(ab.stdout) && /References opened: N of M/.test(ab.stdout));
+  t('audit brief states builder and auditor are never the same agent, with the owner quote', /never the same agent/.test(ab.stdout) && /is one earthworks agent creating AND auditing/.test(ab.stdout));
+  t('make_brief --audit needs only owner words and cases (no Faults/Launched/Waiting)', ab.status === 0);
+  ab = mkAudit(folderP, { owner: 'no quotation marks here' }); t('make_brief --audit without a quoted owner words: refused (exit 1)', ab.status === 1 && /Owner's words/.test(ab.stderr) && ab.stdout === '');
+  t('make_brief --audit logs an audit make_brief line (canary sees it)', fs.readFileSync(logPath, 'utf8').includes('"round":"audit:pass"'));
+  const auditBrief = mkAudit(folderP).stdout;
+
+  // -- launch gate
+  r = launch(auditBrief); t('launch gate: make_brief --audit output allowed without NO-CONTRACT', r.code === 0 && lastLog().reason === 'AUDIT-OF' && lastLog().audit_of === folderP, r.err);
+  r = launch(`Audit it.\nAUDIT-OF: ${folderP}`); t('launch gate: bare AUDIT-OF line allowed', r.code === 0 && lastLog().reason === 'AUDIT-OF');
+  r = launch('Audit it.\nAUDIT-OF: docs/progress/x'); t('launch gate: relative AUDIT-OF denied', r.code === 2 && /absolute/.test(r.err) && lastLog().reason === 'AUDIT-OF refused');
+  r = launch(auditBrief + `\nHANDIN_DIR: ${folderP}`); t('launch gate: AUDIT-OF together with HANDIN_DIR denied', r.code === 2 && /HANDIN_DIR/.test(r.err));
+  r = launch(auditBrief + '\n## Pass 1\n- the kerb is wrong\n'); t('launch gate: pasted "## Pass N" heading denied', r.code === 2 && /fault list/.test(r.err) && /Pass/.test(r.err), r.err);
+  r = launch(auditBrief + '\n## Residual\nnothing\n'); t('launch gate: pasted "## Residual" heading denied', r.code === 2);
+  const L1 = 'The verge between the kerb and the footway is 0.9 m wide in the render but the photo shows roughly 2.5 m of grass.';
+  const L2 = 'The give-way line sits 4 m behind the junction mouth while the photo shows it 1 m behind the kerb return.';
+  fs.writeFileSync(path.join(folderP, 'FAULTS.md'), `# F\n\n## Pass 1\n\n${L1}\n${L2}\nshort\n`);
+  r = launch(auditBrief + `\nBuilder said: ${L1}\n${L1}\n${L2}\n`); t('launch gate: two long lines of the builder FAULTS.md pasted: denied, names the file', r.code === 2 && /repeats 2 long lines/.test(r.err), r.err);
+  r = launch(auditBrief + `\nOne thing only: ${L1}\n`); t('launch gate: a single long line is not a paste: allowed', r.code === 0, r.err);
+  fs.rmSync(path.join(folderP, 'FAULTS.md'));
+  const abf = path.join(tmp, 'audit_brief_file.txt'); fs.writeFileSync(abf, auditBrief);
+  r = launch(`Your brief is in the file.\nBRIEF-FILE: ${abf}`); t('launch gate: AUDIT-OF inside a BRIEF-FILE allowed', r.code === 0 && lastLog().reason === 'AUDIT-OF', r.err);
+  fs.writeFileSync(abf, auditBrief + '\n## Pass 2\nx\n'); r = launch(`BRIEF-FILE: ${abf}`); t('launch gate: BRIEF-FILE with a pasted fault list denied', r.code === 2);
+  r = launch('Builder text only, and the words AUDIT-OF: appear mid-line here'); t('AUDIT-OF mid-line is not a marker: still denied as a contract-less brief', r.code === 2 && /agent contract/.test(r.err));
+
+  // -- contract_inject gives the agent its id
+  r = run('contract_inject.mjs', { hook_event_name: 'SubagentStart', agent_id: 'abc123', agent_type: 'general-purpose', cwd: elsewhere });
+  t('SubagentStart context starts with YOUR AGENT ID and keeps the contract', J(r.out).hookSpecificOutput.additionalContext.startsWith('YOUR AGENT ID: abc123') && J(r.out).hookSpecificOutput.additionalContext.includes('AGENT-CONTRACT-MARKER: v1'), r.out.slice(0, 200));
+
+  // -- the builder passed earlier (round "pass", agent p1): its id was recorded and the audit logged as owed
+  const rec = al.readBuilder(folderP, stateDir);
+  t('builder hand-in pass recorded the builder agent id per HANDIN_DIR', rec && rec.agent_id === 'p1' && rec.agent_type === 'general-purpose' && Date.parse(rec.passed_at) > 0, JSON.stringify(rec));
+  const owedLines = fs.readFileSync(logPath, 'utf8').trim().split('\n').map(J).filter((e) => e.gate === 'audit' && e.decision === 'owed');
+  t('exactly one "audit owed" log line for it (a repeat pass by the same agent logs nothing new)', owedLines.length === 1 && owedLines[0].handin_dir === folderP && owedLines[0].builder_id === 'p1', JSON.stringify(owedLines));
+  r = stop('p1', passTp); t('builder passes again (Stop after Handback): allowed, no new owed line', r.code === 0 && fs.readFileSync(logPath, 'utf8').trim().split('\n').map(J).filter((e) => e.gate === 'audit' && e.decision === 'owed').length === 1);
+  const cA = noticeCtx();
+  t('notice lists the folder as AUDIT OWED with the builder id', /AUDIT OWED x1/.test(cA) && cA.includes(folderP) && /builder general-purpose\/p1/.test(cA) && /--audit/.test(cA), cA);
+  t('notice says an ack cannot clear it', /an ack does nothing/.test(cA));
+  t('the failed hand-in (vis) was never recorded as a builder: no audit owed for it', !al.readBuilder(hd('vis'), stateDir));
+
+  // -- finish gate for the auditor
+  const audTp = transcript('aud', auditBrief);
+  const auditStop = (id, tp = audTp) => stop(id, tp);
+  r = auditStop('a2'); t('auditor without AUDIT.md: blocked, says it is missing', J(r.out).decision === 'block' && /AUDIT GATE/.test(J(r.out).reason) && /AUDIT\.md is missing/.test(J(r.out).reason), r.out);
+  t('the block names the auditor its own agent id', /your agent id is a2/.test(J(r.out).reason));
+  const af = path.join(folderP, 'AUDIT.md');
+  fs.writeFileSync(af, 'Verdict: accept\nReferences opened: 3 of 3\n\n## Faults\n\nlots of nice things to say about the kerb line here, none wrong\n');
+  r = auditStop('a3'); t('AUDIT.md without "Auditor agent:" line: blocked', J(r.out).decision === 'block' && /Auditor agent:/.test(J(r.out).reason));
+  fs.writeFileSync(af, 'Auditor agent: a4\nReferences opened: 3 of 3\n\n## Faults\n\nlots of nice things to say about the kerb line here, none wrong\n');
+  r = auditStop('a4'); t('AUDIT.md without Verdict: blocked', J(r.out).decision === 'block' && /Verdict/.test(J(r.out).reason));
+  fs.writeFileSync(af, 'Auditor agent: a5\nVerdict: maybe\nReferences opened: 3 of 3\n\n## Faults\n\nlots of nice things to say about the kerb line here, none wrong\n');
+  r = auditStop('a5'); t('Verdict other than accept / send back: blocked', J(r.out).decision === 'block' && /Verdict/.test(J(r.out).reason));
+  fs.writeFileSync(af, 'Auditor agent: a6\nVerdict: send back\n\n## Faults\n\nlots of nice things to say about the kerb line here, none wrong\n');
+  r = auditStop('a6'); t('AUDIT.md without "References opened: N of M": blocked', J(r.out).decision === 'block' && /References opened/.test(J(r.out).reason));
+  fs.writeFileSync(af, auditText('a7', { n: 2, m: 3 }));
+  r = auditStop('a7'); t('References opened 2 of 3 without a "not opened" line: blocked', J(r.out).decision === 'block' && /not opened/.test(J(r.out).reason));
+  fs.writeFileSync(af, auditText('a8', { n: 2, m: 3, extra: '\nnot opened: gsv/c.jpg (file could not be decoded)\n' }));
+  r = auditStop('a8'); t('References opened 2 of 3 WITH a "not opened: file (reason)" line: allowed', r.code === 0 && r.out === '' && lastLog().reason === 'audit written', r.out);
+  fs.writeFileSync(af, auditText('a9', { faults: 'ok' }));
+  r = auditStop('a9'); t('faults section under 40 characters: blocked', J(r.out).decision === 'block' && /faults section/.test(J(r.out).reason));
+  fs.writeFileSync(af, 'Auditor agent: a10\nVerdict: accept\nReferences opened: 3 of 3\n\nall good\n');
+  r = auditStop('a10'); t('no faults section at all: blocked', J(r.out).decision === 'block' && /faults/.test(J(r.out).reason));
+  fs.writeFileSync(af, auditText('<agent id>'));
+  r = auditStop('a11'); t('the template placeholder as the id: blocked', J(r.out).decision === 'block' && /Auditor agent:/.test(J(r.out).reason));
+  fs.writeFileSync(af, auditText('someone-else'));
+  r = auditStop('a12'); t('AUDIT.md claims an id that is not the finishing agent: blocked ("is not you")', J(r.out).decision === 'block' && /is not you/.test(J(r.out).reason) && /a12/.test(J(r.out).reason), r.out);
+  fs.writeFileSync(af, auditText('p1'));
+  r = auditStop('p1'); t('auditor id equals the recorded builder id (same agent audits its own round): blocked', J(r.out).decision === 'block' && /never the same agent/.test(J(r.out).reason), r.out);
+  fs.writeFileSync(af, auditText('b1'));
+  r = auditStop('b1', transcript('aud_b1', auditBrief)); t('a different agent writing a valid AUDIT.md: allowed, logged with the builder id', r.code === 0 && r.out === '' && lastLog().reason === 'audit written' && lastLog().builder_id === 'p1', r.out + JSON.stringify(lastLog()));
+  t('stop counter is per agent_id (b1 was never blocked)', !fs.existsSync(path.join(stateDir, 'handin', 'b1.json')));
+  const bfAud = path.join(tmp, 'aud_bf.txt'); fs.writeFileSync(bfAud, auditBrief);
+  fs.rmSync(af);
+  r = auditStop('bf1', transcript('aud_bf', `Brief is in the file.\nBRIEF-FILE: ${bfAud}`)); t('auditor brief reached through BRIEF-FILE: also gated', J(r.out).decision === 'block' && /AUDIT GATE/.test(J(r.out).reason), r.out);
+  // pre-tool variant
+  fs.copyFileSync(audTp, path.join(sess, 'sess1', 'subagents', 'agent-h2.jsonl'));
+  r = run('handin_gate.mjs', { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_id: 'h2', transcript_path: path.join(sess, 'sess1.jsonl'), tool_input: { message: 'report' } });
+  t('auditor on SubagentHandback (PreToolUse): denied with exit 2 until AUDIT.md exists', r.code === 2 && /AUDIT GATE/.test(r.err), r.err + r.out);
+  // 3 refusals then release
+  for (let i = 1; i <= 3; i++) { r = auditStop('rel1'); t(`auditor refusal ${i} of 3`, J(r.out).decision === 'block' && new RegExp(`refusal ${i} of 3`).test(J(r.out).reason)); }
+  r = auditStop('rel1'); t('4th attempt: released (exit 0, no output), AUDIT_FAILED.txt written', r.code === 0 && r.out === '' && fs.existsSync(path.join(folderP, 'AUDIT_FAILED.txt')) && /AUDIT\.md is missing/.test(fs.readFileSync(path.join(folderP, 'AUDIT_FAILED.txt'), 'utf8')));
+  t('release is logged as an audit that stays owed, not as a released hand-in', lastLog().gate === 'audit' && /audit still failing after 3 blocks/.test(lastLog().reason) && lastLog().audit_failed_written === true);
+  t('...and the folder is STILL listed as AUDIT OWED (the release does not clear it)', /AUDIT OWED x1/.test(noticeCtx()));
+  fs.rmSync(path.join(folderP, 'AUDIT_FAILED.txt'));
+  // no builder record: nothing to compare against
+  const folderN = path.join(wt, 'norec', 'docs', 'progress', 'norec'); fs.mkdirSync(folderN, { recursive: true });
+  fs.writeFileSync(path.join(folderN, 'AUDIT.md'), auditText('n1'));
+  r = auditStop('n1', transcript('aud_norec', mkAudit(folderN).stdout)); t('no builder record for the folder: valid AUDIT.md by the finishing agent still allowed (id cannot be compared)', r.code === 0 && lastLog().reason === 'audit written' && lastLog().builder_id === null, r.out);
+
+  // -- the owed notice is driven by the files, not by the log
+  fs.writeFileSync(af, auditText('p1'));
+  t('AUDIT.md written by the builder id does not clear the notice', /AUDIT OWED x1/.test(noticeCtx()) && /is the builder.s id/.test(noticeCtx()));
+  fs.writeFileSync(af, 'Auditor agent: a1\nVerdict: accept\n');
+  t('malformed AUDIT.md does not clear the notice', /AUDIT OWED x1/.test(noticeCtx()));
+  fs.writeFileSync(af, auditText('b1'));
+  const past = new Date(Date.now() - 3600 * 1000); fs.utimesSync(af, past, past);
+  t('AUDIT.md older than the builder\'s passed hand-in does not clear it (stale audit)', /AUDIT OWED x1/.test(noticeCtx()) && /older than the builder/.test(noticeCtx()));
+  const now2 = new Date(); fs.utimesSync(af, now2, now2);
+  t('a valid AUDIT.md by a different agent clears the notice', noticeCtx() === '' || !/AUDIT OWED/.test(noticeCtx()));
+  fs.rmSync(af);
+  const mainCopy = path.join(root, 'docs', 'progress', 'pass'); fs.mkdirSync(mainCopy, { recursive: true });
+  fs.writeFileSync(path.join(mainCopy, 'AUDIT.md'), auditText('m1'));
+  t('a valid AUDIT.md in the same round folder of the main checkout (after merge) clears it too', !/AUDIT OWED/.test(noticeCtx()));
+  fs.rmSync(path.join(root, 'docs', 'progress'), { recursive: true, force: true });
+  t('removing the AUDIT.md brings the notice back', /AUDIT OWED x1/.test(noticeCtx()));
+  // a fresh builder after "send back" owes a new audit
+  fs.writeFileSync(af, auditText('b1')); fs.utimesSync(af, past, past);
+  const nb = al.recordBuilder(folderP, 'p9', 'general-purpose', stateDir); t('a different builder passing the same folder replaces the record (changed)', nb.changed === true && al.readBuilder(folderP, stateDir).agent_id === 'p9');
+  t('and the earlier audit no longer counts: owed again', /AUDIT OWED x1/.test(noticeCtx()) && /p9/.test(noticeCtx()));
+  fs.writeFileSync(af, auditText('b2'));
+  t('the new audit by b2 clears it', !/AUDIT OWED/.test(noticeCtx()));
+  // a record whose folder is gone everywhere is dropped
+  al.recordBuilder(path.join(wt, 'gone', 'docs', 'progress', 'gone'), 'g1', 'general-purpose', stateDir);
+  t('a record whose progress folder no longer exists anywhere is not listed', !/AUDIT OWED/.test(noticeCtx()));
+  // many owed at once: all listed, no cap
+  for (let i = 0; i < 6; i++) { const d = path.join(wt, 'many' + i, 'docs', 'progress', 'many' + i); fs.mkdirSync(d, { recursive: true }); al.recordBuilder(d, 'mb' + i, 'general-purpose', stateDir); }
+  const cm = noticeCtx(); t('six owed audits: all six listed (no cap on auditors needing to run)', /AUDIT OWED x6/.test(cm) && [0, 1, 2, 3, 4, 5].every((i) => cm.includes('many' + i)), cm);
+  for (let i = 0; i < 6; i++) { const d = path.join(wt, 'many' + i, 'docs', 'progress', 'many' + i); fs.writeFileSync(path.join(d, 'AUDIT.md'), auditText('ma' + i)); }
+  t('six valid audits clear all six', !/AUDIT OWED/.test(noticeCtx()));
+
+  // -- ack cannot clear it (own temp checkout so the shared log keeps its counts)
+  const rootA = path.join(tmp, 'mainAudit');
+  ['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs'].forEach((rel) => { const d = path.join(rootA, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+  fs.mkdirSync(path.join(rootA, '.git'), { recursive: true });
+  const folderA = path.join(tmp, 'wtA', 'docs', 'progress', 'ackround'); fs.mkdirSync(folderA, { recursive: true });
+  al.recordBuilder(folderA, 'x1', 'general-purpose', path.join(rootA, '.claude/state'));
+  t('own checkout: owed shows up', /AUDIT OWED x1/.test(noticeCtx(rootA)));
+  let ak = spawnSync(process.execPath, [path.join(rootA, 'tools/hooks/gate_ack.mjs'), 'I looked at it and decided to do nothing about it'], { cwd: elsewhere, encoding: 'utf8' });
+  t('ack accepted but reports the audit as still open and counts 0 acknowledged', ak.status === 0 && /Acknowledged 0 item/.test(ak.stdout) && /Still open/.test(ak.stdout) && /AUDIT OWED x1/.test(ak.stdout), ak.stdout + ak.stderr);
+  t('after the ack the audit is STILL on the notice, on every prompt', /AUDIT OWED x1/.test(noticeCtx(rootA)) && /AUDIT OWED x1/.test(noticeCtx(rootA)));
+  t('the notice with only an owed audit does not offer gate_ack as the way out', !/gate_ack\.mjs/.test(noticeCtx(rootA)));
+  fs.writeFileSync(path.join(folderA, 'AUDIT.md'), auditText('y1'));
+  t('only the file clears it', noticeCtx(rootA) === '');
+  // gate_notice with a broken builders dir fails open
+  fs.rmSync(path.join(rootA, '.claude/state/builders'), { recursive: true }); fs.writeFileSync(path.join(rootA, '.claude/state/builders'), 'i am a file, not a directory');
+  t('unreadable builders state: notice hook still exits 0 and stays silent', noticeCtx(rootA) === '');
+
+  // -- fail-open of the recorder
+  const foTp = transcript('fo', mk('fo', ['--no-visual']));
+  fs.mkdirSync(hd('fo'), { recursive: true }); fs.writeFileSync(path.join(hd('fo'), 'STATUS.md'), goodStatus);
+  fs.mkdirSync(path.join(stateDir, 'builders'), { recursive: true }); fs.rmSync(path.join(stateDir, 'builders'), { recursive: true }); fs.writeFileSync(path.join(stateDir, 'builders'), 'file in the way');
+  r = stop('fo1', foTp); t('builder record cannot be written: the stop is still allowed (fail open), the failure is logged FAIL-OPEN', r.code === 0 && r.out === '' && fs.readFileSync(logPath, 'utf8').includes('could not record the builder'), r.out + r.err);
+  fs.rmSync(path.join(stateDir, 'builders')); fs.mkdirSync(path.join(stateDir, 'builders'));
+  // the pass folder stays covered by its recorded audit for the tests that follow
+  fs.writeFileSync(af, auditText('b1'));
+  al.recordBuilder(folderP, 'p1', 'general-purpose', stateDir);
+  t('after the recorder test the "pass" round is restored and its AUDIT.md still clears the notice', !/AUDIT OWED/.test(noticeCtx()));
+
+  // -- check_handin --accept
+  const acc = (folder, extra = [], rt = root) => spawnSync(process.execPath, [path.join(rt, 'tools/check_handin.mjs'), folder, '--main', rt, '--no-visual', ...extra], { cwd: elsewhere, encoding: 'utf8' });
+  fs.rmSync(af);
+  let c = acc(folderP); t('check_handin without --accept: unchanged, passes with no AUDIT.md', c.status === 0 && /HAND-IN CHECK PASSED/.test(c.stdout), c.stderr);
+  // the recorded builder was replaced by 'fo' test above? "pass" record is p1 (record dir was recreated empty) -> restore
+  al.recordBuilder(folderP, 'p1', 'general-purpose', stateDir);
+  c = acc(folderP, ['--accept']); t('--accept with no AUDIT.md: fails and says it is missing', c.status === 1 && /--accept: AUDIT\.md: AUDIT\.md is missing/.test(c.stderr), c.stderr);
+  fs.writeFileSync(af, auditText('p1'));
+  c = acc(folderP, ['--accept']); t('--accept with AUDIT.md written by the builder: fails, names "never the same agent"', c.status === 1 && /never the same agent/.test(c.stderr), c.stderr);
+  fs.writeFileSync(af, 'Auditor agent: a1\nVerdict: accept\n');
+  c = acc(folderP, ['--accept']); t('--accept with a malformed AUDIT.md: fails with the missing fields', c.status === 1 && /References opened/.test(c.stderr));
+  fs.writeFileSync(af, auditText('q1'));
+  c = acc(folderP, ['--accept']); t('--accept with a valid AUDIT.md by a different agent: passes', c.status === 0 && /HAND-IN CHECK PASSED/.test(c.stdout) && /independent of builder p1/.test(c.stdout), c.stderr + c.stdout);
+  c = acc(folderP, ['--accept', '--builder', 'q1']); t('--accept --builder <the auditor id>: fails (override names the same agent)', c.status === 1 && /never the same agent/.test(c.stderr));
+  al.recordBuilder(path.join(wt, 'orphan'), 'o1', 'general-purpose', path.join(tmp, 'nostate'));
+  const orph = path.join(wt, 'orphan', 'docs', 'progress', 'orphan'); fs.mkdirSync(orph, { recursive: true }); fs.writeFileSync(path.join(orph, 'STATUS.md'), goodStatus); fs.writeFileSync(path.join(orph, 'AUDIT.md'), auditText('q2'));
+  c = acc(orph, ['--accept']); t('--accept with no builder record and no --builder: fails (independence cannot be shown)', c.status === 1 && /no builder record/.test(c.stderr), c.stderr);
+  c = acc(orph, ['--accept', '--builder', 'o1']); t('--accept --builder <id> with a valid AUDIT.md by another agent: passes', c.status === 0, c.stderr);
+  c = acc(orph, ['--builder', 'o1']); t('--builder without --accept changes nothing', c.status === 0);
+  const old2 = new Date(Date.now() - 3600 * 1000); fs.utimesSync(af, old2, old2);
+  c = acc(folderP, ['--accept']); t('--accept with an AUDIT.md older than the builder hand-in: fails (stale)', c.status === 1 && /older than the builder/.test(c.stderr));
+  fs.writeFileSync(af, auditText('q1'));
+  t('--accept still runs the ordinary checks: a broken STATUS.md fails it', (() => { const s0 = fs.readFileSync(path.join(folderP, 'STATUS.md'), 'utf8'); fs.writeFileSync(path.join(folderP, 'STATUS.md'), 'nothing'); const x = acc(folderP, ['--accept']); fs.writeFileSync(path.join(folderP, 'STATUS.md'), s0); return x.status === 1 && /STATUS\.md/.test(x.stderr); })());
+}
+
 // ---- gate_notice / gate_ack / canary
 console.log('gate_notice, gate_ack, canary');
 {
@@ -205,7 +400,7 @@ console.log('gate_notice, gate_ack, canary');
   n = prompt(); t('garbage line in the log is skipped, valid FAIL-OPEN after it still reported', n.status === 0 && /FAIL-OPEN x1/.test(ptxt(n.stdout)));
   ack('garbage log line test, nothing to fix here at all');
   // unreadable state: gate.log missing entirely
-  const rootN = path.join(tmp, 'mainN'); ['tools/hooks/lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs'].forEach((rel) => { const d = path.join(rootN, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+  const rootN = path.join(tmp, 'mainN'); ['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs'].forEach((rel) => { const d = path.join(rootN, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
   n = prompt(rootN); t('no gate.log yet: exit 0, output empty', n.status === 0 && n.stdout === '');
   // state dir is a file: the log cannot be written; hook must still exit 0
   fs.rmSync(path.join(rootN, '.claude'), { recursive: true, force: true }); fs.writeFileSync(path.join(rootN, '.claude'), 'i am a file');
@@ -236,7 +431,7 @@ console.log('gate_notice, gate_ack, canary');
   // ---- canary through the real tools
   const mkRoot = (name) => {
     const rt = path.join(tmp, name);
-    ['tools/hooks/lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md']
+    ['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md']
       .forEach((rel) => { const d = path.join(rt, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
     fs.mkdirSync(path.join(rt, '.git'), { recursive: true });
     fs.mkdirSync(path.join(rt, '.claude/state'), { recursive: true });

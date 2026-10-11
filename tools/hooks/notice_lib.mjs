@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, STATE_DIR, parseJson } from './lib.mjs';
+import { auditOwed } from './audit_lib.mjs';
 
 export const MIN_ACK_CHARS = 20;
 export const CANARY_GRACE_MS = 120 * 1000;          // a brief made less than 2 minutes ago may simply not be launched yet
@@ -33,7 +34,9 @@ export function readGateLog(stateDir = STATE_DIR) { // n = 1-based number of the
 const clip = (s, k = 160) => { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > k ? s.slice(0, k - 1) + '...' : s; };
 
 // Unacknowledged items = everything after the newest { gate: 'ack' } line's through_line.
-export function pendingItems(entries) {
+// auditOwed (opts.stateDir/opts.root, default the main checkout): hand-ins that passed with no valid AUDIT.md by a different
+// agent. Computed from builder records + the files themselves, NOT from the log, so no ack can clear it.
+export function pendingItems(entries, opts = {}) {
   let through = 0;
   for (const e of entries) if (e.gate === 'ack' && Number.isFinite(e.through_line)) through = Math.max(through, e.through_line);
   const live = entries.filter((e) => e.n > through && e.gate !== 'ack');
@@ -42,13 +45,20 @@ export function pendingItems(entries) {
   const handinFailed = live.filter((e) => e.gate === 'handin' && /^check still failing after/.test(String(e.reason || '')))
     .filter((e) => { const k = e.handin_dir || e.agent_id; if (seen.has(k)) return false; seen.add(k); return true; });
   const noContract = live.filter((e) => e.gate === 'brief' && e.reason === 'NO-CONTRACT');
-  return { failOpen, handinFailed, noContract, total: failOpen.length + handinFailed.length + noContract.length };
+  let owed = [];
+  try { owed = auditOwed(opts.stateDir || STATE_DIR, opts.root || ROOT); } catch { /* fail open: logged by the caller if it matters */ }
+  return { failOpen, handinFailed, noContract, auditOwed: owed, total: failOpen.length + handinFailed.length + noContract.length + owed.length };
 }
 
 // Factual text (no imperatives: the hooks docs warn that command-style context can trip prompt-injection defences).
 export function formatNotice(p) {
   if (!p.total) return '';
-  const L = [`GATE NOTICE from tools/hooks/gate_notice.mjs (source: .claude/state/gate.log of the main checkout). ${p.total} unacknowledged item(s).`];
+  const L = [`GATE NOTICE from tools/hooks/gate_notice.mjs (source: .claude/state/gate.log of the main checkout). ${p.total} open item(s).`];
+  if (p.auditOwed.length) {
+    L.push(`- AUDIT OWED x${p.auditOwed.length}: a builder's hand-in passed the check and no independent auditor has written a valid AUDIT.md. Builder and auditor are never the same agent; there is no cap on auditors. Cleared only by that file (an ack does nothing):`);
+    for (const e of p.auditOwed.slice(0, 10)) L.push(`    ${e.handin_dir} (builder ${e.builder_type || '?'}/${e.builder_id}, hand-in passed ${e.passed_at}) - ${clip(e.problems[0], 110)}`);
+    L.push('    start one with: node tools/make_brief.mjs <task-file> --audit <that folder>');
+  }
   if (p.failOpen.length) {
     L.push(`- FAIL-OPEN x${p.failOpen.length}: a gate did NOT run or did not decide (gates fail open so the session cannot deadlock). Newest first:`);
     for (const e of p.failOpen.slice(-8).reverse()) L.push(`    ${e.ts} gate=${e.gate} ${clip(e.reason, 90)}${e.error ? ' | ' + clip(e.error, 120) : ''}`);
@@ -61,7 +71,7 @@ export function formatNotice(p) {
     L.push(`- NO-CONTRACT launches x${p.noContract.length} (no contract, no hand-in gate; reasons given):`);
     for (const e of p.noContract.slice(-8).reverse()) L.push(`    ${e.ts} "${clip(e.no_contract_reason, 120)}" (${clip(e.description, 50)})`);
   }
-  L.push(`This notice is repeated on every prompt until it is acknowledged. The only thing that clears it: ${ACK_CMD} (text of at least ${MIN_ACK_CHARS} characters; recorded in the log with a timestamp).`);
+  if (p.total - p.auditOwed.length > 0) L.push(`${p.auditOwed.length ? 'The log items (all except AUDIT OWED) repeat' : 'This notice is repeated'} on every prompt until acknowledged. The only thing that clears them: ${ACK_CMD} (text of at least ${MIN_ACK_CHARS} characters; recorded in the log with a timestamp).`);
   const s = L.join('\n');
   return s.length > 6000 ? s.slice(0, 5990) + '\n[cut]' : s;
 }
@@ -92,7 +102,7 @@ export function canaryProblems(entries, now = Date.now()) {
 export function canaryReport(stateDir = STATE_DIR, now = Date.now()) {
   const entries = readGateLog(stateDir);
   const problems = canaryProblems(entries, now);
-  const pending = pendingItems(entries);
+  const pending = pendingItems(entries, { stateDir });
   const lines = [];
   if (problems.length) lines.push('!!! HOOK CANARY: the enforcement hooks may NOT be running !!!', ...problems.map((p) => ' - ' + p));
   if (pending.total) lines.push(formatNotice(pending));

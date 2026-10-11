@@ -21,4 +21,5 @@ let lines = 0;
 try { lines = fs.readFileSync(path.join(STATE_DIR, 'gate.log'), 'utf8').split('\n').filter((l) => l.trim()).length; } catch { /* no log yet */ }
 // through_line counts non-empty lines; readGateLog numbers by physical line, which is the same while the log has no blank lines.
 log({ gate: 'ack', text, through_line: lines, cleared: { fail_open: p.failOpen.length, handin_failed: p.handinFailed.length, no_contract: p.noContract.length } });
-console.log(`Acknowledged ${p.total} item(s) (fail-open ${p.failOpen.length}, hand-in released ${p.handinFailed.length}, no-contract ${p.noContract.length}). Recorded in .claude/state/gate.log.`);
+console.log(`Acknowledged ${p.total - p.auditOwed.length} item(s) (fail-open ${p.failOpen.length}, hand-in released ${p.handinFailed.length}, no-contract ${p.noContract.length}). Recorded in .claude/state/gate.log.` +
+  (p.auditOwed.length ? `\nStill open (an ack cannot clear it, only a valid AUDIT.md can): AUDIT OWED x${p.auditOwed.length}: ${p.auditOwed.map((e) => e.handin_dir).join(', ')}` : ''));

@@ -20,7 +20,9 @@ async function main() {
   const base = { gate: 'inject', agent_type: type, agent_id: input.agent_id, cwd: input.cwd };
   if (EXEMPT_TYPES.includes(type)) { log({ ...base, decision: 'skip', reason: 'exempt type' }); return; }
   const contract = fs.readFileSync(path.join(ROOT, 'docs', 'AGENT_CONTRACT.md'), 'utf8').trim();
-  const ctx = 'PROJECT RULES (injected by the SubagentStart hook; these apply to you even if your brief does not repeat them):\n\n' + contract;
+  const aid = String(input.agent_id || '').replace(/[^\w.-]/g, '_');
+  const idLine = aid ? `YOUR AGENT ID: ${aid}  (an auditor writes it as "Auditor agent: ${aid}" in AUDIT.md; the finish gate compares it with the recorded builder's id)\n\n` : '';
+  const ctx = idLine + 'PROJECT RULES (injected by the SubagentStart hook; these apply to you even if your brief does not repeat them):\n\n' + contract;
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: ctx } }));
   log({ ...base, decision: 'inject', chars: ctx.length });
 }
