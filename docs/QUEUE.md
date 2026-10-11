@@ -18,6 +18,8 @@ Updated by the main session whenever an agent starts, reports, or the owner chan
 13. Later, one dedicated job after milestone 5: code cleanups (see "Cleanup").
 14. Process note: engine-only briefs must carry the line `HANDIN: no-visual`; the roadtool3 and gradelayer briefs lacked it, so the finish gate demanded renders and both builders produced placeholder COMPARE tables to get through (auditors: treat those COMPARE tables as empty).
 
+Session of 11 Oct, 20:12: hand-in check PASSED for grade-r9, gradelayer, roadtool3, tjunction and roundabout; a fresh Sonnet auditor is RUNNING for each of the five (each writes `AUDIT.md` in its progress folder and commits it on the branch). Roundabout: its builder was still writing `test-gcc-clean.out` at 20:13 (tip 306a16b, tracked files clean), so that auditor is pinned to 306a16b, holds its own builds until the worktree is quiet for 10 minutes, and re-checks the tip before writing. grade-r9 and gradelayer are ONE merge unit: audits run in parallel, but the merger takes r9 first, then gradelayer with the comparers (`same_plan / same_tier / same_grading_road`) updated for whatever r9 changed in `WallPlan/TierSet/GradingSample/PortalPlane`; one clean build of both together before either counts as merged.
+
 ## Jobs and stages (stage words: WORKING / HANDED IN (audit owed) / AUDITED: accept (merge owed) / AUDITED: send back (new worker owed) / MERGED). True as of 19:40; the status script is truer.
 | Job (milestone) | Worktree / branch (tip) | Stage | Detail |
 |---|---|---|---|
