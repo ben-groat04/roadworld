@@ -29,7 +29,29 @@ struct EdgePoly {
     EdgeId id;
     std::vector<double> s;
     std::vector<Vec3> p;
+    double x0 = 0, y0 = 0, x1 = 0, y1 = 0;  // plan bounding box of p
 };
+
+EdgePoly sample_edge_poly(EdgeId id, const Edge& e, double step) {
+    EdgePoly ep;
+    ep.id = id;
+    const double len = e.horizontal.length();
+    for (double s = 0;; s += step) {
+        if (s > len) s = len;
+        ep.s.push_back(s);
+        ep.p.push_back(edge_point(e, s));
+        if (s >= len) break;
+    }
+    ep.x0 = ep.y0 = kInf;
+    ep.x1 = ep.y1 = -kInf;
+    for (const Vec3& q : ep.p) {
+        ep.x0 = std::min(ep.x0, q.x);
+        ep.x1 = std::max(ep.x1, q.x);
+        ep.y0 = std::min(ep.y0, q.y);
+        ep.y1 = std::max(ep.y1, q.y);
+    }
+    return ep;
+}
 
 struct Crossing {
     double key = kInf;  // segment index + parameter along the stroke
@@ -40,18 +62,16 @@ struct Crossing {
     double s = 0;
 };
 
-std::string format_refusal(double dz, double headroom) {
-    char buf[160];
-    std::snprintf(buf, sizeof buf, "crossing too close vertically (%.1f m): raise/lower to junction or clear %.1f m", dz, headroom);
-    return buf;
-}
+std::string format_refusal(double dz, double headroom) { return crossing_refusal_text(dz, headroom); }
 
 struct Resolver {
     const RoadGraph& g;
     const StrokeParams& P;
     double join_dz = 1e9;
     double headroom = 0;
-    std::vector<EdgePoly> polys;
+    std::vector<EdgePoly> own;
+    const std::vector<EdgePoly>* use = &own;
+    bool ignored(EdgeId id) const { return std::find(P.ignore_edges.begin(), P.ignore_edges.end(), id) != P.ignore_edges.end(); }
 
     Resolver(const RoadGraph& graph, const StrokeParams& params) : g(graph), P(params) {
         double jd = P.join_dz;
@@ -61,27 +81,22 @@ struct Resolver {
     }
 
     void refresh() {
-        polys.clear();
+        own.clear();
+        use = &own;
         for (const auto& [id, e] : g.edges()) {
-            EdgePoly ep;
-            ep.id = id;
-            const double len = e.horizontal.length();
-            for (double s = 0;; s += P.sample_step) {
-                if (s > len) s = len;
-                ep.s.push_back(s);
-                ep.p.push_back(edge_point(e, s));
-                if (s >= len) break;
-            }
-            polys.push_back(std::move(ep));
+            if (ignored(id)) continue;
+            own.push_back(sample_edge_poly(id, e, P.sample_step));
         }
     }
+    void attach(const std::vector<EdgePoly>& polys) { use = &polys; }
 
     // Edge whose centreline passes closest to p (xy) within max_dist, with the arc length of that point.
     EdgeId edge_near(Vec2 p, double* s_out, double max_dist) const {
         EdgeId best;
         double best_d = max_dist, best_s = 0;
-        for (const EdgePoly& ep : polys)
+        for (const EdgePoly& ep : *use)
             for (std::size_t k = 0; k < ep.s.size(); ++k) {
+                if (ignored(ep.id)) continue;
                 const double d = (ep.p[k].xy() - p).length();
                 if (d < best_d) {
                     best_d = d;
@@ -133,7 +148,7 @@ struct Resolver {
         }
         std::vector<Vec2> xy;
         for (const Vec3& p : pts) xy.push_back(p.xy());
-        auto chain = fit_clothoid_chain(xy, {ha}, {hb});
+        auto chain = fit_sane_chain(xy, ha, hb);
         if (!chain) return false;
         std::vector<double> s{0}, z{pts.front().z};
         for (std::size_t i = 0; i < chain->spans.size(); ++i) {
@@ -188,7 +203,8 @@ struct Resolver {
                     out.node = nid;
                 }
             }
-            for (const EdgePoly& ep : polys) {
+            for (const EdgePoly& ep : *use) {
+                if (ignored(ep.id)) continue;
                 for (std::size_t k = 1; k < ep.p.size(); ++k) {
                     const Vec3 p0 = ep.p[k - 1], p1 = ep.p[k];
                     const double s0 = ep.s[k - 1], s = ep.s[k];
@@ -233,7 +249,10 @@ struct Resolver {
             const Vec3 a = pts[i], b = pts[i + 1];
             const Vec2 ab = b.xy() - a.xy();
             if (ab.dot(ab) < 1e-12) continue;
-            for (const EdgePoly& ep : polys)
+            const double sx0 = std::min(a.x, b.x) - 1e-6, sx1 = std::max(a.x, b.x) + 1e-6;
+            const double sy0 = std::min(a.y, b.y) - 1e-6, sy1 = std::max(a.y, b.y) + 1e-6;
+            for (const EdgePoly& ep : *use) {
+                if (ignored(ep.id) || ep.x1 < sx0 || ep.x0 > sx1 || ep.y1 < sy0 || ep.y0 > sy1) continue;
                 for (std::size_t k = 1; k < ep.p.size(); ++k) {
                     const Vec3 p0 = ep.p[k - 1], p1 = ep.p[k];
                     const Vec2 cd = p1.xy() - p0.xy();
@@ -251,6 +270,8 @@ struct Resolver {
                     c.dz = std::abs(q.z - c.existing_z);
                     c.edge = ep.id;
                     c.edge_s = ep.s[k - 1] + (ep.s[k] - ep.s[k - 1]) * u;
+                    c.join_limit = join_dz;
+                    c.headroom = headroom;
                     bool dup = false;
                     for (const StrokeCrossing& o : out) dup = dup || (o.edge == c.edge && std::abs(o.edge_s - c.edge_s) < 0.05);
                     if (dup) continue;
@@ -259,6 +280,7 @@ struct Resolver {
                                                                       : CrossingVerdict::Clear;
                     out.push_back(c);
                 }
+            }
         }
         std::sort(out.begin(), out.end(), [](const StrokeCrossing& l, const StrokeCrossing& r) { return l.key < r.key; });
         return out;
@@ -266,6 +288,44 @@ struct Resolver {
 };
 
 }  // namespace
+
+std::optional<ClothoidChain> fit_sane_chain(const std::vector<Vec2>& points, std::optional<double> heading_a,
+                                            std::optional<double> heading_b) {
+    auto chain = fit_clothoid_chain(points, {heading_a}, {heading_b});
+    if (!chain) return std::nullopt;
+    double poly = 0;
+    for (std::size_t i = 0; i + 1 < points.size(); ++i) poly += (points[i + 1] - points[i]).length();
+    const double len = chain->length();
+    if (!(len <= 20 * poly + 1.0)) return std::nullopt;  // also catches NaN
+    return chain;
+}
+
+std::string crossing_refusal_text(double dz, double headroom) {
+    char buf[160];
+    std::snprintf(buf, sizeof buf, "crossing too close vertically (%.1f m): raise/lower to junction or clear %.1f m", dz, headroom);
+    return buf;
+}
+
+struct CrossingCache::Impl {
+    std::vector<EdgePoly> polys;
+};
+
+CrossingCache::CrossingCache(const RoadGraph& g, double sample_step) {
+    auto impl = std::make_shared<Impl>();
+    for (const auto& [id, e] : g.edges()) impl->polys.push_back(sample_edge_poly(id, e, sample_step));
+    impl_ = std::move(impl);
+}
+
+std::vector<StrokeCrossing> stroke_crossings(const RoadGraph& g, const CrossingCache& cache, const StrokeSpec& spec,
+                                             const StrokeParams& params) {
+    if (spec.points.size() < 2) return {};
+    Resolver r(g, params);
+    if (cache.impl()) r.attach(cache.impl()->polys);
+    else r.refresh();
+    Poly poly;
+    if (!r.make_poly(spec.points, spec.heading_a, spec.heading_b, spec.road_type, poly)) return {};
+    return r.all_crossings(poly);
+}
 
 std::vector<StrokeCrossing> stroke_crossings(const RoadGraph& g, const StrokeSpec& spec, const StrokeParams& params) {
     if (spec.points.size() < 2) return {};
