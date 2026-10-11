@@ -8,10 +8,11 @@
 // the one undo step of the whole stroke. After the host executes any command it calls invalidate() (the road
 // index is a snapshot; a cheap size check also notices most changes by itself).
 //
-// Finishing: click() on the last placed point, finish() (the road ends at the last CLICKED point; the prototype's
-// Enter / right-click) and finish_at_cursor() (the road ends where the preview's ghost ends: what you see is what
-// you get) all return the one command to execute. In the would_finish state the preview shows exactly the
-// geometry finish() would commit.
+// Finishing: finish() (the road ends at the last CLICKED point; the prototype's Enter / right-click / double-click),
+// finish_at_cursor() (the road ends where the preview's ghost ends: what you see is what you get) and, only when
+// DrawParams::finish_pick_px is set, a click on the last placed point all return the one command to execute. In the
+// would_finish state (that option) the preview shows exactly the geometry finish() would commit. By default, as in
+// the prototype, a click near the last point is just another point (or the min-span error).
 //
 // Units: metres, radians, doubles. x east, y north, z up. Driving-side agnostic: dual carriageways are laid
 // out from the region's driving side, everything else is symmetric.
