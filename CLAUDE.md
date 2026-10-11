@@ -24,22 +24,22 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 Source of truth for agents: `docs/AGENT_CONTRACT.md` (pasted unchanged into every brief). Templates: `docs/templates/BRIEF.md`, `docs/templates/STATUS.md`. New session? Read `docs/HANDOFF.md` first, then `docs/QUEUE.md` (the only work queue; anything not written there is not queued).
 
 ### Two gates (the main session runs both, every time, as a checklist)
-**Before sending a brief for visible work** (build it with `node tools/make_brief.mjs <task-file> --round <name>`, create the worktree with `tools/new_agent_worktree.ps1 <name>`):
-1. At least 3 reference photos named per case, absolute paths in the main checkout (`docs/reference/`); say where none exists.
+**Before sending a brief for visible work** (build it with `node tools/make_brief.mjs <task-file> --round <name>`, create the worktree with `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`; plain invocation is blocked on this machine, the flag is per-process):
+1. At least 3 reference photos named per case, absolute paths in the main checkout (`docs/reference/`); say where none exists. The brief lists EVERY reference file explicitly (photos, screenshots, spec documents), so M is countable.
 2. The owner's own words quoted verbatim, with date. Never paraphrase: agents distrust relays.
 3. Finish line = "matches the photo", never "these are the whole task"; no time-box in hours. Stop rule: self-audit residual holds only unfixable items, or 3 passes.
 4. Hand-in files named: STATUS.md (skipped first), FAULTS.md, COMPARE.md with composites, INDEX.md.
 5. Parallelism: list every independent item; start it, or write one line why it waits (Unreal lane, shared file, usage limit). With fewer than 2 agents running, tell the owner why.
 6. Background, own worktree from current main, `[skip ci]`, mute video, download approval, no unbounded absolutes ("as many tiers as needed") without a sanity bound.
 **Before accepting a report or telling the owner anything:**
-1. Run `node tools/check_handin.mjs <progress-folder>`; if it fails, send the list back unread.
+1. Run `node tools/check_handin.mjs <progress-folder>` (`--no-visual` for engine-only work); if it fails, send the list back unread. A report whose `References opened` line is missing, or has N < M without a listed reason, goes back unread, for ALL work with named references, not only visible work.
 2. Read STATUS first lines for anything skipped, refused or failed; raise it with the owner at once.
 3. Open the headline images yourself (every time an agent says good, fixed or done), ask "what here would never be built?", and log it in `docs/ACCEPTANCE.md`. Name the reference files you opened.
 4. Same-camera before/after must show real movement, else change method, not another tuning round.
 5. Update `docs/QUEUE.md` (the only queue: started, reported, new follow-ups, dropped). Commit with `[skip ci]` and push in background (never end a turn with uncommitted changes); check with `git status -sb`, not the exit code. Send pictures as files (the owner often follows from a phone) with your own fault list.
 
 ### For every agent (full text: `docs/AGENT_CONTRACT.md`)
-- Photos are the target, all the time: open >=3 per case before designing, name them, measure in lane widths, render at the same framing, compare item by item; layout/markings scored apart from look; "joins up" properties become tests. A claim about what the photos show names the files opened; a score on fewer than 2 opened per view says so.
+- Photos are the target, all the time (and every reference or spec file the brief names is opened, all of them, with `References opened: N of M listed` in STATUS.md): open >=3 per case before designing, name them, measure in lane widths, render at the same framing, compare item by item; layout/markings scored apart from look; "joins up" properties become tests. A claim about what the photos show names the files opened; a score on fewer than 2 opened per view says so.
 - Self-audit before anyone else does (owner: agents "should anticipate what the cold read viewer might say and just get round to fixing that also before it actually tries to get its work audited"): up to 3 passes with an own fault list and composites; never mark an item "not done" without having tried it.
 - Nothing fails silently: skipped, refused or failed items go in the FIRST lines of the report and STATUS.md.
 - Reference photo downloads are pre-approved by the owner (11 Oct, in chat: "If you ever need more reference images go get them"; "yes please allow them to download photos as and when needed"). Any agent may fetch reference photos into `docs/reference/{aerial,street,gsv}/` (private, gitignored, never committed or copied elsewhere; composites go in `docs/reference/_compare/`), logging source URL and content in the reference INDEX. Reference images only: assets, models, textures, tools and anything paid need the owner.

@@ -1,5 +1,7 @@
 ## Skipped, refused or failed
 
+References opened: N of M listed   <!-- e.g. `References opened: 44 of 44 listed`; M = files the brief lists as reference/spec. If N < M, list each unopened file below as "not opened: <file> (reason)". -->
+
 <!-- FIRST. Everything you skipped, were refused, could not do, failed, or did not verify, one line each, with what blocked it.
      Write "Nothing skipped, refused or failed." only if true, then say what you did NOT verify. Never leave this empty. -->
 
