@@ -59,11 +59,10 @@ if (status === null) {
     const end = heads[1] ? heads[1].index : s.length;
     const skipBody = s.slice(start, end);
     if (skipBody.trim().length < 10) fails.push('STATUS.md: "Skipped, refused or failed" section is empty');
-    const ro = s.match(/References opened:s*(d+)s+ofs+(d+)/i);
+    const ro = s.match(/References opened:\s*(\d+)\s+of\s+(\d+)/i);
     if (!ro) fails.push('STATUS.md: no "References opened: N of M" line (integers)');
     else if (+ro[1] < +ro[2]) {
-      const lines = skipBody.split('
-').filter((l) => /not opened/i.test(l) && /[w-]+.w{2,5}/.test(l));
+      const lines = skipBody.split('\n').filter((l) => /not opened/i.test(l) && /[\w-]+\.\w{2,5}\b/.test(l));
       if (!lines.length) fails.push(`STATUS.md: References opened ${ro[1]} of ${ro[2]}: the Skipped section needs a "not opened" line naming each unopened file with a reason`);
     }
   }
