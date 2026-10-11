@@ -140,7 +140,7 @@ export function auditProblems(handinDir, rec, root = ROOT, actualId = null, opts
         else {
           if (ar.auditor_id !== parsed.auditor) q.push(`the audit record says auditor "${ar.auditor_id}", the file says "${parsed.auditor}"`);
           if (ar.sha1 !== auditSha(text)) q.push('AUDIT.md was edited after the auditor finished (its hash differs from the audit record)');
-          if (notBefore && Date.parse(ar.recorded_at) < notBefore) q.push('the audit record is older than the builder\'s latest passed hand-in (a fresh audit is owed)');
+          if (rec && rec.passed_at && Date.parse(ar.recorded_at) < Date.parse(rec.passed_at)) q.push('the audit record is older than the builder\'s latest passed hand-in (a fresh audit is owed)');
           if (rec && ar.auditor_id === sanitizeId(rec.agent_id)) q.push('the recorded auditor is the builder');
         }
         if (q.length) { best = q; continue; }

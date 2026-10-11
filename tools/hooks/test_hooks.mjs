@@ -591,6 +591,103 @@ console.log('hand-in freshness, counter reset, owner quotes, COMPARE relevance, 
   t('make_brief through the real tool: RULE 3 shows, exit 3, brief still printed', bc.status === 3 && /RULE 3/.test(bc.stderr) && /AGENT-CONTRACT-MARKER/.test(bc.stdout), bc.stderr);
 }
 
+
+// ---- gates2: audit records (the four faults of the audit gate) and the measured gates through the finish hook
+console.log('audit gate v2: records, verdict, resumed builder, no builder record');
+{
+  const al = await import(pathToFileURL(path.join(src, 'tools/hooks/audit_lib.mjs')).href);
+  const stateDir = path.join(root, '.claude/state');
+  const notice = () => { const o = J(spawnSync(process.execPath, [path.join(root, 'tools/hooks/gate_notice.mjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's9', prompt: 'hi', cwd: elsewhere }), cwd: elsewhere, encoding: 'utf8' }).stdout); return (o.hookSpecificOutput && o.hookSpecificOutput.additionalContext) || ''; };
+  const aText = (id, verdict = 'accept') => `Auditor agent: ${id}\nVerdict: ${verdict}\nReferences opened: 3 of 3 listed\n\n## Own fault list\n\nfrom the photos alone, before reading anything the builder wrote about it\n\n## Faults, ranked worst first\n\n1. the kerb line stops 4 m short of the island in the street view, which no driver would accept\n`;
+  const aBrief = (folder) => { const tfa = path.join(tmp, 'f_audit_task_' + path.basename(folder) + '.md'); fs.writeFileSync(tfa, `# T audit\n## Owner's words\n"The photo is the target." (11 Oct)\n## Cases\ncase A | ${path.join(root, 'docs/reference/aerial/a.jpg')} ${path.join(root, 'docs/reference/street/b.jpg')} ${path.join(root, 'docs/reference/gsv/c.jpg')}\n`); return spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tfa, '--audit', folder], { cwd: elsewhere, encoding: 'utf8' }).stdout; };
+  const accept = (folder, extra = []) => spawnSync(process.execPath, [path.join(root, 'tools/check_handin.mjs'), folder, '--main', root, '--no-visual', '--accept', ...extra], { cwd: elsewhere, encoding: 'utf8' });
+  const build = (round, id) => { const tp = transcript('f_' + round, mk(round, ['--no-visual'])); fs.mkdirSync(hd(round), { recursive: true }); fs.writeFileSync(path.join(hd(round), 'STATUS.md'), goodStatus); const o = stop(id, tp); return { tp, o }; };
+  const audit = (folder, id, text) => { fs.writeFileSync(path.join(folder, 'AUDIT.md'), text); return stop(id, transcript('f_aud_' + id, aBrief(folder))); };
+  const owedFor = (folder) => notice().includes(folder);
+
+  // fault 1: a made-up auditor id
+  let { o } = build('fa', 'fb1'); const fa = hd('fa');
+  t('builder (v2 record) passes', o.code === 0 && al.readBuilder(fa, stateDir).v === 2 && owedFor(fa));
+  fs.writeFileSync(path.join(fa, 'AUDIT.md'), aText('zzz'));
+  t('fault 1: a hand-typed AUDIT.md with an invented auditor id does NOT clear the owed audit (no audit record)', owedFor(fa) && /no audit record/.test(notice()));
+  let a = accept(fa); t('fault 1: --accept refuses it too and names the missing record', a.status === 1 && /no audit record/.test(a.stderr), a.stderr);
+  a = accept(fa, ['--builder', 'fb1']); t('fault 1: --accept --builder fb1 does not bypass the record', a.status === 1 && /no audit record/.test(a.stderr), a.stderr);
+  // a real auditor finishing through the gate
+  let r2 = audit(fa, 'fa1', aText('fa1'));
+  t('a real auditor finishing through the gate: allowed, AUDIT RECORD written with its harness id and the builder id', r2.code === 0 && al.readAudit(fa, stateDir).auditor_id === 'fa1' && al.readAudit(fa, stateDir).builder_id === 'fb1', r2.out);
+  t('...and the owed audit is cleared', !owedFor(fa), notice());
+  a = accept(fa); t('--accept with a recorded audit with verdict accept: passes', a.status === 0 && /independent of builder fb1/.test(a.stdout), a.stderr);
+  a = accept(fa, ['--builder', 'someone-else']); t('--accept --builder naming another agent than the audit record: refused', a.status === 1 && /not the builder the audit record names/.test(a.stderr), a.stderr);
+  // edited after the finish gate
+  fs.writeFileSync(path.join(fa, 'AUDIT.md'), aText('fa1') + '\nextra line added later by someone\n');
+  t('an AUDIT.md edited after the auditor finished is owed again (hash differs from the record)', owedFor(fa) && /edited after the auditor finished/.test(notice()));
+  fs.writeFileSync(path.join(fa, 'AUDIT.md'), aText('fa1'));
+  t('...restored to the recorded text: cleared again', !owedFor(fa));
+
+  // fault 2: verdict
+  ({ o } = build('fv', 'fvb')); const fv = hd('fv');
+  r2 = audit(fv, 'fva', aText('fva', 'send back'));
+  t('verdict "send back": the audit was done, the notice clears', r2.code === 0 && !owedFor(fv));
+  a = accept(fv); t('fault 2: --accept refuses a "send back" audit', a.status === 1 && /not "accept"/.test(a.stderr) && /send back/.test(a.stderr), a.stderr);
+
+  // fault 3: resumed builder keeps its id; a new passed hand-in must invalidate the old audit
+  const before = Date.parse(al.readBuilder(fa, stateDir).passed_at);
+  const owedBefore = fs.readFileSync(logPath, 'utf8').split('\n').filter((l) => l.includes('"decision":"owed"') && l.includes(fa.replace(/\\/g, '\\\\'))).length;
+  const resume = (name) => { const tp2 = transcript(name, mk('fa', ['--no-visual'])); fs.writeFileSync(path.join(fa, 'STATUS.md'), goodStatus); return stop('fb1', tp2); };
+  const resumed = resume('f_fa_resume');
+  t('fault 3: the SAME builder id passes the hand-in again after the audit (resumed after send back)', resumed.code === 0 && Date.parse(al.readBuilder(fa, stateDir).passed_at) >= before);
+  t('...the old audit no longer counts: owed again and the log says so', owedFor(fa) && /older than the builder|no audit record|fresh audit/.test(notice()) && fs.readFileSync(logPath, 'utf8').split('\n').filter((l) => l.includes('"decision":"owed"') && l.includes(fa.replace(/\\/g, '\\\\'))).length === owedBefore + 1);
+  a = accept(fa); t('...and --accept refuses until a new audit is recorded', a.status === 1, a.stderr);
+  const again = resume('f_fa_resume2');
+  t('a second pass back to back (PreToolUse then Stop at one finish) logs no extra owed line', again.code === 0 && fs.readFileSync(logPath, 'utf8').split('\n').filter((l) => l.includes('"decision":"owed"') && l.includes(fa.replace(/\\/g, '\\\\'))).length === owedBefore + 1);
+  r2 = audit(fa, 'fa2', aText('fa2'));
+  t('a new auditor after the re-hand-in clears it and is the recorded one', r2.code === 0 && !owedFor(fa) && al.readAudit(fa, stateDir).auditor_id === 'fa2');
+
+  // fault 4: no builder record
+  const fn = path.join(wt, 'fn', 'docs', 'progress', 'fn'); fs.mkdirSync(fn, { recursive: true });
+  r2 = audit(fn, 'fn1', aText('fn1'));
+  t('fault 4: AUDIT-OF a folder with no builder record and no log line: the auditor is REFUSED (fail closed)', J(r2.out).decision === 'block' && /no record of who built/.test(J(r2.out).reason) && !al.readAudit(fn, stateDir), r2.out);
+  fs.rmSync(path.join(stateDir, 'builders', al.builderKey(fv) + '.json'));
+  fs.rmSync(path.join(stateDir, 'audits', al.builderKey(fv) + '.json'));
+  r2 = audit(fv, 'fva2', aText('fva2'));
+  t('fault 4: builder record deleted but the gate log still shows who passed it: the id is recovered from the log, the audit is accepted', r2.code === 0 && al.readAudit(fv, stateDir).builder_id === 'fvb', r2.out);
+  r2 = audit(fv, 'fvb', aText('fvb'));
+  t('...and the builder id (recovered from the log) still cannot audit its own round', J(r2.out).decision === 'block' && /never the same agent/.test(J(r2.out).reason), r2.out);
+  // legacy: records without v:2 keep the old rule (typed file counts), so audits made before this gate are not owed again
+  const fl = path.join(wt, 'fl', 'docs', 'progress', 'fl'); fs.mkdirSync(fl, { recursive: true });
+  const lrec = al.recordBuilder(fl, 'flb', 'general-purpose', stateDir).rec; const lf = path.join(stateDir, 'builders', al.builderKey(fl) + '.json'); const lj = JSON.parse(fs.readFileSync(lf, 'utf8')); delete lj.v; fs.writeFileSync(lf, JSON.stringify(lj));
+  fs.writeFileSync(path.join(fl, 'AUDIT.md'), aText('fla'));
+  t('legacy builder record (no v:2): a typed AUDIT.md by another id still clears it (audits made before this gate are not re-owed)', !owedFor(fl));
+  fs.writeFileSync(path.join(fl, 'STATUS.md'), goodStatus);
+  a = accept(fl); t('...and --accept on it (verdict accept) passes', a.status === 0, a.stderr);
+}
+
+console.log('measured gates through the finish hook');
+{
+  const gate = (round) => path.join(wt, round, 'prototypes/road-draw');
+  const scene = (round, passed, total) => { const lines = []; for (let i = 0; i < total; i++) lines.push((i < passed ? 'PASS ' : 'FAIL ') + 'check_' + i + ' detail'); fs.mkdirSync(path.join(gate(round), 'tools'), { recursive: true }); fs.mkdirSync(path.join(gate(round), 'node_modules'), { recursive: true }); fs.writeFileSync(path.join(gate(round), 'tools/scene.mjs'), `console.log(${JSON.stringify(lines.join('\n'))}); console.log('${passed}/${total} passed in 0.1s');\n`); };
+  const tfg = path.join(tmp, 'gate_task.md'); fs.writeFileSync(tfg, task() + '## Gates\nscene_check >= 20/21 (baseline 20/21, target 21/21)\n');
+  const mkg = (round) => { const r = spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tfg, '--round', round, '--worktree', path.join(wt, round), '--no-visual'], { encoding: 'utf8' }); if (r.status !== 0) throw new Error(r.stderr); return r.stdout; };
+  const brief = mkg('gh');
+  t('make_brief wrote GATES-VERSION and the GATE line into the brief the hook reads', /^GATES-VERSION: 2$/m.test(brief) && /^GATE: scene_check >= 20\/21/m.test(brief));
+  const tp = transcript('gh', brief); fs.mkdirSync(hd('gh'), { recursive: true }); fs.writeFileSync(path.join(hd('gh'), 'STATUS.md'), goodStatus);
+  fs.writeFileSync(path.join(hd('gh'), 'FAULTS.md'), '## Pass 1\nx\n## Pass 2\ny\n## Pass 3\nz\n## Residual\nnone, all fixed\n');
+  scene('gh', 17, 21);
+  let g = stop('gb1', tp);
+  t('hook: the brief\'s GATE line is passed to check_handin; 17/21 measured: stop BLOCKED with the measured number', J(g.out).decision === 'block' && /measured 17\/21/.test(J(g.out).reason), g.out + g.err);
+  scene('gh', 21, 21);
+  g = stop('gb1', tp);
+  t('hook: 21/21 measured: stop allowed, hand-in recorded', g.code === 0 && g.out === '' && lastLog().reason === 'hand-in check passed', g.out + g.err);
+  const tpOld = transcript('gh_old', mk('gh2', ['--no-visual'])); fs.mkdirSync(hd('gh2'), { recursive: true }); fs.writeFileSync(path.join(hd('gh2'), 'STATUS.md'), goodStatus);
+  scene('gh2', 3, 21);
+  g = stop('gb2', tpOld);
+  t('hook: a brief WITHOUT GATES-VERSION (agent started before gates v2) is not measured: 3/21 on disk does not block it', g.code === 0 && g.out === '' && lastLog().reason === 'hand-in check passed', g.out + g.err);
+  const bfFile = path.join(tmp, 'gh3_brief.txt'); fs.writeFileSync(bfFile, mkg('gh3'));
+  const tp3 = transcript('gh3', `Your brief is in the file.\nBRIEF-FILE: ${bfFile}`); fs.mkdirSync(hd('gh3'), { recursive: true }); fs.writeFileSync(path.join(hd('gh3'), 'STATUS.md'), goodStatus); fs.writeFileSync(path.join(hd('gh3'), 'FAULTS.md'), '## Pass 1\nx\n## Pass 2\ny\n## Pass 3\nz\n## Residual\nnone\n');
+  scene('gh3', 15, 21); g = stop('gb3', tp3);
+  t('hook: gates in a BRIEF-FILE are read as well', J(g.out).decision === 'block' && /measured 15\/21/.test(J(g.out).reason), g.out + g.err);
+}
+
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (!process.env.KEEP_HOOKTEST) fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(fail ? 1 : 0);
