@@ -13,6 +13,7 @@
 // headroom_m), not constants.
 //
 // The whole stroke is ONE undo step and mutates the graph only inside apply().
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -40,11 +41,19 @@ struct StrokeParams {
     // clicked points (layouts, whose golden results depend on that). The curve version pins the heading at each
     // crossing to the stroke's own heading there.
     bool follow_curve = false;
+    // Existing edges left out of the crossing tests (editing a road: its old geometry must not cross its new one).
+    std::vector<EdgeId> ignore_edges;
     double snap_tol = 1.0;    // m: a road end this close to a node / centreline attaches to it (layout kSnapTol)
     double node_tol = 0.75;   // m: an existing node this close to an interior stretch splits the road (kNodeTol)
     double sample_step = 0.5; // m: centreline sampling of existing edges for crossings (kSampleStep)
     double curve_step = 1.0;  // m: chord length of the stroke centreline when follow_curve
 };
+
+// fit_clothoid_chain with a sanity bound: a chain more than 20 times longer than the polyline through its points
+// is refused (nullopt). The solver returns such chains (up to 1e15 m, which hangs anything that samples them) for
+// a stroke that doubles back exactly onto an earlier point. Used by the road tool, the edit tool and the stroke.
+std::optional<ClothoidChain> fit_sane_chain(const std::vector<Vec2>& points, std::optional<double> heading_a = {},
+                                            std::optional<double> heading_b = {});
 
 enum class CrossingVerdict { Join, Refused, Clear };
 
@@ -56,11 +65,36 @@ struct StrokeCrossing {
     CrossingVerdict verdict = CrossingVerdict::Clear;
     EdgeId edge;
     double edge_s = 0;
+    double join_limit = 0;  // m: height difference below which the crossing joins (1e9 when joining is not configured)
+    double headroom = 0;    // m: height difference from which the crossing is clear
+};
+
+// "crossing too close vertically (3.0 m): raise/lower to junction or clear 5.3 m": the refusal text used by
+// check_stroke, DrawStroke and the road tool's preview, so a host shows the same words everywhere.
+std::string crossing_refusal_text(double dz, double headroom);
+
+// A snapshot of the centrelines of every edge, sampled for crossing tests. Building one costs one pass over the
+// graph; a pointer tool builds it once per graph change and then asks per mouse move (the overload without a
+// cache re-samples every edge on every call). Rebuild after the graph changes (it copies what it needs).
+class CrossingCache {
+public:
+    CrossingCache() = default;
+    explicit CrossingCache(const RoadGraph& g, double sample_step = 0.5);
+    bool empty() const { return !impl_; }
+    struct Impl;
+    const Impl* impl() const { return impl_.get(); }
+
+private:
+    std::shared_ptr<const Impl> impl_;
 };
 
 // Every plan crossing of the stroke with an existing edge (ends excluded: those attach), ordered along the
 // stroke, with the verdict the thresholds give. Read-only. Empty when the stroke cannot be fitted.
 std::vector<StrokeCrossing> stroke_crossings(const RoadGraph& g, const StrokeSpec& spec, const StrokeParams& params = {});
+// The same against a prebuilt cache (cheap: only edges whose bounding box meets the stroke are tested).
+// StrokeParams::sample_step is ignored (the cache's step applies).
+std::vector<StrokeCrossing> stroke_crossings(const RoadGraph& g, const CrossingCache& cache, const StrokeSpec& spec,
+                                             const StrokeParams& params = {});
 
 // Empty when the stroke may be drawn; else the reason (a refused crossing, "cannot fit curve"). Read-only.
 std::string check_stroke(const RoadGraph& g, const StrokeSpec& spec, const StrokeParams& params = {});
