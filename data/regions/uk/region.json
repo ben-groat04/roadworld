@@ -77,7 +77,7 @@
     "splitter_length_m": 14,
     "splitter_width_m": 3.0,
     "central_island_surface": "grass",
-    "splitter_surface": "asphalt",
+    "splitter_surface": "grass",
     "island_kerb_upstand_m": 0.125,
     "_size_classes": "estimate (UK roundabout practice, DMRB CD 116 style values recalled, not checked): by ring centreline radius. Entry fillets are tight (slow entries), exit fillets generous (easy exits); small rings get an over-run apron. splitter_length_m / splitter_width_m are the KERBED island: a short teardrop (roughly a triangle with a rounded nose) widest at the ring edge. Measured from the private reference photos (aerial 09 M181 and 41 Kolbaskowo, street 28, GSV Brynich and Thetford Rd): about 15-25 m long and 4-6 m wide at the base for a 2-lane approach, a length to width ratio of 3:1 to 5:1; any longer taper is painted ladder hatching, not kerb. Surface (reference photos: GSV Thetford Rd and Brynich show dark tarmac inside a pale kerb, street 28 a grassed 25 x 6 m island on a 20 mph street, aerial 09 grass on the large rural ring; Kolbaskowo, Poland, shows paving blocks, which is not the UK default): asphalt for the small and mid classes, grass for the largest class. The length is scaled by splitter_speed_factors (about 17 m at 30 mph, 26 m at 40-50 mph, 40 m at 60 mph on a ring of 25-50 m radius).",
     "size_classes": [
@@ -118,6 +118,12 @@
         { "length_m": 150 }
       ],
       "default_taper_length_m": 75,
+      "gore_length": [
+        { "max_speed_kph": 50, "length_m": 20 },
+        { "max_speed_kph": 80, "length_m": 35 },
+        { "max_speed_kph": 100, "length_m": 50 },
+        { "length_m": 70 }
+      ],
       "gore_length_m": 10
     },
     "skew_factor": { "min": 0.6, "max": 1.5 },

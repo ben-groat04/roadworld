@@ -2678,8 +2678,8 @@ MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& 
                     if (sx >= sp.nose_s) return 0.0;
                     const double s_c = sp.nose_s - sp.nose_r;
                     const double h = sx > s_c ? std::sqrt(std::max(0.0, sp.nose_r * sp.nose_r - (sx - s_c) * (sx - s_c)))
-                                              : sp.nose_r + (sp.base_half - sp.nose_r) * (s_c - sx) / std::max(s_c - sp.ring_s, 1e-6);
-                    return std::min(h, flare_spread(*arm, sx, true));
+                                              : sp.nose_r + (sp.base_half - sp.nose_r) * std::pow(std::max(0.0, (s_c - sx) / std::max(s_c - sp.ring_s, 1e-6)), 0.6);  // 0.6 = kIslandShape in junction_roundabout.cpp
+                    return std::min(h, std::max(0.05, flare_spread(*arm, sx, true) - 0.25 * (sp.base_half / 0.75)));
                 };
                 // Each bar runs from one boundary stroke's centre line to the other's, so its ends lie on the strokes.
                 const auto bar = [&](double s0b, double a0, double b0, double a1, double b1) {
@@ -2696,7 +2696,7 @@ MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& 
                     const double ll0 = line_lat(sx, true), ll1 = line_lat(s1, true), lr0 = line_lat(sx, false), lr1 = line_lat(s1, false);
                     if (sx > sp.nose_s) {
                         bar(sx, -lr0, ll0, -lr1, ll1);
-                    } else {
+                    } else if (s1 < sp.nose_s) {  // a bar straddling the nose has no island outline to end on: leave it out
                         const double ih0 = island_half(sx) + g + lw / 2, ih1 = island_half(s1) + g + lw / 2;
                         bar(sx, ih0, ll0, ih1, ll1);
                         bar(sx, -lr0, -ih0, -lr1, -ih1);

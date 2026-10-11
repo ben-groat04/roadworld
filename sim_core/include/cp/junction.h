@@ -314,6 +314,8 @@ struct PocketKey {
 struct JunctionOverrides {
     std::map<ConnectorKey, ConnectorOverride> connectors;
     std::map<CornerKey, double> corner_radius;  // m; 0 = sharp
+    // Merge / diverge nodes: gore (chevron area) length in metres for that node, replacing the region's speed table (negative = ignored).
+    std::map<NodeId, double> gore_length;
     std::map<LaneKey, bool> lane_connects;      // false: lane takes no part in connectors at this node
     // Turn pockets: true forces a pocket on that major arm (when the geometry allows one), false suppresses
     // the default one. Absent = the region rule decides. Edited through make_set_turn_pocket_override().

@@ -1476,3 +1476,234 @@ TEST_CASE("markings: marks of different edges never overlap in random junctions"
 TEST_CASE("markings: MarkingParams::for_mesh_tolerance carries the shared tolerance") {
     CHECK(MarkingParams::for_mesh_tolerance(0.25).chord_tolerance == 0.25);
 }
+
+// ================================================================ geometric junction tests (reference-photo round)
+
+namespace {
+
+double dist_to_ring(Vec2 p, std::span<const Vec3> poly) {
+    if (strictly_inside(p, poly)) return 0.0;
+    double d = 1e18;
+    for (std::size_t i = 0; i < poly.size(); ++i) {
+        const Vec2 a = poly[i].xy(), b = poly[(i + 1) % poly.size()].xy(), ab = b - a;
+        const double t = std::clamp((p - a).dot(ab) / std::max(ab.dot(ab), 1e-18), 0.0, 1.0);
+        d = std::min(d, (p - (a + ab * t)).length());
+    }
+    return d;
+}
+
+struct RingFixture {
+    Net n;
+    JunctionSet plain;
+    RoundaboutResult rr;
+    MarkingResult res;
+    RingFixture() {
+        for (double d : {0.0, 90.0, 180.0, 270.0}) REQUIRE(n.polar(d, 110, "b_road"));
+        REQUIRE(n.st.execute(make_place_roundabout({0, 0, 0}, 25, "roundabout_ring", *n.region)));
+        plain = build_plain_junctions(n.g, *n.region, {});
+        rr = apply_roundabouts(plain, n.g, *n.region, {});
+        MarkingParams p;  // use_roundabout_give_way left at its default: nothing is set by the caller
+        p.roundabouts = &rr;
+        res = generate_markings(n.g, *n.region, uk_rules(), plain, p);
+    }
+};
+
+bool in_ring2(const std::vector<Vec2>& ring, Vec2 p) {
+    int wn = 0;
+    for (std::size_t i = 0; i < ring.size(); ++i) {
+        const Vec2 a = ring[i], b = ring[(i + 1) % ring.size()];
+        if (a.y <= p.y) {
+            if (b.y > p.y && (b - a).cross(p - a) > 0) ++wn;
+        } else if (b.y <= p.y && (b - a).cross(p - a) < 0) --wn;
+    }
+    return wn != 0;
+}
+
+}  // namespace
+
+TEST_CASE("markings geometry: every hatching bar endpoint lies on a boundary line (2 cm)") {
+    RingFixture f;
+    REQUIRE(f.res.splitters.size() == 1);
+    const MarkingSet& s = f.res.splitters.begin()->second;
+    const auto bars = of(s, MarkingCategory::Hatching);
+    const auto lines = of(s, MarkingCategory::EdgeLine);
+    REQUIRE(bars.size() >= 20);
+    for (const Marking* b : bars)
+        for (const Vec3& q : s.points(*b)) {
+            double best = 1e18;
+            for (const Marking* l : lines) best = std::min(best, dist_to_ring(q.xy(), s.points(*l)));
+            CHECK_MESSAGE(best <= 0.02, "bar vertex ", best, " m from the nearest boundary line at ", q.x, ",", q.y);
+        }
+}
+
+TEST_CASE("markings geometry: the painted taper is short (tied to the island length and the speed)") {
+    RingFixture f;
+    const MarkingSet& s = f.res.splitters.begin()->second;
+    for (const SplitterIsland& sp : f.rr.layouts[0].splitters) {
+        const double island = sp.nose_s - sp.ring_s;
+        const Vec2 base = sp.polygon.front();
+        double far_bar = 0;
+        for (const Marking* b : of(s, MarkingCategory::Hatching)) {
+            const Vec2 c = centroid(s, *b);
+            double dmin = 1e18;
+            for (const SplitterIsland& o : f.rr.layouts[0].splitters) dmin = std::min(dmin, (o.polygon.front() - c).length());
+            if ((base - c).length() <= dmin + 1e-9) far_bar = std::max(far_bar, (base - c).length());
+        }
+        // island + at most 0.6 x island of taper (marking_rules.json taper_max_island_ratio), plus the projection slack
+        CHECK_MESSAGE(far_bar <= island * 1.6 + 1.5, "bars reach ", far_bar, " m from the island base, island is ", island, " m");
+    }
+}
+
+TEST_CASE("markings geometry: the major road centre line has no gap beyond its own gap across a side-road mouth") {
+    for (DrivingSide side : {DrivingSide::Left, DrivingSide::Right}) {
+        TJunction t(side, side == DrivingSide::Left ? 1.0 : -1.0);
+        const JunctionSet js = t.n.junctions();
+        const MarkingSet s = all_marks(t.n, js);
+        std::vector<std::pair<double, double>> spans;  // x extent of every centre-line mark on the major road
+        for (const Marking* m : of(s, MarkingCategory::CentreLine)) {
+            double x0 = 1e18, x1 = -1e18, ymax = 0;
+            for (const Vec3& q : s.points(*m)) x0 = std::min(x0, q.x), x1 = std::max(x1, q.x), ymax = std::max(ymax, std::fabs(q.y));
+            if (ymax < 1.0) spans.push_back({x0, x1});
+        }
+        REQUIRE(spans.size() > 10);
+        std::sort(spans.begin(), spans.end());
+        double worst = 0;
+        for (std::size_t i = 0; i + 1 < spans.size(); ++i)
+            if (spans[i].second > -60 && spans[i + 1].first < 60) worst = std::max(worst, spans[i + 1].first - spans[i].second);
+        CHECK_MESSAGE(worst <= 4.0 + 0.3 + 0.05, "largest centre-line gap near the junction: ", worst, " m");
+    }
+}
+
+TEST_CASE("markings geometry: parking bays and bay lines stop the configured clearance short of a junction") {
+    Net n;
+    REQUIRE(n.polar(0, 120, "residential"));
+    const EdgeId major_e = n.edges.back();
+    REQUIRE(n.polar(180, 120, "residential"));
+    REQUIRE(n.polar(-90, 100, "residential"));
+    const JunctionSet js = n.junctions();
+    const Junction* j = js.find(n.centre);
+    REQUIRE(j);
+    const MarkingSet s = all_marks(n, js);
+    const auto bays = of(s, MarkingCategory::ParkingBay);
+    REQUIRE_MESSAGE(!bays.empty(), "the residential type should have parking bays");
+    const int ai = arm_of_edge(*j, major_e);
+    const ArmFrame fr = frame_of(*j, ai);
+    const double trim = j->trims[static_cast<std::size_t>(ai)];
+    const double keep = 10.0;  // marking_rules.json uk: bays[0].keepout_m and the bay_line rule's keepout_m
+    for (const Marking* m : bays)
+        if (m->edge == major_e)
+            for (const Vec3& q : s.points(*m)) CHECK_MESSAGE(fr.rel(q).x >= trim + keep - 0.1, "bay mark ", fr.rel(q).x - trim, " m from the mouth");
+}
+
+TEST_CASE("markings geometry: the entry give-way line sits on the ring's outer edge, with no caller flag") {
+    RingFixture f;
+    const MarkingSet all = f.res.merged();
+    const auto entries = of(all, MarkingCategory::RoundaboutEntry);
+    REQUIRE(entries.size() >= 4);
+    const RoundaboutLayout& lay = f.rr.layouts[0];
+    double ring_out_r = 1e18;  // the paint polygon's ring end lies on the ring's outer circle
+    for (const SplitterIsland& sp : lay.splitters)
+        for (const Vec2& q : sp.paint) ring_out_r = std::min(ring_out_r, (q - lay.group.centre).length());
+    for (const Marking* m : entries) {
+        const double r = (centroid(all, *m) - lay.group.centre).length();
+        CHECK_MESSAGE((r >= ring_out_r - 0.3 && r <= ring_out_r + 1.3), "entry dash at r=", r, ", ring outer r=", ring_out_r);
+    }
+}
+
+TEST_CASE("markings geometry: no paving in a slip gore, on either driving side") {
+    for (DrivingSide side : {DrivingSide::Left, DrivingSide::Right})
+        for (bool diverge : {true, false}) {
+            SlipNode t(side, diverge);
+            const JunctionSet js = t.n.junctions();
+            const Junction* j = js.find(t.n.centre);
+            REQUIRE(j);
+            REQUIRE(j->gore.size() == 1);
+            const std::vector<Vec2>& g = j->gore[0];
+            double x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18;
+            for (const Vec2& q : g) x0 = std::min(x0, q.x), x1 = std::max(x1, q.x), y0 = std::min(y0, q.y), y1 = std::max(y1, q.y);
+            int sampled = 0;
+            for (int i = 0; i <= 60; ++i)
+                for (int k = 0; k <= 60; ++k) {
+                    const Vec2 p{x0 + (x1 - x0) * i / 60.0, y0 + (y1 - y0) * k / 60.0};
+                    if (!in_ring2(g, p)) continue;
+                    ++sampled;
+                    for (const auto& pav : j->pavements) CHECK_MESSAGE(!in_ring2(pav, p), "paving inside the gore at ", p.x, ",", p.y);
+                }
+            CHECK(sampled > 100);
+            CHECK(std::max(x1 - x0, y1 - y0) >= 15.0);  // speed-derived chevron area, not the old 10 m stub
+        }
+}
+
+// The shape of every splitter, on every arm of the interchange fixture's roundabouts (one arm is the elevated bridge approach):
+// a teardrop island widest at the ring and narrowing away from it, paint outline converging to the centre line, bars filling
+// the flanks between island and boundary line, an entry line across the inbound lane at the ring edge, on the junction surface.
+TEST_CASE("markings geometry: every splitter arm of the interchange has island, converging paint, bars and an entry line") {
+    std::string err;
+    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE_MESSAGE(sc, err);
+    RoundaboutResult rr;
+    const JunctionSet js = tools::scene_junctions(*sc, &rr);
+    MarkingParams p;
+    p.roundabouts = &rr;
+    const MarkingResult res = generate_markings(sc->graph, *sc->region, uk_rules(), js, p);
+    const MarkingSet all = res.merged();
+    int islands = 0, elevated = 0;
+    for (const RoundaboutLayout& lay : rr.layouts) {
+        REQUIRE(lay.ok);
+        const MarkingSet& s = res.splitters.at(lay.group.nodes.front());
+        for (const SplitterIsland& sp : lay.splitters) {
+            if (sp.paint.empty()) continue;  // dual-carriageway median, no paint
+            ++islands;
+            const RoundaboutArm& ra = lay.group.arms[static_cast<std::size_t>(sp.arm)];
+            const Junction& jn = lay.ring_junctions.at(lay.group.nodes[static_cast<std::size_t>(ra.ring_index)]);
+            const JunctionArm* arm = nullptr;
+            for (const JunctionArm& a : jn.arms)
+                if (a.edge == ra.edge) arm = &a;
+            REQUIRE(arm);
+            if (arm_point(*arm, 20.0, 0).pos.z > 1.0) ++elevated;
+            // (s, lateral) of a plan point in the arm's frame
+            auto frame = [&](Vec2 q) {
+                double best = 1e18, bs = 0;
+                for (double s = 0; s <= std::min(arm->edge_length, 80.0); s += 0.25) {
+                    const double d = (arm_point(*arm, s, 0).pos.xy() - q).length();
+                    if (d < best) best = d, bs = s;
+                }
+                const ArmPoint ap = arm_point(*arm, bs, 0);
+                return std::pair<double, double>{bs, (q - ap.pos.xy()).dot(Vec2{-std::sin(ap.heading_out), std::cos(ap.heading_out)})};
+            };
+            // Island: half width (max |lateral| of the polygon at each s) never grows with distance from the ring.
+            std::map<int, double> half;  // s in 1 m bins
+            for (const Vec2& q : sp.polygon) {
+                const auto [s, lat] = frame(q);
+                double& h = half[static_cast<int>(std::floor(s))];
+                h = std::max(h, std::fabs(lat));
+            }
+            REQUIRE(half.size() >= 5);
+            double prev = 1e18;
+            for (const auto& [bin, h] : half) {
+                CHECK_MESSAGE(h <= prev + 0.05, "island widens away from the ring at s=", bin, " (", h, " > ", prev, ") on edge ", arm->edge.value);
+                prev = h;
+            }
+            CHECK(half.begin()->second > 1.0);                     // wide at the ring ...
+            CHECK(std::prev(half.end())->second < 1.0);            // ... a small nose at the far end
+            // Paint outline: widest at the island, converging below 0.3 m half width at the end of the taper.
+            double w_nose = 0, w_end = 1e18, s_far = 0;
+            for (const Vec2& q : sp.paint) s_far = std::max(s_far, frame(q).first);
+            for (const Vec2& q : sp.paint) {
+                const auto [s, lat] = frame(q);
+                if (std::fabs(s - sp.nose_s) < 1.5) w_nose = std::max(w_nose, std::fabs(lat));
+                if (s > s_far - 1.0) w_end = std::min(w_end, std::fabs(lat));
+            }
+            CHECK(w_nose > 1.0);
+            CHECK_MESSAGE(w_end < 0.3, "paint outline still ", w_end, " m wide at its end");
+        }
+    }
+    CHECK(islands >= 2);
+    CHECK_MESSAGE(elevated >= 1, "the fixture is expected to include an elevated (bridge approach) splitter arm");
+    int entries = 0;
+    for (const Marking* m : of(all, MarkingCategory::RoundaboutEntry)) {
+        ++entries;
+        CHECK(m->count >= 3);
+    }
+    CHECK(entries >= 4);
+}

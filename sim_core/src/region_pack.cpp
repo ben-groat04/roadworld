@@ -385,6 +385,7 @@ void parse_junction_rules(const json& jr, JunctionRules& r, Err& err) {
         const std::string mc = c + ".merge";
         MergeRules& m = r.merge;
         m.taper_length = parse_speed_table(member(*mg, "taper_length"), "length_m", mc + ".taper_length", err);
+        m.gore_length_table = parse_speed_table(member(*mg, "gore_length"), "length_m", mc + ".gore_length", err);
         m.default_taper_length = opt_number(*mg, "default_taper_length_m", m.default_taper_length, mc, err);
         m.gore_length = opt_number(*mg, "gore_length_m", m.gore_length, mc, err);
         if (!err.failed() && (!(m.default_taper_length > 0) || !(m.gore_length >= 0))) err.set(mc + ": a value is out of range");
@@ -597,6 +598,12 @@ double TurnPocketRules::lookup(const std::vector<SpeedFactor>& table, double spe
     for (const SpeedFactor& f : table)
         if (speed_limit <= f.max_speed + 1e-9) return f.factor;
     return table.empty() ? fallback : table.back().factor;
+}
+
+double MergeRules::gore_length_for(double design_speed) const {
+    for (const SpeedFactor& f : gore_length_table)
+        if (design_speed <= f.max_speed + 1e-9) return f.factor;
+    return gore_length_table.empty() ? gore_length : gore_length_table.back().factor;
 }
 
 double MergeRules::taper_length_for(double design_speed) const {

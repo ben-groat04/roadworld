@@ -182,6 +182,10 @@ struct MergeRules {
     double default_taper_length = 75.0;  // m ("default_taper_length_m"), used only when the table is empty
     double gore_length = 10.0;           // m of gore triangle beyond the nose point ("gore_length_m")
     double taper_length_for(double design_speed) const;  // design_speed in m/s
+    // Gore (nose triangle, chevron area) length by main carriageway design speed ("gore_length" table, same shape as taper_length);
+    // empty table = gore_length. Photos (street 33, GSV M11): the hatched wedge is 8-10 lane widths and longer at speed.
+    std::vector<SpeedFactor> gore_length_table;
+    double gore_length_for(double design_speed) const;  // design_speed in m/s
 };
 
 // Junction shaping rules (region.json "junction" object).

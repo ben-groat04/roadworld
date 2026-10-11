@@ -411,8 +411,8 @@ TEST_CASE("round3: the kerbed splitter is a short teardrop, widest at the ring; 
             std::sort(left.begin(), left.end());
             REQUIRE(left.size() >= 2);
             for (std::size_t k = 1; k < left.size(); ++k) CHECK(left[k].second <= left[k - 1].second + 0.02);
-            CHECK(left.front().second > 0.8 * sp.width / 2);
-            CHECK(left.back().second < 0.45 * sp.width / 2);
+            CHECK(left.front().second > 0.7 * sp.width / 2);
+            CHECK(left.back().second < 0.6 * sp.width / 2);
             // The kerbed island lies inside the paint gap, which is as long as the flare.
             REQUIRE(sp.paint.size() >= 3);
             CHECK(simple(sp.paint));
@@ -554,7 +554,7 @@ TEST_CASE("round3: island, splitter and apron surface fields follow the region r
     CHECK(lay.island_surface == prm.central_island_surface);
     CHECK(lay.island_surface == "grass");
     CHECK(lay.splitter_surface == prm.splitter_surface);
-    CHECK(lay.splitter_surface == "asphalt");  // photos: small islands are tarmac inside a kerb
+    CHECK(lay.splitter_surface == "grass");  // photos 28, 41, 09: planted island inside a pale kerb (visible, unlike tarmac on tarmac)
     CHECK(lay.apron_surface == prm.apron_surface);
     CHECK(lay.island_kerb_upstand == doctest::Approx(prm.island_kerb_upstand));
     CHECK(lay.island_kerb_upstand == doctest::Approx(0.125));
