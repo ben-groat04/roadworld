@@ -2,6 +2,7 @@
 
 #include "CPCameraPawn.h"
 #include "CPInputConfig.h"
+#include "Playtest/CPPlaytestDriver.h"
 #include "CityPainterLog.h"
 
 #include "Blueprint/UserWidget.h"
@@ -51,6 +52,7 @@ void ACPPlayerController::BeginPlay()
 	{
 		Hud->AddToViewport();
 	}
+	UCPPlaytestDriver::MaybeStart(this);
 }
 
 void ACPPlayerController::SetupInputComponent()

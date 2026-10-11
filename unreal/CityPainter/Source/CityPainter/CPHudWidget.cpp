@@ -19,6 +19,8 @@ void UCPHudWidget::NativeOnInitialized()
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("Panel"));
 	Panel->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.025f, 0.78f));
 	Panel->SetPadding(FMargin(12.f, 8.f));
+	// A read-only readout: the panel must never swallow mouse clicks (a drag that starts over it still orbits).
+	Panel->SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("Readout"));
 	Text->SetColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.92f, 0.9f, 1.f)));
@@ -42,7 +44,7 @@ void UCPHudWidget::SetData(const FCPHudData& D)
 	if (D.bCursorOnGround)
 	{
 		const double Deg = FMath::RadiansToDegrees(FMath::Atan(D.SlopeRiseRun));
-		Line1 = FString::Printf(TEXT("x %.1f m   y %.1f m   height %.1f m   slope %.1f %% (%.1f deg)"), D.SimX, D.SimY, D.HeightM, D.SlopeRiseRun * 100.0, Deg);
+		Line1 = FString::Printf(TEXT("x %.2f m   y %.2f m   height %.2f m   slope %.1f %% (%.1f deg)"), D.SimX, D.SimY, D.HeightM, D.SlopeRiseRun * 100.0, Deg);
 	}
 	else
 	{

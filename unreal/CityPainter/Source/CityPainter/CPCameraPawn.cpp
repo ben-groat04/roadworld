@@ -17,6 +17,7 @@ constexpr double KeyRotateRate = 1.3;       // radians per second
 constexpr double FastFactor = 3.0;
 constexpr double CameraAboveGroundM = 3.0;  // the camera never sinks below ground + 3 m
 constexpr double TwoPi = 6.283185307179586;
+constexpr float VerticalFovDeg = 50.f;
 }  // namespace
 
 ACPCameraPawn::ACPCameraPawn()
@@ -27,7 +28,13 @@ ACPCameraPawn::ACPCameraPawn()
 	SetRootComponent(Root);
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
 	Camera->SetupAttachment(Root);
-	Camera->SetFieldOfView(60.f);
+	// The prototype camera has a 50 degree VERTICAL field of view (scene.js); the pan speed formula and the pick maths rely on it.
+	// Verified in CameraStackTypes.cpp: with AspectRatio_MaintainYFOV the FieldOfView property is still the HORIZONTAL angle at the
+	// camera's AspectRatio, converted to the vertical angle that is then kept at any viewport shape. So set the horizontal angle
+	// that corresponds to a 50 degree vertical one at that aspect ratio.
+	Camera->bOverrideAspectRatioAxisConstraint = true;
+	Camera->SetAspectRatioAxisConstraint(AspectRatio_MaintainYFOV);
+	Camera->SetFieldOfView(static_cast<float>(FMath::RadiansToDegrees(2.0 * FMath::Atan(FMath::Tan(FMath::DegreesToRadians(static_cast<double>(VerticalFovDeg)) * 0.5) * Camera->AspectRatio))));
 }
 
 UCPWorldSubsystem* ACPCameraPawn::WorldSub() const
@@ -68,7 +75,7 @@ void ACPCameraPawn::AddPanDrag(double DxPixels, double DyPixels, double Viewport
 	}
 	// OrbitControls (screenSpacePanning = false): one pixel = 2 * tan(fov/2) * distance / viewportHeight metres, along the
 	// ground. Dragging right moves the world right (target left); dragging down moves the target forward.
-	const double MetresPerPixel = 2.0 * FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView) * 0.5) * Distance / ViewportHeight;
+	const double MetresPerPixel = 2.0 * FMath::Tan(FMath::DegreesToRadians(static_cast<double>(VerticalFovDeg)) * 0.5) * Distance / ViewportHeight;
 	const double Fn = FMath::Cos(Azimuth), Fe = -FMath::Sin(Azimuth);   // forward on the ground (north, east)
 	const double Rn = FMath::Sin(Azimuth), Re = FMath::Cos(Azimuth);    // right on the ground (north, east)
 	const double Right = -DxPixels * MetresPerPixel, Fwd = DyPixels * MetresPerPixel;
@@ -101,7 +108,8 @@ void ACPCameraPawn::Tick(float DeltaSeconds)
 	}
 	if (KeyRotate != 0.0)
 	{
-		Azimuth += KeyRotate * KeyRotateRate * DeltaSeconds;
+		// Prototype: E (+1) turns the camera offset clockwise seen from above, which decreases the azimuth (theta).
+		Azimuth -= KeyRotate * KeyRotateRate * DeltaSeconds;
 	}
 	Azimuth = FMath::Fmod(Azimuth, TwoPi);
 	ApplyRig();

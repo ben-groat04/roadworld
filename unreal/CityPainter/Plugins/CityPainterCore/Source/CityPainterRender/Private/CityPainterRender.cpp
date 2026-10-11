@@ -1,6 +1,7 @@
 #include "CityPainterRender.h"
 
 #include "CPGroundLayer.h"
+#include "CPGroundSkirtLayer.h"
 #include "ICPRenderLayer.h"
 
 DEFINE_LOG_CATEGORY(LogCPRender);
@@ -38,9 +39,11 @@ void FCityPainterRenderModule::StartupModule()
 {
 	// One line per layer. Later: roads, markings, structures, instanced kit, vegetation.
 	FCPRenderLayerRegistry::Get().Register(FCPGroundLayer::Name(), [] { return MakeUnique<FCPGroundLayer>(); });
+	FCPRenderLayerRegistry::Get().Register(FCPGroundSkirtLayer::Name(), [] { return MakeUnique<FCPGroundSkirtLayer>(); });
 }
 
 void FCityPainterRenderModule::ShutdownModule()
 {
 	FCPRenderLayerRegistry::Get().Unregister(FCPGroundLayer::Name());
+	FCPRenderLayerRegistry::Get().Unregister(FCPGroundSkirtLayer::Name());
 }

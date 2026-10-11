@@ -17,11 +17,15 @@ class CITYPAINTERRENDER_API UCPRenderSettings : public UDeveloperSettings
 public:
 	UCPRenderSettings();
 
-	/** Material of the terrain (created by unreal/tools/py/mat_defs.py). */
+	/** Material of the terrain (created by unreal/tools/py/mat_defs.py). MI_Ground_Floor has VertexDirtWeight 0: the terrain mesh carries no vertex colours (they would read as white = all soil). */
 	UPROPERTY(Config, EditAnywhere, Category = "Ground")
-	TSoftObjectPtr<UMaterialInterface> GroundMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/CityPainter/Materials/MI_Ground.MI_Ground")));
+	TSoftObjectPtr<UMaterialInterface> GroundMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/CityPainter/Materials/MI_Ground_Floor.MI_Ground_Floor")));
 
 	/** Heightfield cells per terrain mesh tile side (cell size comes from the world settings: 64 x 4 m = 256 m tiles). */
 	UPROPERTY(Config, EditAnywhere, Category = "Ground", meta = (ClampMin = "8", ClampMax = "255"))
 	int32 TerrainTileCells = 64;
+
+	/** The ground continues this far (metres) beyond the edge of the world at the edge height, so the world does not end in a void. 0 = off. */
+	UPROPERTY(Config, EditAnywhere, Category = "Ground", meta = (ClampMin = "0"))
+	double SkirtDistanceM = 20000.0;
 };

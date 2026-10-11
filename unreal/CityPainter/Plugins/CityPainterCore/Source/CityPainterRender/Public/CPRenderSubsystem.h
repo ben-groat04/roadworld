@@ -34,6 +34,8 @@ public:
 
 private:
 	void BuildLayers();
+	/** Logs actor and mesh-component counts of this world (for leak checks across play-in-editor sessions). */
+	void LogCounts(const TCHAR* When) const;
 
 	TArray<TUniquePtr<ICPRenderLayer>> Layers;
 	TWeakObjectPtr<AActor> Root;

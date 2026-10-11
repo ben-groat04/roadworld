@@ -1,0 +1,16 @@
+{
+ "editor_roots_before": 1,
+ "pie_running_0": true,
+ "pie_running_after_stop_0": false,
+ "editor_roots_after_0": 1,
+ "pie_running_1": true,
+ "pie_running_after_stop_1": false,
+ "editor_roots_after_1": 1,
+ "log_counts": [
+  "[2026.10.11-13.35.43:672][  0]LogCPRender: World counts (after build, world type 2): 14 actors, 1 render roots, 65 procedural mesh components",
+  "[2026.10.11-13.36.22:185][200]LogCPRender: World counts (after build, world type 3): 24 actors, 1 render roots, 65 procedural mesh components",
+  "[2026.10.11-13.36.30:408][596]LogCPRender: World counts (before teardown, world type 3): 20 actors, 1 render roots, 65 procedural mesh components",
+  "[2026.10.11-13.36.35:207][808]LogCPRender: World counts (after build, world type 3): 24 actors, 1 render roots, 65 procedural mesh components",
+  "[2026.10.11-13.36.43:660][148]LogCPRender: World counts (before teardown, world type 3): 20 actors, 1 render roots, 65 procedural mesh components"
+ ]
+}

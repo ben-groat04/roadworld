@@ -6,6 +6,8 @@
 
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
+#include "Components/PrimitiveComponent.h"
+#include "EngineUtils.h"
 #include "GameFramework/Actor.h"
 
 UCPRenderSubsystem::UCPRenderSubsystem() = default;
@@ -40,6 +42,7 @@ void UCPRenderSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UCPRenderSubsystem::Deinitialize()
 {
+	LogCounts(TEXT("before teardown"));
 	for (TUniquePtr<ICPRenderLayer>& Layer : Layers)
 	{
 		Layer->Teardown();
@@ -106,4 +109,27 @@ void UCPRenderSubsystem::BuildLayers()
 		UE_LOG(LogCPRender, Log, TEXT("Building layer '%s'"), *Layer->LayerName().ToString());
 		Layer->Build(Context);
 	}
+	LogCounts(TEXT("after build"));
+}
+
+void UCPRenderSubsystem::LogCounts(const TCHAR* When) const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	int32 Actors = 0, Roots = 0, MeshComponents = 0;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		++Actors;
+		Roots += It->GetName().StartsWith(TEXT("CP_RenderRoot")) ? 1 : 0;
+		TInlineComponentArray<UPrimitiveComponent*> Comps;
+		It->GetComponents(Comps);
+		for (const UPrimitiveComponent* C : Comps)
+		{
+			MeshComponents += C->GetClass()->GetName().Contains(TEXT("ProceduralMesh")) ? 1 : 0;
+		}
+	}
+	UE_LOG(LogCPRender, Log, TEXT("World counts (%s, world type %d): %d actors, %d render roots, %d procedural mesh components"), When, static_cast<int32>(World->WorldType), Actors, Roots, MeshComponents);
 }

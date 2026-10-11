@@ -36,6 +36,9 @@ public:
 
 	FVector GetTargetCm() const { return Target; }
 	double GetDistanceM() const { return Distance; }
+	double GetAzimuth() const { return Azimuth; }
+	double GetPolar() const { return Polar; }
+	const UCameraComponent* GetCameraComponent() const { return Camera; }
 
 private:
 	void ApplyRig();

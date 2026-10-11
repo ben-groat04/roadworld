@@ -8,7 +8,7 @@ public class CityPainter : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		CppStandard = CppStandardVersion.Cpp20;
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG", "Slate", "SlateCore", "CityPainterSim", "CityPainterWorld" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG", "Slate", "SlateCore", "CityPainterSim", "CityPainterWorld", "ApplicationCore", "Json" });
 		// Loaded (not linked against) so the Render subsystem exists in every City Painter world.
 		PrivateDependencyModuleNames.AddRange(new string[] { "CityPainterRender" });
 	}
