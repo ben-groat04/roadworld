@@ -16,3 +16,6 @@ Fix compile errors (first UBT run predates the CPSimApi.h/UHT include fixes), ru
 - Plugin and game module BUILD (Build-Editor.ps1 succeeded).
 - L_Sandbox created by setup_sandbox_level.py (6 environment actors, game mode CPGameMode on the map).
 - Automation test CityPainter.World.Terrain passes (64 tiles, 524288 triangles, all CCW from above, borders coincide, picks agree).
+
+## Update: M1 complete
+Captures, INDEX.md, headless -game pick log and automation test done. Open: ground material grey, void beyond world edge, PIE mouse interactions not tested by a human.
