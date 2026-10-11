@@ -7,7 +7,7 @@ Updated by the main session every time an agent is started, an agent reports, or
 |---|---|---|---|
 | Earthworks round 9: disturbance view and cross-sections first, then a hard bound on changed ground on every scene, plus round 8 leftovers | `agent/grade-r9`, `..\roadworld-wt-grade-r9` | `agent/grading-r6` 2aff581 + main | `tools/check_handin.mjs` passes on `docs/progress/2026-10-11-structures-r9`; main session opens the disturbance views and sections |
 | Integration: merge, in order, world cover r4 (`agent/world-cover-r2` 0da3c74), junction markings (`agent/junction-markings` d611346), earthworks r7+r8 (`agent/grading-r6` 2aff581), road tool gaps (`agent/road-tool-2` d7dfc99), then main | `integ/2026-10-11`, `..\roadworld-wt-integ` | main | clean builds, full suite on gcc and MSVC after each merge; then fast-forward main |
-| Unreal milestone 2 code (click-click road drawing, undo), compile only | `agent/unreal-m2`, `..\roadworld-wt-m2` | main 269fa1e | compiles; then merge and playtest (below) |
+| Unreal milestone 2: merge main into it, build, automation tests, M1 playtest still 37/37, M2 scenarios, pictures of every drawing state beside the 26 prototype screenshots, fix what belongs to M2 (previous agent built it but never ran it; tip 905df6b) | `agent/unreal-m2`, `../roadworld-wt-m2` (holds the Unreal lane) | 905df6b + main | hand-in in `docs/progress/2026-10-11-unreal-m2-run`; main session opens the composites; then fast-forward main |
 | Hooks: build and test `brief_gate` (refuse a brief without the contract), `handin_gate` (refuse an agent finishing while the hand-in check fails, 3 tries), contract injection at agent start; table of what they close and what they cannot (owner approved 11 Oct) | `agent/rules-fix`, `../roadworld-wt-rules` | main db2d757 | hand-in passes the check; main session reads the diff, merges, runs the live test in this session |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
@@ -15,7 +15,7 @@ Updated by the main session every time an agent is started, an agent reports, or
 Priority rule (owner, Round 50): the photorealism comes from the road builder placed in the Unreal sandbox. Order = what gets a drawn road, with everything it generates, on screen in the game soonest; then what makes that road look right; everything else is support. A new idea goes where it belongs in this order, not at the top because it was said last.
 
 ### Critical path
-1. **Merge Unreal milestone 2 into main, rebuild, playtest it** with `unreal\tools\Run-Playtest.ps1` extended for drawing. Blocked by: M2 agent still compiling. Unreal lane.
+1. **Fast-forward main to the played-and-fixed milestone 2** once its hand-in passes and the main session has opened the composites. Blocked by: the M2 run (Running).
 2. **Grading and structures as WorldCache layers with a dirty path** (so a drawn road gets earthworks in the sandbox). Blocked by: earthworks round 9 and integration.
 3. **Roundabout round** (fresh agent, new contract): arm shape and markings together to a close photo; island widens to the ring, hatching only in the nose taper, give-way line across the whole entry, islands on all arms, ring markings, no stray give-way on the west arm, explain the staircase structure at the south arm end. Blocked by: integration (needs merged junction code).
 4. **T-junction round**, then **slip road round**, same way (give-way line full lane at the main road edge, side-road centre line meets it; chevrons cut cleanly between two solid lines, no holes at the nose, slip edge and lane lines, dashed line across the slip mouth; parking-strip taper). Blocked by: roundabout round (same files).
@@ -62,7 +62,6 @@ Priority rule (owner, Round 50): the photorealism comes from the road builder pl
 - Pier clearance 0.3 -> 0.2 m as region data (the interchange-bridge pier test stays should_fail until then).
 - Carried over from the handoff, not started: street-light incremental limit for close unconnected roads; world-cache road-mesh rebuild cost and re-measuring the 190 ms WorldCache update (milestone 4); `RoadGraph` mutators still public; big files not split (`markings.cpp`, `structure_mesh.cpp`, `render_mesh.cpp`); about 40 structure dimensions not yet in region data (`docs/repo-health-review.md`).
 - Reference photos still missing: a close retaining-wall end in a soil cutting on a highway, a machined benched rock cut, UK kerbside parking near a junction, T-junction ghost island, slip gore close-ups. Toe ditch on soil cuts has no photo support.
-- `agent/unreal-m2` shows no commits after several hours (tip still 269fa1e): check its working tree and STATUS when it reports; it may hold everything uncommitted.
 - Markings drawn in the road material from lane UVs: spike (idea from the Road Creator Pro research).
 
 ## Waiting on the owner (not blocking)
