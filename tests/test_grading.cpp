@@ -1336,3 +1336,58 @@ TEST_CASE("grading invariants: no crease (slope change between adjacent free tex
         CHECK_MESSAGE(vs <= 0.3, std::string(name) << " " << vs << " at " << ws);
     }
 }
+
+// ---- grading round 8 ----
+
+TEST_CASE("grading: a free road end beside another road's earthworks ends in a run-out, not a pit or a cliff") {
+    auto c = make_case("adjacent_levels");  // both roads end at x = 0 and x = 200 side by side, 8 m apart in height
+    const Graded g = grade_region(*c);
+    double worst = 0;
+    int n = 0;
+    for (const double x0 : {-14.0, 200.0})
+        for (double x = x0; x < x0 + 14; x += 0.5)
+            for (double y = -4; y <= 4; y += 0.5)
+                for (const auto& d : {std::pair<double, double>{0.5, 0}, std::pair<double, double>{0, 0.5}}) {
+                    const double sx = x + d.first, sy = y + d.second;
+                    if ((x >= -0.01 && x <= 200.01) && (sx >= -0.01 && sx <= 200.01)) continue;  // on the road itself
+                    ++n;
+                    worst = std::max(worst, std::abs(g.at(sx, sy) - g.at(x, y)));
+                }
+    CHECK(n > 500);
+    CHECK_MESSAGE(worst <= 0.8, "steepest step beyond the lower road's two ends: " << worst << " m per 0.5 m texel (was a 2.9 m cliff before round 8)");
+}
+
+TEST_CASE("grading invariants: a slope never chases a hillside (disturbed width beside walls is bounded)") {
+    for (const char* name : kCases) {
+        auto c = make_case(name);
+        if (c->roads.size() != 1) continue;  // other roads' earthworks also disturb the scan line
+        const Graded g = grade_region(*c);
+        double worst = 0, sum = 0;
+        int count = 0;
+        std::string where;
+        for (const SampledRoad& r : c->roads) {
+            const double hw = r.half_width;
+            for (std::size_t si = 4; si + 4 < r.samples.size(); ++si) {
+                const RoadSample& s = r.samples[si];
+                if (s.br || s.tu) continue;
+                for (const int sg : {1, -1}) {
+                    const WallPlan& pl = sg == 1 ? s.pL : s.pR;
+                    if (!((sg == 1 ? s.wL : s.wR) && pl.present && !pl.full && !pl.wing && !pl.t.plat && !pl.stairs)) continue;  // one wall (+ slope) sides: the old chase
+                    double far = 0;
+                    for (double d = hw + 0.5; d <= hw + 60; d += 0.5) {
+                        const double x = s.x - std::sin(s.h) * sg * d, y = s.y + std::cos(s.h) * sg * d;
+                        if (x < g.t.x0 + 1 || y < g.t.y0 + 1 || x > g.t.x0 + (g.t.nx - 2) * g.t.res || y > g.t.y0 + (g.t.ny - 2) * g.t.res) break;  // outside the graded tile
+                        if (std::abs(g.at(x, y) - c->ground(x, y)) > 0.3) far = d - hw;
+                    }
+                    // wall band + the slope beyond it (at most slope_max_run) + verge, rounding and the smoothing spread
+                    const double bound = c->params.verge + pl.t.n * (c->params.wall_thickness + c->params.bench_min_width) + c->params.slope_max_run + 8.0;
+                    if (far > worst) { worst = far; where = std::string(name) + " station " + std::to_string(si); }
+                    sum += far;
+                    ++count;
+                    CHECK_MESSAGE(far <= bound, std::string(name) << " station " << si << " side " << sg << ": disturbed " << far << " m beyond the formation edge, bound " << bound);
+                }
+            }
+        }
+        if (count) MESSAGE(std::string(name) << ": walled single-tier sides " << count << ", disturbed width beyond the formation edge: max " << worst << " m, mean " << sum / count << " m");
+    }
+}

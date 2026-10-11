@@ -164,11 +164,11 @@ function disturbed(c) {
   const nat = (x, y) => ctx.__terrain(x, y), at = (x, y) => { const i = Math.round((x - X0) / res), j = Math.round((y - Y0) / res); return i < 0 || j < 0 || i >= nx || j >= ny ? nat(x, y) : o[j * nx + i]; };
   const rows = [];
   rsJs.forEach((r, ri) => { const hw = rd[ri].hw, S = r.samples; const len = S[S.length - 1].s - S[0].s;
-    for (const sg of [1, -1]) { let mx = 0, sum = 0, n = 0, bridge = 0;
+    for (const sg of [1, -1]) { let mx = 0, mxAt = '', sum = 0, n = 0, bridge = 0;
       for (let i = 4; i < S.length - 4; i += 1) { const s = S[i]; if (s.br || s.tu) { bridge++; continue; } let far = 0;
         for (let d = hw + 0.5; d <= hw + 60; d += 0.5) { const x = s.x - Math.sin(s.h) * sg * d, y = s.y + Math.cos(s.h) * sg * d; if (Math.abs(at(x, y) - nat(x, y)) > 0.3) far = d - hw; }
-        mx = Math.max(mx, far); sum += far; n++; }
-      rows.push(`${c.name} road${ri} ${sg > 0 ? 'L' : 'R'}: disturbed width beyond the formation edge max ${mx.toFixed(1)} m, mean ${(n ? sum / n : 0).toFixed(1)} m (${n} stations, ${bridge} on structures; road length ${len.toFixed(0)} m)`); } });
+        if (far > mx) mxAt = s.x.toFixed(0); mx = Math.max(mx, far); sum += far; n++; }
+      rows.push(`${c.name} road${ri} ${sg > 0 ? 'L' : 'R'}: disturbed width beyond the formation edge max ${mx.toFixed(1)} m (at x ${mxAt}), mean ${(n ? sum / n : 0).toFixed(1)} m (${n} stations, ${bridge} on structures; road length ${len.toFixed(0)} m)`); } });
   return rows;
 }
 // ---- --faces [case ...]: steep faces in free ground (slope above FACE_MAX_SLOPE between adjacent texels, neither texel footprint / wall solid / rock face) ----
@@ -187,8 +187,10 @@ function faces(c, maxSlope, dump) {
     for (const k2 of [k + 1, k + nx]) { const s = Math.abs(o[k] - o[k2]) / res; if (s > maxSlope && !((fx[k] | fx[k2]) & 3)) { n++; if (bad.length < 8) bad.push(`(${(X0 + i * res).toFixed(1)}, ${(Y0 + j * res).toFixed(1)}) dz ${(s * res).toFixed(2)}`); } } }
   return `${c.name}: ${n} free-ground texel pairs steeper than ${maxSlope} (rise per metre)${bad.length ? ': ' + bad.join('; ') : ''}`;
 }
-if (process.argv.includes('--faces')) { const want = process.argv.slice(2).filter(a => !a.startsWith('--')); for (const c of CASES) if (!want.length || want.includes(c.name)) console.log(faces(c, 1.0, process.env.DUMP ? process.env.DUMP.split(',').map(Number) : null)); process.exit(0); }
-if (process.argv.includes('--disturbed')) { const want = process.argv.slice(2).filter(a => !a.startsWith('--')); for (const c of CASES) if (!want.length || want.includes(c.name)) console.log(disturbed(c).join(String.fromCharCode(10))); process.exit(0); }
+// the s4b render scenario (docs/progress/*/layouts/s4b_side_hill_realistic.json on mesh-view's sidehill_gentle terrain), only for --disturbed / --faces
+const EXTRA = [{ name: 's4b_side_hill_realistic', off: NOISE_OFF, terms: [{ k: 'plane', c0: 2, cx: 0, cy: 0.4 }, { k: 'sin', amp: 1.2, fx: 1 / 25, fy: 0, ph: 0 }], roads: [{ type: 2, pts: [[-130, 0, 1.5], [130, 0, 3.5]] }] }];
+if (process.argv.includes('--faces')) { const want = process.argv.slice(2).filter(a => !a.startsWith('--')); for (const c of [...CASES, ...EXTRA]) if (!want.length || want.includes(c.name)) console.log(faces(c, 1.0, process.env.DUMP ? process.env.DUMP.split(',').map(Number) : null)); process.exit(0); }
+if (process.argv.includes('--disturbed')) { const want = process.argv.slice(2).filter(a => !a.startsWith('--')); for (const c of [...CASES, ...EXTRA]) if (!want.length || want.includes(c.name)) console.log(disturbed(c).join(String.fromCharCode(10))); process.exit(0); }
 
 let total = 0;
 for (const c of CASES) {

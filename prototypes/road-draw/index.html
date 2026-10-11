@@ -774,7 +774,7 @@ const ROCK_BATTER = 0.5;    // h per 1 v of an engineered rock-cut face (rock_cu
 const ROCK_BERM = 3.0;      // m: catch berm every ROCK_BENCH_H of height (rock_berm_width)
 const ROCK_BENCH_H = 9.0;   // m: rock-cut face height between berms (rock_bench_height)
 const FILL_STEEP = 1.5;     // h per 1 v: the steepest stable fill slope graded where a wall cannot hold the fill (fill_steep_batter)
-const STEEP_REACH = 45;     // m: reach limit of a steep fill that never meets the ground
+const STEEP_REACH = 15;     // m: reach limit of a steep fill that never meets the ground (= slope_max_run: no long sliver embankment down a hillside; the flagged needs_structure stretch ends here)
 const WALL_VIS_MIN = 0.35;  // m: a stairs wall lower than this is not built (the ground is natural there)
 const CORRIDOR_MAX = 90;    // m: terraced sections may extend this far beyond the footprint edge (grading corridor_max)
 const TIER_PITCH = WALL_THICK + BENCH_MIN;   // m: lateral distance between neighbouring tiers of a terraced section

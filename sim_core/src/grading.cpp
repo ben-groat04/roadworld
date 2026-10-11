@@ -320,7 +320,6 @@ struct StairResult {
 double tier_pitch(const GradingParams& p) { return p.wall_thickness + p.bench_min_width; }
 
 constexpr double kFadeK = 6.0;       // the strip behind a full tier carves at most kFadeK * (height still to retain) below natural ground (internal)
-constexpr double kSteepReach = 45.0; // reach limit of a steep fill that never meets the ground (internal)
 
 // mt: tiers allowed (1 or 2); ok = the last tier reaches the ground.
 StairResult stair_profile(bool cut, double zf, double h, const Probe& N, int mt, const GradingParams& p) {
@@ -379,7 +378,7 @@ WallPlan profile_plan(bool cut, double z0, const Probe& N, const RunTreat& run, 
         n = static_cast<int>(pr.tiers.size());
         reach_e = n ? pr.tiers.back().a + p.wall_thickness : 0.0;
     } else {
-        const double lim = run.kind == 2 ? std::min(p.corridor_max, kSteepReach) : p.corridor_max;
+        const double lim = run.kind == 2 ? std::min(p.corridor_max, p.slope_max_run) : p.corridor_max;
         for (double e = 0.5; e <= lim; e += 1) {
             reach_e = e;
             const double z = surf_z(run.kind, e, z0, p);
