@@ -47,7 +47,9 @@ export function checkBrief(text) {
   if (!ow || owBody.length < 10 || /\{\{/.test(owBody) || !/["“”]/.test(owBody)) {
     missing.push('a non-empty "## Owner\'s words" section containing the owner\'s verbatim quote in quotation marks');
   }
-  if (/time-box|whole task/i.test(t)) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo, not an item list');
+  // the owner's verbatim words are exempt (an owner quote may mention a time-box or a whole task)
+  const tNoOwner = ow ? t.replace(ow[0], '') : t;
+  if (/time-box|whole task/i.test(tNoOwner)) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo, not an item list');
   return { missing, handinDir, noVisual: /^HANDIN:[ \t]*no-visual[ \t]*$/m.test(t) };
 }
 

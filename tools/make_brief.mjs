@@ -41,7 +41,7 @@ if (get('cases').length < 5) missing.push('"## Cases" (case | absolute photo pat
 if (!auditMode && !get('faults')) missing.push('"## Faults" (starting list; write "none known" if none)');
 if (!auditMode && !get('launched')) missing.push('"## Launched" (independent items launched now)');
 if (!auditMode && !get('waiting')) missing.push('"## Waiting" (items not launched and why; write "none" if none)');
-if (/time-box|whole task/i.test(text)) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
+if (/time-box|whole task/i.test(text.replace(get("owner's words"), ''))) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
 if (missing.length) {
   console.error('REFUSED. Fix the task file:\n - ' + missing.join('\n - '));
   process.exit(1);

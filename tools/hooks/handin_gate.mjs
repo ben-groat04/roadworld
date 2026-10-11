@@ -26,6 +26,20 @@ import { auditOfIn, readBuilder, recordBuilder, checkAuditFile, AUDIT_FILE } fro
 
 const MAX_BLOCKS = 3;
 
+// When this agent's run began: timestamp of the first transcript line, else the transcript file's creation time.
+// Files the gates judge must have been written after it (minus slack), so a stale passing folder from an earlier round
+// cannot satisfy a new agent (audit fault 1).
+export const SLACK_MS = 2000;
+function runStartMs(tp) {
+  try {
+    const first = fs.readFileSync(tp, 'utf8').split('\n').find((l) => l.trim());
+    const ts = first && Date.parse((parseJson(first) || {}).timestamp);
+    if (Number.isFinite(ts)) return ts;
+  } catch { /* fall back */ }
+  try { return fs.statSync(tp).birthtimeMs; } catch { return 0; }
+}
+const resetCounter = (id) => { try { fs.rmSync(path.join(STATE_DIR, 'handin', id + '.json'), { force: true }); } catch { /* best effort */ } };
+
 function transcriptFor(input) {
   if (input.agent_transcript_path && fs.existsSync(input.agent_transcript_path)) return input.agent_transcript_path;
   // PreToolUse events carry only the main transcript_path; the subagent file sits beside it.
@@ -49,6 +63,7 @@ async function main() {
   const tp = transcriptFor(input);
   if (!tp) return allow({ ...base, decision: 'allow', reason: 'FAIL-OPEN: no readable agent transcript' });
 
+  const runStart = runStartMs(tp);
   let text = firstUserText(tp);
   let info = checkBrief(text);
   let aof = auditOfIn(text);
@@ -58,7 +73,8 @@ async function main() {
   }
   if (aof) {
     const rec = readBuilder(aof, STATE_DIR);
-    const probs = checkAuditFile(path.join(aof, AUDIT_FILE), { builderId: rec && rec.agent_id, actualId: id });
+    const probs = checkAuditFile(path.join(aof, AUDIT_FILE), { builderId: rec && rec.agent_id, actualId: id, notBefore: runStart - SLACK_MS });
+    if (!probs.length) resetCounter(id);
     if (!probs.length) return allow({ ...base, decision: 'allow', reason: 'audit written', audit_of: aof, builder_id: rec ? rec.agent_id : null });
     return blockOrRelease({ isPre, base, id, dir: aof, failures: probs.map((p) => ' - ' + p).join('\n'), kind: 'audit',
       intro: `AUDIT GATE: you are the auditor of ${aof} and may not finish yet`,
@@ -77,6 +93,7 @@ async function main() {
 
   const args = [path.join(ROOT, 'tools', 'check_handin.mjs'), handinDir, '--main', ROOT];
   if (noVisual) args.push('--no-visual');
+  if (runStart) args.push('--since', String(Math.round(runStart - SLACK_MS)));
   const r = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', timeout: 30000, env: { ...process.env, CP_FROM_HOOK: '1' } });
   const passed = r.status === 0 && /HAND-IN CHECK PASSED/.test(r.stdout || "");
   const failed = r.status === 1 && /HAND-IN CHECK FAILED/.test(r.stderr || "");
@@ -84,6 +101,7 @@ async function main() {
     return allow({ ...base, decision: 'allow', reason: 'FAIL-OPEN: check_handin crashed or timed out', handin_dir: handinDir, status: r.status, error: String(r.error || r.stderr).slice(0, 300) });
   }
   if (passed) {
+    resetCounter(id);
     try {
       const { changed, rec } = recordBuilder(handinDir, id, input.agent_type, STATE_DIR);
       if (changed) log({ gate: 'audit', decision: 'owed', reason: 'audit owed: hand-in passed, no AUDIT.md by a different agent yet', handin_dir: handinDir, builder_id: id, builder_type: rec.agent_type });
