@@ -1,0 +1,7 @@
+# sim_core output for the scenario of 17_advisory_tunnel.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain
+cursor z 43.5 m (-22 m) · snap: angle
+span 144.0 m · bearing 0° · R at cursor ∞ m · min R ∞ m
+grade 0.0% · max 0.0% · G2 ✓ · total 144 m
+⚠ cut over 12 m wall cap: becomes a tunnel
+profile structure ranges: 1 (tunnel)

@@ -1,0 +1,2 @@
+# before this round (15_advisory_grade.png)
+Base: the grade advisory printed the limit as "above advisory 10.0%" (screenshot: "10%").

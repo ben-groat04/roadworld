@@ -1,0 +1,2 @@
+# sim_core output for 38_finished_tunnel_portal.png
+not this round: the bore, portal headwall and wing walls come from structure_mesh.h / grading.h (other agents). The tool side is the advisory: see 17_advisory_tunnel.txt. Pinned elsewhere by tests/test_grading.cpp "tunnel table and bore probes match the prototype".

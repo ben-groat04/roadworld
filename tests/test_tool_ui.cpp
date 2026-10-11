@@ -3,9 +3,12 @@
 // the edit tool's road chain, junction-making edits, selection and profile, the finish gestures, snap kinds and
 // guides. Each TEST_CASE names the screenshots it pins. Strings are the screenshot's own, with the glyphs the
 // prototype printed (middle dot, degree, infinity, check, cross, warning).
+#define _CRT_SECURE_NO_WARNINGS
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -124,6 +127,20 @@ std::vector<std::string> texts(const std::vector<HudLine>& l) {
     return o;
 }
 
+// Writes the engine's output for a screenshot's scenario to <CP_TOOLUI_DUMP>/<name>.txt when that variable is set
+// (the hand-in's "render": docs/progress/roadtool3/renders). Does nothing otherwise.
+void dump(const std::string& name, const std::vector<std::string>& lines) {
+    const char* dir = std::getenv("CP_TOOLUI_DUMP");
+    if (!dir || !*dir) return;
+    std::ofstream out(std::string(dir) + "/" + name + ".txt", std::ios::binary);
+    out << "# sim_core output for the scenario of " << name << ".png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)\n";
+    for (const std::string& l : lines) out << l << "\n";
+}
+std::vector<std::string> plus(std::vector<std::string> a, const std::vector<std::string>& b) {
+    a.insert(a.end(), b.begin(), b.end());
+    return a;
+}
+
 struct SnapShot {
     std::vector<std::tuple<std::uint64_t, double, double, double>> nodes;
     std::vector<std::tuple<std::uint64_t, std::uint64_t, std::uint64_t, std::string, bool, double, std::size_t>> edges;
@@ -150,10 +167,12 @@ TEST_CASE("HUD (02, 03, 09, 11): header, cursor line, snap off; nothing but the 
     // 02 idle: the ray misses the ground, only the header
     DrawPreview none = d.hover(skyward());
     CHECK_FALSE(none.has_pick);
+    dump("02_idle", plus(texts(draw_hud(none, ctx)), {std::string("profile panel: ") + profile_empty_text(), std::string("inspect bar: ") + inspect_idle_text()}));
     CHECK(texts(draw_hud(none, ctx)) == std::vector<std::string>{"DRAW" DOT "Residential street" DOT "colour: plain"});
     // 03: free cursor over open ground
     DrawPreview pv = d.hover(at(100, 100));
     const auto lines = draw_hud(pv, ctx);
+    dump("03_hover_free", texts(lines));
     CHECK(texts(lines) == std::vector<std::string>{"DRAW" DOT "Residential street" DOT "colour: plain", "cursor z 75.9 m" DOT "snap: free"});
     REQUIRE(lines[0].runs.size() >= 2);
     CHECK(lines[0].runs[0].text == "DRAW");
@@ -187,6 +206,7 @@ TEST_CASE("HUD (11): span, bearing, R at cursor, min R, grade, max, G2, total, e
     HudContext ctx;
     ctx.snap_off = true;
     const DrawPreview pv = d.hover(at(45.9 * dx, 45.9 * dy), kFree);
+    dump("11_shift_snap_off", texts(draw_hud(pv, ctx)));
     CHECK(texts(draw_hud(pv, ctx)) ==
           std::vector<std::string>{"DRAW" DOT "Residential street" DOT "colour: plain" DOT "snap off", "cursor z 71.7 m" DOT "snap: free",
                                    "span 45.9 m" DOT "bearing 101" DEG DOT "R at cursor " INF_ " m" DOT "min R " INF_ " m",
@@ -202,6 +222,7 @@ TEST_CASE("HUD (10): angle and length snap lands on 15 degrees and 8 m multiples
     REQUIRE(d.click(at(0, 0), kFree).added);
     const DrawPreview pv = d.hover(at(47, -13));
     CHECK(pv.snap == SnapKind::Angle);
+    dump("10_snap_angle_length", texts(draw_hud(pv, {})));
     CHECK(texts(draw_hud(pv, {})) ==
           std::vector<std::string>{"DRAW" DOT "Residential street" DOT "colour: plain", "cursor z 71.3 m" DOT "snap: angle",
                                    "span 48.0 m" DOT "bearing 105" DEG DOT "R at cursor " INF_ " m" DOT "min R " INF_ " m",
@@ -254,6 +275,7 @@ TEST_CASE("HUD (04, 13): R at cursor is infinity on a natural end; min R is the 
     CHECK(std::isfinite(pv.readouts.min_radius));
     CHECK(pv.readouts.min_radius > 20);
     const std::string l = draw_hud(pv, {})[2].text();
+    dump("04_midstroke", plus(texts(draw_hud(pv, {})), {"profile: " + std::to_string(pv.profile.grades.size()) + " grade labels, title: " + profile_title(pv.profile)}));
     CHECK(l.find("R at cursor " INF_ " m") != std::string::npos);
     CHECK(l.find("min R " + f0(pv.readouts.min_radius) + " m") != std::string::npos);
     // snapped onto a free road end the heading is pinned, the end curvature is not forced to zero
@@ -288,6 +310,7 @@ TEST_CASE("Min span (12): no ghost, no profile, no readouts, one red line; the c
           std::vector<std::string>{"DRAW" DOT "Residential street" DOT "colour: plain" DOT "snap off", "cursor z 71.6 m" DOT "snap: free",
                                    CROSS " segment shorter than 4 m"});
     CHECK(draw_hud(pv, ctx).back().tone == HudTone::Error);
+    dump("12_error_min_span", plus(texts(draw_hud(pv, ctx)), {"ghost ribbons: 0, profile valid: false"}));
     // the click is refused and nothing is added (finish_pick_px is off: a click near the last point is not a finish)
     const ClickResult c = d.click(at(2.0, 1.0), kFree);
     CHECK_FALSE(c.added);
@@ -313,6 +336,7 @@ TEST_CASE("Finish gestures (26, 27): the finish-on-last-point click is opt-in; b
     // 6 m from the last point at 1 m per pixel: inside 10 px, but the prototype just adds a point
     const DrawPreview near_last = d.hover(at(86, 0), kFree);
     CHECK_FALSE(near_last.would_finish);
+    dump("26_stroke_3pts_before_finish", plus(texts(draw_hud(near_last, {})), {"finish: Enter / right-click / double-click / snap onto a road; a click near the last point adds a point"}));
     CHECK(near_last.ribbons.size() == 1);
     const ClickResult c = d.click(at(86, 0), kFree);
     CHECK(c.added);
@@ -325,6 +349,11 @@ TEST_CASE("Finish gestures (26, 27): the finish-on-last-point click is opt-in; b
     REQUIRE(f.ok());
     REQUIRE(rig.st.execute(std::move(f.command)));
     CHECK(rig.g.edges().size() == 1);
+    {
+        DrawSession dd(rig.g, rig.hf);
+        dd.set_road_type("residential");
+        dump("27_finished_road_idle", plus(texts(draw_hud(dd.hover(at(86, 0, 1.0)), {})), {"ring: green, 11 px (end of the finished road)"}));
+    }
     // opt in: the click on the last point finishes
     DrawSession d2(rig.g, rig.hf);
     d2.set_road_type("residential");
@@ -348,6 +377,7 @@ TEST_CASE("Fold error and radius advisory together (13): red cross line first, a
     REQUIRE(has_issue(pv.advisories, IssueCode::RadiusBelowMinimum));
     const auto lines = draw_hud(pv, {});
     REQUIRE(lines.size() >= 6);
+    dump("13_error_too_tight", plus(texts(lines), {"ghost colour: red (error)"}));
     const std::string r = f1(pv.readouts.min_radius);
     // residential total width 14.3 m: half-width 7.2 as the screenshot prints it
     CHECK(lines[4].text() == CROSS " too tight: radius " + r + " m < half-width 7.2 m (edge folds)");
@@ -366,6 +396,7 @@ TEST_CASE("Fold error and radius advisory together (13): red cross line first, a
     CHECK(adv.errors.empty());
     REQUIRE(has_issue(adv.advisories, IssueCode::RadiusBelowMinimum));
     CHECK(ghost_colour(adv) == ui_theme().ghost);
+    dump("14_advisory_radius", plus(texts(draw_hud(adv, {})), {"ghost colour: normal (advisories do not tint)"}));
     CHECK(adv.advisories[0].text == "radius " + f0(adv.readouts.min_radius) + " m below comfortable 180 m for B road / main road");
     // the click is refused on a fold, allowed on an advisory
     CHECK_FALSE(d.click(at(19.2, 9.4), kFree).added);
@@ -385,6 +416,7 @@ TEST_CASE("Grade advisory prints the limit as a whole number: 'grade 38.2% above
         const Issue& g = *std::find_if(pv.advisories.begin(), pv.advisories.end(), [](const Issue& i) { return i.code == IssueCode::GradeAboveAdvisory; });
         CHECK(g.text == "grade " + t1(pv.readouts.max_grade_pct) + "% above advisory 10%");
         CHECK(draw_hud(pv, {}).back().text() == WARN_SIGN " " + pv.advisories.back().text);
+        dump("15_advisory_grade", texts(draw_hud(pv, {})));
     }
     {  // B road: limit 8%
         Rig rig;
@@ -426,6 +458,7 @@ TEST_CASE("Bridge and tunnel advisories with the height offset in the cursor lin
         CHECK(lines[1].text() == "cursor z 58.4 m (+25 m)" DOT "snap: angle");
         REQUIRE(has_issue(pv.advisories, IssueCode::BridgeNeeded));
         CHECK(lines.back().text() == WARN_SIGN " fill over 12 m wall cap: becomes a bridge");
+        dump("16_advisory_bridge", plus(texts(lines), {"profile structure ranges: " + std::to_string(pv.profile.structures.size()) + " (bridge)"}));
         CHECK(lines.back().tone == HudTone::Warning);
         REQUIRE(pv.profile.structures.size() >= 1);
         CHECK(pv.profile.structures[0].kind == StructureKind::Bridge);
@@ -445,6 +478,7 @@ TEST_CASE("Bridge and tunnel advisories with the height offset in the cursor lin
         CHECK(lines[1].text() == "cursor z 43.5 m (-22 m)" DOT "snap: angle");
         REQUIRE(has_issue(pv.advisories, IssueCode::TunnelNeeded));
         CHECK(lines.back().text() == WARN_SIGN " cut over 12 m wall cap: becomes a tunnel");
+        dump("17_advisory_tunnel", plus(texts(lines), {"profile structure ranges: " + std::to_string(pv.profile.structures.size()) + " (tunnel)"}));
         REQUIRE(pv.profile.structures.size() >= 1);
         CHECK(pv.profile.structures[0].kind == StructureKind::Tunnel);
     }
@@ -483,6 +517,7 @@ TEST_CASE("Crossing too close vertically: the refusal text is on the HUD and the
     for (const HudLine& l : lines)
         if (l.text() == CROSS " crossing too close vertically (2.6 m): raise/lower to junction or clear 5.3 m") found = true;
     CHECK(found);
+    dump("28_error_crossing_too_close", plus(texts(lines), {"ghost colour: red (error), ghost ribbons: 1"}));
     CHECK_FALSE(d.click(at(0, 80), kFree).added);
     // the refusal is still on the HUD after the next mouse move (it vanished with the next move in the prototype)
     const DrawPreview later = d.hover(at(0, 79.5), kFree);
@@ -516,6 +551,15 @@ TEST_CASE("Ghost widths and HUD headers per road type (18, 19, 20, 21, 22)") {
             CHECK(r.total_width == doctest::Approx(t.total).epsilon(0.005));
             CHECK(r.carriageway_width < r.total_width);
         }
+        {
+            std::vector<std::string> d_ = texts(draw_hud(pv, {}));
+            d_.push_back("ghost ribbons: " + std::to_string(pv.ribbons.size()) + ", width each " + f1(pv.ribbons[0].width) + " m (carriageway " +
+                         f1(pv.ribbons[0].carriageway_width) + " m)");
+            const std::string id(t.id);
+            if (id == "a_road_dual") dump("18_type3_dual_ghost", d_);
+            else if (id == "motorway") dump("19_type4_motorway_ghost", d_);
+            else if (id == "b_road") dump("22_type2_b_road_ghost", d_);
+        }
         CHECK(pv.road_type == t.id);
         CHECK(pv.road_type_name == t.name);   // the HUD name is in the preview: the host looks nothing up
         CHECK(draw_hud(pv, {})[0].text() == std::string("DRAW" DOT) + t.name + DOT "colour: plain");
@@ -534,6 +578,7 @@ TEST_CASE("Ghost widths and HUD headers per road type (18, 19, 20, 21, 22)") {
         CHECK(pv.ribbons.size() == 1);
         const HudLine h = draw_hud(pv, {})[0];
         CHECK(h.text() == "DRAW" DOT "A road / dual c'way" DOT "single carriageway" DOT "colour: plain");
+        dump("20_type3_single_carriageway_O", plus(texts(draw_hud(pv, {})), {"ghost ribbons: 1"}));
         const auto bold = std::find_if(h.runs.begin(), h.runs.end(), [](const HudRun& r) { return r.bold && r.text == "single carriageway"; });
         CHECK(bold != h.runs.end());
     }
@@ -545,6 +590,7 @@ TEST_CASE("Ghost widths and HUD headers per road type (18, 19, 20, 21, 22)") {
         d.click(at(0, 0), kFree);
         const DrawPreview pv = d.hover(at(70, 30), kFree);
         CHECK(draw_hud(pv, {})[0].text() == "DRAW" DOT "Residential street" DOT "one-way" DOT "colour: plain");
+        dump("21_type1_oneway", texts(draw_hud(pv, {})));
     }
 }
 
@@ -634,6 +680,9 @@ TEST_CASE("Offset guide at 1x, 2x and 3x the lateral spacing, both sides, and no
             for (const Vec3& p : pv.guide.polyline) CHECK(std::abs(p.y - sgn * base * k) < 1e-3);  // the dashed copy of the road
             CHECK(draw_hud(pv, {})[1].text().find(DOT "snap: guide") != std::string::npos);
             CHECK(ring_style(pv.snap).colour == 0x7ee0ff);
+            if (sgn > 0 && (k == 1 || k == 3))
+                dump(k == 1 ? "08_snap_parallel_offset_guide" : "08b_snap_offset_guide_3x",
+                     plus(texts(draw_hud(pv, {})), {"guide: dashed copy of the road at lateral offset " + f1(pv.guide.offset) + " m (" + std::to_string(k) + " x " + f1(base) + " m), ring cyan"}));
         }
     const DrawPreview four = d.hover(at(0, base * 4 + 1.5, 1.0));
     CHECK(four.snap != SnapKind::Guide);
@@ -659,11 +708,13 @@ TEST_CASE("Snap kinds: end, road, extension guide; ring colours and sizes (05, 0
         CHECK(draw_hud(pv, {})[1].text() == "cursor z 79.2 m" DOT "snap: end");
         CHECK(ring_style(pv.snap).colour == 0x3fb950);
         CHECK(ring_style(pv.snap).radius_px == 11);
+        dump("05_snap_end", plus(texts(draw_hud(pv, {})), {"ring: green, 11 px"}));
     }
     {  // 06: on the road (10 px pick), away from the ends
         const DrawPreview pv = d.hover(at(100, 3, 1.0));
         CHECK(pv.snap == SnapKind::Road);
         CHECK(draw_hud(pv, {})[1].text() == "cursor z 79.2 m" DOT "snap: road");
+        dump("06_snap_road", plus(texts(draw_hud(pv, {})), {"ring: green, 11 px"}));
         CHECK(ring_style(pv.snap).colour == 0x3fb950);
     }
     {  // 07: on the straight extension beyond the end: a cyan dashed line from the end to the cursor
@@ -674,10 +725,12 @@ TEST_CASE("Snap kinds: end, road, extension guide; ring colours and sizes (05, 0
         CHECK(pv.guide.polyline.front().x == doctest::Approx(200));
         CHECK(pv.guide.polyline.back().x == doctest::Approx(260));
         CHECK(draw_hud(pv, {})[1].text() == "cursor z 79.2 m" DOT "snap: guide");
+        dump("07_snap_extension_guide", plus(texts(draw_hud(pv, {})), {"guide: cyan dashed line from the road end (x 200) to the cursor (x 260), ring cyan 11 px"}));
     }
     {  // free ring is white and small
         const DrawPreview pv = d.hover(at(100, 400, 1.0));
         CHECK(pv.snap == SnapKind::Free);
+        dump("09_hover_free_second", plus(texts(draw_hud(pv, {})), {"ring: white, 7 px"}));
         CHECK(ring_style(pv.snap).colour == 0xffffff);
         CHECK(ring_style(pv.snap).radius_px == 7);
     }
@@ -763,6 +816,20 @@ TEST_CASE("Heat map per vertex on a drawn S-curve road: one value and class per 
     }
     for (const HeatVertex& v : gv) CHECK(v.cls == heat_class_gradient(v.value, rt->advisory_max_grade, h));
     CHECK(any_red);   // the bends are far tighter than 90 m
+    {
+        auto summary = [&](const std::vector<HeatVertex>& v, ColourMode m) {
+            std::size_t n[4] = {0, 0, 0, 0};
+            for (const HeatVertex& x : v) ++n[static_cast<int>(x.cls)];
+            DrawPreview hp;
+            hp.road_type_name = "B road / main road";
+            HudContext hc;
+            hc.colour = m;
+            return plus(texts(draw_hud(hp, hc)), {std::to_string(v.size()) + " vertices: ok " + std::to_string(n[0]) + ", caution " + std::to_string(n[1]) + ", amber " +
+                                                      std::to_string(n[2]) + ", red " + std::to_string(n[3]) + " (colours 3fb950 e8d44d f5a623 e5484d)"});
+        };
+        dump("29_colour_curvature", summary(cv, ColourMode::Curvature));
+        dump("30_colour_gradient", summary(gv, ColourMode::Gradient));
+    }
     // thresholds are data: loosening them turns the red away
     RegionPack loose = *rig.region;
     loose.road_tool.heat.curvature_red = 0.01;
@@ -814,6 +881,11 @@ TEST_CASE("Tuning panel (23): eight fields, labels, ranges and steps as the scre
 
     Rig rig;
     const ToolTuning t0 = default_tuning(rig.region.get());
+    {
+        std::vector<std::string> rows;
+        for (const TuningField& fd : f) rows.push_back(std::string(fd.label) + "  " + tuning_value_text(fd, t0.*fd.member) + "   [" + tuning_value_text(fd, fd.min) + " .. " + tuning_value_text(fd, fd.max) + ", step " + tuning_value_text(fd, fd.step) + "]");
+        dump("23_tuning_panel_open", rows);
+    }
     // the screenshot's slider values: 15, 8, 12, 12, 2, 1, 4, 14
     CHECK(t0.snap_angle == 15);
     CHECK(t0.snap_length == 8);
@@ -989,6 +1061,14 @@ TEST_CASE("Help overlay (01) and inspect bar (02, 43, 44) words") {
     CHECK(inspect_status_text("interchange.json", 19, 12, 11, 0, 54, 0, true) ==
           "interchange.json: 19 roads, 12 junctions, 11 bridge / 0 tunnel samples, 54 connectors (0 disabled)" DOT "J connectors on");
     CHECK(inspect_status_text("interchange.json", 19, 12, 11, 0, 54, 0, false).find("J connectors off") != std::string::npos);
+    dump("43_inspect_scene_loaded_connectors", {inspect_status_text("interchange.json", 19, 12, 11, 0, 54, 0, true)});
+    dump("44_inspect_connectors_off", {inspect_status_text("interchange.json", 19, 12, 11, 0, 54, 0, false)});
+    {
+        std::vector<std::string> hr;
+        for (const HelpRow& r : rows) hr.push_back(r.keys + "  |  " + r.meaning);
+        hr.push_back(help_paragraph());
+        dump("01_idle_help", hr);
+    }
     CHECK(ui_theme().turn_left == 0x4aa3ff);
     CHECK(ui_theme().turn_disabled == 0x8a8f98);
     CHECK(ui_theme().edit_selected_line == 0xffd866);
@@ -1018,6 +1098,7 @@ TEST_CASE("Edit mode (31-36): hover lights the road, selection says 'selected ro
     CHECK(hv.profile.valid);
     CHECK(hv.profile_edge == rig.road_id);
     CHECK_FALSE(hv.selection.valid);
+    dump("31_edit_hover_road", plus(texts(edit_hud(hv, ctx, "Residential street")), {"hovered road lit: " + std::to_string(hv.hover_chain.size()) + " edge, profile of the hovered road: valid"}));
     CHECK(texts(edit_hud(hv, ctx, "Residential street")) == std::vector<std::string>{"EDIT" DOT "Residential street" DOT "colour: plain"});
     // 32: select it: the HUD line with the whole road's length; three handles (ends and the interior point)
     const EditHover clicked = es.click(at(60, 1.5));
@@ -1031,6 +1112,7 @@ TEST_CASE("Edit mode (31-36): hover lights the road, selection says 'selected ro
     CHECK(texts(edit_hud(sel, ctx, "Residential street")) ==
           std::vector<std::string>{"EDIT" DOT "Residential street" DOT "colour: plain",
                                    "selected road #" + std::to_string(rig.road_id.value) + DOT "200 m" DOT "drag handles, PgUp/PgDn height, Del delete"});
+    dump("32_edit_selected_handles", plus(texts(edit_hud(sel, ctx, "Residential street")), {"handles: 3 (two ends, one interior point)"}));
     const auto handles = es.handles();
     REQUIRE(handles.size() == 3);
     CHECK(handles[0].is_node());
@@ -1041,6 +1123,7 @@ TEST_CASE("Edit mode (31-36): hover lights the road, selection says 'selected ro
     const EditPreview hh = es.hover(through({103, 0, 77.7 + 0.5}));
     CHECK(hh.hover.kind == EditHoverKind::Handle);
     CHECK(hh.hover.handle == 1);
+    dump("33_edit_handle_hover", plus(texts(edit_hud(hh, ctx, "Residential street")), {"hover: handle 1 of the selected road (gold, 10 px)"}));
     // 34: drag it: the road as it will be, a live profile, no commit yet
     REQUIRE(es.begin_drag(through({103, 0, 78.2})));
     const EditPreview dr = es.drag_to(at(103, 40));
@@ -1049,6 +1132,7 @@ TEST_CASE("Edit mode (31-36): hover lights the road, selection says 'selected ro
     CHECK(dr.ribbons.size() == 1);
     CHECK(dr.profile.valid);
     CHECK(dr.profile.length > 200);   // longer than the straight road
+    dump("34_edit_handle_dragging", plus(texts(edit_hud(dr, ctx, "Residential street")), {"drag preview: ghost ribbon 1, live profile length " + f0(dr.profile.length) + " m, graph untouched"}));
     CHECK(rig.g.edges().begin()->second.interior[0].y == 0);   // the graph is untouched
     // 35: release: one command
     EditResult r = es.end_drag(at(103, 40));
@@ -1060,6 +1144,7 @@ TEST_CASE("Edit mode (31-36): hover lights the road, selection says 'selected ro
     CHECK(after.selection.valid);
     CHECK(after.selection.length > 200);   // the HUD length follows the edit (206 m in the screenshot)
     CHECK(after.profile.valid);
+    dump("35_edit_after_drag", texts(edit_hud(after, ctx, "Residential street")));
     // 36: delete: the road goes, and so does its profile (the prototype left a stale one; the tool shows none)
     EditResult del = es.delete_selected();
     REQUIRE(del.ok());
@@ -1071,6 +1156,7 @@ TEST_CASE("Edit mode (31-36): hover lights the road, selection says 'selected ro
     CHECK_FALSE(gone.profile_edge.valid());
     CHECK(gone.profile.stations.empty());
     CHECK_FALSE(gone.selection.valid);
+    dump("36_edit_after_delete", plus(texts(edit_hud(gone, ctx, "Residential street")), {"profile: none (valid = false)"}));
     CHECK(texts(edit_hud(gone, ctx, "Residential street")) == std::vector<std::string>{"EDIT" DOT "Residential street" DOT "colour: plain"});
     // and an undo brings the road and its profile back
     REQUIRE(rig.st.undo());
@@ -1205,6 +1291,7 @@ TEST_CASE("Road chain: a road through a junction selects, profiles, measures and
     // the HUD says the whole length
     const auto lines = edit_hud(pv, {}, "Residential street");
     CHECK(lines.back().text() == "selected road #" + std::to_string(s.number) + DOT "300 m" DOT "drag handles, PgUp/PgDn height, Del delete");
+    dump("41_edit_select_viaduct_profile", plus(texts(lines), {"one road of " + std::to_string(s.chain.edges.size()) + " edges; profile length " + f0(pv.profile.length) + " m, " + std::to_string(pv.profile.curves.size()) + " control points, grades " + pv.profile.grades[0].label + " " + pv.profile.grades[1].label}));
     // a handle of the OTHER half can be hovered
     const EditPreview hv = es.hover(through({300, 0, 55.5}));
     CHECK(hv.hover.kind == EditHoverKind::Handle);
@@ -1215,6 +1302,10 @@ TEST_CASE("Road chain: a road through a junction selects, profiles, measures and
     es.click(at(150.5, 80));
     CHECK(es.selection().chain.edges.size() == 2);
     CHECK(es.selection().chain.edges != s.chain.edges);
+    {
+        const EditPreview pb = es.hover(at(500, 500));
+        dump("42_edit_select_tunnel_profile", plus(texts(edit_hud(pb, {}, "Residential street")), {"the second road: " + std::to_string(pb.selection.chain.edges.size()) + " edges, profile length " + f0(pb.profile.length) + " m"}));
+    }
     // Delete takes the whole road in ONE undo step
     es.click(at(40, 0.5));
     const SnapShot before = snapshot(rig.g);

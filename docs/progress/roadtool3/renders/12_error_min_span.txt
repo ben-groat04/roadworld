@@ -1,0 +1,5 @@
+# sim_core output for the scenario of 12_error_min_span.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain · snap off
+cursor z 71.6 m · snap: free
+✕ segment shorter than 4 m
+ghost ribbons: 0, profile valid: false

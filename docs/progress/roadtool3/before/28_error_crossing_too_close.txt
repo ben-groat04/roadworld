@@ -1,0 +1,2 @@
+# before this round (28_error_crossing_too_close.png)
+Base: the Crossing error existed in the preview; the HUD line (cross glyph and words) was not produced by the engine.

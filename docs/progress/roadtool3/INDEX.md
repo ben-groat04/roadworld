@@ -1,6 +1,6 @@
 # INDEX: roadtool3 (engine work, no renders)
 
-Branch `agent/roadtool3` (worktree `C:\Users\bgbg0\Documents\Programming\roadworld-wt-roadtool3`), cut from `integ/2026-10-11` at e0c0d4b. No renders or composites were made: the brief says engine work with the 45 prototype screenshots as the spec, so the "render list" is the set of tests that pin each screenshot (`COMPARE.md`, one row per screenshot).
+Branch `agent/roadtool3` (worktree `C:\Users\bgbg0\Documents\Programming\roadworld-wt-roadtool3`), cut from `integ/2026-10-11` at e0c0d4b. No 3D renders (engine work, the 45 prototype screenshots are the spec). The "render" of each screenshot is the text sim_core produces for its scenario: `renders/NN_name.txt` (45 files, written by `CP_TOOLUI_DUMP=<dir> sim_core_tests -sf="*test_tool_ui*"`; 24, 25 and 37 to 40 say they are host or other agents' work). `before/NN_name.txt` is what the base commit gave for the same scenario. Composites (screenshot beside the render text and the before text) are in `C:Usersgbg0DocumentsProgrammingoadworlddocseference_compareoadtool3NN_name.png` (private, gitignored). `COMPARE.md` is the five-column table, `COMPARE_DETAIL.md` the per-row explanation (field and pinning test).
 
 ## New files
 - `sim_core/include/cp/tool_hud.h`, `sim_core/src/tool_hud.cpp`: HUD lines (`draw_hud`, `edit_hud`, `error_hud_line`, `warning_hud_line`), `snap_kind_word`, profile title / empty text / axes / bands, `ui_theme()`, `ring_style`, `ghost_colour`, help rows and paragraph, inspect bar text.

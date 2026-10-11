@@ -1,0 +1,2 @@
+# before this round (19_type4_motorway_ghost.png)
+Base: motorway and B-road ghost widths untested.

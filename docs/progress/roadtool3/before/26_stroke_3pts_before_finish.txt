@@ -1,0 +1,2 @@
+# before this round (26_stroke_3pts_before_finish.png)
+Base: a click within 10 px of the last point FINISHED the stroke (finish_pick_px = 10); the prototype adds a point there.

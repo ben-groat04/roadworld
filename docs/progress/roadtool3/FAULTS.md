@@ -33,6 +33,8 @@ Method: every one of the 45 screenshots opened one by one; for each, the questio
 21. Clean builds, full suite on both compilers (numbers in STATUS.md). Re-ran the tool-UI tests after each fix (95 cases in the road / edit / UI filter all green before the full run).
 22. Last cold read of the diff for things the owner has said more than once: opened every screenshot (45 of 45), no row of COMPARE.md rests on the written spec alone; rows 24, 25, 37 to 40 and 43/44's J key are marked as host or other-agent work, not claimed.
 
+23. Opened the composites (13, 41 and others) beside their screenshots: the text formats match line for line; digits differ where my scenario stroke differs from the screenshot's (13: R 6.8 m vs 6.4 m), exact only for 10 and 11 where the geometry could be matched. Stated in COMPARE.md rather than hidden.
+
 ## Residual (not fixed; why)
 
 1. Selected road number `#N` is the lowest edge id of the chain, not creation order (screenshots 32, 41, 42 show #1 and #2). Needs a road / stroke id on `Edge`, a change to the graph model outside this round's files. Cosmetic.

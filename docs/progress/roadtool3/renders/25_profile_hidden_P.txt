@@ -1,0 +1,2 @@
+# sim_core output for 25_profile_hidden_P.png
+host only: the P key hides the profile panel. The engine side is DrawParams::profile_series / EditParams::profile_series (switch the series off); tested by tests/test_road_tool.cpp "hover cost with and without the profile series". See H.4 item 2.

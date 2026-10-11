@@ -1,0 +1,7 @@
+# sim_core output for the scenario of 04_midstroke.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · B road / main road · colour: plain
+cursor z 0.0 m · snap: free
+span 71.0 m · bearing 101° · R at cursor ∞ m · min R 63 m
+grade 0.0% · max 0.0% · G2 ✓ · total 239 m
+⚠ radius 63 m below comfortable 180 m for B road / main road
+profile: 3 grade labels, title: Profile · 239 m · vs original ground · blue = fill, orange = cut, red = over 12 m wall cap (bridge/tunnel) · yellow = vertical curves

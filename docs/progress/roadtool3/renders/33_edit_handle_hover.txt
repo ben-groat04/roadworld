@@ -1,0 +1,4 @@
+# sim_core output for the scenario of 33_edit_handle_hover.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+EDIT · Residential street · colour: plain
+selected road #1 · 200 m · drag handles, PgUp/PgDn height, Del delete
+hover: handle 1 of the selected road (gold, 10 px)

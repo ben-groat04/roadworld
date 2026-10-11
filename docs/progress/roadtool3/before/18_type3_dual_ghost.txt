@@ -1,0 +1,2 @@
+# before this round (18_type3_dual_ghost.png)
+Base: dual ghost refitted per carriageway but never compared with the prototype's offset ghost; type name in the preview was missing (host looked it up by id); long type name.

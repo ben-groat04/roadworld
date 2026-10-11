@@ -1,0 +1,2 @@
+# before this round (16_advisory_bridge.png)
+Base: advisory text existed; "cursor z ... (+25 m)" offset text was not produced by the engine.

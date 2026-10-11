@@ -1,0 +1,2 @@
+# before this round (43_inspect_scene_loaded_connectors.png)
+Base: no inspect bar text in the engine.
