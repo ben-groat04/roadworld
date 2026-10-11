@@ -449,6 +449,38 @@ TEST_CASE("test_world: default cover structure: T junctions only, corner and asp
     }
 }
 
+TEST_CASE("test_world: golden default cover (field ids, uses, tints, row directions, hedge length: same on gcc and MSVC)") {
+    auto src = make_default_cover_source(uk_rules(), 1);
+    struct G { double x, y; std::uint64_t id; int use; long long tint, rx, ry; };
+    // Recorded from a gcc build (round 4); the MSVC build must reproduce them: the generator uses only + - * / sqrt floor and integer hashing.
+    const G golden[] = {
+        {0.00, 0.00, 0x4125a9a280cf3165ull, 6, 286479, -983796, -179290},
+        {-731.50, 412.25, 0x9f6889136a5287e2ull, 5, 689722, -963211, 268746},
+        {905.10, -233.70, 0xfd2e515c1fc13dc2ull, 5, 136661, 146517, 989208},
+        {-120.30, -880.90, 0x6280f638a7792b85ull, 2, 476718, 999801, -19961},
+        {333.30, 777.70, 0x53de7d414f65746ull, 7, 643460, -17972, -999838},
+        {1500.50, 1500.50, 0x6dddfca0ff9ee111ull, 7, 322335, -176955, 984219},
+    };
+    for (const G& g : golden) {
+        const CoverGround c = src->ground_at({g.x, g.y});
+        INFO("at " << g.x << "," << g.y);
+        CHECK(c.field_id == g.id);
+        CHECK(static_cast<int>(c.use) == g.use);
+        CHECK(std::llround(c.tint * 1e6) == g.tint);
+        CHECK(std::llround(c.row_dir.x * 1e6) == g.rx);
+        CHECK(std::llround(c.row_dir.y * 1e6) == g.ry);
+    }
+    std::vector<CoverLine> ls;
+    src->lines_touching({-500, -500}, {500, 500}, ls);
+    REQUIRE(!ls.empty());
+    double len = 0;
+    for (const auto& l : ls)
+        for (std::size_t k = 0; k + 1 < l.points.size(); ++k) len += (l.points[k + 1] - l.points[k]).length();
+    CHECK(ls.size() == 18);
+    CHECK(std::llround(len * 1000) == 5117600);
+    CHECK(ls.front().seed == 0x8f388445e0626b5eull);
+}
+
 TEST_CASE("test_world: per-field attributes are stable and constant over a field") {
     auto rules = uk_rules();
     auto src = make_default_cover_source(rules, 2);

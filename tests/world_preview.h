@@ -119,8 +119,8 @@ inline Rgb ground_colour(const cp::CoverGround& g, const cp::VegetationRules& r,
         case cp::LandUse::RoughGrazing: c = {128, 136, 84}; break;
     }
     const double t = g.tint;
-    const double f = 0.84 + 0.32 * t;
-    c = {c.r * f * (1.0 + 0.07 * (t - 0.5)), c.g * f, c.b * f * (1.0 - 0.07 * (t - 0.5))};
+    const double f = 0.78 + 0.44 * t;  // strong per-field variation, as in the aerials
+    c = {c.r * f * (1.0 + 0.20 * (t - 0.5)), c.g * f, c.b * f * (1.0 - 0.20 * (t - 0.5))};
     if (hatch && g.use >= cp::LandUse::Ploughed && g.use <= cp::LandUse::OtherCrop) {
         const double across = p.x * -g.row_dir.y + p.y * g.row_dir.x;
         const double sp = g.use == cp::LandUse::Ploughed ? 7.0 : 24.0;
@@ -268,7 +268,11 @@ inline Img cover_crop(const cp::TestWorld& tw, const cp::Heightfield& hf, const 
         }
     std::vector<cp::CoverPoint> pts;
     src.points_in(origin, {origin.x + w_m, origin.y + h_m}, pts);
-    for (const auto& p : pts) disc(p.pos, 3.0 * p.scale, 26, 56, 26);
+    for (const auto& p : pts) {
+        const bool in_wood = src.ground_at(p.pos).use == cp::LandUse::Woodland;
+        if (in_wood) disc(p.pos, 2.5 * p.scale, 38, 68, 36);
+        else disc(p.pos, 4.0 * p.scale, 30, 62, 30);
+    }
     return im;
 }
 
