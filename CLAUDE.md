@@ -30,3 +30,13 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - **The main session never audits screenshots or code itself**: visual and code review go to cold-read Sonnet agents; the main session reads only their reports.
 - **New session? Read `docs/HANDOFF.md` first.**
 - **Reference claims need opened references.** Any statement about what the reference photos show must name the reference files actually opened; review briefs must require this, and a score based on fewer than two opened references per view must say so (see `docs/README.md`, "Reference claims").
+- **Unreal is a single lane**: one agent at a time builds the plugin or runs the editor; queue Unreal work. Prefer the live editor via MCP over cold-start scripts.
+- **One git worktree and branch per code agent** (at least its own build dir, CLEAN builds). Merge one agent at a time; run the full suite on both compilers after each merge. After an agent says "N/N pass" in a shared tree, trust only a clean build of the merged state.
+- **Watch the usage limit**: at most 3-4 agents at once, finish before starting more, resume an agent with context rather than spawning a new one, stop agents re-sending finished reports, commit WIP before the limit cuts it off.
+- **Agents always run in the background** (a failed foreground launch blocks the turn). Every push carries `[skip ci]` until the person asks for CI (last CI-verified commit `1ae80b0`).
+- **Research Unreal/plugin/tool facts with agents, never from memory**; verify against `C:\UE_5.8` source.
+- **Briefs**: no unbounded absolutes ("as many tiers as needed") without a sanity bound; require agents to look at and judge results and to report what they did NOT verify; render and cold-read every geometry or look change before building on it.
+- **Check commits landed** with `git status -sb`, not the exit code.
+- **Send the person pictures as files** whenever new visual results exist (they often follow from a phone).
+- **Decision split**: road-engineering details are the assistant's (region-data defaults); product direction, scope, purchases, downloads and anything irreversible are the person's.
+- **Product framing (11 Oct)**: it is a game; a road placed in the open world must produce everything in the picture via a `world_cover` layer and road-generated content (incl. lighting columns); no hand-dressed look-test levels. Details in `docs/HANDOFF.md` section 1.

@@ -1,10 +1,10 @@
 # docs/ index
 
-Entry point for a new session: **HANDOFF.md**, then `CLAUDE.md` (repo root), then `planning-log.md`. Last revised 10 Oct 2026 (late evening).
+Entry point for a new session: **HANDOFF.md**, then `CLAUDE.md` (repo root), then `planning-log.md`. Last revised 11 Oct 2026 (morning).
 
 ## Start here
 - `HANDOFF.md` – current state, working rules, first steps for the Unreal phase. Current, rewritten whenever a session ends.
-- `planning-log.md` – source of truth for every product and design decision (Rounds 1-34). Current.
+- `planning-log.md` – source of truth for every product and design decision (Rounds 1-39). Current.
 
 ## Decisions and scope
 - `v0-brief.md` – v0 kickoff brief (scope, build order). Historical: v0 scope is also summarised in the planning log.
@@ -31,9 +31,14 @@ Entry point for a new session: **HANDOFF.md**, then `CLAUDE.md` (repo root), the
 - `research/mesh-terrain-research.md` – Mesh Terrain: verdict stays "avoid" (editor-only modifiers).
 - `research/pre-research.md` – v0 licence and data pre-research (CGAL ruled out, Clipper2). Historical.
 - `research/reference-claims-audit.md` – 11 Oct 2026 audit of every doc that says what real roads or the reference photos look like: claims, verdicts, files opened, edits, open hits.
+- `research/vegetation-plan.md` – 11 Oct 2026: what 36 opened photos show, world cover vs road-edge scatter, free asset routes, reviewer ignore/judge lists.
+- `research/infinigen-preflight.md` – 11 Oct 2026: read-only Infinigen pre-flight (machine facts, install route); dropped by the person.
 
 ## Progress
 - `progress/2026-10-10-structures/` – first structure and earthwork renders: `INDEX.md` (scenarios) and `REVIEW.md` (cold-read score 4.5/10). Snapshot; later rounds get their own dated folder.
+- `progress/2026-10-10-structures-r2/`, `-r3/`, `-r4/` – later structure rounds (r3 and r4 have `REVIEW.md`; the r4 review rejects stacked terraces as a ziggurat).
+- `progress/2026-10-10-unreal-first/`, `2026-10-11-unreal-second/`, `2026-10-11-unreal-third/` – first Unreal screenshots, the winding fix, the material and lighting pass (second and third have `REVIEW.md`; photorealism 2 -> 3.5/10). A fourth pass is in flight.
+- `progress/2026-10-11-junction-fixes/` – before/after renders of splitter islands, give-way lines and slip gores.
 
 ## Reference claims (rule)
 - Any statement about what the reference photos show (colour, wear, proportions, vegetation, light) must name the reference files that were actually opened for it, e.g. "(gsv 180248, street/02)". Text in an INDEX is not an opened reference.
