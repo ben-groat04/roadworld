@@ -62,3 +62,18 @@ const fill = {
 const tpl = fs.readFileSync(path.join(root, 'docs/templates/BRIEF.md'), 'utf8');
 // single pass so placeholder-like text inside the pasted values is never re-expanded
 process.stdout.write(tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k] ?? ''));
+
+// Canary (tools/hooks/notice_lib.mjs): hooks that never run cannot report themselves, so look at gate.log from this side.
+// Only in the main checkout, which owns the live log. The brief above is still printed; the exit code is 3 if tripped.
+let canaryExit = 0;
+try {
+  const nl = await import('./hooks/notice_lib.mjs');
+  const lib = await import('./hooks/lib.mjs');
+  if (nl.isMainCheckout(root)) {
+    const rep = nl.canaryReport(lib.STATE_DIR);
+    if (rep.text) console.error('\n' + rep.text + '\n');
+    if (rep.problems.length) canaryExit = 3;
+    lib.log({ gate: 'make_brief', round: opt('round'), handin_dir: handinDir });
+  }
+} catch (e) { console.error('make_brief: canary check could not run (' + (e && e.message) + ')'); }
+process.exitCode = canaryExit;

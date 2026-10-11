@@ -6,17 +6,18 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hooktest-'));
 const root = path.join(tmp, 'main');
 const wt = path.join(tmp, 'wt');
 const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); };
-['tools/hooks/lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs',
+['tools/hooks/lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
   'tools/check_handin.mjs', 'tools/make_brief.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
 for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'x'); }
+fs.mkdirSync(path.join(root, '.git'), { recursive: true }); // main-checkout marker for make_brief's canary
 const elsewhere = path.join(tmp, 'elsewhere'); fs.mkdirSync(elsewhere);
 const logPath = path.join(root, '.claude/state/gate.log');
 const lastLog = () => { const l = fs.readFileSync(logPath, 'utf8').trim().split('\n'); return JSON.parse(l[l.length - 1]); };
@@ -141,6 +142,135 @@ console.log('check_handin non-photo references');
   c = check(); t('one non-existent path: fails and names the file', c.status === 1 && /missing_shot\.png/.test(c.stderr), c.stderr);
   fs.writeFileSync(path.join(handin, 'STATUS.md'), status(['docs/progress/2026-10-11-prototype-ui/s01.png', 'docs/progress/2026-10-11-prototype-ui/s02.png'], 2));
   c = check(); t('only 2 existing files in a case: still fails (needs 3)', c.status === 1 && /need at least 3/.test(c.stderr), c.stderr);
+}
+
+// ---- gate_notice / gate_ack / canary
+console.log('gate_notice, gate_ack, canary');
+{
+  const nl = await import(pathToFileURL(path.join(src, 'tools/hooks/notice_lib.mjs')).href);
+  const ptxt = (o) => (J(o).hookSpecificOutput || {}).additionalContext || '';
+  const prompt = (rt = root) => spawnSync(process.execPath, [path.join(rt, 'tools/hooks/gate_notice.mjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's9', prompt: 'hi', cwd: elsewhere }), cwd: elsewhere, encoding: 'utf8' });
+  const ack = (txt, rt = root) => spawnSync(process.execPath, [path.join(rt, 'tools/hooks/gate_ack.mjs'), ...(txt === null ? [] : [txt])], { cwd: elsewhere, encoding: 'utf8' });
+
+  // The log of this run already holds real FAIL-OPEN lines, a NO-CONTRACT launch and a released hand-in from the tests above.
+  let n = prompt();
+  const ctx = ptxt(n.stdout);
+  t('real log: notice emitted as UserPromptSubmit additionalContext', n.status === 0 && J(n.stdout).hookSpecificOutput.hookEventName === 'UserPromptSubmit' && ctx.startsWith('GATE NOTICE'), n.stdout.slice(0, 300));
+  t('notice names FAIL-OPEN lines', /FAIL-OPEN x\d+/.test(ctx));
+  t('notice names the released hand-in with its HANDIN_DIR', /HAND-IN RELEASED after 3 refusals x1/.test(ctx) && ctx.includes(hd('vis')), ctx);
+  t('notice counts NO-CONTRACT launches with the reason', /NO-CONTRACT launches x1/.test(ctx) && /read-only research, no hand-in expected/.test(ctx));
+  t('notice states how to clear it', ctx.includes('gate_ack.mjs') && /20 characters/.test(ctx));
+  t('notice under the 10000 character cap', ctx.length < 6100);
+  n = prompt(); t('repeats on the next prompt until acknowledged', ptxt(n.stdout).startsWith('GATE NOTICE'));
+  t('every run logs a heartbeat line (gate notice)', lastLog().gate === 'notice' && lastLog().decision === 'notice');
+
+  let a = ack(null); t('ack without text: refused, exit 1', a.status === 1 && /REFUSED/.test(a.stderr));
+  a = ack('too short'); t('ack with short text: refused, exit 1', a.status === 1 && /at least 20/.test(a.stderr));
+  a = ack('x'.repeat(19)); t('ack with 19 characters: refused', a.status === 1);
+  a = ack('   ' + 'y'.repeat(10) + '   '); t('ack padded with spaces to 20+: refused (trimmed)', a.status === 1);
+  n = prompt(); t('refused acks do not clear the notice', ptxt(n.stdout).startsWith('GATE NOTICE'));
+  t('refused ack writes nothing to the log', !fs.readFileSync(logPath, 'utf8').includes('"gate":"ack"'));
+
+  a = ack('read HANDIN_FAILED.txt, re-ran the check by hand, reasons judged harmless');
+  t('ack with 20+ characters: accepted and counted', a.status === 0 && /Acknowledged \d+ item/.test(a.stdout), a.stderr + a.stdout);
+  t('ack logged with text, timestamp, through_line', lastLog().gate === 'ack' && /re-ran the check/.test(lastLog().text) && !!lastLog().ts && lastLog().through_line > 0 && lastLog().cleared.handin_failed === 1);
+  n = prompt(); t('after ack: no output at all', n.status === 0 && n.stdout === '');
+  t('after ack: heartbeat still logged (decision none)', lastLog().gate === 'notice' && lastLog().decision === 'none');
+  n = prompt(); t('still silent on the next prompt', n.stdout === '');
+
+  // new events after the ack show up again, and only those
+  launch('Research again.\nNO-CONTRACT: a second read-only research launch here');
+  n = prompt(); const c2 = ptxt(n.stdout);
+  t('a new NO-CONTRACT after the ack is reported alone', /x1/.test(c2) && /second read-only research/.test(c2) && !/HAND-IN RELEASED/.test(c2) && !/read-only research, no hand-in expected/.test(c2), c2);
+  run('handin_gate.mjs', 'not json');
+  n = prompt(); t('a new FAIL-OPEN after the ack is reported', /FAIL-OPEN x1/.test(ptxt(n.stdout)));
+  ack('second ack: both new items were looked at and judged fine');
+  t('ack clears both', prompt().stdout === '');
+  t('acking with nothing pending is allowed', ack('acknowledged again with nothing pending at all').status === 0);
+
+  // hand-in released repeatedly for the same HANDIN_DIR is one item
+  const dupTp = transcript('dup', mk('dup'));
+  fs.mkdirSync(hd('dup'), { recursive: true }); fs.writeFileSync(path.join(hd('dup'), 'STATUS.md'), goodStatus);
+  for (let i = 0; i < 6; i++) stop('d1', dupTp);
+  n = prompt(); t('same HANDIN_DIR released repeatedly: reported once', /HAND-IN RELEASED after 3 refusals x1/.test(ptxt(n.stdout)), ptxt(n.stdout));
+  ack('dup hand-in looked at, FAULTS and COMPARE missing, accepted');
+
+  // fail-open of the notice hook itself
+  n = spawnSync(process.execPath, [path.join(root, 'tools/hooks/gate_notice.mjs')], { input: 'garbage', cwd: elsewhere, encoding: 'utf8' });
+  t('notice hook with bad stdin: exit 0, no output, logged FAIL-OPEN', n.status === 0 && n.stdout === '' && lastLog().gate === 'notice' && /FAIL-OPEN/.test(lastLog().reason));
+  n = prompt(); t('and that failure shows up in the next notice', /FAIL-OPEN x1/.test(ptxt(n.stdout)) && /gate=notice/.test(ptxt(n.stdout)));
+  ack('notice hook failure was a test with bad stdin, nothing to fix');
+  // a log that cannot be parsed in places must not break the notice
+  fs.appendFileSync(logPath, 'this is not json\n{"gate":"brief","reason":"FAIL-OPEN: test line","ts":"2026-01-01T00:00:00Z"}\n');
+  n = prompt(); t('garbage line in the log is skipped, valid FAIL-OPEN after it still reported', n.status === 0 && /FAIL-OPEN x1/.test(ptxt(n.stdout)));
+  ack('garbage log line test, nothing to fix here at all');
+  // unreadable state: gate.log missing entirely
+  const rootN = path.join(tmp, 'mainN'); ['tools/hooks/lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs'].forEach((rel) => { const d = path.join(rootN, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+  n = prompt(rootN); t('no gate.log yet: exit 0, output empty', n.status === 0 && n.stdout === '');
+  // state dir is a file: the log cannot be written; hook must still exit 0
+  fs.rmSync(path.join(rootN, '.claude'), { recursive: true, force: true }); fs.writeFileSync(path.join(rootN, '.claude'), 'i am a file');
+  n = prompt(rootN); t('state dir unusable: exit 0, silent', n.status === 0 && n.stdout === '');
+
+  // ---- canary rules (pure function)
+  const T0 = Date.parse('2026-10-11T12:00:00Z');
+  const at = (sec, e) => ({ ts: new Date(T0 + sec * 1000).toISOString(), ...e });
+  const cp1 = (es, nowSec) => nl.canaryProblems(es.map((e, i) => ({ n: i + 1, ...e })), T0 + nowSec * 1000);
+  t('canary: empty log is fine', cp1([], 0).length === 0);
+  t('canary: brief made 10 s ago, no launch yet: grace, fine', cp1([at(0, { gate: 'make_brief', round: 'a' }), at(5, { gate: 'notice', reason: 'ran' })], 10).length === 0);
+  let pr = cp1([at(0, { gate: 'notice', reason: 'ran' }), at(10, { gate: 'make_brief', round: 'r7' })], 600);
+  t('canary RULE 1: brief 10 min old and no launch hook line after it: tripped, names the round', pr.length === 1 && /RULE 1/.test(pr[0]) && /r7/.test(pr[0]), pr.join('|'));
+  t('canary RULE 1: launch hook line (brief) after the brief: fine', cp1([at(10, { gate: 'make_brief', round: 'r7' }), at(20, { gate: 'brief', decision: 'allow' }), at(500, { gate: 'notice', reason: 'ran' })], 600).length === 0);
+  t('canary RULE 1: inject line after the brief also counts', cp1([at(10, { gate: 'make_brief', round: 'r7' }), at(20, { gate: 'inject' }), at(500, { gate: 'notice', reason: 'ran' })], 600).length === 0);
+  t('canary RULE 1: a launch line BEFORE the brief does not count', cp1([at(1, { gate: 'brief' }), at(10, { gate: 'make_brief', round: 'r7' }), at(500, { gate: 'notice', reason: 'ran' })], 600).length === 1);
+  t('canary RULE 1: handin/notice lines do not count as launch hooks', cp1([at(10, { gate: 'make_brief', round: 'r7' }), at(20, { gate: 'handin' }), at(30, { gate: 'notice', reason: 'ran' })], 600).length === 1);
+  pr = cp1([at(0, { gate: 'brief' }), at(100, { gate: 'notice', reason: 'ran' })], 100 + 4 * 3600);
+  t('canary RULE 2: last notice line older than 3 h: tripped', pr.length === 1 && /RULE 2/.test(pr[0]) && /since/.test(pr[0]), pr.join('|'));
+  t('canary RULE 2: notice 2 h ago: fine', cp1([at(0, { gate: 'brief' }), at(100, { gate: 'notice', reason: 'ran' })], 100 + 2 * 3600).length === 0);
+  pr = cp1([at(0, { gate: 'brief' })], 4 * 3600);
+  t('canary RULE 2: notice hook never logged but launch hooks old: tripped ("ever")', pr.length === 1 && /ever/.test(pr[0]));
+  t('canary RULE 2: notice never logged and launch hooks young: fine', cp1([at(0, { gate: 'brief' })], 3600).length === 0);
+  pr = cp1([at(0, { gate: 'notice', reason: 'ran' }), at(100, { gate: 'notice', reason: 'FAIL-OPEN: exception' })], 4 * 3600);
+  t('canary RULE 2: FAIL-OPEN notice lines do not count as the hook running', pr.length === 1 && /RULE 2/.test(pr[0]));
+  t('canary: both rules can trip together', cp1([at(0, { gate: 'brief' }), at(10, { gate: 'make_brief', round: 'z' })], 4 * 3600).length === 2);
+
+  // ---- canary through the real tools
+  const mkRoot = (name) => {
+    const rt = path.join(tmp, name);
+    ['tools/hooks/lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md']
+      .forEach((rel) => { const d = path.join(rt, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+    fs.mkdirSync(path.join(rt, '.git'), { recursive: true });
+    fs.mkdirSync(path.join(rt, '.claude/state'), { recursive: true });
+    return rt;
+  };
+  const brief = (rt, round) => { const tf = path.join(tmp, round + '.md'); fs.writeFileSync(tf, task()); return spawnSync(process.execPath, [path.join(rt, 'tools/make_brief.mjs'), tf, '--round', round, '--worktree', path.join(wt, round)], { cwd: elsewhere, encoding: 'utf8' }); };
+  const old = (minAgo, e) => JSON.stringify({ ts: new Date(Date.now() - minAgo * 60000).toISOString(), ...e }) + '\n';
+  const rC = mkRoot('mainC');
+  let b = brief(rC, 'c1'); t('make_brief on a clean checkout: exit 0, brief printed, no canary text', b.status === 0 && /AGENT-CONTRACT-MARKER/.test(b.stdout) && !/CANARY/.test(b.stderr), b.stderr);
+  t('make_brief logs a make_brief line', fs.readFileSync(path.join(rC, '.claude/state/gate.log'), 'utf8').includes('"gate":"make_brief"'));
+  fs.writeFileSync(path.join(rC, '.claude/state/gate.log'), old(30, { gate: 'make_brief', round: 'old' }) + old(1, { gate: 'notice', reason: 'ran' }));
+  b = brief(rC, 'c2');
+  t('make_brief: previous brief 30 min old with no launch hook line: exit 3, loud warning, brief still printed', b.status === 3 && /HOOK CANARY/.test(b.stderr) && /RULE 1/.test(b.stderr) && /AGENT-CONTRACT-MARKER/.test(b.stdout), b.stderr);
+  b = brief(rC, 'c3'); t('make_brief again: still tripped until a launch hook line appears', b.status === 3);
+  fs.appendFileSync(path.join(rC, '.claude/state/gate.log'), old(0, { gate: 'brief', decision: 'allow', reason: 'contract present' }) + old(0, { gate: 'notice', reason: 'ran' }));
+  b = brief(rC, 'c4'); t('after a launch hook line the canary clears', b.status === 0 && !/CANARY/.test(b.stderr), b.stderr);
+  fs.appendFileSync(path.join(rC, '.claude/state/gate.log'), old(0, { gate: 'brief', decision: 'allow', reason: 'FAIL-OPEN: stdin missing or not JSON' }));
+  b = brief(rC, 'c5'); t('make_brief prints pending gate notices too (exit stays 0)', b.status === 0 && /GATE NOTICE/.test(b.stderr) && /FAIL-OPEN x1/.test(b.stderr), b.stderr);
+  const rW = mkRoot('mainW'); fs.rmSync(path.join(rW, '.git'), { recursive: true }); fs.writeFileSync(path.join(rW, '.git'), 'gitdir: elsewhere');
+  fs.writeFileSync(path.join(rW, '.claude/state/gate.log'), old(60, { gate: 'make_brief', round: 'x' }));
+  b = brief(rW, 'w1'); t('worktree checkout (.git is a file): canary skipped and no log line written', b.status === 0 && !/CANARY/.test(b.stderr) && fs.readFileSync(path.join(rW, '.claude/state/gate.log'), 'utf8').trim().split('\n').length === 1, b.stderr);
+  // check_handin prints the canary but keeps its own exit code
+  const hdC = path.join(tmp, 'wtC', 'docs', 'progress', 'cc'); fs.mkdirSync(hdC, { recursive: true });
+  fs.writeFileSync(path.join(rC, '.claude/state/gate.log'), old(30, { gate: 'make_brief', round: 'old' }) + old(1, { gate: 'notice', reason: 'ran' }));
+  let ch = spawnSync(process.execPath, [path.join(rC, 'tools/check_handin.mjs'), hdC, '--main', rC, '--no-visual'], { cwd: elsewhere, encoding: 'utf8' });
+  t('check_handin: loud canary warning on stderr, exit code still 1 for the missing STATUS.md', ch.status === 1 && /HOOK CANARY/.test(ch.stderr) && /HAND-IN CHECK FAILED/.test(ch.stderr), ch.stderr);
+  ch = spawnSync(process.execPath, [path.join(rC, 'tools/check_handin.mjs'), hdC, '--main', rC, '--no-visual'], { cwd: elsewhere, encoding: 'utf8', env: { ...process.env, CP_FROM_HOOK: '1' } });
+  t('check_handin called by the hand-in gate (CP_FROM_HOOK): no canary text', ch.status === 1 && !/CANARY/.test(ch.stderr));
+  fs.writeFileSync(path.join(rC, '.claude/state/gate.log'), '');
+  ch = spawnSync(process.execPath, [path.join(rC, 'tools/check_handin.mjs'), hdC, '--main', rC, '--no-visual'], { cwd: elsewhere, encoding: 'utf8' });
+  t('check_handin with an empty gate.log: no canary text', !/CANARY/.test(ch.stderr));
+  // settings wiring
+  const sj = JSON.parse(fs.readFileSync(path.join(src, '.claude/settings.json'), 'utf8'));
+  t('settings.json wires UserPromptSubmit to gate_notice.mjs', JSON.stringify(sj.hooks.UserPromptSubmit || []).includes('tools/hooks/gate_notice.mjs'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
