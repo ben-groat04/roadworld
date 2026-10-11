@@ -164,7 +164,10 @@ FCPToolPreview FCPToolSession::Hover(const FCPPointerInput& Pointer, const FCPTo
 FCPToolClickResult FCPToolSession::Click(const FCPPointerInput& Pointer, const FCPToolModifiers& Modifiers)
 {
 	cp::ClickResult R = Impl->Session.click(ToPointer(Pointer), ToMods(Modifiers));
-	Impl->LastRibbons.clear();
+	if (!R.added || R.finished)
+	{
+		Impl->LastRibbons.clear();   // an added point keeps the ribbons of the hover that led to it: the cursor now sits on it and the sim returns none
+	}
 	FCPToolClickResult Out;
 	Out.bAdded = R.added;
 	Out.bFinished = R.finished;

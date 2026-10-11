@@ -139,6 +139,11 @@ void ScenarioStates(FBuilder& B)
 	B.Press(EKeys::Enter);
 	B.CheckGraph(TEXT("states: second road finished"), 4, 2, TEXT(""));
 	State(B, TEXT("s27_finished_road_idle"), 100, -165);
+	B.View(130.0, 0.0, 0.2, 0.0, -165.0);
+	StateHere(B, TEXT("s27b_finished_topdown"));
+	B.View(90.0, 0.5, 1.2, 60.0, -165.0);
+	StateHere(B, TEXT("s27c_finished_low_oblique"));
+	B.View(Dist, 0.0, Polar, 0.0, -80.0);
 
 	// 28 crossing refused: a street across R0 whose height differs by a few metres where they cross.
 	B.ShiftDown();
@@ -149,12 +154,26 @@ void ScenarioStates(FBuilder& B)
 	B.ShiftUp();
 	StateHere(B, TEXT("s28_error_crossing_too_close"));
 	B.Press(EKeys::Escape);
+
+	// Slope report: a road over the hills west of the centre (ground about 50 m up there). Earthworks are not wired yet, so this
+	// shows what a road on a slope looks like today.
+	B.ShiftDown();
+	B.View(170.0, 0.0, 1.05, -240.0, -40.0);
+	B.Click(-300, -90);
+	B.Click(-240, -40);
+	B.Click(-180, 10);
+	B.Press(EKeys::Enter);
+	B.ShiftUp();
+	B.Pointer(-240, 60);
+	StateHere(B, TEXT("s30_road_on_slope"));
+	B.View(120.0, 0.6, 1.3, -240.0, -40.0);
+	StateHere(B, TEXT("s31_road_on_slope_low"));
 }
 
 void ScenarioUndoAll(FBuilder& B)
 {
 	// Back to the empty world for the counted scenarios that follow.
-	for (int32 I = 0; I < 6; ++I)
+	for (int32 I = 0; I < 8; ++I)
 	{
 		B.Chord(EKeys::LeftControl, EKeys::Z);
 	}
