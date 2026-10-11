@@ -95,6 +95,8 @@ No graph mutation, no `WorldCache`, no Unreal collision. Cost is that of the pro
 Undo, redo and load take the same path. Rapid edits coalesce into one update.
 
 ## C. Milestones
+> Scope only. State (what is done, running, owed) is in docs/QUEUE.md.
+
 
 sim_core work runs in parallel worktrees; Unreal work is the single lane.
 

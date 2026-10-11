@@ -1,3 +1,5 @@
+> HISTORICAL (11 Oct 2026): kept for the record; not current state. Current state: docs/QUEUE.md and docs/HANDOFF.md.
+
 # Windows setup for Unreal 5.8 C++ (do this while the engine downloads)
 
 VS Code can be your editor, but Unreal C++ needs Microsoft's **MSVC compiler**, which only comes from the Visual Studio Installer. Checked against Epic's UE 5.8 release notes and the Visual Studio setup page (10 Oct 2026).

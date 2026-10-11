@@ -1,3 +1,5 @@
+> HISTORICAL (11 Oct 2026): kept for the record; not current state. Current state: docs/QUEUE.md and docs/HANDOFF.md.
+
 # City Painter: v0 kickoff brief for Claude Code
 
 10 Oct 2026

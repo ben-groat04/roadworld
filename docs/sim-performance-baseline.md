@@ -1,3 +1,5 @@
+> HISTORICAL (11 Oct 2026): kept for the record; not current state. Current state: docs/QUEUE.md and docs/HANDOFF.md.
+
 # Sim performance baseline (PARTIAL)
 
 **Status.** First numbers only. The session was cut short, so: large was measured for `grid` only, with 1 repeat and no edit loop; medium and large for `organic` and `motorway` were only smoke-run (no numbers recorded here); scaling exponents were not computed (the tool computes them when two or more sizes run in one invocation); no re-run of headline numbers; no second-run determinism comparison across processes. All timings were taken on a busy laptop (other agents compiling), so treat them as +/-30% at best. I did not measure the noise formally; small-network repeats spread by up to about 2x on mesh stages.

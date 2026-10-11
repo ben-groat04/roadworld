@@ -1,126 +1,83 @@
-# Work queue (the main session's only queue; if it is not here, it is not queued)
+# Work queue (the ONLY queue: if it is not here, it is not queued)
 
-Updated by the main session every time an agent is started, an agent reports, or the owner changes direction. Newest state wins; finished items are deleted (git history keeps them). Last updated: 11 Oct 2026, 19:05.
+Updated by the main session whenever an agent starts, reports, or the owner changes direction; finished items are deleted (git history keeps them). Last rewritten 11 Oct 2026, about 19:40, by the reorganising agent from git and files. Live truth for branches: run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\worktree_status.ps1` first. Milestone state table: `docs/HANDOFF.md` (single copy). Pipeline: worker -> auditor (different, fresh) -> merger (third); send-back to a fresh worker; main session only decides.
 
-## The plan (milestones from docs/unreal-game-plan.md section C; every agent belongs to one row, or it does not start)
-**Standing pipeline** (owner, 11 Oct: "one job should have a working agent, an auditing agent, and a merging agent. this should be obvious."). Every job = worker -> auditor (a different agent) -> merger (a third agent: merges an accepted branch into main, clean builds and full suite on both compilers, removes the worktree and its build folders). A send-back goes to a fresh worker. The main session only decides jobs and their order.
+## First actions for the new session (in order)
+1. Run `tools\worktree_status.ps1`. Check which of the WORKING agents below have finished (a worktree with a new commit and a STATUS.md in `docs/progress/` is a hand-in): run `node tools/check_handin.mjs <folder>` on each; failures go back unread. Start an auditor for every hand-in that passes. Read STATUS first lines for anything skipped.
+2. Integration merger (`../roadworld-wt-integ`, `integ/2026-10-11` 35e74bd = world cover r4, junction markings, earthworks r7+r8, road tool r2, unreal-m2, main): when it hands in, an independent auditor does a clean build and the full suite on gcc and MSVC; then a merger fast-forwards main to it. This blocks everything below that is based on old code.
+3. Audit-gate tooling (`agent/auditgate` c9c3616): an auditor is running; get its verdict. If accept, a merger merges it (3-4 commits behind main; it also edits `CLAUDE.md` and `tools/hooks`, expect a small conflict with the layout edits made on 11 Oct: keep both). It was tested only with synthetic hook input: the auditor must exercise it live (agent_id match, YOUR AGENT ID line, a real auditor run).
+4. Earthworks round 9 (`agent/grade-r9` de26275): audit owed. Check the section sheets and disturbance views against the height data they claim to show; scene check fell 20/21 to 17/21 (the brief asked for 21/21). Based on 0404204, so rebase after step 2.
+5. Merge order, one at a time, clean builds both compilers after each: integ -> auditgate -> grade-r9 -> gradelayer (both grading: r9 first) -> roundabout -> tjunction -> sliproad -> roadtool3. Junction rounds touch the same files: roundabout before tjunction before sliproad.
+6. New worker for milestone 2's audit items (`../roadworld-wt-m2/docs/progress/2026-10-11-unreal-m2-run/AUDIT.md`, section "For the next Unreal builder": 9 items that belong to M2 plus the harness strengthening). Fresh worktree from the new main.
+7. Start the milestone 3 UI job (owner decided: start in the new session). Task file `docs/tasks/m3ui.md` (45 screenshot paths included). `../roadworld-wt-m3ui` and `-wt-uelook` sit at 62368f3 with no commits of their own: remove them and recut worktrees from the new main with `tools\new_agent_worktree.ps1`. Needs the Unreal lane (one build or run at a time).
+8. Start the slip road job (owner decided: start in the new session). Task file `docs/tasks/sliproad.md`; cut from main after roundabout has merged if possible (same junction files), and brief it from `docs/reference/MATCHED.md` once that exists.
+9. HOLD the sandbox look job (`docs/tasks/uelook.md`) until the free-asset results arrive; its worktree is the stale one from step 7.
+10. Free assets (see section below): collect both research reports, put them in `docs/README.md`, and give the owner the list of account-gated assets.
+11. Mergers do these as work lands (all owner-approved): remove worktrees + branches whose work is on main (`-wt-grade`, `-wt-cover`, `-wt-tool2`, `-wt-junc`, `-wt-tool`, `-wt-world`, `-wt-rules` now; `-wt-integ` after step 2; `-wt-m2`, `-wt-auditgate`, `-wt-grade-r9`, `-wt-gradelayer`, `-wt-roundabout`, `-wt-tjunction`, `-wt-roadtool3`, `-wt-sliproad` each after its merge; one line per removal here). `-wt-junc` first: its `AUDIT.md` is already copied to main (`docs/progress/2026-10-11-junction-markings`). Delete the old `build-*` dirs in the main checkout (keep `build`, `build-gcc`, `build-msvc`, today's) only once no builder is running (`Get-Process` shows no cmake/ninja/msbuild there). Delete scratch outside the repo: copy `C:\Users\bgbg0\cp_scratch` composites into `docs/reference/_compare/world-cover-r4/` first, then delete `cp_scratch`, `livetest`, `hk`, orphan `roadworld-wt-hooktest`, `roadworld-build-tool`, `roadworld-b-tool2-*`, `roadworld-junc-*` and their `.log` files. When the Unreal lane is idle: delete the ignored leftover `unreal/CityPainter/Plugins/CityPainterSim` (not `Intermediate` of the live plugin).
+12. Main session writes two memory notes the reorganisation did not (`dont-rush-a-stop`, `think-about-parallelism`) plus a repo-organisation-rules note; reconcile the usage-limit paragraph in `CLAUDE.md` with the owner's rule (do not tell agents about usage limits).
+13. Later, one dedicated job after milestone 5: code cleanups (see "Cleanup").
 
-Two tracks. ENGINE (sim_core, any number of parallel worktrees) feeds GAME (Unreal, one build or run at a time, shared by the lock dir .claude/state/unreal_lane.lock). Each milestone: builder -> auditor -> main session -> merge. Order of the GAME track is fixed: M2 -> M3 -> M5 -> M6 -> M7 -> M4 -> M8.
-
-| Milestone | Player can | Engine side | Game side | State |
-|---|---|---|---|---|
-| M1 | fly over the hills | done | done, played | DONE |
-| M2 | click a road, undo/redo | done | built and played 51/51 | under audit, then merge |
-| M3 | draw like the prototype: curves, snaps, junctions, warnings, profile panel, types | road tool round 2 merged; follow-up running (roadtool3) | m3ui builder: next on the lane | STARTING |
-| M5 | get cuttings, embankments, walls, bridges under a drawn road | earthworks r9 running; world layers running (gradelayer) | graded ground + structures layers: after M3 on the lane | ENGINE RUNNING |
-| M6 | see lights, hedges, trees, verge, believable ground and sky | street lights exist; world cover r4 merged (stops there) | instancing + ground/sky look: after M5; needs the free asset results (two searches running) | ASSETS RUNNING |
-| M7 | edit, bulldoze, roundabout and bridge tools | EditSession merged; junction quality rounds running (roundabout, tjunction, sliproad) | three tools: after M6 | ENGINE RUNNING |
-| M4 | no hitches on a big map | mesh reuse | worker thread, budgeted swap | not started (moved late on purpose: measure after M5-M6 load exists) |
-| M8 | run a packaged exe, save/load | save format | packaging | not started |
-
-Support, serves all rows: matched reference set, audit gate tooling, integration merges.
-Rule for starting anything: name its row. A request that fits no row is raised with the owner as a plan change, not just started.
-
-## Running now (true as of 11 Oct 2026, 19:05; stages are exactly: WORKING, HANDED IN (audit owed), AUDITED: accept (merge owed), AUDITED: send back (new worker owed), MERGED)
-Found by `git worktree list`, last commit, uncommitted file count and file modification times. WORKING means files in the worktree changed within the last minute.
-| Job | Worktree / branch | Stage | Detail |
+## Jobs and stages (stage words: WORKING / HANDED IN (audit owed) / AUDITED: accept (merge owed) / AUDITED: send back (new worker owed) / MERGED). True as of 19:40; the status script is truer.
+| Job (milestone) | Worktree / branch (tip) | Stage | Detail |
 |---|---|---|---|
-| Unreal milestone 2 | `../roadworld-wt-m2`, `agent/unreal-m2` (hand-in 62368f3, audit 48819a7) | AUDITED: accept (merge owed) | Mechanics only; finished-road look NOT accepted. The auditor's 9 "belongs to M2" items and the harness strengthening go to a NEW worker (AUDIT.md). Merger owed. |
-| Earthworks round 9 | `../roadworld-wt-grade-r9`, `agent/grade-r9` (de26275) | HANDED IN (audit owed) | check_handin passes; scene check 17/21 (down from 20/21); not audited. |
-| Audit gate mechanism | `../roadworld-wt-auditgate`, `agent/auditgate` (c9c3616) | HANDED IN (audit owed) | check_handin passes (--no-visual); 237 hook tests; nothing tested live. |
-| Vegetation scripted kit r2 | `../roadworld-wt-veg`, `agent/veg-kit-r2` (12a4645) | AUDITED: send back (new worker owed) | STOPPED: owner chose free assets, so no new worker; branch is not merged. |
-| Junction markings | `../roadworld-wt-junc`, `agent/junction-markings` (be59b50) | AUDITED: send back (new worker owed) | The roundabout, tjunction and sliproad rounds are the new workers; old branch is merged into integ only as base code. |
-| Gate notices and hooks | `../roadworld-wt-rules`, `agent/rules-fix` (84a6cb8) | MERGED | Audited accept, merged to main, live. Worktree removal owed to a merger. |
-| Integration (world cover r4, junction markings, earthworks r7+r8, road tool gaps) | `../roadworld-wt-integ`, `integ/2026-10-11` (e0c0d4b) | WORKING | Merges done to e0c0d4b but NOT yet in main; files changing now (31 uncommitted). Needs its own independent auditor for the clean build and suite on both compilers, then fast-forward main. |
-| Roundabout round | `../roadworld-wt-roundabout`, `agent/roundabout` (base e0c0d4b) | WORKING | 12 uncommitted files, `docs/progress/roundabout` started. |
-| T-junction round | `../roadworld-wt-tjunction`, `agent/tjunction` (base e0c0d4b) | WORKING | 6 uncommitted files, `docs/progress/tjunction` started. |
-| Grading and structures as world cache layers | `../roadworld-wt-gradelayer`, `agent/gradelayer` (base e0c0d4b) | WORKING | 10 uncommitted files. |
-| Road tool follow-up | `../roadworld-wt-roadtool3`, `agent/roadtool3` (base e0c0d4b) | WORKING | 24 uncommitted files. |
-| Slip road round | `../roadworld-wt-sliproad`, `agent/sliproad` | NO AGENT STARTED | Worktree created, brief prepared, held by the owner's instruction to stop launching. |
-| Unreal look (uelook) | `../roadworld-wt-uelook`, `agent/uelook` (62368f3) | NO AGENT STARTED | Worktree created, brief prepared, held (same instruction). |
-| Unreal M3 UI (m3ui) | `../roadworld-wt-m3ui`, `agent/m3ui` (62368f3) | NO AGENT STARTED | Worktree created, brief prepared, held (same instruction). |
-| Free assets, vegetation | research agent (no worktree) | WORKING (research) | Writes untracked files under `unreal/CityPainter/SourceArt` and `docs/research` (`free-assets-vegetation.md`). |
-| Free assets, roads and world | research agent (no worktree) | WORKING (research) | Same locations (`free-assets-roads-world.md`). |
-| Matched junction reference set | research agent (no worktree) | WORKING (research) | Writes under `docs/reference` (`MATCHED.md`, does not exist yet); blocks every junction builder. |
-| Repo organisation audit | read-only research agent | WORKING (research) | Will write `docs/research/repo-organisation-audit-2026-10-11.md`. |
-Old worktrees with nothing running (merged into integ or superseded; removal owed to a merger): `-wt-cover`, `-wt-grade`, `-wt-tool`, `-wt-tool2`, `-wt-world`, `-wt-hooktest` (not a git repo, leftover folder).
+| Unreal milestone 2 (M2) | `-wt-m2`, `agent/unreal-m2` (48819a7) | AUDITED: accept (merge owed); already merged into integ | Mechanics only; finished-road look NOT accepted; new worker owed (First actions 6). |
+| Integration | `-wt-integ`, `integ/2026-10-11` (35e74bd) | WORKING (a merger is merging and building Unreal) | Then independent audit, then main fast-forward. |
+| Earthworks round 9 (M5) | `-wt-grade-r9`, `agent/grade-r9` (de26275, base 0404204) | HANDED IN (audit owed) | scene check 17/21. |
+| Grading and structures as WorldCache layers (M5) | `-wt-gradelayer`, `agent/gradelayer` (3bc381f, base e0c0d4b) | WORKING | commit "Graded ground and structures as WorldCache layers" exists; uncommitted files too. |
+| Road tool follow-up (M3 engine) | `-wt-roadtool3`, `agent/roadtool3` (e0c0d4b) | WORKING | gaps list: `docs/tasks/roadtool3-gaps.md`. |
+| Roundabout round (M7) | `-wt-roundabout`, `agent/roundabout` (e0c0d4b) | WORKING | `docs/progress/roundabout` started. |
+| T-junction round (M7) | `-wt-tjunction`, `agent/tjunction` (e0c0d4b) | WORKING | `docs/progress/tjunction` started. |
+| Audit gate mechanism (support) | `-wt-auditgate`, `agent/auditgate` (c9c3616) | HANDED IN; auditor running | First actions 3. |
+| Slip road round (M7) | `-wt-sliproad`, `agent/sliproad` (e0c0d4b) | NO AGENT STARTED; brief ready | Start in the new session (First actions 8). |
+| Unreal M3 UI (M3) | `-wt-m3ui`, `agent/m3ui` (62368f3, no own commits) | NO AGENT STARTED; brief ready | Start in the new session; recut the worktree. |
+| Unreal sandbox look (M6) | `-wt-uelook`, `agent/uelook` (62368f3, no own commits) | HELD | Until the free assets arrive. |
+| Junction markings (M7, old round) | `-wt-junc`, `agent/junction-markings` (tip be59b50 = audit only; content d611346 is in integ) | AUDITED: send back | Roundabout, tjunction, sliproad are the new workers. Worktree removal owed. |
+| Vegetation scripted kit r2 (M6) | `-wt-veg`, `agent/veg-kit-r2` (12a4645, 41+ behind) | AUDITED: send back; kit STOPPED | Owner: keep the branch UNMERGED until the free-asset results are in, then drop what the free assets replace. |
+| Gate notices and hooks | `-wt-rules`, `agent/rules-fix` (84a6cb8) | MERGED | Worktree removal owed. |
+| Road tool r2, junction (merged), grading r6, cover r2, test world, road tool | `-wt-tool2`, `-wt-grade`, `-wt-cover`, `-wt-tool`, `-wt-world` | MERGED (via integ or main) | Removal owed (First actions 11). |
+| Free assets, vegetation | research agent | WORKING (research) | Will write `docs/research/free-assets-vegetation.md` (not on disk yet). |
+| Free assets, roads and world | research agent | WORKING (research) | Will write `docs/research/free-assets-roads-world.md` (not on disk yet). |
+| Matched junction reference set | research agent | WORKING (research) | Will write `docs/reference/MATCHED.md`; blocks every junction builder's visible claims. |
+
+## Free assets
+Owner: free assets for everything, paid not. Downloaded so far, UNTRACKED on disk (do not `git add`): `unreal/CityPainter/SourceArt/Free/{signs/GOVUK_DfT, surfaces/asphalt/ambientCG/Asphalt025C, walls/PolyHaven/*}` (about 369 MB) and `SourceArt/Meshes/Free/{ambientCG (Foliage005, Grass004, Grass005, LeafSet029), Mantissa/birch_pack, PolyHaven (fir_tree_01, pine_tree_01)}` (about 623 MB). Owner decision: they stay on disk, uncommitted, until he has confirmed the Git LFS quota (open: he is checking; `.git` is 1.8 GB, 953 LFS objects). The list of ACCOUNT-GATED free assets is not written yet: it comes from the two research agents' reports; the owner then sets up the accounts. Not yet decided or written anywhere: which assets the kit/Unreal jobs will actually import.
 
 ## Reference relevance (blocks visible rounds)
-A comparison pair is valid only when photo and render show the same junction type, size class and viewpoint. A case with no matching photo is reported as "no matching photo" and one is fetched; a near miss is never paired. Junction rounds are briefed from `docs/reference/MATCHED.md`, with render cameras set to match each photo. To make mechanical in the audit gate work: COMPARE.md rows carry type / scale / view match fields and the check fails on a row without them. The same relevance check is owed for the earthworks and vegetation references when those rounds are audited.
+A comparison pair is valid only when photo and render show the same junction type, size class and viewpoint. A case with no matching photo is reported as "no matching photo" and one is fetched; a near miss is never paired. Junction rounds are briefed from `docs/reference/MATCHED.md`, render cameras set to match each photo. To make mechanical in the audit gate: COMPARE.md rows carry type / scale / view match fields (done on `agent/auditgate`). The same relevance check is owed for earthworks and vegetation references.
 
-## Audit step (part of every round, not support)
-Owner, 11 Oct: "is one earthworks agent creating AND auditing? that's wrong. and elsewhere, that's just an expample". Builder and auditor are never the same agent. Nothing is accepted, merged or reported as done until a fresh auditor has written `AUDIT.md` in its progress folder; an auditor starts the moment a hand-in passes `check_handin.mjs`. Auditors are not capped (owner: "wdym \"free slot\" just keep adding them as needed"). Hand-in checks run by the main session on 11 Oct: vegetation r2, unreal-m2-run, structures-r9 and auditgate all PASSED (ACCEPTANCE.md).
-Audit state per job (see Running now for the stage word):
-- Unreal milestone 2: AUDITED: accept (merge owed). AUDIT.md in `../roadworld-wt-m2/docs/progress/2026-10-11-unreal-m2-run`. Merger owed; new worker owed for its faults.
-- Earthworks round 9: HANDED IN (audit owed). Auditor owed now; also check the section sheets and disturbance views against the height data they claim to show.
-- Audit gate mechanism: HANDED IN (audit owed). Auditor owed now; must exercise it live (agent_id match, YOUR AGENT ID line, a real auditor run).
-- Vegetation kit r2: AUDITED: send back; stopped by the owner's choice of free assets.
-- Junction markings: AUDITED: send back (be59b50, 14 items). Roundabout and T-junction rounds are briefed from it; slip round held.
-- Gate notices and hooks: AUDITED: accept, MERGED.
-- Integration: auditor owed when it hands in (independent clean build and suite on both compilers of the merged tip).
-- Roundabout, T-junction, grading layer, road tool follow-up: auditors owed when each hands in.
-- Road tool round 2 (`agent/road-tool-2` d7dfc99): the read-only 45-screenshot check counts as its audit; nothing more owed.
+## Audit step
+Owner, 11 Oct: "is one earthworks agent creating AND auditing? that's wrong." Builder and auditor are never the same agent; nothing is accepted, merged or reported done until a fresh auditor has written `AUDIT.md` in the progress folder; an auditor starts as soon as a hand-in passes `check_handin.mjs`; auditors are not capped. Audited so far: M2 accept; junction markings, vegetation kit r2 send back; gate notices accept; road tool r2 counted as audited by the read-only 45-screenshot check. Hand-in file checks run by the main session 11 Oct: vegetation r2, unreal-m2-run, structures-r9, auditgate all PASSED (a pass says files exist, not that the work is good).
 
 ## Next, by priority (start when its blocker clears)
-Priority rule (owner, Round 50): the photorealism comes from the road builder placed in the Unreal sandbox. Order = what gets a drawn road, with everything it generates, on screen in the game soonest; then what makes that road look right; everything else is support. A new idea goes where it belongs in this order, not at the top because it was said last.
-
-### Critical path
-1. **Fast-forward main to the played-and-fixed milestone 2** once its hand-in passes and the main session has opened the composites. Blocked by: the M2 run (Running).
-2. **Grading and structures as WorldCache layers with a dirty path** (so a drawn road gets earthworks in the sandbox). Blocked by: earthworks round 9 and integration.
-3. **Roundabout round** (fresh agent, new contract): arm shape and markings together to a close photo; island widens to the ring, hatching only in the nose taper, give-way line across the whole entry, islands on all arms, ring markings, no stray give-way on the west arm, explain the staircase structure at the south arm end. Blocked by: integration (needs merged junction code).
-4. **T-junction round**, then **slip road round**, same way (give-way line full lane at the main road edge, side-road centre line meets it; chevrons cut cleanly between two solid lines, no holes at the nose, slip edge and lane lines, dashed line across the slip mouth; parking-strip taper). Blocked by: roundabout round (same files).
-5. **Unreal: build the unbuilt wrapper** `Wrap_edit_tool.cpp` with the next plugin build; wire `gore_length` region table and `JunctionOverrides::gore_length`; confirm the dark slot on the raised roundabout arm is gone. Unreal lane.
-6. **Road-generated content in the Unreal sandbox**: lighting columns instanced (sim_core street-light layer and kit columns exist), verge and road-edge scatter, vegetation kit and approved Poly Haven pieces imported and instanced. Unreal lane, after item 6.
-7. **Unreal background visuals** (world is only a backdrop, planning log Round 50): ground material per field land use from the new `CoverGround` fields, kit hedges and trees instanced; fix tile grid on grass, heavy cloud-shadow blotches from high up, dark blue horizon band, hills barely reading from the ground. Unreal lane, after M2 playtest.
-8. **Road tool follow-up** (fresh agent, new contract; source: read-only check that opened all 45 prototype screenshots in `docs/progress/2026-10-11-prototype-ui/` against `road_tool.h`, `edit_tool.h`, `stroke.h` on `agent/road-tool-2`). Blocked by: integration.
-   Missing or partly covered, most visible first (screenshot in brackets):
-   - Heat-map road colours: no curvature/gradient classes or thresholds, no per-vertex value (29, 30). Still open from the spec's GAP-7.
-   - Tuning panel: wall start, batter, vertical-curve K multiplier, water level have no field anywhere in sim_core; only snap angle, snap length, min segment exist (23).
-   - Grade advisory text prints "8.0%" where the prototype shows "8%" (14-19; `road_tool.cpp` ~265).
-   - Bearing and "R at cursor" readouts exist but no test checks them or the compass convention (04, 10, 11, 13-15).
-   - Min-span error should leave no ghost and no profile: behaviour present, not tested (12).
-   - Fold error and radius advisory shown together with exact texts: not tested (13).
-   - Offset guide at 2x and 3x spacing: not tested (08b).
-   - Edit HUD line "selected road #N · L m": no direct length field (32).
-   - Profile after delete: prototype shows a stale profile, code shows none; decide and pin with a test (36). Default: none (cleaner).
-   - Road type name is not in the preview; host looks it up by id (all).
-   - Motorway and B-road ghost widths not tested (19, 22). Dual ghost is refitted per carriageway where the prototype offset the centreline; compare on tight curves (18, 19).
-   Differences from the pictures not declared by the builder:
-   - Edits that cross another road at the same level make no junction (prototype did); only an advisory.
-   - Selection is per engine edge, not per prototype "road": a road through a junction selects and profiles in pieces (41, 42). Needs a road-chain selection.
-   - `finish_pick_px` 10: a click within 10 px of the last point finishes; the prototype would add a point there (26).
-   - New snap kind Node (auto-finishes on junction nodes): no test; host needs a word and ring colour.
-   - Hover reports nodes and interior points of any road; the prototype highlights only the road.
-   - `world_margin` drag clamp has no test.
-   Also: proper fix of `fit_clothoid_chain` returning a huge chain when a stroke doubles back onto an earlier point (`fit_sane_chain` is a stopgap); update `docs/unreal-ui-parity.md` with all of the above.
-   Host-side (Unreal) list from the same check, for milestones 2-3: HUD text, order, glyphs and colours; profile panel drawing; tuning panel, help overlay, inspect bar, frame stats; ring sizes and colours per snap kind, dots, ghost, dashed guides, edit lines and handles; input map and 4 px drag threshold; heat-map surface colouring; scene loader and connector overlay; profile colours from depth and wall cap.
-9. **Milestone 3 onward** per `docs/unreal-game-plan.md` (prototype UI parity: profile panel, readouts, warnings, edit tool).
-
-### Support (cheap, no file conflicts; start only in a free slot when no critical-path item can start, never ahead of one)
-- **Technical references for the main session's final check** (owner, 11 Oct: "i like the retaining wall side profile thing for earthworks ... maybe allows for more technical drawing style references or general real world guidance to be used as a help for YOU (not the agent) on a final review check"). One research agent: fetch typical cross-section and detail drawings (cutting, embankment, retaining wall with backfill and drainage, benched rock cut, split-level carriageways, roundabout entry with splitter island, T-junction, slip road nose) into `docs/reference/technical/` with sources in the INDEX, and write a one-page list of guidance numbers with their source (slope ratios, bench widths, wall heights, verge widths, island and taper lengths, chevron lengths by speed). Researched from published standards and drawings, not from memory. Use as a SENSE CHECK only (owner: "it doesn't have to match the tech drawings perfectly ofc, they aren't all consistent. but it'll be a good sense check"): plausibility and order of magnitude, not a spec, never a hard test. Then: section, profile and plan diagnostics with dimensions become standard hand-in files for earthworks, structures and junction geometry rounds, and the second gate opens them beside the matching drawing. Waits only for a free agent slot (5 running).
-- **Refresh `docs/HANDOFF.md`** sections 2, 6, 7, 8, 9, 12 to today (they describe the state before the playtest, rounds 8/4, the rules fix and Round 50). After the integration lands.
+Priority rule (owner, Round 50): the photorealism comes from the road builder placed in the Unreal sandbox. Order = what puts a drawn road with everything it generates on screen in the game soonest; then what makes that road look right; everything else is support.
+1. Fast-forward main to the played-and-fixed M2 (First actions 2).
+2. Grading and structures as WorldCache layers with a dirty path (gradelayer; needs earthworks r9 and integration).
+3. Roundabout round: arm shape and markings together to a close photo; island widens to the ring, hatching only in the nose taper, give-way line across the whole entry, islands on all arms, ring markings, explain the staircase structure at the south arm end. Blocked by integration (merged junction code).
+4. T-junction round, then slip road round (give-way line full lane at the main road edge, side-road centre line meets it; chevrons cut cleanly between two solid lines, no holes at the nose, slip edge and lane lines, dashed line across the slip mouth; parking-strip taper). Same files as the roundabout: in that order.
+5. Unreal: build the unbuilt wrapper `Wrap_edit_tool.cpp` with the next plugin build; wire the `gore_length` region table and `JunctionOverrides::gore_length`; confirm the dark slot on the raised roundabout arm is gone. Unreal lane.
+6. Road-generated content in the Unreal sandbox: lighting columns instanced, verge and edge scatter, free-asset vegetation imported and instanced. Unreal lane, after item 5.
+7. Unreal background visuals (the world is only a backdrop): ground material per field land use from `CoverGround`, kit hedges and trees instanced; fix tile grid on grass, heavy cloud-shadow blotches from high up, dark blue horizon band, hills barely reading from the ground. Unreal lane, held until the free assets arrive.
+8. Road tool follow-up (roadtool3 running; list `docs/tasks/roadtool3-gaps.md`).
+9. M3 onward per `docs/unreal-game-plan.md`.
+Support (never ahead of a critical-path item): technical references for the main session's final check (owner, 11 Oct: "a good sense check"; fetch typical cross-sections and junction drawings into `docs/reference/technical/` with a one-page numbers list and sources; sense check only, never a hard test).
 
 ## Machine notes
-- Enforcement hooks are LIVE in the main checkout since the evening of 11 Oct (`.claude/settings.json`, `tools/hooks/`): a launch without the contract, `HANDIN_DIR` and the owner`s words is refused unless it carries `NO-CONTRACT: <reason>`; the contract is injected into every agent; an agent with a `HANDIN_DIR` cannot finish while `tools/check_handin.mjs` fails (3 tries, then `HANDIN_FAILED.txt`). Log: `.claude/state/gate.log`. Gate notices reach the main session by themselves (UserPromptSubmit hook `gate_notice.mjs`, added on `agent/rules-fix`, live once merged): any FAIL-OPEN line, any hand-in released after 3 refusals (with its HANDIN_DIR) and the NO-CONTRACT launches with their reasons are put into the context on every prompt until `node tools/hooks/gate_ack.mjs "<what was done>"` is run; `make_brief.mjs` (exit 3) and `check_handin.mjs` print a `HOOK CANARY` warning when the log shows the hooks are not running. Confirmed live in the session: refusal and injection. Agents started before the merge carry no `HANDIN_DIR`, so the finish gate does not apply to them: run the check by hand on their hand-ins.
-- The owner stopped the CFD job on the evening of 11 Oct, so more RAM is free. The one-editor-at-a-time rule stays (builds wait on the UBT mutex anyway); heavier parallel compiles are fine.
+- Hooks are live in the main checkout (see HANDOFF). Agents started before the hook merge carry no `HANDIN_DIR`: run the hand-in check by hand.
+- Unreal lane lock: create dir `.claude/state/unreal_lane.lock` (with `owner.txt`) before any UBT build, editor or `-game` run; remove it after; wait while Unreal processes you did not start are running. Playtest harness loses all synthetic mouse input in about 4 of 11 runs (cause unknown): rerun before believing a regression. Never run a UBT build in another worktree while a playtest starts (once hung 24 min).
+- The CFD job was stopped, so more RAM is free; parallel compiles are fine, one editor at a time.
 
-## Small fixes (batch into the next docs/tools agent)
-- `tools/new_agent_worktree.ps1`: usage line must say `powershell -NoProfile -ExecutionPolicy Bypass -File ...` (plain invocation is blocked on this machine); CLAUDE.md gate text likewise.
-- Playtest harness: about 4 in 11 runs lose all synthetic mouse input; cause not found. Rerun before believing a regression. Do not run a UBT build in another worktree while a playtest starts (mutex wait, once hung 24 min).
-- World cover round 4 composites were written to `C:\Users\bgbg0\cp_scratch\pairs\` (outside the repo); move to `docs/reference/_compare/world-cover-r4/` and remove the outside folder with the owner's OK.
-- Old worktrees and branches to remove once merged: `-wt-grade`, `-wt-junc`, `-wt-cover`, `-wt-tool2`, `-wt-rules`, `-wt-tool`, `-wt-world`; leftover `unreal/CityPainter/Plugins/CityPainterSim` folder.
-- Pier clearance 0.3 -> 0.2 m as region data (the interchange-bridge pier test stays should_fail until then).
-- Carried over from the handoff, not started: street-light incremental limit for close unconnected roads; world-cache road-mesh rebuild cost and re-measuring the 190 ms WorldCache update (milestone 4); `RoadGraph` mutators still public; big files not split (`markings.cpp`, `structure_mesh.cpp`, `render_mesh.cpp`); about 40 structure dimensions not yet in region data (`docs/repo-health-review.md`).
-- Reference photos still missing: a close retaining-wall end in a soil cutting on a highway, a machined benched rock cut, UK kerbside parking near a junction, T-junction ghost island, slip gore close-ups. Toe ditch on soil cuts has no photo support.
-- Markings drawn in the road material from lane UVs: spike (idea from the Road Creator Pro research).
+## Cleanup (one dedicated job after milestone 5; owner: later)
+From `docs/repo-health-review.md`: split `markings.cpp` (2645 lines), `structure_mesh.cpp` (1761), `render_mesh.cpp` (1632); make `RoadGraph` mutators command-only (`road_graph.h:75` `insert_node` is public); tag tests fast/golden/fuzz; untrack `prototypes/road-draw/x/` and the generated `index.html`; about 40 structure dimensions into region data; move the taper table to the region pack; finish migrating helpers to `cp/geom.h` (10 of 31 files). Also: street-light incremental limit for close unconnected roads; re-measure the 190 ms WorldCache update (M4); pier clearance 0.3 -> 0.2 m as region data (decided, not done; the interchange-bridge pier test stays `should_fail`); markings drawn in the road material from lane UVs (spike). Missing reference photos: a close retaining-wall end in a soil cutting, a machined benched rock cut, UK kerbside parking near a junction, T-junction ghost island, slip gore close-ups; toe ditch on soil cuts has no photo support.
 
-## Waiting on the owner (not blocking)
-- Vegetation: owner answered 11 Oct: use the best free assets, for everything (two asset agents running). Scripted kit stops; no round 3.
-- (Hooks: approved by the owner 11 Oct, now under Running.)
-- Agents still running on briefs written before the contract: Unreal M2 and vegetation kit (both were sent the new requirements by message). Their hand-ins get the check like any other; if it fails they go back.
-- Confirm the five settled contradictions in planning log Round 49 (fresh agent per round; decision split; 3 photos per case; parallel within 3-4 agents and one editor; stop rule replaces time-boxes).
-- Deep cuts on steep hills: rock face (current) vs taller walls or steeper soil banks. Main session will pick a default in round 9 unless told otherwise.
+## Decided by the owner (11 Oct 2026, "agreed with all recommendations"; logged as planning log Round 51; actions are in First actions)
+1. Scratch folders outside the repo are deleted: yes, by a merger agent. 2. Old `build-*` folders inside the repo: yes, by a merger once running builders have finished. 3. Merged worktrees and their branches removed once main has the work: yes. 4. Scripted vegetation kit: keep `agent/veg-kit-r2` unmerged until the free-asset results are in, then drop what they replace. 5. Start M3 UI and slip road jobs in the new session; hold the sandbox look job until the free assets arrive. 6. New free assets stay on disk uncommitted until the LFS quota is confirmed. 7. Working rules confirmed as a block (fresh agent per job; worker + auditor + merger; main session decides road-engineering details, owner decides product, scope and money; at least three matching photos per case; no time-boxes); the five "resolved, owner to confirm" items of Round 49 are closed. 8. Code cleanups: later, one job after M5. 9. Account-gated free assets: wait for the agents' lists, then he sets up accounts.
+
+## Needs the owner (open)
+- Git LFS quota: has he confirmed the GitHub LFS quota, so the free assets (about 1 GB) may be committed? (He is checking.)
+- Account-gated free assets: pending the research agents' list, then his account setup.
+- Usage-limit wording: confirm the paragraph in `CLAUDE.md` that sends agents a "usage window nearly full" message should be deleted, given his rule not to tell agents about usage limits? (yes/no)
+- Starting world: should it contain anything man-made (lanes, farm tracks, farmsteads) before the player draws? Recommendation: no, not now (Round 50 dropped it).
+- Deep cuts on steep hills: rock face (current) vs taller walls or steeper soil banks. Default stays rock face unless told otherwise.
 
 ## Dropped (owner decision)
-- Further world-cover layout rounds, woods and hedge shape rounds, anything man-made in the starting world, a map editor: not now (Round 50).
-- Workflow efficiency audit: not needed (owner, 11 Oct).
+Further world-cover layout rounds, woods and hedge shape rounds, anything man-made in the starting world, a map editor (Round 50); workflow efficiency audit (11 Oct); scripted vegetation kit round 3 (free assets instead).
