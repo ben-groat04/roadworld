@@ -18,30 +18,28 @@ Branch `agent/world-cover-r2`. The Voronoi block level of round 3 is gone. New m
 | Every field differs: stubble tan, ploughed brown, cereal with tramlines, dark other crop, bright ley, olive rough (47, 50, 56) | Per field: id, `LandUse` (7 + woodland), tint, row direction (long axis of the field, +-3.5 deg) in `CoverGround` |
 
 ## Pictures (2 km, north up, 2 m per pixel; photos are 1 m per pixel, view both at 1000 px)
-| Ours | Photo | Why |
+| Ours | Photo (opened) | Why |
 |---|---|---|
-| `seed1_match_2km.png` | `58_oxon_vertical_brill_hills_woodland_edge` | sinuous diagonal through-line, fields in rows, small district top-left, large district right |
-| `seed2_match_2km.png` | `59_oxon_vertical_charlbury_cotswold_dip` | wood parcels with stepped edges, belts, corner plantations |
-| `seed3_match_2km.png` | `57_oxon_vertical_wroxton_north_oxon_uplands` | mixed sizes, tan / dark / bright fields, tree lines |
-| `seed3_close_1m.png` (1 km, 1 m per pixel) | detail of 57 / 58 | hedge weights, notches, tramlines |
+| seed1_match_2km.png | 58_oxon_vertical_brill_hills_woodland_edge | sinuous lane with fields in rows, small and large districts |
+| seed2_match_2km.png | 51_oxon_vertical_hook_norton_ironstone_hills (59 for the woods) | small irregular enclosure, wood parcels |
+| seed3_match_2km.png | 46_oxon_vertical_stanford_vale_enclosure (57 for sizes) | mixed sizes, crop colours |
 
-Colours: dark green wood, mid green permanent pasture, bright green ley, olive rough, brown ploughed, tan stubble, mid-dark green cereal with light tramlines,
-very dark green other crop; field boundaries without a hedge show as a faint line.
+Side-by-side composites contain the private photos, so they are kept out of the repo: `C:/Users/bgbg0/cp_scratch/pairs/` (`final_pair*`, and the earlier passes `p2_`, `p3_`, `p4_` for before/after at the same seed).
 
-## Checklist (honest; all four images opened, next to the photos named above; 2 look iterations used)
-| Question | Seed 1 | Seed 2 | Seed 3 |
-|---|---|---|---|
-| Only T-junctions? (measured, 8 km box: T / Y / X) | 3138 / 2 / 3 | 4235 / 0 / 0 | 3985 / 1 / 3 |
-| Wedges gone? (min corner, max aspect, triangles) | 60.3 deg, 4.00, none | 62.4, 4.00, none | 64.5, 3.99, none |
-| Through-lines sinuous? | yes, the diagonal lane and valley line cross the map | yes | yes |
-| Districts of size? (area-weighted p10 / p50 / p90 ha) | 1.6 / 7.5 / 22 | 1.5 / 3.4 / 21 | 1.3 / 6.2 / 23 |
-| Three boundary weights visible? | yes: thin hedge, thick tree-line stretches, faint fence lines | yes | yes |
-| Woods on parcels with notches? | yes, stepped; one long scarp wood still reads as a ribbon (about 50-60 m) | yes, large stepped masses | yes |
-| Per-field variety like the photo? | good: 7 uses, tint spread; tramline hatching reads as aerial | good | good |
+## Measured (uk pack, test-world hints, 8 km box per seed; seeds 1 / 2 / 3)
+Fields 1851 / 2464 / 2266; count p10 0.8, p50 1.7, p90 5-8 ha; area-weighted p10 1.1-1.4, p50 3.0-6.1, p90 17.5-20.3 ha; max 30-38 ha. Min corner 60.3 / 60.7 / 64.3 deg,
+max aspect 3.2, no triangles. Junctions T 3626 / 4917 / 4582, Y 1 / 1 / 1, X 8 / 0 / 1; T stem angle 60.3-90.6 (p5 76). Boundary weights by length: hedge 70 %, fence 20 %,
+tree line 10 %; gateway gaps 4.3 %; hedge removed inside wood 7-10 %. Area share by use (seed 1): wood 5, permanent pasture 24, ley 13, ploughed 5, cereal 24, stubble 8, other crop 13, rough 7 %.
 
-**Would a person still say "Voronoi with random woods"?** The Voronoi part: no. No wedges, no star vertices, boundaries are curved lines with fields hanging
-off them as in 58. "Random woods": partly. Woods now sit on parcels with notches, but the large masses are blocky (stepped on 20-60 m) where 48 and 47 show
-ragged organic lobes, and the stream/scarp wood is still the most artificial element. Remaining gaps against the photos: no lanes, tracks, farmsteads or ponds (owner
-decision pending), fields are almost all quads with gently curved sides (51, 59 have more 5-6 sided, bent fields), rounded corners absent, and the grain of
-cropped fields is always along the long axis (56 also shows tramlines following a curved edge). My own score on the same scale as the round-3 review:
-fields 7, boundaries 6, woodland 6, overall 6 to 6.5 (a self-score; a cold read is still needed).
+## Checklist (own judgement after 3 passes; the residual list is in STATUS.md)
+| Question | Verdict |
+|---|---|
+| T-junctions only? | Yes, measured (Y + X under 0.3 % of T) |
+| Wedges gone? | Yes (min corner 60 deg, aspect 3.2, no triangles) |
+| Through-lines sinuous? | Yes, but one grain family across the map |
+| Districts of size? | Yes (area-weighted 1-20 ha); count median 1.7 ha is a little small |
+| Three boundary weights visible? | Yes in close crops; hedge shadow and varied width missing |
+| Woods on parcels with notches? | Yes, but flat colour and stair-stepped; scarp wood still band-like |
+| Per-field variety? | Yes; the photos cluster uses by district more |
+
+**Still "Voronoi with random woods"?** Not Voronoi. The woods are the weakest part. Own score: fields 7, boundaries 6, woodland 5.5, overall 6 (self-score, no cold read yet).
