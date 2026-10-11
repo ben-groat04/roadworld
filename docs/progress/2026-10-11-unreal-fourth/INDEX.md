@@ -1,0 +1,10 @@
+# Fourth Unreal set (11 Oct 2026). Nothing here is scored.
+Images: `stage1_shadows_final/` (final state after stages 1-3, 8 default views plus look_07), `diag_evidence/` (diagnosis shots, names `diag_<config>__<view>`). Findings: `LUMEN_FINDINGS.md`.
+## Regenerate
+`Build-Editor.ps1 -EngineRoot C:\UE_5.8 -MaxParallelActions 4` (rebuilt this run, no code change), `First-Run.ps1 -Only level -EngineRoot C:\UE_5.8` (rebuilds materials, sets sky/fog/exposure), `-Only screenshots`. Diagnostics: `-ScriptArgs "diag:baseline,no_dynshadows,...,view:look_08,view:look_02"` (configs in `DIAG_CONFIGS` in `screenshot_views.py`; hooks `py:ppv:`, `py:fog:`, `py:atm:`; setters, not set_editor_property, reach the renderer; fog/atm actors keep template labels).
+## Stage 1 shadows: SKY_INTENSITY 3.0 -> 7.0, EXPOSURE_BIAS_EV -0.35 (setup_look_test_level.py). No Lumen/HWRT change. Known: shadows remain dark (green-grey); median strip shadow cause in sim geometry not checked.
+## Stage 2 horizon: FOG_CUTOFF_CM 3,000,000 (fog exempts sky pixels). Band gone in look_08/03/04/05. Ground albedo of atmosphere unchanged. DefaultEngine.ini unchanged (a test flip of r.SupportSkyAtmosphereAffectsHeightFog was reverted).
+## Stage 3 materials
+Asphalt: AlbedoScale 0.75, Desaturate 0.8, TrackDarken 0.22, TrackWidthM 0.45, TrackRoughDelta -0.15, EdgeRagged 0.4, FringeAmount 0.25, FringeThreshold 0.88 (narrower smoothstep, noise 0.3), FringeGravelScale 0.25, FringeTint (0.9,0.88,0.82), gravel desat 0.6; instances New 0.65, Worn 0.95, Patched 0.85. Kerb: UnitVariation 0.10, MacroVariation 0.08, macro period 19 m. Footway: MacroVariation 0.07, DirtAmount 0.08, softer larger dirt. Marking PaintBrightness 0.85. Ground: tone levels smooth (no floor() steps = no hard discs), FieldContrast 0.12, GrassTint (0.82,1.35,0.68), texture detail fades to mean colour 120-500 m (DetailFadeStartM/EndM) against the cross-hatch weave.
+## Stage 4: not done (comparison composites, reference-photo side-by-sides). Floating roads: no terrain, not faked.
+## Not done: runtime static-mesh Lumen test, GPU ms, Lumen visualisation views, plugin C++ (none changed).
