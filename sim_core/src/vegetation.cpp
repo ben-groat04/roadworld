@@ -4,7 +4,7 @@
 //   1. small helpers (hashing, geometry, polyline cutting and tile splitting)
 //   2. region data parser (VegetationRules)
 //   3. cross-section reading and the CorridorModel (the clearing mask shared by both layers)
-//   4. the default WorldCoverSource (jittered / warped field grid)
+//   4. the default WorldCoverSource (warped Voronoi fields, woodland shapes, hedges)
 //   5. output assembly (VegetationTile, equality)
 //   6. the three WorldLayers: veg_corridor, world_cover, vegetation (road edge)
 #include "cp/vegetation.h"
@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -372,25 +374,72 @@ void parse_island(const json& j, IslandRule& r, const std::string& ctx, Err& err
 }
 
 void parse_cover(const json& j, WorldCoverRules& w, const std::string& ctx, Err& err) {
-    w.field_size_x = num(j, "field_size_x_m", w.field_size_x, ctx, err);
-    w.field_size_y = num(j, "field_size_y_m", w.field_size_y, ctx, err);
-    w.field_jitter = num(j, "field_jitter", w.field_jitter, ctx, err);
-    w.warp_m = num(j, "warp_m", w.warp_m, ctx, err);
-    w.warp_wavelength_m = num(j, "warp_wavelength_m", w.warp_wavelength_m, ctx, err);
+    w.field_area_ha = num(j, "field_area_ha", w.field_area_ha, ctx, err);
+    w.block_m = num(j, "block_m", w.block_m, ctx, err);
+    w.block_len_m = num(j, "block_len_m", w.block_len_m, ctx, err);
+    w.row_jitter = num(j, "row_jitter", w.row_jitter, ctx, err);
+    w.row_meander = num(j, "row_meander", w.row_meander, ctx, err);
+    w.cross_tilt = num(j, "cross_tilt", w.cross_tilt, ctx, err);
+    w.min_corner_deg = num(j, "min_corner_deg", w.min_corner_deg, ctx, err);
+    w.max_aspect = num(j, "max_aspect", w.max_aspect, ctx, err);
+    range(j, "field_size_factor", w.field_size_lo, w.field_size_hi, ctx, err);
+    w.district_wavelength_m = num(j, "district_wavelength_m", w.district_wavelength_m, ctx, err);
+    w.smallholding_share = num(j, "smallholding_share", w.smallholding_share, ctx, err);
+    w.smallholding_scale = num(j, "smallholding_scale", w.smallholding_scale, ctx, err);
+    range(j, "field_aspect", w.aspect_min, w.aspect_max, ctx, err);
+    w.grain_edge_share = num(j, "grain_edge_share", w.grain_edge_share, ctx, err);
+    w.cut_tilt = num(j, "cut_tilt", w.cut_tilt, ctx, err);
+    w.cut_frac_min = num(j, "cut_frac_min", w.cut_frac_min, ctx, err);
+    w.regional_warp_m = num(j, "regional_warp_m", w.regional_warp_m, ctx, err);
+    w.regional_warp_wavelength_m = num(j, "regional_warp_wavelength_m", w.regional_warp_wavelength_m, ctx, err);
+    w.boundary_wobble_m = num(j, "boundary_wobble_m", w.boundary_wobble_m, ctx, err);
+    w.boundary_wobble_wavelength_m = num(j, "boundary_wobble_wavelength_m", w.boundary_wobble_wavelength_m, ctx, err);
     w.woodland_share = num(j, "woodland_share", w.woodland_share, ctx, err);
+    w.woodland_cluster = num(j, "woodland_cluster", w.woodland_cluster, ctx, err);
+    w.woodland_cluster_wavelength_m = num(j, "woodland_cluster_wavelength_m", w.woodland_cluster_wavelength_m, ctx, err);
+    w.strip_width_m = num(j, "strip_width_m", w.strip_width_m, ctx, err);
+    w.strip_wood_share = num(j, "strip_wood_share", w.strip_wood_share, ctx, err);
     w.woodland_edge_ragged_m = num(j, "woodland_edge_ragged_m", w.woodland_edge_ragged_m, ctx, err);
+    w.steep_wood_keep = num(j, "steep_wood_keep", w.steep_wood_keep, ctx, err);
+    w.wood_notch_share = num(j, "wood_notch_share", w.wood_notch_share, ctx, err);
+    range(j, "wood_notch_m", w.wood_notch_min, w.wood_notch_max, ctx, err);
+    range(j, "wood_notch_len_m", w.wood_notch_len_min, w.wood_notch_len_max, ctx, err);
+    w.improved_share = num(j, "improved_share", w.improved_share, ctx, err);
+    w.ploughed_share = num(j, "ploughed_share", w.ploughed_share, ctx, err);
+    w.cereal_share = num(j, "cereal_share", w.cereal_share, ctx, err);
+    w.stubble_share = num(j, "stubble_share", w.stubble_share, ctx, err);
+    w.other_crop_share = num(j, "other_crop_share", w.other_crop_share, ctx, err);
     w.arable_share = num(j, "arable_share", w.arable_share, ctx, err);
     w.rough_share = num(j, "rough_share", w.rough_share, ctx, err);
+    w.arable_cluster = num(j, "arable_cluster", w.arable_cluster, ctx, err);
+    w.arable_cluster_wavelength_m = num(j, "arable_cluster_wavelength_m", w.arable_cluster_wavelength_m, ctx, err);
+    w.belt_share = num(j, "belt_share", w.belt_share, ctx, err);
+    range(j, "belt_width_m", w.belt_width_min, w.belt_width_max, ctx, err);
+    w.belt_length_m = num(j, "belt_length_m", w.belt_length_m, ctx, err);
+    w.belt_gate = num(j, "belt_gate", w.belt_gate, ctx, err);
+    w.copse_share = num(j, "copse_share", w.copse_share, ctx, err);
+    range(j, "copse_side_m", w.copse_side_min, w.copse_side_max, ctx, err);
+    range(j, "copse_area_ha", w.copse_area_min_ha, w.copse_area_max_ha, ctx, err);
+    w.wood_block_per_km2 = num(j, "wood_block_per_km2", w.wood_block_per_km2, ctx, err);
+    range(j, "wood_block_area_ha", w.wood_block_area_min_ha, w.wood_block_area_max_ha, ctx, err);
+    w.wood_ragged = num(j, "wood_ragged", w.wood_ragged, ctx, err);
     w.hedge_share = num(j, "hedge_share", w.hedge_share, ctx, err);
+    w.treeline_share = num(j, "treeline_share", w.treeline_share, ctx, err);
+    range(j, "treeline_width_m", w.treeline_width_min, w.treeline_width_max, ctx, err);
+    range(j, "treeline_tree_spacing_m", w.treeline_tree_spacing_min, w.treeline_tree_spacing_max, ctx, err);
     w.hedge_overgrown_share = num(j, "hedge_overgrown_share", w.hedge_overgrown_share, ctx, err);
     w.hedge_trimmed_type = str(j, "hedge_trimmed_type", w.hedge_trimmed_type, ctx, err);
     w.hedge_overgrown_type = str(j, "hedge_overgrown_type", w.hedge_overgrown_type, ctx, err);
+    range(j, "hedge_width_m", w.hedge_width_min, w.hedge_width_max, ctx, err);
     w.hedge_tree_share = num(j, "hedge_tree_share", w.hedge_tree_share, ctx, err);
     w.hedge_tree_spacing = num(j, "hedge_tree_spacing_m", w.hedge_tree_spacing, ctx, err);
     w.hedge_tree_jitter = num(j, "hedge_tree_jitter", w.hedge_tree_jitter, ctx, err);
     w.hedge_gap_per_km = num(j, "hedge_gap_per_km", w.hedge_gap_per_km, ctx, err);
     range(j, "hedge_gap_m", w.hedge_gap_min, w.hedge_gap_max, ctx, err);
+    w.hedge_decay_per_km = num(j, "hedge_decay_per_km", w.hedge_decay_per_km, ctx, err);
+    range(j, "hedge_decay_m", w.hedge_decay_min, w.hedge_decay_max, ctx, err);
     w.scatter_trees_per_ha = num(j, "scatter_trees_per_ha", w.scatter_trees_per_ha, ctx, err);
+    w.arable_tree_factor = num(j, "arable_tree_factor", w.arable_tree_factor, ctx, err);
     w.woodland_trees_per_ha = num(j, "woodland_trees_per_ha", w.woodland_trees_per_ha, ctx, err);
     classes(j, "tree_classes", w.tree_classes, ctx, err);
     classes(j, "woodland_classes", w.woodland_classes, ctx, err);
@@ -559,8 +608,14 @@ Loaded<VegetationRules> parse_vegetation_rules(const std::string& json_text, con
     for (const TreeClass& c : w.tree_classes) check(c.type, "world_cover tree_classes");
     for (const TreeClass& c : w.woodland_classes) check(c.type, "world_cover woodland_classes");
     if (r.blend_band <= 0 || r.clear_margin < 0 || r.clear_margin + r.blend_band > 40) err.set("vegetation corridor: need 0 < blend_band and clear_margin + blend_band <= 40 m");
-    if (w.field_jitter < 0 || w.field_jitter >= 0.5) err.set("vegetation world_cover: field_jitter must be in [0, 0.5)");
-    if (w.field_size_x <= 0 || w.field_size_y <= 0 || w.ground_cell <= 0 || w.min_cell <= 0) err.set("vegetation world_cover: sizes must be positive");
+    if (w.row_jitter < 0 || w.row_meander < 0 || w.row_jitter + w.row_meander > 0.35) err.set("vegetation world_cover: row_jitter + row_meander must be in [0, 0.35]");
+    if (w.field_area_ha <= 0 || w.block_m < 100 || w.block_len_m < 150 || w.aspect_min < 1 || w.aspect_max < w.aspect_min || w.field_size_lo <= 0 ||
+        w.field_size_hi < w.field_size_lo || w.district_wavelength_m <= 0 || w.min_corner_deg < 20 || w.min_corner_deg > 80 || w.max_aspect < 1.5 ||
+        w.wood_notch_min < 0 || w.wood_notch_max < w.wood_notch_min || w.wood_notch_len_min <= 0 || w.wood_notch_len_max < w.wood_notch_len_min ||
+        w.treeline_share < 0 || w.hedge_share < 0 || w.hedge_share + w.treeline_share > 1 + 1e-9 || w.ground_cell <= 0 || w.min_cell <= 0 || w.regional_warp_wavelength_m <= 0 ||
+        w.boundary_wobble_wavelength_m <= 0 || w.belt_length_m <= 0 || w.arable_cluster_wavelength_m <= 0 || w.woodland_cluster_wavelength_m <= 0 ||
+        w.cut_frac_min <= 0.05 || w.cut_frac_min >= 0.5)
+        err.set("vegetation world_cover: sizes, wavelengths and scales must be positive (aspect >= 1, block_m >= 100)");
     return finish_rules(std::move(r), err);
 }
 
@@ -1003,50 +1058,182 @@ namespace {
 
 // ================================================================== 4. the default world cover source
 
-enum class Land { Wood, Arable, Rough, Pasture };
+// Structure (docs/progress/2026-10-11-world-cover-r2/INDEX_R4.md, from the vertical aerials 46-59 oxon_vertical):
+//   ROWS     long through-lines across the whole map (lanes, tree lines, streams), about block_m apart, in a frame set by the terrain
+//            (valley / contour direction at the world centre), smooth S-curves between knots; the whole pattern is also warped by a
+//            smooth displacement so that nothing is straight for long.
+//   BLOCKS   a row is split by cross lines that run from one row line to the next and END ON them (brick bond: row j and j + 1 have
+//            different cross-line positions), so every meeting of two through-lines is a T.
+//   FIELDS   a block polygon is cut recursively along and across its grain; every cut ends on an edge of the polygon (a T) and is
+//            accepted only if both pieces keep their corners above min_corner_deg and their aspect below max_aspect.
+//   DISTRICTS the target field area varies smoothly (1-2 ha in one district, 20-40 ha in another).
+//   WOODLAND whole fields (clustered), stepped edges along field boundaries, shelter belts on boundaries, square plantations in field corners.
+//   LAND USE per field: permanent pasture, ley, ploughed, cereal, stubble, other crop, rough grazing; per-field tint and row direction.
+// Everything is a pure function of (position, seed) built from + - * / sqrt floor and integer hashing (identical on every compiler).
+enum class Use : std::uint8_t { Wood, Permanent, Improved, Ploughed, Cereal, Stubble, OtherCrop, Rough };
+bool is_crop(Use u) { return u == Use::Ploughed || u == Use::Cereal || u == Use::Stubble || u == Use::OtherCrop; }
+enum class Bound : std::uint8_t { Hedge, Fence, Treeline };
+
+double len2d(Vec2 v) { return std::sqrt(v.x * v.x + v.y * v.y); }
+Vec2 perp(Vec2 v) { return {-v.y, v.x}; }
+Vec2 unit(Vec2 v) {
+    const double l = len2d(v);
+    return l > 1e-12 ? v * (1.0 / l) : Vec2{1, 0};
+}
+// cos of an angle in degrees by a Taylor series (+ and * only: identical on every compiler).
+double cos_deg(double deg) {
+    const double x = deg * (3.14159265358979323846 / 180.0), x2 = x * x;
+    return 1 - x2 / 2 + x2 * x2 / 24 - x2 * x2 * x2 / 720 + x2 * x2 * x2 * x2 / 40320 - x2 * x2 * x2 * x2 * x2 / 3628800;
+}
+
+struct Poly {
+    std::vector<Vec2> v;
+    std::vector<u64> lab;  // lab[i]: key of the edge v[i] -> v[i+1]
+};
+double poly_area(const Poly& p) {
+    double a = 0;
+    for (std::size_t i = 0; i < p.v.size(); ++i) a += p.v[i].cross(p.v[(i + 1) % p.v.size()]);
+    return std::fabs(a) * 0.5;
+}
+// Keeps the part of `p` with (x - pt) . n <= 0; the new edge along the cut gets `label`.
+Poly clip_half(const Poly& p, Vec2 pt, Vec2 n, u64 label) {
+    Poly out;
+    const std::size_t m = p.v.size();
+    for (std::size_t i = 0; i < m; ++i) {
+        const Vec2 a = p.v[i], b = p.v[(i + 1) % m];
+        const double fa = (a - pt).dot(n), fb = (b - pt).dot(n);
+        const u64 la = p.lab[i];
+        if (fa <= 0) {
+            out.v.push_back(a);
+            out.lab.push_back(la);
+            if (fb > 0) {
+                const double t = fa / (fa - fb);
+                out.v.push_back(a + (b - a) * t);
+                out.lab.push_back(label);
+            }
+        } else if (fb <= 0) {
+            const double t = fa / (fa - fb);
+            out.v.push_back(a + (b - a) * t);
+            out.lab.push_back(la);
+        }
+    }
+    return out;
+}
+
+// Shape of a field polygon (counter-clockwise).
+struct Shape {
+    double area = 0;
+    double aspect = 1;            // long : short side of the smallest bounding rectangle over the edge directions
+    double width = 0;             // the short side, m
+    double max_cos = -1;          // largest cosine over the corners (smallest interior angle); -1 = no corners
+    int corners = 0;              // vertices with interior angle below 155 degrees
+    Vec2 long_dir{1, 0};
+    Vec2 centroid{0, 0};
+    std::vector<int> corner_idx;
+};
+constexpr double kStraightCos = -0.90631;  // cos 155 degrees
+
+Shape analyse(const Poly& P) {
+    Shape s;
+    const std::size_t n = P.v.size();
+    if (n < 3) return s;
+    double a2 = 0, cx = 0, cy = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        const Vec2 p = P.v[i], q = P.v[(i + 1) % n];
+        const double c = p.cross(q);
+        a2 += c;
+        cx += (p.x + q.x) * c;
+        cy += (p.y + q.y) * c;
+    }
+    s.area = std::fabs(a2) * 0.5;
+    if (std::fabs(a2) > 1e-9) s.centroid = {cx / (3 * a2), cy / (3 * a2)};
+    for (std::size_t i = 0; i < n; ++i) {
+        const Vec2 a = P.v[(i + n - 1) % n] - P.v[i], b = P.v[(i + 1) % n] - P.v[i];
+        const double la = len2d(a), lb = len2d(b);
+        if (la < 1e-6 || lb < 1e-6) continue;
+        const double c = a.dot(b) / (la * lb);
+        if (c > kStraightCos) {
+            ++s.corners;
+            s.corner_idx.push_back(static_cast<int>(i));
+            s.max_cos = std::max(s.max_cos, c);
+        }
+    }
+    double best = 1e300;
+    for (std::size_t i = 0; i < n; ++i) {
+        const Vec2 e = P.v[(i + 1) % n] - P.v[i];
+        if (len2d(e) < 3.0) continue;
+        const Vec2 u = unit(e), w = perp(u);
+        double u0 = 1e300, u1 = -1e300, w0 = 1e300, w1 = -1e300;
+        for (const Vec2& x : P.v) {
+            const double du = x.dot(u), dw = x.dot(w);
+            u0 = std::min(u0, du); u1 = std::max(u1, du);
+            w0 = std::min(w0, dw); w1 = std::max(w1, dw);
+        }
+        const double eu = u1 - u0, ew = std::max(1e-6, w1 - w0);
+        if (eu * ew < best) {
+            best = eu * ew;
+            s.aspect = std::max(eu, ew) / std::min(eu, ew);
+            s.width = std::min(eu, ew);
+            s.long_dir = eu >= ew ? u : w;
+        }
+    }
+    return s;
+}
 
 class DefaultCover final : public WorldCoverSource {
 public:
-    DefaultCover(std::shared_ptr<const VegetationRules> rules, u64 seed) : r_(std::move(rules)), w_(r_->world_cover), seed_(seed) {}
+    DefaultCover(std::shared_ptr<const VegetationRules> rules, u64 seed, CoverHints hints)
+        : r_(std::move(rules)), w_(r_->world_cover), seed_(seed), hints_(std::move(hints)) {
+        Vec2 d{hu(100) - 0.5, hu(101) - 0.5};
+        Vec2 hint;
+        if (hints_.field_axis && hints_.field_axis({0, 0}, hint) && len2d(hint) > 0.5) d = hint;
+        if (len2d(d) < 1e-3) d = {1, 0};
+        e_ = unit(d);
+        nv_ = perp(e_);
+        H0_ = std::max(100.0, w_.block_m);
+        Lb_ = std::max(150.0, w_.block_len_m);
+        Kn_ = 1.5 * H0_;
+        jit_ = std::clamp(w_.row_jitter, 0.0, 0.2);
+        mea_ = std::clamp(w_.row_meander, 0.0, 0.15);
+        tilt_ = std::min(std::max(0.0, w_.cross_tilt), 0.5 * 0.6 * Lb_ / ((1.0 + 2 * jit_ + 2 * mea_) * H0_));
+        cos_min_ = cos_deg(w_.min_corner_deg);
+        amp_mid_ = 0.28 * w_.regional_warp_m;
+        dmax_ = w_.regional_warp_m + amp_mid_ + w_.boundary_wobble_m + 1.0;
+    }
 
     CoverGround ground_at(Vec2 p) const override {
-        CoverGround g;
-        switch (land_at(p)) {
-            case Land::Wood:
-                g = {w_.woodland_floor_type, w_.woodland_density, static_cast<std::uint8_t>(w_.woodland_height_class)};
-                break;
-            case Land::Rough:
-                g = {w_.rough_grass_type, w_.rough_density, static_cast<std::uint8_t>(w_.rough_height_class)};
-                break;
-            case Land::Pasture:
-                g = {w_.open_grass_type, w_.open_density, static_cast<std::uint8_t>(w_.open_height_class)};
-                break;
-            case Land::Arable:
-                g = {"", 0, 0};  // no instances: the renderer's ground material shows soil / crop
-                break;
-        }
-        return g;
+        const Vec2 q = to_q(p);
+        const Ground g = resolve(p, q, 0);
+        CoverGround c = make_ground(g.use);
+        c.field_id = g.id;
+        c.tint = static_cast<float>(g.tint);
+        c.use = land_use(g.use);
+        c.row_dir = to_world_dir(to_p(g.centre_q, 10), g.row_q);  // one direction per field: evaluated at its centre
+        return c;
     }
 
     void points_in(Vec2 lo, Vec2 hi, std::vector<CoverPoint>& out) const override {
-        // Hedge trees.
-        for_segments(lo, hi, [&](const Seg& s) {
-            if (!s.present || ha(18, s.axis, s.i, s.j) >= w_.hedge_tree_share) return;
+        // Hedge trees and tree-line crowns.
+        for_edges(lo, hi, [&](const Seg& s) {
+            if (!s.present) return;
+            const bool tl = s.cls == Bound::Treeline;
+            if (!tl && he(s.key, 18) >= w_.hedge_tree_share) return;
             const double len = s.s.back();
-            const double sp = std::max(1.0, w_.hedge_tree_spacing);
+            const double sp = tl ? std::max(5.0, lerp(w_.treeline_tree_spacing_min, w_.treeline_tree_spacing_max, he(s.key, 29)))
+                                 : std::max(1.0, w_.hedge_tree_spacing);
             for (int k = 0; (k + 0.5) * sp < len; ++k) {
-                const double sk = (k + 0.5) * sp + (ha(19, s.axis, s.i, static_cast<i64>(k) + 1000 * s.j) - 0.5) * 2 * w_.hedge_tree_jitter * sp;
+                const double sk = (k + 0.5) * sp + (he(s.key, 19, static_cast<u64>(k)) - 0.5) * 2 * w_.hedge_tree_jitter * sp;
                 if (sk <= 0 || sk >= len) continue;
                 bool in_gap = false;
                 for (const auto& g : s.gaps) in_gap = in_gap || (sk > g.first - 1.5 && sk < g.second + 1.5);
                 if (in_gap) continue;
                 const Vec2 pos = point_at(s.pts, s.s, sk);
                 if (pos.x < lo.x || pos.x >= hi.x || pos.y < lo.y || pos.y >= hi.y) continue;
-                const TreeClass* c = pick_class(w_.tree_classes, ha(20, s.axis, s.i, static_cast<i64>(k) + 1000 * s.j));
-                if (c) out.push_back(make_point(*c, pos, key3(seed_, 21, ui(s.axis * 2 + 1) ^ ui(s.i), ui(s.j), ui(k))));
+                const TreeClass* c = pick_class(w_.tree_classes, he(s.key, 20, static_cast<u64>(k)));
+                if (c) out.push_back(make_point(*c, pos, key3(seed_, 21, s.key, static_cast<u64>(k))));
             }
         });
-        // Scattered trees in open and rough fields: coarse lattice.
+        // Scattered trees in open and rough fields: coarse lattice (arable thinned).
         {
             const double C = 20;
             const double prob = w_.scatter_trees_per_ha * C * C / 1e4;
@@ -1055,7 +1242,9 @@ public:
                     if (h(30, ui(cx), ui(cy)) >= prob) continue;
                     const Vec2 pos{(static_cast<double>(cx) + h(31, ui(cx), ui(cy))) * C, (static_cast<double>(cy) + h(32, ui(cx), ui(cy))) * C};
                     if (pos.x < lo.x || pos.x >= hi.x || pos.y < lo.y || pos.y >= hi.y) continue;
-                    if (land_at(pos) == Land::Wood) continue;
+                    const Use u = use_at(pos);
+                    if (u == Use::Wood) continue;
+                    if (is_crop(u) && h(35, ui(cx), ui(cy)) >= w_.arable_tree_factor) continue;
                     const TreeClass* c = pick_class(w_.tree_classes, h(33, ui(cx), ui(cy)));
                     if (c) out.push_back(make_point(*c, pos, key3(seed_, 34, ui(cx), ui(cy))));
                 }
@@ -1071,7 +1260,7 @@ public:
                         if (h(40, ui(cx), ui(cy)) >= prob) continue;
                         const Vec2 pos{(static_cast<double>(cx) + h(41, ui(cx), ui(cy))) * F, (static_cast<double>(cy) + h(42, ui(cx), ui(cy))) * F};
                         if (pos.x < lo.x || pos.x >= hi.x || pos.y < lo.y || pos.y >= hi.y) continue;
-                        if (land_at(pos) != Land::Wood) continue;
+                        if (use_at(pos) != Use::Wood) continue;
                         const TreeClass* c = pick_class(cl, h(43, ui(cx), ui(cy)));
                         if (c) out.push_back(make_point(*c, pos, key3(seed_, 44, ui(cx), ui(cy))));
                     }
@@ -1079,27 +1268,35 @@ public:
     }
 
     void lines_touching(Vec2 lo, Vec2 hi, std::vector<CoverLine>& out) const override {
-        for_segments(lo, hi, [&](const Seg& s) {
+        for_edges(lo, hi, [&](const Seg& s) {
             if (!s.present) return;
             std::vector<std::pair<double, double>> keep;  // arc intervals between gaps
             double a = 0;
             const double len = s.s.back();
             for (const auto& g : s.gaps) {
                 if (g.first - a >= 2.0) keep.push_back({a, g.first});
-                a = g.second;
+                a = std::max(a, g.second);
             }
             if (len - a >= 2.0) keep.push_back({a, len});
-            const bool over = ha(12, s.axis, s.i, s.j) < w_.hedge_overgrown_share;
+            const bool tl = s.cls == Bound::Treeline;
+            const bool over = tl || he(s.key, 12) < w_.hedge_overgrown_share;
             const std::string& tid = over ? w_.hedge_overgrown_type : w_.hedge_trimmed_type;
             const VegTypeDef* def = r_->type(tid);
-            const u64 base = key3(seed_, 20, ui(s.axis), ui(s.i), ui(s.j));
+            const u64 base = key3(seed_, 20, s.key);
+            const double u1 = he(s.key, 14), u2 = he(s.key, 15);
+            double edge_w;
+            if (tl) edge_w = lerp(w_.treeline_width_min, w_.treeline_width_max, u2);
+            else if (w_.hedge_width_max > 0) edge_w = lerp(w_.hedge_width_min, w_.hedge_width_max, u2 * std::sqrt(u2)) * (over ? 1.15 : 1.0);
+            else edge_w = def ? lerp(def->width_min, def->width_max, u2) : 1.0;
             for (std::size_t k = 0; k < keep.size(); ++k) {
                 CoverLine l;
                 l.type_id = tid;
                 l.style = over ? HedgeStyle::Overgrown : HedgeStyle::Trimmed;
-                const double u1 = ha(14, s.axis, s.i, s.j), u2 = ha(15, s.axis, s.i, s.j);
                 l.height = static_cast<float>(def ? lerp(def->height_min, def->height_max, u1) : 1.5);
-                l.width = static_cast<float>(def ? lerp(def->width_min, def->width_max, u2) : 1.0);
+                double wd = edge_w * (0.85 + 0.3 * he(s.key, 22, static_cast<u64>(k)));
+                if (tl) wd = std::clamp(wd, w_.treeline_width_min, w_.treeline_width_max);
+                else if (w_.hedge_width_max > 0) wd = std::clamp(wd, w_.hedge_width_min, w_.hedge_width_max);
+                l.width = static_cast<float>(wd);
                 l.seed = mix64(base + k);
                 const double sa = keep[k].first, sb = keep[k].second;
                 l.points.push_back(point_at(s.pts, s.s, sa));
@@ -1118,53 +1315,677 @@ public:
         });
     }
 
+    // Fields whose block centre lies in [lo, hi): area, aspect.
+    void cell_stats(Vec2 lo, Vec2 hi, std::vector<double>& area_ha, std::vector<double>& aspect) const {
+        CoverStructureStats S;
+        structure_stats(lo, hi, S, false);
+        area_ha = S.area_ha;
+        aspect = S.aspect;
+    }
+
+    void structure_stats(Vec2 lo, Vec2 hi, CoverStructureStats& S, bool junctions = true) const {
+        const double R = 1800;  // gather polygons this far around for the junction count
+        struct Pg { const Block* b; int node; };
+        std::vector<std::shared_ptr<const Block>> keep;
+        std::vector<Pg> polys;
+        for_blocks({lo.x - R - dmax_, lo.y - R - dmax_}, {hi.x + R + dmax_, hi.y + R + dmax_}, [&](const std::shared_ptr<const Block>& b) {
+            keep.push_back(b);
+            const bool own = b->centre_p.x >= lo.x && b->centre_p.x < hi.x && b->centre_p.y >= lo.y && b->centre_p.y < hi.y;
+            for (std::size_t i = 0; i < b->nodes.size(); ++i) {
+                if (!b->nodes[i].leaf) continue;
+                polys.push_back({b.get(), static_cast<int>(i)});
+                if (!own) continue;
+                const Node& n = b->nodes[i];
+                S.area_ha.push_back(n.shape.area / 1e4);
+                S.aspect.push_back(n.shape.aspect);
+                S.min_corner_deg.push_back(n.shape.corners > 0 ? std::acos(std::clamp(n.shape.max_cos, -1.0, 1.0)) * 180.0 / 3.14159265358979 : 180.0);
+                S.corners.push_back(n.shape.corners);
+                S.use.push_back(static_cast<std::uint8_t>(land_use(use_of(n, n.id))));
+            }
+            if (own) {  // boundary lengths by weight
+                auto add = [&](u64 key, const std::vector<Vec2>& pl) {
+                    double L = 0;
+                    for (std::size_t i = 0; i + 1 < pl.size(); ++i) L += len2d(pl[i + 1] - pl[i]);
+                    const Bound c = bound_class(key);
+                    (c == Bound::Hedge ? S.len_hedge_m : c == Bound::Fence ? S.len_fence_m : S.len_treeline_m) += L;
+                };
+                add(b->bottom_key, b->bottom_q);
+                add(b->left_key, {b->left_a, b->left_b});
+                for (const CutSeg& c : b->cuts) add(c.label, {c.a, c.b});
+            }
+        });
+        if (!junctions) return;
+        // Junction census on the polygons: a vertex shared as a corner by two cells and lying inside an edge of a third is a T.
+        const double q = 20.0;  // quantisation: 5 cm
+        auto kx = [&](Vec2 v) { return std::make_pair(static_cast<i64>(std::llround(v.x * q)), static_cast<i64>(std::llround(v.y * q))); };
+        std::map<std::pair<i64, i64>, std::vector<std::pair<int, double>>> at;  // vertex -> (polygon index, interior angle cos) list
+        for (std::size_t pi = 0; pi < polys.size(); ++pi) {
+            const Poly& P = polys[pi].b->nodes[polys[pi].node].poly;
+            const std::size_t n = P.v.size();
+            for (std::size_t i = 0; i < n; ++i) {
+                const Vec2 a = P.v[(i + n - 1) % n] - P.v[i], b = P.v[(i + 1) % n] - P.v[i];
+                const double la = len2d(a), lb = len2d(b);
+                if (la < 1e-6 || lb < 1e-6) continue;
+                at[kx(P.v[i])].push_back({static_cast<int>(pi), a.dot(b) / (la * lb)});
+            }
+        }
+        // edge index by 120 m cells
+        std::map<std::pair<i64, i64>, std::vector<std::pair<int, int>>> eg;
+        for (std::size_t pi = 0; pi < polys.size(); ++pi) {
+            const Poly& P = polys[pi].b->nodes[polys[pi].node].poly;
+            const std::size_t n = P.v.size();
+            for (std::size_t i = 0; i < n; ++i) {
+                const Vec2 a = P.v[i], b = P.v[(i + 1) % n];
+                const i64 x0 = static_cast<i64>(std::floor(std::min(a.x, b.x) / 120)), x1 = static_cast<i64>(std::floor(std::max(a.x, b.x) / 120));
+                const i64 y0 = static_cast<i64>(std::floor(std::min(a.y, b.y) / 120)), y1 = static_cast<i64>(std::floor(std::max(a.y, b.y) / 120));
+                for (i64 cy = y0; cy <= y1; ++cy)
+                    for (i64 cx = x0; cx <= x1; ++cx) eg[{cx, cy}].push_back({static_cast<int>(pi), static_cast<int>(i)});
+            }
+        }
+        for (const auto& [key, lst] : at) {
+            const Vec2 v{static_cast<double>(key.first) / q, static_cast<double>(key.second) / q};
+            if (v.x < lo.x || v.x >= hi.x || v.y < lo.y || v.y >= hi.y) continue;  // judge only the vertices inside the box
+            std::set<int> verts;
+            for (const auto& pr : lst) verts.insert(pr.first);
+            if (verts.size() < 2) continue;
+            int inner = 0;
+            const auto it = eg.find({static_cast<i64>(std::floor(v.x / 120)), static_cast<i64>(std::floor(v.y / 120))});
+            std::set<int> ins;
+            if (it != eg.end())
+                for (const auto& [pi, ei] : it->second) {
+                    if (verts.count(pi)) continue;
+                    const Poly& P = polys[static_cast<std::size_t>(pi)].b->nodes[polys[static_cast<std::size_t>(pi)].node].poly;
+                    const Vec2 a = P.v[static_cast<std::size_t>(ei)], b = P.v[(static_cast<std::size_t>(ei) + 1) % P.v.size()];
+                    const Vec2 ab = b - a;
+                    const double l2 = ab.dot(ab);
+                    if (l2 < 1e-9) continue;
+                    const double t = (v - a).dot(ab) / l2;
+                    if (t <= 0 || t >= 1) continue;
+                    if (len2d(v - (a + ab * t)) < 0.1) ins.insert(pi);
+                }
+            inner = static_cast<int>(ins.size());
+            const int nv = static_cast<int>(verts.size());
+            if (nv == 2 && inner == 1) {
+                ++S.t_junctions;
+                double cmax = -1;
+                for (const auto& pr : lst) cmax = std::max(cmax, pr.second);  // smallest interior angle among the two stem-side cells
+                S.t_angle_deg.push_back(std::acos(std::clamp(cmax, -1.0, 1.0)) * 180.0 / 3.14159265358979);
+            } else if (nv >= 4 || (nv == 2 && inner >= 2)) {
+                ++S.x_junctions;
+            } else if (nv == 3) {
+                ++S.y_junctions;
+            }
+        }
+        // gap length (removed hedge) over the same boxes
+        for_edges(lo, hi, [&](const Seg& s) {
+            if (s.cls == Bound::Fence) return;
+            S.len_gap_m += s.gate_len;
+            S.len_wood_gap_m += s.wood_len;
+        }, true);
+    }
+
 private:
+    struct CutSeg {
+        Vec2 a, b;
+        u64 label = 0;
+    };
+    struct Node {
+        Poly poly;                 // leaves only (internal nodes drop it)
+        Vec2 cpt{}, cn{};          // internal: keep (x - cpt) . cn <= 0 for child 0
+        int child[2]{-1, -1};
+        u64 id = 0;
+        bool leaf = false;
+        Shape shape;
+        double prop = 0;           // terrain wood propensity (leaves)
+    };
+    struct Block {
+        u64 id = 0;
+        i64 j = 0, k = 0;
+        std::vector<Node> nodes;
+        std::vector<CutSeg> cuts;
+        std::vector<Vec2> bottom_q;  // the owned bottom boundary (q space)
+        u64 bottom_key = 0, left_key = 0;
+        Vec2 left_a{}, left_b{};     // the owned left cross line
+        Vec2 centre_q{}, centre_p{};
+        Vec2 lo{}, hi{};             // q bounding box
+        Vec2 d{1, 0}, pp{0, 1};
+        double area_t = 5e4, rho = 1.5;
+    };
     struct Seg {
         bool present = false;
-        int axis = 0;
-        i64 i = 0, j = 0;
+        u64 key = 0;
+        Bound cls = Bound::Hedge;
         std::vector<Vec2> pts;
         std::vector<double> s;
-        std::vector<std::pair<double, double>> gaps;
+        std::vector<std::pair<double, double>> gaps;  // sorted, disjoint
+        double gate_len = 0, wood_len = 0;            // gateway + decay length, length with wood on both sides
+    };
+    struct Ground {
+        Use use = Use::Permanent;
+        u64 id = 0;
+        double tint = 0.5;
+        Vec2 row_q{1, 0};
+        Vec2 centre_q{0, 0};
     };
 
+    // ---- hashing helpers
+    double hu(u64 salt) const { return hash01(mix64(seed_ ^ mix64(salt + 991))); }
     double h(u64 salt, u64 a, u64 b = 0, u64 c = 0) const { return h01(seed_ ^ mix64(salt + 77), a, b, c); }
-    double ha(u64 salt, int axis, i64 i, i64 j) const { return h(salt, ui(axis), ui(i), ui(j)); }
+    static double he(u64 key, u64 salt, u64 extra = 0) { return hash01(mix64(key ^ mix64(salt * 0x9E3779B97F4A7C15ull + extra + 5))); }
+    static double hk(u64 key, u64 salt) { return hash01(mix64(key + salt * 0x9E3779B97F4A7C15ull)); }
+    static double hk2(u64 key, u64 salt, u64 extra) { return hash01(mix64(mix64(key + salt * 0x9E3779B97F4A7C15ull) ^ (extra * 0xD1B54A32D192ED03ull + 3))); }
+    double vn(u64 salt, double x, double y) const { return vnoise2(seed_ ^ salt, x, y); }
 
-    double line_x(i64 i) const { return static_cast<double>(i) * w_.field_size_x + (h(1, ui(i)) - 0.5) * 2 * w_.field_jitter * w_.field_size_x; }
-    double line_y(i64 j) const { return static_cast<double>(j) * w_.field_size_y + (h(2, ui(j)) - 0.5) * 2 * w_.field_jitter * w_.field_size_y; }
-    double wx(double y) const { return w_.warp_m * vnoise1(seed_ ^ 0x3, y / w_.warp_wavelength_m); }
-    double wy(double x) const { return w_.warp_m * vnoise1(seed_ ^ 0x4, x / w_.warp_wavelength_m); }
-
-    Land kind_of(i64 i, i64 j) const {
-        if (h(5, ui(i), ui(j)) < w_.woodland_share) return Land::Wood;
-        const double r = h(6, ui(i), ui(j));
-        if (r < w_.arable_share) return Land::Arable;
-        if (r < w_.arable_share + w_.rough_share) return Land::Rough;
-        return Land::Pasture;
+    // ---- the warp: q = p + D(p); the inverse is a fixed-point iteration (Lipschitz constant of D well below 1)
+    Vec2 disp(Vec2 p) const {
+        const double Lr = w_.regional_warp_wavelength_m, Lm = 0.3 * Lr, Lw = w_.boundary_wobble_wavelength_m;
+        return {w_.regional_warp_m * (2 * vn(0x31, p.x / Lr, p.y / Lr) - 1) + amp_mid_ * (2 * vn(0x35, p.x / Lm, p.y / Lm) - 1) +
+                    w_.boundary_wobble_m * (2 * vn(0x33, p.x / Lw, p.y / Lw) - 1),
+                w_.regional_warp_m * (2 * vn(0x32, p.x / Lr, p.y / Lr) - 1) + amp_mid_ * (2 * vn(0x36, p.x / Lm, p.y / Lm) - 1) +
+                    w_.boundary_wobble_m * (2 * vn(0x34, p.x / Lw, p.y / Lw) - 1)};
+    }
+    Vec2 to_q(Vec2 p) const { return p + disp(p); }
+    Vec2 to_p(Vec2 q, int iters = 22) const {
+        Vec2 p = q - disp(q);
+        for (int i = 0; i < iters; ++i) p = q - disp(p);
+        return p;
+    }
+    // A q-space direction at world position p as a world direction (inverse of the warp's Jacobian).
+    Vec2 to_world_dir(Vec2 p, Vec2 dq) const {
+        const double e = 2.0;
+        const Vec2 qx = to_q({p.x + e, p.y}) - to_q({p.x - e, p.y}), qy = to_q({p.x, p.y + e}) - to_q({p.x, p.y - e});
+        const double a = qx.x / (2 * e), c = qx.y / (2 * e), b = qy.x / (2 * e), d = qy.y / (2 * e);  // J = [[a b],[c d]]
+        const double det = a * d - b * c;
+        if (std::fabs(det) < 1e-6) return dq;
+        return unit({(d * dq.x - b * dq.y) / det, (-c * dq.x + a * dq.y) / det});
     }
 
-    Land land_at(Vec2 p) const {
-        const double u = p.x - wx(p.y), v = p.y - wy(p.x);
-        i64 i = static_cast<i64>(std::floor(u / w_.field_size_x)), j = static_cast<i64>(std::floor(v / w_.field_size_y));
-        while (line_x(i + 1) <= u) ++i;
-        while (line_x(i) > u) --i;
-        while (line_y(j + 1) <= v) ++j;
-        while (line_y(j) > v) --j;
-        const double dxl = u - line_x(i), dxh = line_x(i + 1) - u, dyl = v - line_y(j), dyh = line_y(j + 1) - v;
-        const Land own = kind_of(i, j);
-        const double rg = w_.woodland_edge_ragged_m;
-        if (own == Land::Wood) {
-            const double t = rg * (2 * vnoise2(seed_ ^ 0x7, p.x / 15, p.y / 15) - 1);
-            if (std::min({dxl, dxh, dyl, dyh}) > t) return Land::Wood;
-            return Land::Rough;  // eroded fringe
+    // ---- rows, cross lines, blocks
+    struct RowInfo {
+        double Y = 0, phase = 0, phase2 = 0;
+        u64 key = 0;
+    };
+    RowInfo row_info(i64 j) const {
+        RowInfo r;
+        r.key = key3(seed_, 210, ui(j));
+        r.Y = (static_cast<double>(j) + (hk(r.key, 1) - 0.5) * 2 * jit_) * H0_;
+        r.phase = hk(r.key, 2);
+        r.phase2 = hk(r.key, 3);
+        return r;
+    }
+    // b coordinate of row j at along-coordinate a: knots every Kn, smooth between.
+    double row_b(const RowInfo& r, i64 j, double a) const {
+        const double u = a / Kn_ + r.phase;
+        const double fl = std::floor(u);
+        const i64 m = static_cast<i64>(fl);
+        const double t = smooth01(u - fl);
+        const double v0 = (hk(key3(seed_, 211, ui(j), ui(m)), 1) - 0.5) * 2 * mea_ * H0_;
+        const double v1 = (hk(key3(seed_, 211, ui(j), ui(m + 1)), 1) - 0.5) * 2 * mea_ * H0_;
+        return r.Y + lerp(v0, v1, t);
+    }
+    i64 knot_of(const RowInfo& r, double a) const { return static_cast<i64>(std::floor(a / Kn_ + r.phase)); }
+    struct CrossInfo {
+        double a0 = 0, tilt = 0;
+    };
+    CrossInfo cross_info(const RowInfo& r, i64 j, i64 k) const {
+        const u64 ck = key3(seed_, 212, ui(j), ui(k));
+        CrossInfo c;
+        c.a0 = (static_cast<double>(k) + r.phase2 + (hk(ck, 1) - 0.5) * 0.4) * Lb_;
+        c.tilt = (hk(ck, 2) - 0.5) * 2 * tilt_;
+        return c;
+    }
+    double cross_a(const RowInfo& r, i64 j, i64 k, double b) const {
+        const CrossInfo c = cross_info(r, j, k);
+        return c.a0 + c.tilt * (b - r.Y);
+    }
+    Vec2 to_q_ab(double a, double b) const { return e_ * a + nv_ * b; }
+
+    void locate_block(Vec2 q, i64& jo, i64& ko) const {
+        const double a = q.dot(e_), b = q.dot(nv_);
+        const i64 j0 = static_cast<i64>(std::floor(b / H0_));
+        i64 j = j0 - 2;
+        for (i64 jj = j0 - 2; jj <= j0 + 2; ++jj)
+            if (row_b(row_info(jj), jj, a) <= b) j = jj;
+        const RowInfo r = row_info(j);
+        const i64 k0 = static_cast<i64>(std::floor(a / Lb_ - r.phase2));
+        i64 k = k0 - 2;
+        for (i64 kk = k0 - 2; kk <= k0 + 2; ++kk)
+            if (cross_a(r, j, kk, b) <= a) k = kk;
+        jo = j;
+        ko = k;
+    }
+
+    std::shared_ptr<const Block> block(i64 j, i64 k) const {
+        const std::pair<i64, i64> key{j, k};
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            const auto it = cache_.find(key);
+            if (it != cache_.end()) return it->second;
         }
-        const double t2 = rg * vnoise2(seed_ ^ 0x8, p.x / 15, p.y / 15);
-        if ((dxl < t2 && kind_of(i - 1, j) == Land::Wood) || (dxh < t2 && kind_of(i + 1, j) == Land::Wood) ||
-            (dyl < t2 && kind_of(i, j - 1) == Land::Wood) || (dyh < t2 && kind_of(i, j + 1) == Land::Wood))
-            return Land::Wood;
-        return own;
+        auto b = std::make_shared<Block>(make_block(j, k));
+        std::lock_guard<std::mutex> lk(mu_);
+        if (cache_.size() > 4000) cache_.clear();
+        return cache_.emplace(key, b).first->second;
     }
+
+    template <class F>
+    void for_blocks(Vec2 qlo, Vec2 qhi, F f) const {
+        double a0 = 1e300, a1 = -1e300, b0 = 1e300, b1 = -1e300;
+        for (const Vec2 c : {Vec2{qlo.x, qlo.y}, Vec2{qhi.x, qlo.y}, Vec2{qlo.x, qhi.y}, Vec2{qhi.x, qhi.y}}) {
+            a0 = std::min(a0, c.dot(e_)); a1 = std::max(a1, c.dot(e_));
+            b0 = std::min(b0, c.dot(nv_)); b1 = std::max(b1, c.dot(nv_));
+        }
+        for (i64 j = static_cast<i64>(std::floor(b0 / H0_)) - 2; j <= static_cast<i64>(std::floor(b1 / H0_)) + 2; ++j) {
+            const RowInfo r = row_info(j);
+            for (i64 k = static_cast<i64>(std::floor(a0 / Lb_ - r.phase2)) - 2; k <= static_cast<i64>(std::floor(a1 / Lb_ - r.phase2)) + 2; ++k) {
+                const std::shared_ptr<const Block> b = block(j, k);
+                if (b->hi.x < qlo.x || b->lo.x > qhi.x || b->hi.y < qlo.y || b->lo.y > qhi.y) continue;
+                f(b);
+            }
+        }
+    }
+
+    // Intersection of cross line k of row j with row line jr (the row's own bottom or the next row's).
+    double cross_hit(const RowInfo& r, i64 j, i64 k, const RowInfo& rr, i64 jr) const {
+        double a = cross_info(r, j, k).a0;
+        for (int it = 0; it < 8; ++it) a = cross_a(r, j, k, row_b(rr, jr, a));
+        return a;
+    }
+
+    Block make_block(i64 j, i64 k) const {
+        Block b;
+        b.j = j;
+        b.k = k;
+        b.id = key3(seed_, 200, ui(j), ui(k));
+        const RowInfo r0 = row_info(j), r1 = row_info(j + 1);
+        const double aBL = cross_hit(r0, j, k, r0, j), aBR = cross_hit(r0, j, k + 1, r0, j);
+        const double aTL = cross_hit(r0, j, k, r1, j + 1), aTR = cross_hit(r0, j, k + 1, r1, j + 1);
+        // row sample vertices (about every 60 m) with edge labels by knot interval
+        auto sample = [&](const RowInfo& rr, i64 jr, double from, double to, std::vector<Vec2>& pts, std::vector<u64>& labs) {
+            const int n = std::max(1, static_cast<int>(std::ceil(std::fabs(to - from) / 60.0)));
+            for (int i = 0; i <= n; ++i) {
+                const double a = from + (to - from) * (static_cast<double>(i) / n);
+                pts.push_back(to_q_ab(a, row_b(rr, jr, a)));
+                if (i < n) {
+                    const double am = from + (to - from) * ((i + 0.5) / n);
+                    labs.push_back(key3(seed_, 220, ui(jr), ui(knot_of(rr, am))));
+                }
+            }
+        };
+        std::vector<Vec2> bv, tv;
+        std::vector<u64> bl, tl;
+        sample(r0, j, aBL, aBR, bv, bl);
+        sample(r1, j + 1, aTR, aTL, tv, tl);
+        Poly quad;
+        for (std::size_t i = 0; i < bv.size(); ++i) {
+            quad.v.push_back(bv[i]);
+            quad.lab.push_back(i + 1 < bv.size() ? bl[i] : key3(seed_, 221, ui(j), ui(k + 1)));
+        }
+        for (std::size_t i = 0; i < tv.size(); ++i) {
+            quad.v.push_back(tv[i]);
+            quad.lab.push_back(i + 1 < tv.size() ? tl[i] : key3(seed_, 221, ui(j), ui(k)));
+        }
+        b.bottom_q = bv;
+        b.bottom_key = key3(seed_, 222, ui(j), ui(k));
+        b.left_key = key3(seed_, 223, ui(j), ui(k));
+        b.left_a = bv.front();
+        b.left_b = tv.back();
+        const Shape qs = analyse(quad);
+        b.centre_q = qs.centroid;
+        b.centre_p = to_p(qs.centroid, 8);
+        b.lo = {1e300, 1e300};
+        b.hi = {-1e300, -1e300};
+        for (const Vec2& v : quad.v) {
+            b.lo = {std::min(b.lo.x, v.x), std::min(b.lo.y, v.y)};
+            b.hi = {std::max(b.hi.x, v.x), std::max(b.hi.y, v.y)};
+        }
+        // grain: the row direction or across it, tilted a little (towards the terrain's contour / valley hint when there is one)
+        const u64 bk = b.id;
+        const bool along_row = hk(bk, 3) < w_.grain_edge_share;
+        const Vec2 axis = along_row ? e_ : nv_, pa = perp(axis);
+        double psi = (hk(bk, 4) - 0.5) * 2 * 0.14;
+        Vec2 hint;
+        if (hints_.field_axis && hints_.field_axis(b.centre_p, hint) && len2d(hint) > 0.5 && hk(bk, 5) < 0.75) {
+            const Vec2 hq = unit(hint);
+            const double u = hq.dot(axis), v = hq.dot(pa);
+            if (std::fabs(u) > 0.2) psi = std::clamp(v / u, -0.25, 0.25);
+        }
+        b.d = unit(axis + pa * psi);
+        b.pp = perp(b.d);
+        // district field size
+        const double Ld = std::max(300.0, w_.district_wavelength_m);
+        const double sn = vn(0xD1, b.centre_q.x / Ld, b.centre_q.y / Ld);
+        const double t = std::clamp(0.5 + (sn - 0.5) * 2.4, 0.0, 1.0);
+        double fa = w_.field_area_ha * lerp(w_.field_size_lo, w_.field_size_hi, t * t * (0.4 + 0.6 * t));
+        fa *= 0.8 + 0.4 * hk(bk, 6);
+        if (hk(bk, 7) < w_.smallholding_share) fa *= w_.smallholding_scale * w_.smallholding_scale;
+        b.area_t = fa * 1e4;
+        b.rho = lerp(w_.aspect_min, w_.aspect_max, hk(bk, 8));
+        // cut tree
+        b.nodes.emplace_back();
+        b.nodes[0].poly = std::move(quad);
+        b.nodes[0].id = bk;
+        build_tree(b);
+#ifdef CP_COVER_DEBUG
+        { int nl = 0; for (const auto& n : b.nodes) nl += n.leaf ? 1 : 0; std::fprintf(stderr, "block %lld,%lld area %.1f ha target %.1f ha leaves %d\n", (long long)j, (long long)k, qs.area / 1e4, b.area_t / 1e4, nl); }
+#endif
+        return b;
+    }
+
+    // ---- cutting
+    static u64 child_id(u64 id, int side) { return mix64(id * 3 + 1 + static_cast<u64>(side)); }
+
+    bool shape_ok(const Shape& s) const {
+        if (s.corners < 4) return false;
+        if (s.max_cos > cos_min_) return false;
+        if (s.aspect > w_.max_aspect) return false;
+        return true;
+    }
+    // cut end clearance: the endpoints of the new edge keep 20 m from every other vertex of the piece.
+    static bool ends_clear(const Poly& P, u64 label) {
+        const std::size_t n = P.v.size();
+        for (std::size_t i = 0; i < n; ++i) {
+            if (P.lab[i] != label) continue;
+            for (const Vec2 e : {P.v[i], P.v[(i + 1) % n]})
+                for (std::size_t q = 0; q < n; ++q) {
+                    if (q == i || q == (i + 1) % n) continue;
+                    if (len2d(P.v[q] - e) >= 20.0) continue;
+                    // only real corners count; the near-straight sample vertices along a curved row line do not
+                    const Vec2 a = P.v[(q + n - 1) % n] - P.v[q], c = P.v[(q + 1) % n] - P.v[q];
+                    const double la = len2d(a), lc = len2d(c);
+                    if (la < 1e-6 || lc < 1e-6 || a.dot(c) / (la * lc) <= kStraightCos) continue;
+                    return false;
+                }
+        }
+        return true;
+    }
+
+    bool choose_cut(const Block& b, u64 id, const Poly& P, double area, Node& nd, Poly& c0, Poly& c1, CutSeg& seg) const {
+        const Vec2 org = b.centre_q;
+        double u0 = 1e300, u1 = -1e300, v0 = 1e300, v1 = -1e300;
+        for (const Vec2& x : P.v) {
+            const Vec2 r = x - org;
+            const double u = r.dot(b.d), v = r.dot(b.pp);
+            u0 = std::min(u0, u); u1 = std::max(u1, u);
+            v0 = std::min(v0, v); v1 = std::max(v1, v);
+        }
+        const double eu = u1 - u0, ev = std::max(1.0, v1 - v0);
+        const bool across0 = eu / ev > b.rho;
+        const u64 label = mix64(id ^ 0xC07C07ull);
+        const double amin = std::max(6000.0, 0.18 * b.area_t);
+        for (int att = 0; att < 10; ++att) {
+            const bool across = att < 7 ? across0 : !across0;
+            const double f = lerp(w_.cut_frac_min, 1.0 - w_.cut_frac_min, hk2(id, 3, static_cast<u64>(att)));
+            const double tilt = (hk2(id, 4, static_cast<u64>(att)) - 0.5) * 2 * w_.cut_tilt;
+            Vec2 dir, pt;
+            if (across) {
+                dir = b.pp + b.d * tilt;
+                pt = org + b.d * (u0 + f * eu) + b.pp * (0.5 * (v0 + v1));
+            } else {
+                dir = b.d + b.pp * tilt;
+                pt = org + b.d * (0.5 * (u0 + u1)) + b.pp * (v0 + f * ev);
+            }
+            dir = unit(dir);
+            if (att >= 3 && att < 7) {  // snap: perpendicular to the two edges the line hits
+                double tmin = 1e300, tmax = -1e300;
+                int imin = -1, imax = -1;
+                const std::size_t n = P.v.size();
+                for (std::size_t i = 0; i < n; ++i) {
+                    const Vec2 a = P.v[i], c = P.v[(i + 1) % n];
+                    const Vec2 e = c - a;
+                    const double den = dir.cross(e);
+                    if (std::fabs(den) < 1e-9) continue;
+                    const double s = (a - pt).cross(e) / den;  // along dir
+                    const double t = (a - pt).cross(dir) / den;  // along the edge
+                    if (t < 0 || t > 1) continue;
+                    if (s < tmin) { tmin = s; imin = static_cast<int>(i); }
+                    if (s > tmax) { tmax = s; imax = static_cast<int>(i); }
+                }
+                if (imin >= 0 && imax >= 0 && imin != imax) {
+                    auto edge_perp = [&](int i) {
+                        const Vec2 e = unit(P.v[(static_cast<std::size_t>(i) + 1) % n] - P.v[static_cast<std::size_t>(i)]);
+                        Vec2 pe = perp(e);
+                        if (pe.dot(dir) < 0) pe = pe * -1.0;
+                        return pe;
+                    };
+                    dir = unit(edge_perp(imin) + edge_perp(imax));
+                }
+            }
+            const Vec2 n{dir.y, -dir.x};
+            Poly A = clip_half(P, pt, n, label), B = clip_half(P, pt, n * -1.0, label);
+            if (A.v.size() < 3 || B.v.size() < 3) continue;
+            if (!ends_clear(A, label) || !ends_clear(B, label)) continue;
+            const Shape sa = analyse(A), sb = analyse(B);
+            if (sa.area < amin || sb.area < amin) continue;
+            if (!shape_ok(sa) || !shape_ok(sb)) continue;
+            nd.cpt = pt;
+            nd.cn = n;
+            for (std::size_t i = 0; i < A.v.size(); ++i)
+                if (A.lab[i] == label) {
+                    seg.a = A.v[i];
+                    seg.b = A.v[(i + 1) % A.v.size()];
+                    seg.label = label;
+                }
+            c0 = std::move(A);
+            c1 = std::move(B);
+            (void)area;
+            return true;
+        }
+        return false;
+    }
+
+    void build_tree(Block& b) const {
+        std::vector<std::pair<int, int>> stack{{0, 0}};  // node, depth
+        while (!stack.empty()) {
+            const auto [ni, depth] = stack.back();
+            stack.pop_back();
+            const Poly P = b.nodes[static_cast<std::size_t>(ni)].poly;
+            const u64 id = b.nodes[static_cast<std::size_t>(ni)].id;
+            const double area = poly_area(P);
+            const bool small = area <= b.area_t * (0.85 + 0.65 * hk(id, 2));
+            Node tmp;
+            Poly c0, c1;
+            CutSeg seg;
+            if (small || depth >= 12 || !choose_cut(b, id, P, area, tmp, c0, c1, seg)) {
+                Node& n = b.nodes[static_cast<std::size_t>(ni)];
+                n.leaf = true;
+                n.shape = analyse(P);
+                n.prop = propensity(P, n.shape);
+                continue;
+            }
+            const int i0 = static_cast<int>(b.nodes.size());
+            b.nodes.emplace_back();
+            b.nodes.emplace_back();
+            Node& n = b.nodes[static_cast<std::size_t>(ni)];
+            n.cpt = tmp.cpt;
+            n.cn = tmp.cn;
+            n.poly = Poly{};
+            n.child[0] = i0;
+            n.child[1] = i0 + 1;
+            b.nodes[static_cast<std::size_t>(i0)].poly = std::move(c0);
+            b.nodes[static_cast<std::size_t>(i0)].id = child_id(id, 0);
+            b.nodes[static_cast<std::size_t>(i0) + 1].poly = std::move(c1);
+            b.nodes[static_cast<std::size_t>(i0) + 1].id = child_id(id, 1);
+            b.cuts.push_back(seg);
+            stack.push_back({i0, depth + 1});
+            stack.push_back({i0 + 1, depth + 1});
+        }
+    }
+
+    // Share of sample points inside the field (centre and the points half way to each of up to 8 vertices) where the terrain asks for wood.
+    double propensity(const Poly& P, const Shape& s) const {
+        if (!hints_.wood_propensity) return 0;
+        int hit = hints_.wood_propensity(to_p(s.centroid, 5)) > 0.5 ? 1 : 0, n = 1;
+        const std::size_t step = std::max<std::size_t>(1, P.v.size() / 8);
+        for (std::size_t i = 0; i < P.v.size(); i += step) {
+            hit += hints_.wood_propensity(to_p(P.v[i] * 0.5 + s.centroid * 0.5, 5)) > 0.5 ? 1 : 0;
+            ++n;
+        }
+        return static_cast<double>(hit) / n;
+    }
+
+    // ---- locating a leaf
+    struct LeafRef {
+        std::shared_ptr<const Block> b;
+        int node = 0;
+    };
+    LeafRef leaf_ref(Vec2 q) const {
+        i64 j, k;
+        locate_block(q, j, k);
+        LeafRef L;
+        L.b = block(j, k);
+        int ni = 0;
+        while (!L.b->nodes[static_cast<std::size_t>(ni)].leaf) {
+            const Node& n = L.b->nodes[static_cast<std::size_t>(ni)];
+            ni = n.child[(q - n.cpt).dot(n.cn) <= 0 ? 0 : 1];
+        }
+        L.node = ni;
+        return L;
+    }
+
+    // ---- land use of a field
+    Use use_of(const Node& n, u64 id) const {
+        const Vec2 c = n.shape.centroid;
+        const double Lw = w_.woodland_cluster_wavelength_m;
+        const double wshare = std::clamp(w_.woodland_share * (1.0 + w_.woodland_cluster * (2 * vn(0xC2, c.x / Lw, c.y / Lw) - 1) * 2.0), 0.0, 0.9);
+        if (hk(id, 11) < wshare) return Use::Wood;
+        if (n.shape.width > 0 && n.shape.width < w_.strip_width_m && hk(id, 15) < w_.strip_wood_share) return Use::Wood;
+        if (n.prop >= 0.34) return hk(id, 17) < w_.steep_wood_keep ? Use::Wood : Use::Rough;
+        const double Lc = w_.arable_cluster_wavelength_m;
+        const double ab = w_.arable_share + w_.arable_cluster * (2 * vn(0xC1, c.x / Lc, c.y / Lc) - 1);
+        const double r = hk(id, 12);
+        if (r < ab) {
+            const double tot = std::max(1e-9, w_.ploughed_share + w_.cereal_share + w_.stubble_share + w_.other_crop_share);
+            double u = hk(id, 13) * tot;
+            if ((u -= w_.ploughed_share) < 0) return Use::Ploughed;
+            if ((u -= w_.cereal_share) < 0) return Use::Cereal;
+            if ((u -= w_.stubble_share) < 0) return Use::Stubble;
+            return Use::OtherCrop;
+        }
+        if (r < ab + w_.rough_share) return Use::Rough;
+        return hk(id, 14) < w_.improved_share ? Use::Improved : Use::Permanent;
+    }
+    static LandUse land_use(Use u) {
+        switch (u) {
+            case Use::Wood: return LandUse::Woodland;
+            case Use::Permanent: return LandUse::PermanentPasture;
+            case Use::Improved: return LandUse::ImprovedGrass;
+            case Use::Ploughed: return LandUse::Ploughed;
+            case Use::Cereal: return LandUse::Cereal;
+            case Use::Stubble: return LandUse::Stubble;
+            case Use::OtherCrop: return LandUse::OtherCrop;
+            case Use::Rough: return LandUse::RoughGrazing;
+        }
+        return LandUse::PermanentPasture;
+    }
+    CoverGround make_ground(Use u) const {
+        CoverGround g;
+        switch (u) {
+            case Use::Wood:
+                g = {w_.woodland_floor_type, w_.woodland_density, static_cast<std::uint8_t>(w_.woodland_height_class), LandClass::Wood};
+                break;
+            case Use::Rough:
+                g = {w_.rough_grass_type, w_.rough_density, static_cast<std::uint8_t>(w_.rough_height_class), LandClass::Rough};
+                break;
+            case Use::Permanent:
+            case Use::Improved:
+                g = {w_.open_grass_type, w_.open_density, static_cast<std::uint8_t>(w_.open_height_class), LandClass::Pasture};
+                break;
+            default:  // crops: no instances, the renderer's ground material shows soil / crop
+                g = {"", 0, 0, LandClass::Arable};
+                break;
+        }
+        return g;
+    }
+
+    // ---- boundary pieces: stepped wood edges, belts, plantations
+    double edge_step(u64 lk, double s) const {
+        const double Ls = lerp(w_.wood_notch_len_min, w_.wood_notch_len_max, hk(lk, 0xA1));
+        const i64 idx = static_cast<i64>(std::floor(s / Ls + hk(lk, 0xA2)));
+        const u64 ik = key3(lk, 0xA3, ui(idx));
+        if (hk(ik, 1) >= w_.wood_notch_share) return 0;
+        const double depth = lerp(w_.wood_notch_min, w_.wood_notch_max, hk(ik, 2));
+        return hk(ik, 3) < 0.5 ? -depth : depth;
+    }
+    bool belt_edge(u64 ekey) const { return hk(ekey, 0xB1) < w_.belt_share; }
+    bool belt_gate_on(Vec2 q) const {
+        const double L = w_.belt_length_m;
+        return vn(0xB2, q.x / L, q.y / L) > w_.belt_gate;
+    }
+
+    Ground resolve(Vec2 p, Vec2 q, int depth) const {
+        const LeafRef L = leaf_ref(q);
+        const Block& b = *L.b;
+        const Node& n = b.nodes[static_cast<std::size_t>(L.node)];
+        u64 id = n.id;
+        if (hints_.stream_offset) id = child_id(id, hints_.stream_offset(p) > 0 ? 1 : 0);
+        Ground g;
+        g.id = id;
+        g.use = use_of(n, id);
+        g.tint = hk(id, 0x71);
+        g.centre_q = n.shape.centroid;
+        {
+            const Vec2 ld = n.shape.long_dir;
+            g.row_q = unit(ld + perp(ld) * ((hk(id, 0x72) - 0.5) * 0.12));
+        }
+        const Poly& P = n.poly;
+        const std::size_t m = P.v.size();
+        if (m < 3) return g;
+        // nearest edge
+        double db = 1e300;
+        std::size_t ei = 0;
+        Vec2 foot{};
+        for (std::size_t i = 0; i < m; ++i) {
+            const Vec2 a = P.v[i], c = P.v[(i + 1) % m];
+            const Vec2 ab = c - a;
+            const double l2 = ab.dot(ab);
+            const double t = l2 > 1e-18 ? std::clamp((q - a).dot(ab) / l2, 0.0, 1.0) : 0.0;
+            const Vec2 f = a + ab * t;
+            const double d = len2d(q - f);
+            if (d < db) { db = d; ei = i; foot = f; }
+        }
+        const u64 lk = P.lab[ei];
+        const Vec2 eu = unit(P.v[(ei + 1) % m] - P.v[ei]);
+        const Vec2 outward{eu.y, -eu.x};  // counter-clockwise polygon
+        // stepped boundary between a wood field and its neighbour
+        if (depth == 0 && db < w_.wood_notch_max + 1) {
+            Vec2 dc = eu;
+            if (dc.x < 0 || (dc.x == 0 && dc.y < 0)) dc = dc * -1.0;
+            const double v = edge_step(lk, q.dot(dc));
+            if (v != 0) {
+                const Vec2 q2 = foot + outward * 3.0;
+                const Ground g2 = resolve(p + (q2 - q), q2, 1);
+                if (g.use == Use::Wood && g2.use != Use::Wood && v < 0 && db < -v) return g2;  // notch: the neighbour's field runs in
+                if (g.use != Use::Wood && g2.use == Use::Wood && v > 0 && db < v) { g.use = Use::Wood; return g; }
+            }
+        }
+        if (g.use == Use::Wood) return g;
+        // shelter belt along a flagged boundary
+        if (belt_edge(lk) && belt_gate_on(q)) {
+            const double hw = 0.5 * lerp(w_.belt_width_min, w_.belt_width_max, hk(lk, 0xB3)) * (0.8 + 0.4 * vn(0xB4, p.x / 30, p.y / 30));
+            if (db < hw) { g.use = Use::Wood; return g; }
+        }
+        // square plantation in one corner of the field
+        if (hk(id, 0xC3) < w_.copse_share && !n.shape.corner_idx.empty()) {
+            const std::size_t ci = static_cast<std::size_t>(hk(id, 0xC4) * static_cast<double>(n.shape.corner_idx.size())) % n.shape.corner_idx.size();
+            const std::size_t k = static_cast<std::size_t>(n.shape.corner_idx[ci]);
+            const double s1 = lerp(w_.copse_side_min, w_.copse_side_max, hk(id, 0xC5));
+            const double s2 = s1 * (0.8 + 0.4 * hk(id, 0xC6));
+            if (std::max(s1, s2) < 0.45 * n.shape.width) {
+                const Vec2 v = P.v[k];
+                const Vec2 e1 = unit(P.v[(k + 1) % m] - v), e2 = unit(P.v[(k + m - 1) % m] - v);
+                const double det = e1.cross(e2);
+                if (std::fabs(det) > 0.2) {
+                    const Vec2 r = q - v;
+                    const double al = r.cross(e2) / det, be = e1.cross(r) / det;
+                    if (al >= 0 && al < s1 && be >= 0 && be < s2) { g.use = Use::Wood; return g; }
+                }
+            }
+        }
+        return g;
+    }
+
+    Use use_at(Vec2 p) const { return resolve(p, to_q(p), 0).use; }
 
     static Vec2 point_at(const std::vector<Vec2>& pts, const std::vector<double>& s, double sv) {
         if (sv <= s.front()) return pts.front();
@@ -1175,56 +1996,97 @@ private:
         return pts[k - 1] + (pts[k] - pts[k - 1]) * t;
     }
 
-    Seg make_seg(int axis, i64 i, i64 j) const {
-        Seg s;
-        s.axis = axis;
-        s.i = i;
-        s.j = j;
-        if (ha(10, axis, i, j) >= w_.hedge_share) return s;
-        Land a, b;
-        if (axis == 0) {
-            a = kind_of(i - 1, j);
-            b = kind_of(i, j);
-        } else {
-            a = kind_of(i, j - 1);
-            b = kind_of(i, j);
-        }
-        if (a == Land::Wood && b == Land::Wood) return s;
-        const double t0 = axis == 0 ? line_y(j) : line_x(i), t1 = axis == 0 ? line_y(j + 1) : line_x(i + 1);
-        const int n = std::max(1, static_cast<int>(std::ceil((t1 - t0) / 2.0)));
-        for (int k = 0; k <= n; ++k) {
-            const double t = lerp(t0, t1, static_cast<double>(k) / n);
-            s.pts.push_back(axis == 0 ? Vec2{line_x(i) + wx(t), t} : Vec2{t, line_y(j) + wy(t)});
-        }
-        s.s.push_back(0);
-        for (std::size_t k = 1; k < s.pts.size(); ++k) s.s.push_back(s.s.back() + (s.pts[k] - s.pts[k - 1]).length());
+    // ---- hedges
+    Bound bound_class(u64 key) const {
+        const double u = hk(key, 10);
+        const double tl = std::clamp(w_.treeline_share, 0.0, 1.0);
+        const double fence = std::max(0.0, 1.0 - std::clamp(w_.hedge_share, 0.0, 1.0) - tl);
+        if (u < tl) return Bound::Treeline;
+        if (u < tl + fence) return Bound::Fence;
+        return Bound::Hedge;
+    }
+
+    // Intervals [a, b] of arc length removed from the boundary: gateways, decayed stretches, and stretches with wood on both sides.
+    // Returns false when (nearly) all of it is wood.
+    bool make_gaps(Seg& s) const {
+        std::vector<std::pair<double, double>> g;
         const double len = s.s.back();
-        const int ng = std::min(3, static_cast<int>(std::floor(len / 1000.0 * w_.hedge_gap_per_km + ha(16, axis, i, j))));
-        for (int g = 0; g < ng; ++g) {
-            const double c = len * (g + 0.15 + 0.7 * ha(17, axis, i, j * 7 + g)) / ng;
-            const double gw = lerp(w_.hedge_gap_min, w_.hedge_gap_max, ha(9, axis, i, j * 7 + g));
-            s.gaps.push_back({std::max(0.0, c - gw / 2), std::min(len, c + gw / 2)});
+        const int ng = std::min(3, static_cast<int>(std::floor(len / 1000.0 * w_.hedge_gap_per_km + he(s.key, 16))));
+        for (int k = 0; k < ng; ++k) {
+            const double c = len * (k + 0.15 + 0.7 * he(s.key, 17, static_cast<u64>(k))) / ng;
+            const double gw = lerp(w_.hedge_gap_min, w_.hedge_gap_max, he(s.key, 9, static_cast<u64>(k)));
+            g.push_back({std::max(0.0, c - gw / 2), std::min(len, c + gw / 2)});
+            s.gate_len += g.back().second - g.back().first;
         }
-        s.present = true;
-        return s;
+        const int nd = std::min(3, static_cast<int>(std::floor(len / 1000.0 * w_.hedge_decay_per_km + he(s.key, 23))));
+        for (int k = 0; k < nd; ++k) {
+            const double c = len * (k + 0.15 + 0.7 * he(s.key, 24, static_cast<u64>(k))) / nd;
+            const double gw = lerp(w_.hedge_decay_min, w_.hedge_decay_max, he(s.key, 25, static_cast<u64>(k)));
+            g.push_back({std::max(0.0, c - gw / 2), std::min(len, c + gw / 2)});
+            s.gate_len += g.back().second - g.back().first;
+        }
+        const int ns = std::max(1, static_cast<int>(std::ceil(len / 6.0)));
+        double start = -1, wood_len = 0;
+        for (int k = 0; k <= ns; ++k) {
+            const double sv = len * k / ns;
+            const Vec2 p = point_at(s.pts, s.s, sv);
+            const Vec2 t = point_at(s.pts, s.s, std::min(len, sv + 3.0)) - point_at(s.pts, s.s, std::max(0.0, sv - 3.0));
+            const double tl = std::max(1e-9, len2d(t));
+            const Vec2 nrm{-t.y / tl, t.x / tl};
+            const bool wood = use_at(p + nrm * 6.0) == Use::Wood && use_at(p - nrm * 6.0) == Use::Wood;
+            if (wood && start < 0) start = sv;
+            if (!wood && start >= 0) { g.push_back({start, sv}); wood_len += sv - start; start = -1; }
+        }
+        if (start >= 0) { g.push_back({start, len}); wood_len += len - start; }
+        std::sort(g.begin(), g.end());
+        for (const auto& x : g) {
+            if (!s.gaps.empty() && x.first <= s.gaps.back().second) s.gaps.back().second = std::max(s.gaps.back().second, x.second);
+            else s.gaps.push_back(x);
+        }
+        s.wood_len = wood_len;
+        return wood_len < 0.95 * len;
+    }
+
+    // Builds the candidate of the q-space polyline `qpts` (key = its label); calls f when it touches the box.
+    template <class F>
+    void emit_poly(u64 key, const std::vector<Vec2>& qpts, Vec2 lo, Vec2 hi, F& f, bool want_fence) const {
+        if (qpts.size() < 2) return;
+        double x0 = 1e300, x1 = -1e300, y0 = 1e300, y1 = -1e300;
+        for (const Vec2& v : qpts) {
+            x0 = std::min(x0, v.x); x1 = std::max(x1, v.x);
+            y0 = std::min(y0, v.y); y1 = std::max(y1, v.y);
+        }
+        if (x1 + dmax_ + 4 < lo.x || x0 - dmax_ - 4 > hi.x || y1 + dmax_ + 4 < lo.y || y0 - dmax_ - 4 > hi.y) return;
+        Seg seg;
+        seg.key = key;
+        seg.cls = bound_class(key);
+        if (seg.cls == Bound::Fence && !want_fence) return;
+        Aabb2 bx;
+        for (std::size_t i = 0; i + 1 < qpts.size(); ++i) {
+            const double L = len2d(qpts[i + 1] - qpts[i]);
+            const int np = std::max(1, static_cast<int>(std::ceil(L / 5.0)));
+            for (int k = (i == 0 ? 0 : 1); k <= np; ++k) {
+                const Vec2 p = to_p(qpts[i] + (qpts[i + 1] - qpts[i]) * (static_cast<double>(k) / np));
+                seg.pts.push_back(p);
+                box_add(bx, p);
+            }
+        }
+        if (!box_hit(bx, Aabb2{{lo.x - 4, lo.y - 4}, {hi.x + 4, hi.y + 4}})) return;
+        seg.s.push_back(0);
+        for (std::size_t k = 1; k < seg.pts.size(); ++k) seg.s.push_back(seg.s.back() + len2d(seg.pts[k] - seg.pts[k - 1]));
+        if (seg.s.back() < 3.0) return;
+        seg.present = make_gaps(seg) && seg.cls != Bound::Fence;
+        f(seg);
     }
 
     template <class F>
-    void for_segments(Vec2 lo, Vec2 hi, F f) const {
-        const double mx = w_.warp_m + w_.field_jitter * std::max(w_.field_size_x, w_.field_size_y) + 4;
-        const i64 i0 = static_cast<i64>(std::floor((lo.x - mx) / w_.field_size_x)) - 1, i1 = static_cast<i64>(std::floor((hi.x + mx) / w_.field_size_x)) + 1;
-        const i64 j0 = static_cast<i64>(std::floor((lo.y - mx) / w_.field_size_y)) - 1, j1 = static_cast<i64>(std::floor((hi.y + mx) / w_.field_size_y)) + 1;
-        for (i64 i = i0; i <= i1; ++i)
-            for (i64 j = j0; j <= j1; ++j) {
-                for (int axis = 0; axis < 2; ++axis) {
-                    // Cheap reject by the segment's box.
-                    const double xa = axis == 0 ? line_x(i) - w_.warp_m : line_x(i), xb = axis == 0 ? line_x(i) + w_.warp_m : line_x(i + 1);
-                    const double ya = axis == 0 ? line_y(j) : line_y(j) - w_.warp_m, yb = axis == 0 ? line_y(j + 1) : line_y(j) + w_.warp_m;
-                    if (xb < lo.x - 4 || xa > hi.x + 4 || yb < lo.y - 4 || ya > hi.y + 4) continue;
-                    const Seg s = make_seg(axis, i, j);
-                    if (s.present) f(s);
-                }
-            }
+    void for_edges(Vec2 lo, Vec2 hi, F f, bool want_fence = false) const {
+        const double m = dmax_ + 6;
+        for_blocks({lo.x - m, lo.y - m}, {hi.x + m, hi.y + m}, [&](const std::shared_ptr<const Block>& b) {
+            emit_poly(b->bottom_key, b->bottom_q, lo, hi, f, want_fence);
+            emit_poly(b->left_key, {b->left_a, b->left_b}, lo, hi, f, want_fence);
+            for (const CutSeg& c : b->cuts) emit_poly(c.label, {c.a, c.b}, lo, hi, f, want_fence);
+        });
     }
 
     CoverPoint make_point(const TreeClass& c, Vec2 pos, u64 seed) const {
@@ -1243,7 +2105,14 @@ private:
     std::shared_ptr<const VegetationRules> r_;
     const WorldCoverRules& w_;
     u64 seed_;
+    CoverHints hints_;
+    Vec2 e_{1, 0}, nv_{0, 1};
+    double H0_ = 700, Lb_ = 770, Kn_ = 1050, jit_ = 0.18, mea_ = 0.1, tilt_ = 0.18, cos_min_ = 0.57, amp_mid_ = 20;
+    double dmax_ = 100;
+    mutable std::mutex mu_;
+    mutable std::map<std::pair<i64, i64>, std::shared_ptr<const Block>> cache_;
 };
+
 
 // ================================================================== 5. tile assembly and equality
 
@@ -1329,8 +2198,17 @@ bool same_content(const VegetationTile& a, const VegetationTile& b) {
     return true;
 }
 
-std::shared_ptr<const WorldCoverSource> make_default_cover_source(std::shared_ptr<const VegetationRules> rules, std::uint64_t world_seed) {
-    return std::make_shared<DefaultCover>(std::move(rules), world_seed);
+void default_cover_field_stats(const WorldCoverSource& src, Vec2 lo, Vec2 hi, std::vector<double>& area_ha, std::vector<double>& aspect) {
+    if (const auto* d = dynamic_cast<const DefaultCover*>(&src)) d->cell_stats(lo, hi, area_ha, aspect);
+}
+
+void default_cover_structure_stats(const WorldCoverSource& src, Vec2 lo, Vec2 hi, CoverStructureStats& out) {
+    if (const auto* d = dynamic_cast<const DefaultCover*>(&src)) d->structure_stats(lo, hi, out);
+}
+
+std::shared_ptr<const WorldCoverSource> make_default_cover_source(std::shared_ptr<const VegetationRules> rules, std::uint64_t world_seed,
+                                                                  CoverHints hints) {
+    return std::make_shared<DefaultCover>(std::move(rules), world_seed, std::move(hints));
 }
 
 namespace {

@@ -451,16 +451,28 @@
       "enabled": false
     },
     "world_cover": {
-      "_comment": "Testland field pattern: smaller fields, fewer hedges, big ragged-less plantations; not measured.",
-      "field_size_x_m": 220,
-      "field_size_y_m": 150,
-      "field_jitter": 0.32,
-      "warp_m": 6,
-      "warp_wavelength_m": 80,
-      "woodland_share": 0.3,
-      "woodland_edge_ragged_m": 3,
+      "_comment": "Testland field pattern (round 4): smaller squarer fields,  few hedges,  many whole-field plantations and big belts; not measured. Exercises every new key with values far from the uk pack.",
+      "field_area_ha": 3.5,
+      "block_m": 520,
+      "smallholding_share": 0.05,
+      "smallholding_scale": 0.5,
+      "field_aspect": [1, 1.6],
+      "grain_edge_share": 0.4,
+      "cut_tilt": 0.05,
+      "cut_frac_min": 0.38,
+      "regional_warp_m": 45,
+      "regional_warp_wavelength_m": 900,
+      "boundary_wobble_m": 3,
+      "boundary_wobble_wavelength_m": 80,
+      "woodland_share": 0.22,
+      "woodland_cluster": 0.5,
+      "strip_wood_share": 0.8,
       "arable_share": 0.22,
       "rough_share": 0.2,
+      "belt_share": 0.3,
+      "belt_width_m": [30, 60],
+      "copse_share": 0.12,
+      "wood_block_per_km2": 0,
       "hedge_share": 0.35,
       "hedge_overgrown_share": 0.2,
       "hedge_trimmed_type": "hedge_trimmed",
@@ -469,36 +481,12 @@
       "hedge_tree_spacing_m": 45,
       "hedge_tree_jitter": 0.3,
       "hedge_gap_per_km": 6,
-      "hedge_gap_m": [
-        3,
-        5
-      ],
+      "hedge_gap_m": [3, 5],
       "scatter_trees_per_ha": 1.5,
       "woodland_trees_per_ha": 320,
-      "tree_classes": [
-        {
-          "type": "tree_conifer_plantation",
-          "weight": 0.5
-        },
-        {
-          "type": "tree_broadleaf_open",
-          "weight": 0.5
-        }
-      ],
-      "woodland_classes": [
-        {
-          "type": "tree_conifer_plantation",
-          "weight": 0.8
-        },
-        {
-          "type": "tree_broadleaf_open",
-          "weight": 0.2
-        }
-      ],
-      "tree_scale": [
-        0.7,
-        1.4
-      ],
+      "tree_classes": [{"type":"tree_conifer_plantation", "weight":0.5}, {"type":"tree_broadleaf_open", "weight":0.5}],
+      "woodland_classes": [{"type":"tree_conifer_plantation", "weight":0.8}, {"type":"tree_broadleaf_open", "weight":0.2}],
+      "tree_scale": [0.7, 1.4],
       "open_grass_type": "grass_rough_tuft",
       "rough_grass_type": "grass_tussock",
       "woodland_floor_type": "bracken_patch",
@@ -509,7 +497,21 @@
       "rough_height_class": 2,
       "woodland_height_class": 2,
       "ground_cell_m": 12,
-      "min_cell_m": 1.5
+      "min_cell_m": 1.5,
+      "block_len_m": 560,
+      "row_jitter": 0.12,
+      "row_meander": 0.06,
+      "cross_tilt": 0.1,
+      "min_corner_deg": 60,
+      "max_aspect": 3,
+      "field_size_factor": [0.3, 2],
+      "treeline_share": 0.2,
+      "treeline_width_m": [10, 16],
+      "wood_notch_share": 0.2,
+      "wood_notch_m": [10, 30],
+      "improved_share": 0.6,
+      "steep_wood_keep": 1,
+      "copse_side_m": [50, 90]
     }
   }
 }

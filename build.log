@@ -1,0 +1,4 @@
+[1/4] Building CXX object sim_core/CMakeFiles/sim_core.dir/src/test_world.cpp.obj
+[2/4] Linking CXX static library sim_core\libsim_core.a
+[3/4] Building CXX object tests/CMakeFiles/sim_core_tests.dir/test_world.cpp.obj
+[4/4] Linking CXX executable tests\sim_core_tests.exe
