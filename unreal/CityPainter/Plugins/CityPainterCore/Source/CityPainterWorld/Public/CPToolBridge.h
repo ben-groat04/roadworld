@@ -46,7 +46,9 @@ struct FCPUEToolPreview
 	bool bRoadTypeDual = false;
 	double MetresPerPixel = 0;              // ground metres per screen pixel at the cursor (for constant-size overlay marks)
 
-	bool HasErrors() const { return Errors.Num() > 0; }
+	bool bRefused = false;                  // a refusal (finish rejected, click refused) is on screen: the ghost stays red like the prototype (28_error_crossing_too_close)
+
+	bool HasErrors() const { return Errors.Num() > 0 || bRefused; }
 };
 
 namespace CPToolBridge

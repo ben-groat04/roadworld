@@ -75,6 +75,7 @@ void UCPRoadDrawTool::OnHover(const FCPToolContext& Context)
 	Preview.MetresPerPixel = Context.MetresPerPixelPerMetre * FVector::Dist(Context.RayOriginCm, Preview.CursorCm) / 100.0;
 	Feedback.bHasPreview = Preview.bHasPick;
 	Feedback.bSnapOff = Context.bSnapOff;
+	Preview.bRefused = !Feedback.RefusalText.IsEmpty();
 	Feedback.Preview = MoveTemp(Preview);
 }
 

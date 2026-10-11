@@ -1,6 +1,6 @@
 #pragma once
 
-// UCPToolHudWidget: the road tool's on-screen text, a UUserWidget whose tree is built in C++: a panel at the top right
+// UCPToolHudWidget: the road tool's on-screen text, a UUserWidget whose tree is built in C++: a panel at the top left (under the M1 readout)
 // with one coloured line per readout / error / advisory, and a key-hint bar at the bottom centre. It only shows the lines
 // it is given (CPToolHudFormat builds them); it never swallows mouse clicks. It must not query the sim or the tools.
 

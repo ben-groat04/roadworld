@@ -23,7 +23,7 @@ void UCPToolHudWidget::NativeOnInitialized()
 	UCanvasPanel* Canvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("ToolCanvas"));
 	WidgetTree->RootWidget = Canvas;
 
-	// Top right: the readouts panel.
+	// Top left (the prototype's HUD position), under the M1 cursor readout: the tool readouts panel.
 	UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ToolPanel"));
 	Panel->SetBrushColor(PanelColour);
 	Panel->SetPadding(FMargin(12.f, 8.f));
@@ -32,9 +32,9 @@ void UCPToolHudWidget::NativeOnInitialized()
 	Panel->SetContent(LineBox);
 	if (UCanvasPanelSlot* PanelSlot = Canvas->AddChildToCanvas(Panel))
 	{
-		PanelSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));
-		PanelSlot->SetAlignment(FVector2D(1.0, 0.0));
-		PanelSlot->SetPosition(FVector2D(-16.0, 16.0));
+		PanelSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));   // top left like the prototype HUD, below the M1 readout panel
+		PanelSlot->SetAlignment(FVector2D(0.0, 0.0));
+		PanelSlot->SetPosition(FVector2D(16.0, 84.0));
 		PanelSlot->SetAutoSize(true);
 	}
 
