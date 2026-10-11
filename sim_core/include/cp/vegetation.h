@@ -235,51 +235,68 @@ struct IslandRule {
     double tree_min_radius = 0;      // 0 = never
 };
 
-// Parameters of the default world-cover generator. Structure (from the vertical aerials, REFERENCE_NOTES_R3.md): the world is
-// divided into BLOCKS (Voronoi cells of a coarse jittered lattice; their edges are the through-lines: lanes, streams); each block has a
-// grain direction (its longest bounding line, or the terrain's contour / valley direction) and is cut recursively along and across
-// the grain into fields (T-junctions, long shared lines). Woodland is assigned to fields (whole parcels), to boundaries (shelter belts),
-// to field corners (copses) and, from the terrain hints, to steep ground; a few large lobed woods are laid on top.
+// Parameters of the default world-cover generator (round 4). Structure, from the vertical aerials (docs/progress/2026-10-11-world-cover-r2/
+// REFERENCE_NOTES_R3.md and INDEX_R4.md): the plane is divided into ROWS (long sinuous through-lines that run across the whole map, a
+// little over block_m apart, in a frame set by the terrain's valley / contour direction) and each row into BLOCKS by cross lines that END ON
+// the two row lines (brick bond: every meeting is a T, none are Y or X). Each block has a grain and is cut recursively into fields by cuts
+// that end on its edges; a cut is accepted only if the pieces keep every corner at least min_corner_deg and the aspect below max_aspect
+// (otherwise another cut, or the piece stays whole). Field size varies smoothly in districts. Woodland is assigned to whole fields, with
+// stepped (notched) edges along the field boundary, shelter belts on boundaries and square plantations in field corners.
+// Every field carries a stable id, a land use, a tint and a row direction (CoverGround).
 struct WorldCoverRules {
-    double field_area_ha = 5;                        // mean field area target (blocks scale it)
-    double block_m = 800;                            // spacing of the coarse block lattice
-    double block_scale_min = 0.55, block_scale_max = 1.6;  // linear field-size multiplier per block
-    double smallholding_share = 0.12, smallholding_scale = 0.4;  // blocks of small paddocks
+    double field_area_ha = 5;                        // median field area (field_size_lo / hi below set the district range around it)
+    double block_m = 700;                            // mean spacing of the through-lines (rows)
+    double block_len_m = 770;                        // mean spacing of the cross lines along a row
+    double row_jitter = 0.18, row_meander = 0.10;    // row position jitter and wander, fractions of block_m (sum below 0.35)
+    double cross_tilt = 0.18;                        // largest tan of the tilt of a cross line from the perpendicular
+    double min_corner_deg = 55, max_aspect = 4;      // quality gates on the corners and aspect of every field
+    double field_size_lo = 0.22, field_size_hi = 2.6;  // district field area range, as multiples of field_area_ha
+    double district_wavelength_m = 1500;             // district (field size) variation
+    double smallholding_share = 0.12, smallholding_scale = 0.4;  // blocks of small paddocks (area scale)
     double aspect_min = 1.0, aspect_max = 2.6;       // field length : width per block (length along the grain)
-    double block_angle_var = 0.5;                    // grain scatter when not taken from a bounding line (perpendicular mix)
-    double grain_edge_share = 0.7;                   // blocks whose grain follows their longest bounding line
-    double site_jitter = 0.35;                       // block lattice jitter, fraction of spacing (< 0.5)
-    double cut_tilt = 0.10;                          // cuts are tilted off the grain by up to this (rad)
+    double grain_edge_share = 0.6;                   // blocks whose long axis runs along the row (the rest across it)
+    double cut_tilt = 0.10;                          // cuts are tilted off the grain by up to this (rad, small)
     double cut_frac_min = 0.32;                      // cut position range [min, 1 - min] of the node's extent
-    double regional_warp_m = 40, regional_warp_wavelength_m = 900;  // bends the whole pattern
-    double boundary_wobble_m = 5, boundary_wobble_wavelength_m = 110;  // boundary sinuosity
+    double regional_warp_m = 70, regional_warp_wavelength_m = 1400;  // bends the whole pattern (rows become sinuous)
+    double boundary_wobble_m = 10, boundary_wobble_wavelength_m = 130;  // boundary sinuosity (5-15 m every 100-150 m)
     // Land classes.
     double woodland_share = 0.06;                    // fraction of fields that are whole woodland parcels
     double woodland_cluster = 0.8;                   // wooded districts: share varies by +-this fraction over woodland_cluster_wavelength_m
     double woodland_cluster_wavelength_m = 1500;
-    double strip_width_m = 50, strip_wood_share = 0.5;  // fields narrower than this on average become woodland strips with this probability
-    double woodland_edge_ragged_m = 3;               // woodland parcel edge noise amplitude
-    double arable_share = 0.4;                       // fraction of the non-wood fields in arable (no grass instances: the renderer's ground material)
-    double rough_share = 0.1;                        // fraction of the non-wood fields in rough ground
+    double strip_width_m = 50, strip_wood_share = 0.5;  // fields narrower than this become woodland strips with this probability (ribbon cap)
+    double woodland_edge_ragged_m = 3;               // unused since round 4 (stepped edges replaced it)
+    double steep_wood_keep = 0.7;                    // fields the terrain asks to be wood: this share become wood, the rest rough grazing
+    double wood_notch_share = 0.45;                  // share of a wood boundary that is stepped
+    double wood_notch_min = 20, wood_notch_max = 60; // step depth, m
+    double wood_notch_len_min = 40, wood_notch_len_max = 110;  // length of one step along the boundary, m
+    // Land use of the non-wood fields.
+    double arable_share = 0.4;                       // fraction of the non-wood fields in arable (renderer's ground material)
+    double rough_share = 0.1;                        // fraction of the non-wood fields in rough grazing
     double arable_cluster = 0.3, arable_cluster_wavelength_m = 1500;  // arable share varies +-cluster over this wavelength
+    double improved_share = 0.35;                    // fraction of the grass fields that are ley / improved grass (the rest permanent pasture)
+    double ploughed_share = 0.12, cereal_share = 0.45, stubble_share = 0.18, other_crop_share = 0.25;  // shares of arable (normalised)
     // Other woodland shapes.
     double belt_share = 0.12;                        // fraction of field boundaries that may carry a shelter belt
     double belt_width_min = 20, belt_width_max = 40; // m
     double belt_length_m = 400;                      // wavelength of the gate that starts and stops a belt
     double belt_gate = 0.5;                          // belt present where its gate noise exceeds this
-    double copse_share = 0.08;                       // fraction of fields with a copse in one corner
-    double copse_area_min_ha = 1, copse_area_max_ha = 3;
-    double wood_block_per_km2 = 0.06;                // large lobed woods laid over the fields
-    double wood_block_area_min_ha = 12, wood_block_area_max_ha = 30;
-    double wood_ragged = 0.3;                        // large wood radial edge noise, fraction of radius
-    // Hedges.
-    double hedge_share = 0.7;                        // fraction of field boundaries with a hedge (the rest: fence or open, nothing emitted)
+    double copse_share = 0.08;                       // fraction of fields with a square plantation in one corner
+    double copse_side_min = 60, copse_side_max = 120;  // plantation side, m
+    double copse_area_min_ha = 1, copse_area_max_ha = 3;  // unused since round 4
+    double wood_block_per_km2 = 0;                   // unused since round 4 (free-standing lobed woods do not occur in the photos)
+    double wood_block_area_min_ha = 12, wood_block_area_max_ha = 30;  // unused
+    double wood_ragged = 0.3;                        // unused
+    // Boundaries in three weights: hedge, fence / bank (draws nothing), tree line. hedge_share + treeline_share <= 1, the rest is fence.
+    double hedge_share = 0.7;
+    double treeline_share = 0.1;
+    double treeline_width_min = 12, treeline_width_max = 20;          // m
+    double treeline_tree_spacing_min = 25, treeline_tree_spacing_max = 40;  // crowns every this many m
     double hedge_overgrown_share = 0.4;
     std::string hedge_trimmed_type, hedge_overgrown_type;
     double hedge_width_min = 0, hedge_width_max = 0; // m; 0 = the hedge type's own range. Skewed to the thin end.
     double hedge_tree_share = 0.3;                   // fraction of hedges carrying trees
     double hedge_tree_spacing = 60, hedge_tree_jitter = 0.4;
-    double hedge_gap_per_km = 4, hedge_gap_min = 4, hedge_gap_max = 6;  // gateways
+    double hedge_gap_per_km = 2, hedge_gap_min = 10, hedge_gap_max = 30;  // gateways (a few percent of the length)
     double hedge_decay_per_km = 0, hedge_decay_min = 15, hedge_decay_max = 45;  // missing stretches
     double scatter_trees_per_ha = 2;                 // in open and rough fields
     double arable_tree_factor = 0.2;                 // scattered tree density in arable relative to pasture
@@ -344,11 +361,20 @@ struct CoverLine {
 };
 // Land class of a position (what kind of ground it is), independent of which ground type renders it.
 enum class LandClass : std::uint8_t { Pasture, Arable, Rough, Wood };
+// Land use of a field (richer than LandClass; read off the vertical aerials 46-59 oxon_vertical). LandClass keeps working for old callers:
+// Woodland -> Wood; PermanentPasture, ImprovedGrass -> Pasture; Ploughed, Cereal, Stubble, OtherCrop -> Arable; RoughGrazing -> Rough.
+enum class LandUse : std::uint8_t { Woodland, PermanentPasture, ImprovedGrass, Ploughed, Cereal, Stubble, OtherCrop, RoughGrazing };
 struct CoverGround {
     std::string type_id;
     double density = 1;
     std::uint8_t height_class = 0;
     LandClass land = LandClass::Pasture;
+    // Per-field attributes for a land-use map (round 4). A field is a cell bounded by hedges / fences / tree lines; every point of it
+    // reports the same id, tint and row direction. Belt and plantation points keep the id of the field they sit in but report Woodland.
+    std::uint64_t field_id = 0;       // stable: a pure function of the seed and the field's place in the pattern (0 = source without fields)
+    LandUse use = LandUse::PermanentPasture;
+    float tint = 0.5f;                // 0..1, per-field colour variation (same range for every use)
+    Vec2 row_dir{1, 0};               // unit, world frame: tramline / plough / mowing direction (the field's grain)
 };
 
 // HOW A REAL WORLD GENERATOR PLUGS IN: implement this interface (points from its tree/forest data, lines from
@@ -367,8 +393,22 @@ public:
     virtual CoverGround ground_at(Vec2 p) const = 0;
 };
 
+// Measured structure of the default source over the fields whose block centre lies in [lo, hi) (for tests and the comparison tool).
+struct CoverStructureStats {
+    std::vector<double> area_ha, aspect, min_corner_deg;  // per field (min_corner_deg is 180 for a field without corners)
+    std::vector<int> corners;                              // per field: vertices with interior angle below 155 degrees
+    std::vector<std::uint8_t> use;                         // per field: LandUse
+    int t_junctions = 0, y_junctions = 0, x_junctions = 0; // vertices where cells meet (T: two cells have a corner there, a third has it inside an edge)
+    std::vector<double> t_angle_deg;                       // per T junction: the smaller angle between the stem and the through line
+    double len_hedge_m = 0, len_fence_m = 0, len_treeline_m = 0;  // boundary length by weight (hedge / fence-bank / tree line)
+    double len_gap_m = 0;       // gateways and decayed stretches removed from hedges and tree lines (summed, not unioned)
+    double len_wood_gap_m = 0;  // hedge removed because wood stands on both sides
+};
+
 // Field cell statistics of a default source (empty for other sources): the unclipped cells whose site lies in [lo, hi).
 void default_cover_field_stats(const WorldCoverSource& src, Vec2 lo, Vec2 hi, std::vector<double>& area_ha, std::vector<double>& aspect);
+// The full structure statistics of a default source (nothing for other sources).
+void default_cover_structure_stats(const WorldCoverSource& src, Vec2 lo, Vec2 hi, CoverStructureStats& out);
 
 // Optional terrain hints for the default source (pure functions; evaluated at block centres only).
 struct CoverHints {
@@ -377,9 +417,14 @@ struct CoverHints {
     std::function<bool(Vec2, Vec2&)> field_axis;
     // 0..1: how strongly the ground asks to be woodland (steep, awkward); fields whose mean value exceeds 0.5 become woodland parcels.
     std::function<double(Vec2)> wood_propensity;
+    // Signed distance (m, world frame, > 0 on one side) from a stream or river line: fields never straddle it (the two sides get
+    // different field ids, hence different land use). Leave empty where there is no stream.
+    std::function<double(Vec2)> stream_offset;
 };
 
-// The default: irregular warped-Voronoi fields with hedgerows, woodland ribbons / belts / copses / blocks, scattered trees.
+
+// The default: rows and blocks (T-junctions only) cut into fields with hedge / fence / tree-line boundaries, woodland parcels with stepped
+// edges, belts and corner plantations, per-field land use, scattered trees.
 std::shared_ptr<const WorldCoverSource> make_default_cover_source(std::shared_ptr<const VegetationRules> rules,
                                                                   std::uint64_t world_seed, CoverHints hints = {});
 

@@ -44,7 +44,7 @@ struct TestWorldParams {
     // Valley sides (a profile with a constant-slope middle and smooth feet).
     double gentle_rise_m = 22, gentle_len_m = 400;       // the gentle side (and the scarp side away from the scarp)
     double scarp_side_gentle_rise_m = 24, scarp_side_gentle_len_m = 410;
-    double scarp_rise_m = 46, scarp_len_m = 150;         // the steep stretch: mean slope rise/len = 30 %, plateau ~40 %
+    double scarp_rise_m = 42, scarp_len_m = 160;         // the steep stretch: mean slope rise/len = 30 %, plateau ~40 %
     double scarp_stretch_m = 560;          // length along the valley where the scarp is fully developed
     double scarp_fade_m = 420;             // blend length at each end
     double spur_amp_m = 55, spur_wavelength_m = 340;     // the scarp crest wanders sideways: spurs and re-entrants
@@ -86,6 +86,8 @@ public:
 
     // Thin sinuous tree line on the stream (in stretches, width varying); a pure function of position.
     bool valley_ribbon(double x, double y) const;
+    // Signed distance (m) from the stream line (the centre of the tree line); > 0 on the scarp side. Fields never straddle it.
+    double stream_offset(double x, double y) const;
     // Preferred field direction (contour direction on slopes, valley direction near the valley); false = none.
     bool field_axis(Vec2 p, Vec2& dir) const;
 

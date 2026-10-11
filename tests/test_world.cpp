@@ -85,9 +85,9 @@ TEST_CASE("test_world: deterministic per seed, different between seeds") {
 TEST_CASE("test_world: golden heights (same on gcc and MSVC, millimetre exact)") {
     TestWorld w{TestWorldParams{}};
     struct G { double x, y; long long mm; };
-    // Recorded from a gcc 16 build (round 2 terrain); the MSVC build must reproduce them (no libm transcendental is used).
+    // Recorded from a gcc 16 build (round 4 terrain: scarp rise 42 m over 160 m); the MSVC build must reproduce them (no libm transcendental is used).
     const G golden[] = {
-        {0, 0, -1480}, {-900, -900, 34816}, {500, 300, 21094}, {-300, 700, 596}, {1000, -1000, 3199}, {123.4, -567.8, 45401},
+        {0, 0, -1480}, {-900, -900, 30816}, {500, 300, 21094}, {-300, 700, 596}, {1000, -1000, 3199}, {123.4, -567.8, 41553},
     };
     for (const G& g : golden) {
         const long long mm = std::llround(w.height(g.x, g.y) * 1000.0);
@@ -108,7 +108,7 @@ TEST_CASE("test_world: default seed relief, slope and continuity statistics (mea
     CHECK(s.s90 < 0.12);  // most slopes under 12 %
     CHECK(s.s50 < 0.06);
     CHECK(s.s99 < 0.45);
-    CHECK(s.smax < 0.57);  // peak spots on the steep side (measured 0.49-0.555 over the seeds below)
+    CHECK(s.smax < 0.50);  // peak spots on the steep side (round 4: measured 0.42 at seed 1; the earlier 0.57 relaxation is undone)
     CHECK(s.max_step <= 0.55 * hf.cell());  // no step above 55 % between adjacent cells (2.2 m at 4 m cells)
     // Other seeds stay inside the same bounds.
     for (std::uint64_t seed : {2ull, 3ull, 11ull, 99ull}) {
@@ -120,7 +120,7 @@ TEST_CASE("test_world: default seed relief, slope and continuity statistics (mea
         CHECK(t.hi - t.lo >= 30);
         CHECK(t.hi - t.lo <= 70);
         CHECK(t.s90 < 0.12);
-        CHECK(t.smax < 0.57);
+        CHECK(t.smax < 0.50);
     }
 }
 
@@ -188,7 +188,7 @@ TEST_CASE("test_world: the steep stretch exists, 30-45 % over 100-300 m, on one 
                     static_cast<unsigned long long>(seed), w.scarp_centre_t(), best, maxs, best_side > 0 ? "scarp" : "other", at);
         CHECK(best >= 60);
         CHECK(best <= 300);
-        CHECK(maxs <= 0.56);
+        CHECK(maxs <= 0.47);
         CHECK(best_side > 0);
         // Far from the scarp the same side is gentle.
         const double ft = w.scarp_centre_t() + (w.scarp_centre_t() > 0 ? -1.0 : 1.0) * 800;
@@ -230,9 +230,9 @@ TEST_CASE("test_world: terrain-aware cover is pure and follows slope") {
     auto rules = uk_rules();
     TestWorldParams p;
     auto tw = std::make_shared<const TestWorld>(p);
-    auto base = make_default_cover_source(rules, p.seed);
-    auto cover = make_test_world_cover_source(tw, rules, base);
-    auto cover2 = make_test_world_cover_source(tw, rules, make_default_cover_source(rules, p.seed));
+    const TestWorldBundle bundle = make_test_world(p, rules), bundle2 = make_test_world(p, rules);  // with the terrain hints
+    auto cover = bundle.cover;
+    auto cover2 = bundle2.cover;
 
     // Purity: points of a sub-box equal the same points picked out of a bigger box; two instances agree.
     std::vector<CoverPoint> big, small, again;
@@ -267,7 +267,18 @@ TEST_CASE("test_world: terrain-aware cover is pure and follows slope") {
             }
     std::printf("[test_world] steep (> %.0f%%) samples %d, woodland %d\n", p.wood_slope_hi * 100, steep_n, steep_wood);
     CHECK(steep_n > 100);
-    CHECK(steep_wood >= steep_n - steep_n / 50 - 1);  // all except the wet strip crossing a steep patch
+    // Wood follows whole fields: part of the steep ground (the rest is open scarp grass), far more than the flat ground has.
+    int flat_n = 0, flat_wood = 0;
+    for (double y = -1000; y <= 1000; y += 16)
+        for (double x = -1000; x <= 1000; x += 16)
+            if (tw->slope(x, y) < 0.04 && std::fabs(tw->valley_distance(x, y)) > 150) {
+                ++flat_n;
+                flat_wood += cover->ground_at({x, y}).land == LandClass::Wood;
+            }
+    std::printf("[test_world] wood share on steep ground %.2f, on flat ground %.2f\n", static_cast<double>(steep_wood) / steep_n, static_cast<double>(flat_wood) / flat_n);
+    CHECK(static_cast<double>(steep_wood) / steep_n > 0.3);
+    CHECK(static_cast<double>(steep_wood) / steep_n < 0.95);  // broken up: not one wide band
+    CHECK(static_cast<double>(steep_wood) / steep_n > 2.0 * static_cast<double>(flat_wood) / flat_n);
     for (double t = -900; t <= 900; t += 150) {
         const Vec2 a = tw->valley_axis_point(t);
         const CoverGround g = cover->ground_at(a);
@@ -277,23 +288,57 @@ TEST_CASE("test_world: terrain-aware cover is pure and follows slope") {
     }
     const Vec2 sc = tw->scarp_centre(), cd = tw->cross_dir();
     const Vec2 on = sc + cd * (p.valley_floor_half_width_m + 0.5 * p.scarp_len_m);
-    std::vector<CoverPoint> scarpv, floorv;
-    cover->points_in({on.x - 70, on.y - 70}, {on.x + 70, on.y + 70}, scarpv);
-    cover->points_in({sc.x - 70, sc.y - 70}, {sc.x + 70, sc.y + 70}, floorv);
-    std::printf("[test_world] trees on scarp window %zu, on valley floor window %zu\n", scarpv.size(), floorv.size());
-    CHECK(scarpv.size() > 3 * floorv.size() + 20);
-    // The valley ribbon: woodland just beside the floor edge in stretches, none out on the open plateau.
-    int ribbon_wood = 0, ribbon_n = 0;
-    for (double t = -900; t <= 900; t += 10) {
-        const Vec2 a = tw->valley_axis_point(t);
-        const double e = tw->valley_floor_half_width(t) + 15;
-        const Vec2 q = a - cd * e;  // the gentle side
-        ++ribbon_n;
-        ribbon_wood += cover->ground_at(q).land == LandClass::Wood;
+    (void)on;
+    std::vector<CoverPoint> allv;
+    cover->points_in({-1000, -1000}, {1000, 1000}, allv);
+    std::size_t steep_t = 0, floor_t = 0;
+    for (const auto& c : allv) {
+        if (tw->slope(c.pos.x, c.pos.y) > p.wood_slope_lo) ++steep_t;
+        else if (std::fabs(tw->valley_distance(c.pos.x, c.pos.y)) < tw->valley_floor_half_width(tw->valley_t(c.pos.x, c.pos.y))) ++floor_t;
     }
-    std::printf("[test_world] wood just outside the floor edge (gentle side): %d of %d samples\n", ribbon_wood, ribbon_n);
-    CHECK(ribbon_wood > ribbon_n / 8);
-    CHECK(ribbon_wood < ribbon_n * 7 / 8);
+    int steep_area = 0, floor_area = 0;
+    for (double y = -1000; y <= 1000; y += 16)
+        for (double x = -1000; x <= 1000; x += 16) {
+            if (tw->slope(x, y) > p.wood_slope_lo) ++steep_area;
+            else if (std::fabs(tw->valley_distance(x, y)) < tw->valley_floor_half_width(tw->valley_t(x, y))) ++floor_area;
+        }
+    const double dens_steep = static_cast<double>(steep_t) / steep_area, dens_floor = static_cast<double>(floor_t) / floor_area;
+    std::printf("[test_world] trees per sample cell: steep %.2f, valley floor %.2f\n", dens_steep, dens_floor);
+    CHECK(dens_steep > 1.5 * dens_floor);
+    // The stream tree line: woodland wherever the ribbon is (it exists in stretches), and fields never straddle the stream.
+    int ribbon_wood = 0, ribbon_n = 0, stretch = 0;
+    for (double t = -900; t <= 900; t += 6) {
+        const Vec2 a = tw->valley_axis_point(t);
+        for (double d = -70; d <= 70; d += 2) {
+            const Vec2 q = a + cd * d;
+            if (!tw->valley_ribbon(q.x, q.y)) continue;
+            ++stretch;
+            if (std::fabs(tw->valley_distance(q.x, q.y)) < p.wet_half_width_m) continue;  // the wet strip stays rough
+            ++ribbon_n;
+            ribbon_wood += cover->ground_at(q).land == LandClass::Wood;
+        }
+    }
+    std::printf("[test_world] stream tree line samples %d, wood %d\n", ribbon_n, ribbon_wood);
+    CHECK(stretch > 100);
+    CHECK(ribbon_wood == ribbon_n);
+    int straddle = 0, pairs = 0;
+    auto hinted = [&] {
+        CoverHints h;
+        h.stream_offset = [tw](Vec2 q) { return tw->stream_offset(q.x, q.y); };
+        return make_default_cover_source(rules, p.seed, h);
+    }();
+    for (double t = -900; t <= 900; t += 25) {
+        const Vec2 a = tw->valley_axis_point(t);
+        for (double d = -60; d <= 60; d += 3) {
+            const Vec2 q = a + cd * d;
+            if (std::fabs(tw->stream_offset(q.x, q.y)) > 1.5) continue;
+            ++pairs;
+            straddle += hinted->ground_at(q - cd * 12).field_id == hinted->ground_at(q + cd * 12).field_id;
+        }
+    }
+    std::printf("[test_world] stream crossings checked %d, fields straddling it %d\n", pairs, straddle);
+    CHECK(pairs > 20);
+    CHECK(straddle == 0);
 }
 
 TEST_CASE("test_world: default cover is irregular: field sizes, aspects, orientations, woods, hedges (measured)") {
@@ -344,24 +389,96 @@ TEST_CASE("test_world: default cover is irregular: field sizes, aspects, orienta
                     "wood %.1f%% arable %.1f%% rough %.1f%%; hedge %.1f km (%.0f m/ha), widths %.1f..%.1f m, %.0f%% within 8 deg of an axis; %zu trees\n",
                     static_cast<unsigned long long>(seed), area.size(), mean, a10, a90, amax, asp50, 100.0 * wood / n, 100.0 * arable / n,
                     100.0 * rough / n, len / 1000, len / 419.0, wmin, wmax, 100.0 * axis_len / std::max(len, 1.0), pts.size());
-        CHECK(mean > 3.0);
+        CHECK(mean > 1.5);
         CHECK(mean < 8.0);
-        CHECK(a10 < 3.0);
-        CHECK(a90 > 7.0);
-        CHECK(amax < 40);
+        CHECK(a10 < 1.5);   // districts of small fields exist
+        CHECK(a90 > 4.0);   // and districts of large ones
+        CHECK(amax < 45);
         CHECK(asp50 > 1.25);
         CHECK(static_cast<double>(wood) / n > 0.04);
         CHECK(static_cast<double>(wood) / n < 0.20);
         CHECK(static_cast<double>(arable) / n > 0.15);
-        CHECK(wmin < 4.0);
-        CHECK(wmax > 6.0);
-        CHECK(axis_len / len < 0.45);  // the old grid was ~100 % axis-aligned; a random orientation gives ~18 %
+        CHECK(wmin >= 5.5);   // hedges 6-10 m, tree lines 12-20 m (fences emit nothing)
+        CHECK(wmax > 12.0);
+        CHECK(wmax <= 20.5);
+        CHECK(axis_len / len < 0.9);  // rows follow the terrain frame, so a share lies near an axis; not all of it
     }
     // Different seeds give different layouts.
     auto a = make_default_cover_source(rules, 1), b = make_default_cover_source(rules, 2);
     int diff = 0;
     for (int k = 0; k < 100; ++k) diff += a->ground_at({-900 + 17.3 * k, -700 + 13.1 * k}).land != b->ground_at({-900 + 17.3 * k, -700 + 13.1 * k}).land;
     CHECK(diff > 20);
+}
+
+TEST_CASE("test_world: default cover structure: T junctions only, corner and aspect gates, land-use shares, boundary weights (measured)") {
+    auto rules = uk_rules();
+    for (std::uint64_t seed : {1ull, 2ull, 3ull}) {
+        auto src = make_default_cover_source(rules, seed);
+        CoverStructureStats S;
+        default_cover_structure_stats(*src, {-3000, -3000}, {3000, 3000}, S);
+        REQUIRE(S.area_ha.size() > 300);
+        double minc = 180, maxa = 0;
+        int under4 = 0;
+        for (std::size_t i = 0; i < S.area_ha.size(); ++i) {
+            minc = std::min(minc, S.min_corner_deg[i]);
+            maxa = std::max(maxa, S.aspect[i]);
+            under4 += S.corners[i] < 4;
+        }
+        double tmin = 180;
+        for (double a : S.t_angle_deg) tmin = std::min(tmin, a);
+        const double bl = S.len_hedge_m + S.len_fence_m + S.len_treeline_m, bl2 = S.len_hedge_m + S.len_treeline_m;
+        std::printf("[test_world] structure seed %llu: %zu fields, min corner %.1f deg, max aspect %.2f, T %d Y %d X %d (min T angle %.1f), hedge %.0f%% fence %.0f%% treeline %.0f%%, gateway gaps %.1f%%\n",
+                    static_cast<unsigned long long>(seed), S.area_ha.size(), minc, maxa, S.t_junctions, S.y_junctions, S.x_junctions, tmin,
+                    100 * S.len_hedge_m / bl, 100 * S.len_fence_m / bl, 100 * S.len_treeline_m / bl, 100 * S.len_gap_m / bl2);
+        CHECK(minc >= 55.0 - 1e-6);       // no field corner under 55 degrees
+        CHECK(maxa <= 4.0 + 1e-6);        // aspect no worse than 4:1
+        CHECK(under4 == 0);               // no triangles
+        CHECK(S.t_junctions > 1000);
+        CHECK(S.y_junctions + S.x_junctions < S.t_junctions / 100);  // T junctions only (a handful of coincidences at most)
+        CHECK(tmin >= 55.0);              // cuts meet at 55-90 on the small side
+        CHECK(S.len_hedge_m / bl > 0.6);
+        CHECK(S.len_hedge_m / bl < 0.8);
+        CHECK(S.len_fence_m / bl > 0.1);
+        CHECK(S.len_treeline_m / bl > 0.05);
+        CHECK(S.len_treeline_m / bl < 0.16);
+        CHECK(S.len_gap_m / bl2 > 0.02);
+        CHECK(S.len_gap_m / bl2 < 0.08);  // gateways: a few percent
+        int seen[8] = {0};
+        for (std::uint8_t u : S.use) ++seen[u];
+        for (int u = 0; u < 8; ++u) CHECK(seen[u] > 0);  // every land use occurs
+    }
+}
+
+TEST_CASE("test_world: per-field attributes are stable and constant over a field") {
+    auto rules = uk_rules();
+    auto src = make_default_cover_source(rules, 2);
+    std::map<std::uint64_t, CoverGround> first;
+    std::size_t fields = 0;
+    for (double y = -500; y < 500; y += 7.3)
+        for (double x = -500; x < 500; x += 7.3) {
+            const CoverGround g = src->ground_at({x, y});
+            CHECK(g.field_id != 0);
+            CHECK(std::fabs(g.row_dir.x * g.row_dir.x + g.row_dir.y * g.row_dir.y - 1.0) < 1e-9);
+            CHECK(g.tint >= 0.0f);
+            CHECK(g.tint <= 1.0f);
+            CHECK((g.land == LandClass::Wood) == (g.use == LandUse::Woodland));
+            CHECK((g.land == LandClass::Arable) == (g.use == LandUse::Ploughed || g.use == LandUse::Cereal || g.use == LandUse::Stubble || g.use == LandUse::OtherCrop));
+            auto it = first.find(g.field_id);
+            if (it == first.end()) {
+                first[g.field_id] = g;
+                ++fields;
+                continue;
+            }
+            CHECK(it->second.tint == g.tint);
+            CHECK(it->second.row_dir.x == g.row_dir.x);
+            CHECK(it->second.row_dir.y == g.row_dir.y);
+            if (g.use != LandUse::Woodland && it->second.use != LandUse::Woodland) CHECK(it->second.use == g.use);
+        }
+    CHECK(fields > 20);
+    // Same seed, same ids; another source instance reproduces them.
+    auto again = make_default_cover_source(rules, 2);
+    CHECK(again->ground_at({123.4, -77.7}).field_id == src->ground_at({123.4, -77.7}).field_id);
+    CHECK(make_default_cover_source(rules, 3)->ground_at({123.4, -77.7}).field_id != src->ground_at({123.4, -77.7}).field_id);
 }
 
 TEST_CASE("test_world: default cover hedges are tile independent and woods are not the field cells") {

@@ -103,15 +103,35 @@ inline double shade(const cp::Heightfield& hf, double x, double y) {
     return std::clamp(0.25 + 0.9 * d, 0.0, 1.2);
 }
 
-inline Rgb ground_colour(const cp::CoverGround& g, const cp::VegetationRules& r) {
+// Colour of a ground sample by land use (round 4): base colours read off the vertical aerials 46-59, per-field tint, and
+// tramline / furrow hatching along the field's row direction for cropped fields (the stripes that make the aerials look like aerials).
+inline Rgb ground_colour(const cp::CoverGround& g, const cp::VegetationRules& r, cp::Vec2 p = {0, 0}, bool hatch = true) {
     (void)r;
-    switch (g.land) {
-        case cp::LandClass::Arable: return {196, 170, 120};
-        case cp::LandClass::Wood: return {58, 92, 52};
-        case cp::LandClass::Rough: return {128, 138, 78};
-        case cp::LandClass::Pasture: break;
+    Rgb c{112, 148, 76};
+    switch (g.use) {
+        case cp::LandUse::Woodland: c = {48, 80, 46}; break;
+        case cp::LandUse::PermanentPasture: c = {112, 148, 76}; break;
+        case cp::LandUse::ImprovedGrass: c = {146, 180, 92}; break;
+        case cp::LandUse::Ploughed: c = {142, 112, 86}; break;
+        case cp::LandUse::Cereal: c = {78, 124, 72}; break;
+        case cp::LandUse::Stubble: c = {200, 176, 122}; break;
+        case cp::LandUse::OtherCrop: c = {42, 84, 54}; break;
+        case cp::LandUse::RoughGrazing: c = {128, 136, 84}; break;
     }
-    return {130, 170, 84};
+    const double t = g.tint;
+    const double f = 0.84 + 0.32 * t;
+    c = {c.r * f * (1.0 + 0.07 * (t - 0.5)), c.g * f, c.b * f * (1.0 - 0.07 * (t - 0.5))};
+    if (hatch && g.use >= cp::LandUse::Ploughed && g.use <= cp::LandUse::OtherCrop) {
+        const double across = p.x * -g.row_dir.y + p.y * g.row_dir.x;
+        const double sp = g.use == cp::LandUse::Ploughed ? 7.0 : 24.0;
+        double ph = std::fmod(across + 1000.0 * static_cast<double>(g.field_id % 977) / 977.0, sp);
+        if (ph < 0) ph += sp;
+        if (ph < 2.0) {
+            const double d = g.use == cp::LandUse::Ploughed ? -16 : g.use == cp::LandUse::Cereal ? 30 : g.use == cp::LandUse::Stubble ? -14 : 22;
+            c = {c.r + d, c.g + d, c.b + d};
+        }
+    }
+    return c;
 }
 
 // Top-down images. `px` metres per pixel.
@@ -174,7 +194,7 @@ inline Img cover_map(const cp::TestWorld& tw, const cp::Heightfield& hf, const c
     for (int j = 0; j < n; ++j)
         for (int i = 0; i < n; ++i) {
             const double x = lo.x + (i + 0.5) * px, y = lo.y + (n - 1 - j + 0.5) * px;
-            const Rgb c = ground_colour(src.ground_at({x, y}), rules);
+            const Rgb c = ground_colour(src.ground_at({x, y}), rules, {x, y});
             const double s = shade(hf, x, y);
             im.put(i, j, c.r * s, c.g * s, c.b * s);
         }
@@ -211,12 +231,25 @@ inline Img cover_crop(const cp::TestWorld& tw, const cp::Heightfield& hf, const 
     (void)tw;
     const int W = static_cast<int>(w_m / px), H = static_cast<int>(h_m / px);
     Img im(W, H);
+    std::vector<std::uint64_t> ids(static_cast<std::size_t>(W) * H, 0);
     for (int j = 0; j < H; ++j)
         for (int i = 0; i < W; ++i) {
             const double x = origin.x + (i + 0.5) * px, y = origin.y + (H - 1 - j + 0.5) * px;
-            const Rgb c = ground_colour(src.ground_at({x, y}), rules);
+            const cp::CoverGround g = src.ground_at({x, y});
+            ids[static_cast<std::size_t>(j) * W + i] = g.field_id;
+            const Rgb c = ground_colour(g, rules, {x, y});
             const double s = 0.75 + 0.25 * shade(hf, x, y);
             im.put(i, j, c.r * s, c.g * s, c.b * s);
+        }
+    // Field boundaries without a hedge (fences, banks) still show as a faint line.
+    for (int j = 0; j + 1 < H; ++j)
+        for (int i = 0; i + 1 < W; ++i) {
+            const std::size_t k = static_cast<std::size_t>(j) * W + i;
+            if (ids[k] != ids[k + 1] || ids[k] != ids[k + static_cast<std::size_t>(W)]) {
+                double r, g, b;
+                im.get(i, j, r, g, b);
+                im.put(i, j, r * 0.80, g * 0.80, b * 0.80);
+            }
         }
     auto disc = [&](cp::Vec2 p, double r, double cr, double cg, double cb) {
         const int ci = static_cast<int>((p.x - origin.x) / px), cj = H - 1 - static_cast<int>((p.y - origin.y) / px);
@@ -283,7 +316,7 @@ inline Img oblique(const cp::TestWorld& tw, const cp::Heightfield& hf, const cp:
             }
             const double x = ex + dx * hit, y = ey + dy * hit;
             Rgb c{130, 160, 90};
-            if (src && rules) c = ground_colour(src->ground_at({x, y}), *rules);
+            if (src && rules) c = ground_colour(src->ground_at({x, y}), *rules, {x, y}, false);
             const double s = shade(hf, x, y);
             const double fog = std::clamp(hit / 5000.0, 0.0, 0.7);
             im.put(i, j, lerp3(c.r * s, 200, fog), lerp3(c.g * s, 212, fog), lerp3(c.b * s, 225, fog));

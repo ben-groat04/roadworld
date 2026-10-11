@@ -149,6 +149,12 @@ double TestWorld::slope(double x, double y) const {
     return std::sqrt(gx * gx + gy * gy);
 }
 
+double TestWorld::stream_offset(double x, double y) const {
+    const double t = valley_t(x, y);
+    const double centre = 38.0 * noise(53, 0, t, 240, 0) + 16.0 * noise(54, 0, t, 90, 0);
+    return valley_distance(x, y) - centre;
+}
+
 bool TestWorld::valley_ribbon(double x, double y) const {
     const double t = valley_t(x, y);
     if (noise(51, 0, t, 420, 0) <= p_.ribbon_gate) return false;
@@ -203,16 +209,44 @@ public:
         return 1.0 - smoothstep((a - w_->valley_floor_half_width(w_->valley_t(p.x, p.y))) / 60.0);
     }
 
+    // Sets the land use of a ground sample, keeping its field attributes.
+    void set_use(CoverGround& g, LandUse u) const {
+        const std::uint64_t id = g.field_id;
+        const float tint = g.tint;
+        const Vec2 rd = g.row_dir;
+        switch (u) {
+            case LandUse::Woodland:
+                g = {wc_.woodland_floor_type, wc_.woodland_density, static_cast<std::uint8_t>(wc_.woodland_height_class), LandClass::Wood};
+                break;
+            case LandUse::RoughGrazing:
+                g = {wc_.rough_grass_type, wc_.rough_density, static_cast<std::uint8_t>(wc_.rough_height_class), LandClass::Rough};
+                break;
+            default:
+                g = {wc_.open_grass_type, wc_.open_density, static_cast<std::uint8_t>(wc_.open_height_class), LandClass::Pasture};
+                break;
+        }
+        g.field_id = id;
+        g.tint = tint;
+        g.row_dir = rd;
+        g.use = u;
+    }
+
     CoverGround ground_at(Vec2 p) const override {
         CoverGround g = base_->ground_at(p);
         const double a = std::fabs(w_->valley_distance(p.x, p.y));
-        if (a < p_.wet_half_width_m)
-            return {wc_.rough_grass_type, wc_.rough_density, static_cast<std::uint8_t>(wc_.rough_height_class), LandClass::Rough};
-        const double ws = wood_share(p);
-        if (ws >= 0.5)
-            return {wc_.woodland_floor_type, wc_.woodland_density, static_cast<std::uint8_t>(wc_.woodland_height_class), LandClass::Wood};
-        if (g.land == LandClass::Arable && ws > 0.3)  // arable on a steep field: grass instead
-            return {wc_.open_grass_type, wc_.open_density, static_cast<std::uint8_t>(wc_.open_height_class), LandClass::Pasture};
+        if (a < p_.wet_half_width_m) {  // wet ground along the stream
+            set_use(g, LandUse::RoughGrazing);
+            return g;
+        }
+        if (w_->valley_ribbon(p.x, p.y)) {  // the stream's tree line
+            set_use(g, LandUse::Woodland);
+            return g;
+        }
+        const double ws = smoothstep((w_->slope(p.x, p.y) - p_.wood_slope_lo) / std::max(p_.wood_slope_hi - p_.wood_slope_lo, 1e-6));
+        // Steep ground is wooded per field by the base source (wood_propensity hint), so wood follows field edges, not a smooth band.
+        if (g.land == LandClass::Arable && ws > 0.3) {  // arable on a steep field: grass instead
+            set_use(g, LandUse::ImprovedGrass);
+        }
         return g;
     }
 
@@ -264,7 +298,40 @@ public:
             }
     }
 
-    void lines_touching(Vec2 lo, Vec2 hi, std::vector<CoverLine>& out) const override { base_->lines_touching(lo, hi, out); }
+    // The base's boundaries, minus the stretches that this wrapper's wood (stream tree line, steep wood) stands on at both sides.
+    void lines_touching(Vec2 lo, Vec2 hi, std::vector<CoverLine>& out) const override {
+        std::vector<CoverLine> in;
+        base_->lines_touching(lo, hi, in);
+        for (CoverLine& l : in) {
+            std::vector<char> wood(l.points.size(), 0);
+            bool any = false;
+            for (std::size_t i = 0; i < l.points.size(); ++i) {
+                const Vec2 p = l.points[i];
+                const Vec2 t = l.points[std::min(i + 1, l.points.size() - 1)] - l.points[i > 0 ? i - 1 : 0];
+                const double tl = std::sqrt(t.x * t.x + t.y * t.y);
+                const Vec2 n = tl > 1e-9 ? Vec2{-t.y / tl, t.x / tl} : Vec2{0, 1};
+                wood[i] = ground_at(p + n * 6.0).land == LandClass::Wood && ground_at(p - n * 6.0).land == LandClass::Wood;
+                any = any || wood[i];
+            }
+            if (!any) {
+                out.push_back(std::move(l));
+                continue;
+            }
+            std::size_t i = 0;
+            std::uint64_t part = 0;
+            while (i < l.points.size()) {
+                while (i < l.points.size() && wood[i]) ++i;
+                const std::size_t i0 = i;
+                while (i < l.points.size() && !wood[i]) ++i;
+                if (i - i0 < 2) continue;
+                CoverLine c = l;
+                c.points.assign(l.points.begin() + static_cast<std::ptrdiff_t>(i0), l.points.begin() + static_cast<std::ptrdiff_t>(i));
+                c.s.assign(l.s.begin() + static_cast<std::ptrdiff_t>(i0), l.s.begin() + static_cast<std::ptrdiff_t>(i));
+                c.seed = mix64(l.seed + 0x77 + part++);
+                out.push_back(std::move(c));
+            }
+        }
+    }
 
 private:
     std::shared_ptr<const TestWorld> w_;
@@ -306,6 +373,7 @@ TestWorldBundle make_test_world(const TestWorldParams& params, std::shared_ptr<c
         CoverHints hints;
         hints.field_axis = [world](Vec2 p, Vec2& d) { return world->field_axis(p, d); };
         hints.wood_propensity = [world](Vec2 p) { return smoothstep((world->slope(p.x, p.y) - 0.07) / 0.06); };
+        hints.stream_offset = [world](Vec2 p) { return world->stream_offset(p.x, p.y); };
         b.cover = make_test_world_cover_source(b.world, b.rules, make_default_cover_source(b.rules, params.seed, std::move(hints)));
     }
     return b;
