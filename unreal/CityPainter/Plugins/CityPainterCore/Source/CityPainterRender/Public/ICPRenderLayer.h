@@ -9,6 +9,7 @@
 
 class AActor;
 class FCPSimWorld;
+struct FCPChangeSet;
 class UWorld;
 
 struct FCPRenderContext
@@ -27,6 +28,8 @@ public:
 	virtual void Build(const FCPRenderContext& Context) = 0;
 	/** Drops everything the layer created (the world is going away or is rebuilt). */
 	virtual void Teardown() = 0;
+	/** The sim changed some tiles (an edit, undo or redo). Layers that follow edits override this; static layers ignore it. Game thread. */
+	virtual void OnTilesChanged(const FCPChangeSet& Changes) {}
 };
 
 /** Where layers announce themselves; each layer's registration is a single line in the module startup. */

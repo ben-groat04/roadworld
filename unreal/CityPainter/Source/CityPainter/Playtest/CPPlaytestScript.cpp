@@ -5,6 +5,7 @@
 // polar 0.05..1.42, camera >= 3 m above ground, zoom factor 0.95^1.1 per notch, zoom to the screen centre).
 
 #include "CPPlaytestScript.h"
+#include "CPPlaytestRoads.h"
 
 #include "../CPCameraPawn.h"
 #include "../CPPlayerController.h"
@@ -526,4 +527,5 @@ void BuildCPPlaytestScript(TArray<FCPPlaytestStep>& Out)
 	ScenarioPicking(B);
 	ScenarioHudClickThrough(B);
 	ScenarioResize(B);
+	AppendCPPlaytestRoadScenarios(Out);   // M2: roads, undo / redo (Playtest/CPPlaytestRoads.cpp)
 }

@@ -2,6 +2,7 @@
 
 #include "CPCameraPawn.h"
 #include "CPInputConfig.h"
+#include "Tools/CPToolManager.h"
 #include "Playtest/CPPlaytestDriver.h"
 #include "CityPainterLog.h"
 
@@ -52,6 +53,10 @@ void ACPPlayerController::BeginPlay()
 	{
 		Hud->AddToViewport();
 	}
+	if (Tools)
+	{
+		Tools->Begin();   // M2 tools hook
+	}
 	UCPPlaytestDriver::MaybeStart(this);
 }
 
@@ -79,6 +84,8 @@ void ACPPlayerController::SetupInputComponent()
 	EIC->BindAction(InputConfig->Move, ETriggerEvent::Completed, this, &ACPPlayerController::OnMove);
 	EIC->BindAction(InputConfig->RotateKey, ETriggerEvent::Triggered, this, &ACPPlayerController::OnRotateKey);
 	EIC->BindAction(InputConfig->RotateKey, ETriggerEvent::Completed, this, &ACPPlayerController::OnRotateKey);
+
+	Tools = UCPToolManager::Create(this, EIC);   // M2 tools hook: binds its own actions (left/right click, keys)
 }
 
 // Hold actions: Started / Completed / Canceled all arrive here; the bool value tells which (true while held).
@@ -171,6 +178,11 @@ void ACPPlayerController::PlayerTick(float DeltaTime)
 		Data.SlopeRiseRun = Pick.SlopeRiseRun;
 		Data.FrameMs = SmoothedFrameMs;
 		Hud->SetData(Data);
+	}
+
+	if (Tools)
+	{
+		Tools->Tick(DeltaTime);   // M2 tools hook: hover, overlay, tool HUD
 	}
 }
 

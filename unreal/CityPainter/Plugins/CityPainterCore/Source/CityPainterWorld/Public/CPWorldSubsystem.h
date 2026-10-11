@@ -2,13 +2,16 @@
 
 // UCPWorldSubsystem: owns the simulation world (FCPSimWorld) for one UWorld and is the ONLY adapter between Unreal
 // types and the sim: it turns Unreal-frame rays and points into sim queries through CPFrame.h and back. It exists
-// only in worlds on a City Painter map (UCPSettings::MapPathPrefix). Later it will also own command submission, undo
-// and the worker that updates the world cache. It must not know about meshes, materials, actors, input or UI.
+// only in worlds on a City Painter map (UCPSettings::MapPathPrefix). It also owns edits: Submit / Undo / Redo run through
+// the sim world (command stack + world cache) and are announced to listeners (OnTilesChanged) with the tiles that
+// changed; the road tool session is reached through GetToolSession(). Later a worker will run the cache update.
+// It must not know about meshes, materials, actors, input or UI.
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
 
 #include "CPSimWorld.h"
+#include "CPToolBridge.h"
 
 #include "CPWorldSubsystem.generated.h"
 
@@ -20,6 +23,8 @@ struct FCPUEGroundPick
 	double HeightM = 0;
 	double SlopeRiseRun = 0;
 };
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FCPOnTilesChanged, const FCPChangeSet&);
 
 UCLASS()
 class CITYPAINTERWORLD_API UCPWorldSubsystem : public UTickableWorldSubsystem
@@ -53,9 +58,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "CityPainter", meta = (WorldContext = "WorldContextObject"))
 	static double GetTerrainHeightM(const UObject* WorldContextObject, double SimX, double SimY);
 
+	// ---- edits (M2) ----
+	/** Executes a command from the tool session (one undo step), updates the world and broadcasts OnTilesChanged. */
+	FCPEditResult Submit(FCPCommandHandle Command);
+	FCPEditResult Undo();
+	FCPEditResult Redo();
+	/** The road tool session, or null when roads are unavailable. */
+	FCPToolSession* GetToolSession() const { return Sim ? Sim->ToolSession() : nullptr; }
+	/** Fired after every edit that changed exported tiles; the change set is valid during the call. */
+	FCPOnTilesChanged& OnTilesChanged() { return TilesChanged; }
+
 	/** Terrain extent in Unreal centimetres (X north, Y east); an invalid box without a sim. */
 	FBox2D WorldBoundsCm() const;
 
 private:
+	/** Logs the result of an edit and broadcasts its tiles. */
+	FCPEditResult Publish(const TCHAR* What, FCPEditResult Result);
+
 	TUniquePtr<FCPSimWorld> Sim;
+	FCPOnTilesChanged TilesChanged;
 };

@@ -14,6 +14,7 @@
 
 class ACPCameraPawn;
 class UCPInputConfig;
+class UCPToolManager;   // M2 tools hook
 struct FInputActionValue;
 
 UCLASS()
@@ -52,6 +53,9 @@ private:
 
 	UPROPERTY(Transient) TObjectPtr<UCPInputConfig> InputConfig;
 	UPROPERTY(Transient) TObjectPtr<UCPHudWidget> Hud;
+
+	// ---- M2 tools hook (see Tools/CPToolManager.h): input, hover, overlay and HUD of the player tools ----
+	UPROPERTY(Transient) TObjectPtr<UCPToolManager> Tools;
 
 	bool bRotating = false, bPanning = false, bFast = false;
 	FVector2D MouseLast = FVector2D::ZeroVector;
