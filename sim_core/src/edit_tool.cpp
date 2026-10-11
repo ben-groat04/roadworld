@@ -164,8 +164,12 @@ double continuation_turn(const RoadGraph& g, const Edge& e, const Edge& o, NodeI
 }
 
 // The road that continues `e` through `n`: the other edge with the smallest turn within max_turn, provided `e` is
-// also ITS best continuation (so a Y or a four-way where several roads compete never chains by accident).
+// also ITS best continuation (so a Y or a four-way where several roads compete never chains by accident). Only at a
+// junction (three or more edges): a stroke is split where another road crosses it or ends on it, so those nodes are
+// where one drawn road becomes several edges. Two edges meeting at a node with no third edge are two separately
+// drawn roads (the prototype: a road continued from another's end is its own road), however straight they meet.
 EdgeId continuation(const RoadGraph& g, const Edge& e, NodeId n, double max_turn) {
+    if (g.edges_at(n).size() < 3) return {};
     auto best_for = [&](const Edge& a) {
         EdgeId best;
         double bd = max_turn + 1e-9;
@@ -634,13 +638,40 @@ EditResult EditSession::commit_move(EdgeId edge, std::size_t handle, Vec3 to) {
         return r;
     }
     r.advisories = std::move(t.an.advisories);
+    ensure_index();
+    // The anchor for select_at() after the command: a point on the edited road that no other road passes near (the moved
+    // handle itself when it is clear of them: a handle dropped ON another road would be ambiguous).
     r.anchor = to;
+    if (!t.edited_pts.empty() && t.edited.horizontal.length() > 0) {
+        const double L = t.edited.horizontal.length();
+        auto clear_of_others = [&](const Vec3& p) { return !index_.nearest_point(p.xy(), 3.0, p.z, params_.level_tol, edge); };
+        if (!clear_of_others(to))
+            for (const double f : {0.5, 0.25, 0.75, 0.1, 0.9}) {
+                const Vec3 p = edge_point(t.edited, L * f);
+                if (clear_of_others(p)) {
+                    r.anchor = p;
+                    break;
+                }
+            }
+    }
     // A same-level crossing makes a junction (JS conformRoad): replace the edge by the drawn stroke through its new
     // control points. Only for an edge on its own: an interior handle, or a free road end. Dragging a node that
     // several roads share moves them all and only advises.
     bool join = false;
     for (const CrossingReport& c : t.an.crossings) join = join || c.verdict == CrossingVerdict::Join;
     const bool lone = !t.node.valid() || graph_.edges_at(t.node).size() == 1;
+    // A free end dropped on another road (or on its node) at the same level joins it, as a drawn end does (a T).
+    if (params_.make_junctions && !join && t.node.valid() && lone && graph_.region()) {
+        ensure_index();
+        const double jdz = graph_.region()->plan_crossing_junction_dz_m;
+        const double tol = 1.0;  // StrokeParams::snap_tol
+        if (jdz > 0) {
+            if (auto nd = index_.nearest_node(to.xy(), tol, to.z, params_.level_tol))
+                join = nd->node != t.node && std::abs(nd->pos.z - to.z) < jdz;
+            if (!join)
+                if (auto on = index_.nearest_point(to.xy(), tol, to.z, params_.level_tol, edge)) join = std::abs(on->point.z - to.z) < jdz;
+        }
+    }
     if (params_.make_junctions && join && lone && t.edited_pts.size() >= 2) {
         const StrokeSpec spec{t.edited_pts, t.edited.heading_a, t.edited.heading_b, t.edited.road_type, t.edited.one_way};
         StrokeParams sp;

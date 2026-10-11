@@ -556,7 +556,7 @@ TEST_CASE("Dual ghost: refitted through the offset points, as committed; how far
         double radius;
         double limit;
     };
-    const C cases[] = {{"gentle R~400", 400, 0.15}, {"tight R~60", 60, 0.15}};
+    const C cases[] = {{"gentle R~400", 400, 0.15}, {"tight R~60", 60, 0.15}, {"very tight R~25", 25, 0.5}};
     for (const C& c : cases) {
         CAPTURE(c.name);
         Rig rig;
@@ -1079,6 +1079,47 @@ TEST_CASE("Edit mode (31-36): hover lights the road, selection says 'selected ro
     CHECK(es.hover(at(60, 300)).profile.valid);
 }
 
+TEST_CASE("Edit: a free end dropped on another road joins it, as a drawn end does; refused edits print as red HUD lines (36)") {
+    Rig rig;
+    rig.road({0, 100, 0}, {}, {200, 100, 0});
+    const EdgeId b = rig.road({100, -100, 0}, {}, {100, 40, 0});
+    const SnapShot before = snapshot(rig.g);
+    EditSession es(rig.g, rig.hf);
+    es.select(b);
+    REQUIRE(es.begin_drag(through({100, 40, 0.5})));
+    const EditPreview pv = es.drag_to(at(100, 100.4));
+    CHECK(pv.ok());
+    EditResult r = es.end_drag(at(100, 100.4));
+    REQUIRE(r.ok());
+    CHECK(r.made_junction);
+    CHECK(std::abs(r.anchor.y - 100) > 3);   // the anchor is on the new road, not on the road it joined
+    REQUIRE(rig.st.execute(std::move(r.command)));
+    es.invalidate();
+    REQUIRE(es.select_at(r.anchor));
+    {   // the new road is selected (its far end is at y = -100), not a half of the road it joined
+        const Edge* sel = rig.g.edge(es.selected());
+        REQUIRE(sel != nullptr);
+        CHECK((std::abs(rig.g.node(sel->a)->pos.y + 100) < 1 || std::abs(rig.g.node(sel->b)->pos.y + 100) < 1));
+    }
+    CHECK(rig.g.edges().size() == 3);   // the other road is split, a T of three arms
+    std::size_t three = 0;
+    for (const auto& [id, n] : rig.g.nodes()) three += rig.g.edges_at(id).size() == 3;
+    CHECK(three == 1);
+    REQUIRE(rig.st.undo());
+    CHECK(snapshot(rig.g) == before);
+    // a refused release (onto its own other end: no sane curve) comes back as a reason the host prints as a red line
+    es.invalidate();
+    es.select(b);
+    REQUIRE(es.begin_drag(through({100, 40, 0.5})));
+    es.drag_to(at(100, -100));
+    const EditResult bad = es.end_drag(at(100, -100));
+    CHECK_FALSE(bad.ok());
+    const HudLine line = error_hud_line(bad.error);
+    CHECK(line.text() == CROSS " " + bad.error);
+    CHECK(line.tone == HudTone::Error);
+    CHECK(warning_hud_line("x").text() == WARN_SIGN " x");
+}
+
 TEST_CASE("Edit hover reports nodes and interior points but names the road to light up (31, 33)") {
     EditRig rig;
     EditSession es(rig.g, rig.hf);
@@ -1221,14 +1262,22 @@ TEST_CASE("Road chain: T junctions, sharp bends, other types and the turn limit 
         REQUIRE(rig.g.edges().size() == 2);
         CHECK(road_chain_of(rig.g, rig.g.edges().begin()->first, 25).edges.size() == 1);
     }
-    {  // the turn limit is region data: a 15 degree kink chains at 25 and not at 5
+    {  // the turn limit is region data: a 15 degree kink at a junction chains at 25 and not at 5
         Rig rig;
         rig.stroke({{0, 0, 0}, {150, 0, 0}});
         rig.stroke({{150, 0, 0}, {300, 40, 0}});
-        REQUIRE(rig.g.edges().size() == 2);
+        rig.stroke({{150, 0, 0}, {150, -120, 0}});   // a side road makes the node a junction
+        REQUIRE(rig.g.edges().size() == 3);
         const EdgeId first = rig.g.edges().begin()->first;
         CHECK(road_chain_of(rig.g, first, 25).edges.size() == 2);
         CHECK(road_chain_of(rig.g, first, 5).edges.size() == 1);
+    }
+    {  // two roads meeting end to end (one continued from the other's end) are two roads, as in the prototype
+        Rig rig;
+        rig.stroke({{0, 0, 0}, {150, 0, 0}});
+        rig.stroke({{150, 0, 0}, {300, 0, 0}});
+        REQUIRE(rig.g.edges().size() == 2);
+        for (const auto& [id, e] : rig.g.edges()) CHECK(road_chain_of(rig.g, id, 25).edges.size() == 1);
     }
     {  // chain selection off: a click selects the single edge
         Rig rig;
@@ -1248,7 +1297,8 @@ TEST_CASE("Road chain: drawn in opposite directions, the profile still runs one 
     const EdgeId e1 = rig.road({0, 0, 40}, {}, {150, 0, 47.5});            // west to east
     const NodeId mid = rig.g.edge(e1)->b;
     rig.road({300, 0, 55}, {}, {150, 0, 47.5}, "residential", {}, mid);   // east to west, ends at the same node
-    REQUIRE(rig.g.edges().size() == 2);
+    rig.road({150, -120, 47.5}, {}, {150, 0, 47.5}, "residential", {}, mid);   // a side road: the node is a junction
+    REQUIRE(rig.g.edges().size() == 3);
     EditSession es(rig.g, rig.hf);
     es.select(e1);
     const RoadChain c = es.road_chain(e1);

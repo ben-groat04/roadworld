@@ -83,6 +83,9 @@ std::string HudLine::text() const {
     return s;
 }
 
+HudLine error_hud_line(const std::string& text) { return plain_line(std::string(kCross) + " " + text, HudTone::Error); }
+HudLine warning_hud_line(const std::string& text) { return plain_line(std::string(kWarn) + " " + text, HudTone::Warning); }
+
 const char* snap_kind_word(SnapKind k) {
     switch (k) {
         case SnapKind::Free: return "free";

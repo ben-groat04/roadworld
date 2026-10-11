@@ -408,7 +408,7 @@ TEST_CASE("EditSession: a drag across another road at the same level makes junct
     CHECK(four_way == 2);
     es.invalidate();
     CHECK_FALSE(es.selected().valid());  // the edited edge is gone ...
-    CHECK(es.select_at({100, 170, 0}));  // ... and the road is found again by where the edit happened
+    CHECK(es.select_at(r.anchor));  // ... and the road is found again by where the edit happened
     CHECK(es.selection().chain.edges.size() == 3);  // the three pieces are one road
     REQUIRE(rig.st.undo());
     CHECK(snap(rig.g) == before);  // one undo step restores the roads exactly

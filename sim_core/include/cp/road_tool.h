@@ -163,7 +163,7 @@ enum class IssueCode {
     BridgeNeeded,         // advisory
     TunnelNeeded,         // advisory
     G1Fallback,           // advisory: the G2 solve fell back to G1 (curvature kink)
-    CrossingAtGrade,      // advisory (editing only): the edited road crosses another at the same level; an edit makes no junction
+    CrossingAtGrade,      // advisory (editing only): the edited road crosses another at the same level (the edit makes a junction there unless EditParams::make_junctions is off)
 };
 
 struct Issue {

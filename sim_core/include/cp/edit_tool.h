@@ -16,8 +16,9 @@
 // A "road" is what the user drew, not one engine edge: a road through a junction is several edges (the stroke is
 // split at every junction it makes), and the prototype's road is the whole stroke. Selecting, the handles, the
 // profile, the length in the HUD and Delete all work on the road chain: the edges that continue each other
-// straight through their nodes (same type and one-way flag, tangents within RoadToolRules::chain_max_turn_deg,
-// each the other's best continuation). A road that bends sharply at a junction is two roads.
+// straight through a JUNCTION node of three or more edges (same type and one-way flag, tangents within
+// RoadToolRules::chain_max_turn_deg, each the other's best continuation). A road that bends sharply at a junction
+// is two roads, and so are two roads that merely meet end to end (a road continued from another's end).
 //
 // Like the prototype, an edit that lands the road across another road at the same level makes a junction there
 // (JS commitHandleEdit -> conformRoad): the command then replaces the edited edge by the drawn stroke through its
@@ -155,7 +156,7 @@ struct EditResult {
     // replaced by new edges, so its id (and the selection) is gone after the command executes. select_at(anchor)
     // re-selects the road.
     bool made_junction = false;
-    Vec3 anchor;  // where the edit happened (the handle's new position)
+    Vec3 anchor;  // a point on the edited road that is not on any other road (the moved handle when it is clear of them): for select_at()
     bool ok() const { return command != nullptr; }
 };
 

@@ -48,6 +48,11 @@ std::vector<HudLine> draw_hud(const DrawPreview& pv, const HudContext& ctx);
 // a drag in progress.
 std::vector<HudLine> edit_hud(const EditPreview& pv, const HudContext& ctx, const std::string& tool_type_name);
 
+// One red / amber line for something a host holds outside a preview: the reason of a refused finish, click or edit
+// ("X text" / "! text"), so it prints exactly like the lines the previews produce.
+HudLine error_hud_line(const std::string& text);
+HudLine warning_hud_line(const std::string& text);
+
 // The word the HUD prints for a snap kind: free, angle, guide, end, road (and node for a junction node).
 const char* snap_kind_word(SnapKind k);
 
