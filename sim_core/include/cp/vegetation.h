@@ -235,39 +235,43 @@ struct IslandRule {
     double tree_min_radius = 0;      // 0 = never
 };
 
-// Parameters of the default world-cover generator: irregular fields from a warped Voronoi partition, woodland as
-// ribbons, belts, copses, blocks and plantation cells (never on the field grid), varied hedges. Every one is region data.
+// Parameters of the default world-cover generator. Structure (from the vertical aerials, REFERENCE_NOTES_R3.md): the world is
+// divided into BLOCKS (Voronoi cells of a coarse jittered lattice; their edges are the through-lines: lanes, streams); each block has a
+// grain direction (its longest bounding line, or the terrain's contour / valley direction) and is cut recursively along and across
+// the grain into fields (T-junctions, long shared lines). Woodland is assigned to fields (whole parcels), to boundaries (shelter belts),
+// to field corners (copses) and, from the terrain hints, to steep ground; a few large lobed woods are laid on top.
 struct WorldCoverRules {
-    // Fields. Sites come from per-block rotated, stretched, jittered lattices (block_m squares); fields are the Voronoi cells
-    // of all sites, then warped. Block scale, aspect and orientation vary block to block.
-    double field_area_ha = 5;                        // mean field area
-    double block_m = 450;                            // size of a block that shares one lattice
-    double block_scale_min = 0.55, block_scale_max = 1.6;  // linear size multiplier per block
+    double field_area_ha = 5;                        // mean field area target (blocks scale it)
+    double block_m = 800;                            // spacing of the coarse block lattice
+    double block_scale_min = 0.55, block_scale_max = 1.6;  // linear field-size multiplier per block
     double smallholding_share = 0.12, smallholding_scale = 0.4;  // blocks of small paddocks
-    double aspect_min = 1.0, aspect_max = 2.6;       // field length : width per block
-    double block_angle_var = 0.5;                    // per-block orientation scatter (perpendicular mix, ~ +-27 deg at 0.5)
-    double site_jitter = 0.35;                       // lattice jitter, fraction of spacing (< 0.5)
-    double regional_warp_m = 60, regional_warp_wavelength_m = 900;  // bends the whole pattern
-    double boundary_wobble_m = 4, boundary_wobble_wavelength_m = 70;  // boundary irregularity
+    double aspect_min = 1.0, aspect_max = 2.6;       // field length : width per block (length along the grain)
+    double block_angle_var = 0.5;                    // grain scatter when not taken from a bounding line (perpendicular mix)
+    double grain_edge_share = 0.7;                   // blocks whose grain follows their longest bounding line
+    double site_jitter = 0.35;                       // block lattice jitter, fraction of spacing (< 0.5)
+    double cut_tilt = 0.10;                          // cuts are tilted off the grain by up to this (rad)
+    double cut_frac_min = 0.32;                      // cut position range [min, 1 - min] of the node's extent
+    double regional_warp_m = 40, regional_warp_wavelength_m = 900;  // bends the whole pattern
+    double boundary_wobble_m = 5, boundary_wobble_wavelength_m = 110;  // boundary sinuosity
     // Land classes.
-    double woodland_share = 0.04;                    // fraction of fields that are woodland plantation cells
-    double woodland_edge_ragged_m = 8;               // plantation / woodland edge noise amplitude
+    double woodland_share = 0.06;                    // fraction of fields that are whole woodland parcels
+    double woodland_cluster = 0.8;                   // wooded districts: share varies by +-this fraction over woodland_cluster_wavelength_m
+    double woodland_cluster_wavelength_m = 1500;
+    double strip_width_m = 50, strip_wood_share = 0.5;  // fields narrower than this on average become woodland strips with this probability
+    double woodland_edge_ragged_m = 3;               // woodland parcel edge noise amplitude
     double arable_share = 0.4;                       // fraction of the non-wood fields in arable (no grass instances: the renderer's ground material)
     double rough_share = 0.1;                        // fraction of the non-wood fields in rough ground
     double arable_cluster = 0.3, arable_cluster_wavelength_m = 1500;  // arable share varies +-cluster over this wavelength
-    // Other woodland shapes (each a pure function of position).
-    double ribbon_band = 0.018;                      // value-noise isoline half band: valley-side ribbons (0 = none)
-    double ribbon_wavelength_m = 900;
-    double ribbon_gate = 0.55;                       // ribbons exist where a second noise exceeds this
+    // Other woodland shapes.
     double belt_share = 0.12;                        // fraction of field boundaries that may carry a shelter belt
     double belt_width_min = 20, belt_width_max = 40; // m
     double belt_length_m = 400;                      // wavelength of the gate that starts and stops a belt
     double belt_gate = 0.5;                          // belt present where its gate noise exceeds this
-    double copse_per_km2 = 3;                        // copses (1-3 ha rounded woods)
+    double copse_share = 0.08;                       // fraction of fields with a copse in one corner
     double copse_area_min_ha = 1, copse_area_max_ha = 3;
-    double wood_block_per_km2 = 0.4;                 // larger woods with ragged lobed edges
-    double wood_block_area_min_ha = 15, wood_block_area_max_ha = 40;
-    double wood_ragged = 0.3;                        // copse / block radial edge noise, fraction of radius
+    double wood_block_per_km2 = 0.06;                // large lobed woods laid over the fields
+    double wood_block_area_min_ha = 12, wood_block_area_max_ha = 30;
+    double wood_ragged = 0.3;                        // large wood radial edge noise, fraction of radius
     // Hedges.
     double hedge_share = 0.7;                        // fraction of field boundaries with a hedge (the rest: fence or open, nothing emitted)
     double hedge_overgrown_share = 0.4;
@@ -371,6 +375,8 @@ struct CoverHints {
     // Preferred long-axis direction of fields near a position (unit vector); return false for "no preference".
     // A terrain-aware world returns the contour direction on slopes and the valley direction near a valley.
     std::function<bool(Vec2, Vec2&)> field_axis;
+    // 0..1: how strongly the ground asks to be woodland (steep, awkward); fields whose mean value exceeds 0.5 become woodland parcels.
+    std::function<double(Vec2)> wood_propensity;
 };
 
 // The default: irregular warped-Voronoi fields with hedgerows, woodland ribbons / belts / copses / blocks, scattered trees.

@@ -381,25 +381,29 @@ void parse_cover(const json& j, WorldCoverRules& w, const std::string& ctx, Err&
     w.smallholding_scale = num(j, "smallholding_scale", w.smallholding_scale, ctx, err);
     range(j, "field_aspect", w.aspect_min, w.aspect_max, ctx, err);
     w.block_angle_var = num(j, "block_angle_var", w.block_angle_var, ctx, err);
+    w.grain_edge_share = num(j, "grain_edge_share", w.grain_edge_share, ctx, err);
     w.site_jitter = num(j, "site_jitter", w.site_jitter, ctx, err);
+    w.cut_tilt = num(j, "cut_tilt", w.cut_tilt, ctx, err);
+    w.cut_frac_min = num(j, "cut_frac_min", w.cut_frac_min, ctx, err);
     w.regional_warp_m = num(j, "regional_warp_m", w.regional_warp_m, ctx, err);
     w.regional_warp_wavelength_m = num(j, "regional_warp_wavelength_m", w.regional_warp_wavelength_m, ctx, err);
     w.boundary_wobble_m = num(j, "boundary_wobble_m", w.boundary_wobble_m, ctx, err);
     w.boundary_wobble_wavelength_m = num(j, "boundary_wobble_wavelength_m", w.boundary_wobble_wavelength_m, ctx, err);
     w.woodland_share = num(j, "woodland_share", w.woodland_share, ctx, err);
+    w.woodland_cluster = num(j, "woodland_cluster", w.woodland_cluster, ctx, err);
+    w.woodland_cluster_wavelength_m = num(j, "woodland_cluster_wavelength_m", w.woodland_cluster_wavelength_m, ctx, err);
+    w.strip_width_m = num(j, "strip_width_m", w.strip_width_m, ctx, err);
+    w.strip_wood_share = num(j, "strip_wood_share", w.strip_wood_share, ctx, err);
     w.woodland_edge_ragged_m = num(j, "woodland_edge_ragged_m", w.woodland_edge_ragged_m, ctx, err);
     w.arable_share = num(j, "arable_share", w.arable_share, ctx, err);
     w.rough_share = num(j, "rough_share", w.rough_share, ctx, err);
     w.arable_cluster = num(j, "arable_cluster", w.arable_cluster, ctx, err);
     w.arable_cluster_wavelength_m = num(j, "arable_cluster_wavelength_m", w.arable_cluster_wavelength_m, ctx, err);
-    w.ribbon_band = num(j, "ribbon_band", w.ribbon_band, ctx, err);
-    w.ribbon_wavelength_m = num(j, "ribbon_wavelength_m", w.ribbon_wavelength_m, ctx, err);
-    w.ribbon_gate = num(j, "ribbon_gate", w.ribbon_gate, ctx, err);
     w.belt_share = num(j, "belt_share", w.belt_share, ctx, err);
     range(j, "belt_width_m", w.belt_width_min, w.belt_width_max, ctx, err);
     w.belt_length_m = num(j, "belt_length_m", w.belt_length_m, ctx, err);
     w.belt_gate = num(j, "belt_gate", w.belt_gate, ctx, err);
-    w.copse_per_km2 = num(j, "copse_per_km2", w.copse_per_km2, ctx, err);
+    w.copse_share = num(j, "copse_share", w.copse_share, ctx, err);
     range(j, "copse_area_ha", w.copse_area_min_ha, w.copse_area_max_ha, ctx, err);
     w.wood_block_per_km2 = num(j, "wood_block_per_km2", w.wood_block_per_km2, ctx, err);
     range(j, "wood_block_area_ha", w.wood_block_area_min_ha, w.wood_block_area_max_ha, ctx, err);
@@ -589,7 +593,8 @@ Loaded<VegetationRules> parse_vegetation_rules(const std::string& json_text, con
     if (w.site_jitter < 0 || w.site_jitter >= 0.5) err.set("vegetation world_cover: site_jitter must be in [0, 0.5)");
     if (w.field_area_ha <= 0 || w.block_m < 100 || w.aspect_min < 1 || w.aspect_max < w.aspect_min || w.block_scale_min <= 0 ||
         w.block_scale_max < w.block_scale_min || w.ground_cell <= 0 || w.min_cell <= 0 || w.regional_warp_wavelength_m <= 0 ||
-        w.boundary_wobble_wavelength_m <= 0 || w.ribbon_wavelength_m <= 0 || w.belt_length_m <= 0 || w.arable_cluster_wavelength_m <= 0)
+        w.boundary_wobble_wavelength_m <= 0 || w.belt_length_m <= 0 || w.arable_cluster_wavelength_m <= 0 || w.woodland_cluster_wavelength_m <= 0 ||
+        w.cut_frac_min <= 0.05 || w.cut_frac_min >= 0.5)
         err.set("vegetation world_cover: sizes, wavelengths and scales must be positive (aspect >= 1, block_m >= 100)");
     return finish_rules(std::move(r), err);
 }
@@ -1033,15 +1038,52 @@ namespace {
 
 // ================================================================== 4. the default world cover source
 
-// Irregular fields: the Voronoi cells of sites that come from per-block rotated, stretched, jittered lattices, in a space
-// that is warped by a smooth displacement (so the pattern bends) plus a short-wavelength wobble (so boundaries are not
-// ruler-straight). Woodland is NOT tied to the field cells except for a few plantation cells: it is made of valley-side
-// ribbons (value-noise isolines), shelter belts along boundaries, copses and larger lobed blocks, each a pure function
-// of position. Everything uses only + - * / sqrt floor and integer hashing, so it is identical on every compiler.
+// Structure (docs/progress/2026-10-11-world-cover-r2/REFERENCE_NOTES_R3.md, from 14 vertical aerials):
+//   BLOCKS   Voronoi cells of a coarse jittered lattice (30-100 ha). Their edges are the through-lines (lanes, streams).
+//   GRAIN    each block has a grain direction: its longest bounding line, else the terrain hint, else a regional direction.
+//   FIELDS   a block polygon is cut recursively by lines along and across the grain (slightly tilted, cut position hashed)
+//            until the pieces are field sized: T-junctions and long shared lines, convex polygons.
+//   WOODLAND is assigned: whole fields (clustered into wooded districts, narrow strips, terrain propensity), shelter belts on
+//            boundaries, copses in field corners, and a few large lobed woods. Nothing is laid on the fields as a free blob except those.
+// All of it is a pure function of (position, seed) built from + - * / sqrt floor and integer hashing (identical on every compiler).
 enum class Land { Wood, Arable, Rough, Pasture };
 
 double len2d(Vec2 v) { return std::sqrt(v.x * v.x + v.y * v.y); }
 u64 edge_key(u64 a, u64 b) { return a < b ? mix64(a ^ mix64(b + 0x51ED)) : mix64(b ^ mix64(a + 0x51ED)); }
+
+struct Poly {
+    std::vector<Vec2> v;
+    std::vector<u64> lab;  // lab[i]: key of the edge v[i] -> v[i+1]
+};
+double poly_area(const Poly& p) {
+    double a = 0;
+    for (std::size_t i = 0; i < p.v.size(); ++i) a += p.v[i].cross(p.v[(i + 1) % p.v.size()]);
+    return std::fabs(a) * 0.5;
+}
+// Keeps the part of `p` with (x - pt) . n <= 0; the new edge along the cut gets `label`.
+Poly clip_half(const Poly& p, Vec2 pt, Vec2 n, u64 label) {
+    Poly out;
+    const std::size_t m = p.v.size();
+    for (std::size_t i = 0; i < m; ++i) {
+        const Vec2 a = p.v[i], b = p.v[(i + 1) % m];
+        const double fa = (a - pt).dot(n), fb = (b - pt).dot(n);
+        const u64 la = p.lab[i];
+        if (fa <= 0) {
+            out.v.push_back(a);
+            out.lab.push_back(la);
+            if (fb > 0) {
+                const double t = fa / (fa - fb);
+                out.v.push_back(a + (b - a) * t);
+                out.lab.push_back(label);
+            }
+        } else if (fb <= 0) {
+            const double t = fa / (fa - fb);
+            out.v.push_back(a + (b - a) * t);
+            out.lab.push_back(la);
+        }
+    }
+    return out;
+}
 
 class DefaultCover final : public WorldCoverSource {
 public:
@@ -1051,8 +1093,6 @@ public:
         double l = len2d(d);
         if (l < 1e-3) { d = {1, 0}; l = 1; }
         dir0_ = d * (1.0 / l);
-        const double area_max = w_.field_area_ha * 1e4 * w_.block_scale_max * w_.block_scale_max;
-        rmax_ = std::max(0.9 * std::sqrt(area_max * w_.aspect_max), 0.6 * w_.block_m);
         dmax_ = w_.regional_warp_m + w_.boundary_wobble_m + 1.0;
     }
 
@@ -1128,29 +1168,29 @@ public:
         }
     }
 
-    // Areas (ha) and long : short extent ratios of the field cells whose site lies in [lo, hi) and that are not clipped.
+    // Areas (ha) and long : short extent ratios of the fields whose block site lies in [lo, hi).
     void cell_stats(Vec2 lo, Vec2 hi, std::vector<double>& area_ha, std::vector<double>& aspect) const {
-        std::vector<std::shared_ptr<const Block>> blocks;
-        gather_box(lo, hi, blocks);
-        for (const auto& b : blocks)
-            for (const Site& s : b->sites) {
+        const double B = w_.block_m;
+        for (i64 cj = static_cast<i64>(std::floor(lo.y / B)) - 1; cj <= static_cast<i64>(std::floor(hi.y / B)) + 1; ++cj)
+            for (i64 ci = static_cast<i64>(std::floor(lo.x / B)) - 1; ci <= static_cast<i64>(std::floor(hi.x / B)) + 1; ++ci) {
+                const CSite s = csite(ci, cj);
                 if (s.p.x < lo.x || s.p.x >= hi.x || s.p.y < lo.y || s.p.y >= hi.y) continue;
-                const Cell c = cell_of(s);
-                bool clipped = c.v.size() < 3;
-                for (u64 l : c.label) clipped = clipped || l == kClip;
+                const std::shared_ptr<const Block> b = block(ci, cj);
+                bool clipped = false;
+                for (u64 l : b->poly.lab) clipped = clipped || l == kClip;
                 if (clipped) continue;
-                double a2 = 0;
-                for (std::size_t i = 0; i < c.v.size(); ++i) a2 += c.v[i].cross(c.v[(i + 1) % c.v.size()]);
-                area_ha.push_back(std::fabs(a2) * 0.5 / 1e4);
-                // principal-axis extent ratio from the vertex covariance about the centroid of the vertices
-                Vec2 m{0, 0};
-                for (const Vec2& v : c.v) m = m + v * (1.0 / static_cast<double>(c.v.size()));
-                double sxx = 0, syy = 0, sxy = 0;
-                for (const Vec2& v : c.v) { sxx += (v.x - m.x) * (v.x - m.x); syy += (v.y - m.y) * (v.y - m.y); sxy += (v.x - m.x) * (v.y - m.y); }
-                const double tr = sxx + syy, det = sxx * syy - sxy * sxy;
-                const double disc = std::sqrt(std::max(0.0, tr * tr / 4 - det));
-                const double l1 = tr / 2 + disc, l2 = std::max(1e-9, tr / 2 - disc);
-                aspect.push_back(std::sqrt(l1 / l2));
+                auto on_leaf = [&](const Poly& leaf, u64) {
+                          area_ha.push_back(poly_area(leaf) / 1e4);
+                          Vec2 m{0, 0};
+                          for (const Vec2& v : leaf.v) m = m + v * (1.0 / static_cast<double>(leaf.v.size()));
+                          double sxx = 0, syy = 0, sxy = 0;
+                          for (const Vec2& v : leaf.v) { sxx += (v.x - m.x) * (v.x - m.x); syy += (v.y - m.y) * (v.y - m.y); sxy += (v.x - m.x) * (v.y - m.y); }
+                          const double tr = sxx + syy, det = sxx * syy - sxy * sxy;
+                          const double disc = std::sqrt(std::max(0.0, tr * tr / 4 - det));
+                          const double l1 = tr / 2 + disc, l2 = std::max(1e-9, tr / 2 - disc);
+                          aspect.push_back(std::sqrt(l1 / l2));
+                };
+                visit_rec(*b, b->poly, b->s.id, 0, {-1e18, -1e18}, {1e18, 1e18}, on_leaf, [](Vec2, Vec2, u64) {});
             }
     }
 
@@ -1200,17 +1240,18 @@ public:
     }
 
 private:
-    struct Site {
+    static constexpr u64 kClip = ~0ull;
+    struct CSite {
         Vec2 p;
         u64 id = 0;
     };
     struct Block {
-        std::vector<Site> sites;
-    };
-    struct Probe {
-        Site s, n;        // nearest site and the neighbour whose bisector is nearest
-        double db = 1e9;  // distance to that bisector
-        bool has_n = false, ok = false;
+        CSite s;
+        Poly poly;                  // the block cell, labels = edge keys (kClip on the clip box)
+        std::vector<char> owner;    // per edge: this block emits it (lower site id)
+        Vec2 d{1, 0}, pp{0, 1};     // grain and its perpendicular
+        double area_t = 5e4;        // leaf area target (m2)
+        double rho = 1.5;           // field aspect target
     };
     struct Seg {
         bool present = false;
@@ -1240,127 +1281,242 @@ private:
         return p;
     }
 
-    // ---- sites
-    std::shared_ptr<const Block> block(i64 bi, i64 bj) const {
-        const std::pair<i64, i64> k{bi, bj};
+    // ---- blocks
+    CSite csite(i64 ci, i64 cj) const {
+        const double B = w_.block_m;
+        const u64 key = key3(seed_, 200, ui(ci), ui(cj));
+        CSite s;
+        s.id = key;
+        s.p = {(static_cast<double>(ci) + 0.5 + (hk(key, 1) - 0.5) * 2 * w_.site_jitter) * B,
+               (static_cast<double>(cj) + 0.5 + (hk(key, 2) - 0.5) * 2 * w_.site_jitter) * B};
+        return s;
+    }
+
+    std::shared_ptr<const Block> block(i64 ci, i64 cj) const {
+        const std::pair<i64, i64> k{ci, cj};
         {
             std::lock_guard<std::mutex> lk(mu_);
             const auto it = cache_.find(k);
             if (it != cache_.end()) return it->second;
         }
-        auto b = std::make_shared<Block>(make_block(bi, bj));
+        auto b = std::make_shared<Block>(make_block(ci, cj));
         std::lock_guard<std::mutex> lk(mu_);
         if (cache_.size() > 20000) cache_.clear();
         return cache_.emplace(k, b).first->second;
     }
 
-    Block make_block(i64 bi, i64 bj) const {
-        Block out;
+    Block make_block(i64 ci, i64 cj) const {
+        Block b;
+        b.s = csite(ci, cj);
         const double B = w_.block_m;
-        const Vec2 centre{(static_cast<double>(bi) + 0.5) * B, (static_cast<double>(bj) + 0.5) * B};
-        const u64 bk = key3(seed_, 200, ui(bi), ui(bj));
-        const double scale = hk(bk, 1) < w_.smallholding_share ? w_.smallholding_scale : lerp(w_.block_scale_min, w_.block_scale_max, hk(bk, 2));
-        const double aspect = lerp(w_.aspect_min, w_.aspect_max, hk(bk, 3));
-        Vec2 d = dir0_;
-        Vec2 hint;
-        const bool hinted = hints_.field_axis && hints_.field_axis(centre, hint) && len2d(hint) > 0.5;
-        if (hinted) d = hint * (1.0 / len2d(hint));
-        const double t = (hk(bk, 4) - 0.5) * 2 * (hinted ? 0.25 * w_.block_angle_var : w_.block_angle_var);
-        const Vec2 d2 = d + Vec2{-d.y, d.x} * t;
-        d = d2 * (1.0 / len2d(d2));
-        const Vec2 pp{-d.y, d.x};
-        const double A = w_.field_area_ha * 1e4 * scale * scale;
-        const double a = std::sqrt(A / aspect), b = a * aspect;  // spacing across (a) and along (b) the long axis
-        const double ph_u = hk(bk, 5), ph_v = hk(bk, 6);
-        const double ext = B * 0.7072;
-        const i64 M = static_cast<i64>(std::ceil(ext / b)) + 1, N = static_cast<i64>(std::ceil(ext / a)) + 1;
-        const double x0 = static_cast<double>(bi) * B, y0 = static_cast<double>(bj) * B;
-        for (i64 m = -M; m <= M; ++m)
-            for (i64 n = -N; n <= N; ++n) {
-                const u64 sk = key3(bk, 7, ui(m), ui(n));
-                const double ju = (hk(sk, 1) - 0.5) * 2 * w_.site_jitter, jv = (hk(sk, 2) - 0.5) * 2 * w_.site_jitter;
-                const double lu = (static_cast<double>(m) + ph_u + ju) * b, lv = (static_cast<double>(n) + ph_v + jv) * a;
-                const Vec2 pos = centre + d * lu + pp * lv;
-                if (pos.x < x0 || pos.x >= x0 + B || pos.y < y0 || pos.y >= y0 + B) continue;
-                out.sites.push_back({pos, sk});
+        const double R = 1.25 * B;
+        std::vector<std::pair<double, CSite>> nbs;
+        for (i64 j = cj - 2; j <= cj + 2; ++j)
+            for (i64 i = ci - 2; i <= ci + 2; ++i) {
+                if (i == ci && j == cj) continue;
+                const CSite t = csite(i, j);
+                nbs.push_back({len2d(t.p - b.s.p), t});
             }
-        return out;
+        std::sort(nbs.begin(), nbs.end(), [](const auto& a, const auto& c) { return a.first < c.first; });
+        b.poly.v = {{b.s.p.x - R, b.s.p.y - R}, {b.s.p.x + R, b.s.p.y - R}, {b.s.p.x + R, b.s.p.y + R}, {b.s.p.x - R, b.s.p.y + R}};
+        b.poly.lab.assign(4, kClip);
+        std::vector<u64> nid(4, kClip);
+        double maxr = R * 1.4143;
+        for (const auto& nd : nbs) {
+            if (nd.first * 0.5 > maxr) break;
+            const CSite& t = nd.second;
+            const Vec2 n = t.p - b.s.p;
+            const Vec2 mid = (b.s.p + t.p) * 0.5;
+            // clip keeping the side nearer to s, remembering the neighbour id of each edge
+            Poly np;
+            std::vector<u64> nn;
+            const std::size_t m = b.poly.v.size();
+            const u64 lk = edge_key(b.s.id, t.id);
+            for (std::size_t i = 0; i < m; ++i) {
+                const Vec2 a = b.poly.v[i], c = b.poly.v[(i + 1) % m];
+                const double fa = (a - mid).dot(n), fc = (c - mid).dot(n);
+                if (fa <= 0) {
+                    np.v.push_back(a); np.lab.push_back(b.poly.lab[i]); nn.push_back(nid[i]);
+                    if (fc > 0) {
+                        const double tt = fa / (fa - fc);
+                        np.v.push_back(a + (c - a) * tt); np.lab.push_back(lk); nn.push_back(t.id);
+                    }
+                } else if (fc <= 0) {
+                    const double tt = fa / (fa - fc);
+                    np.v.push_back(a + (c - a) * tt); np.lab.push_back(b.poly.lab[i]); nn.push_back(nid[i]);
+                }
+            }
+            b.poly = std::move(np);
+            nid = std::move(nn);
+            if (b.poly.v.size() < 3) break;
+            maxr = 0;
+            for (const Vec2& x : b.poly.v) maxr = std::max(maxr, len2d(x - b.s.p));
+        }
+        b.owner.resize(b.poly.v.size());
+        for (std::size_t i = 0; i < b.poly.v.size(); ++i) b.owner[i] = nid[i] != kClip && b.s.id < nid[i];
+        // grain: the longest bounding line (not the clip box), else the terrain hint, else a regional direction with scatter
+        const u64 bk = b.s.id;
+        Vec2 d = dir0_;
+        double best = 0;
+        bool from_edge = false;
+        if (hk(bk, 3) < w_.grain_edge_share)
+            for (std::size_t i = 0; i < b.poly.v.size(); ++i) {
+                if (nid[i] == kClip) continue;
+                const Vec2 e = b.poly.v[(i + 1) % b.poly.v.size()] - b.poly.v[i];
+                const double l = len2d(e);
+                if (l > best) { best = l; d = e * (1.0 / l); from_edge = true; }
+            }
+        Vec2 hint;
+        const bool hinted = hints_.field_axis && hints_.field_axis(b.s.p, hint) && len2d(hint) > 0.5;
+        if (hinted) { d = hint * (1.0 / len2d(hint)); from_edge = true; }
+        if (!from_edge) {
+            const double t = (hk(bk, 4) - 0.5) * 2 * w_.block_angle_var;
+            const Vec2 d2 = d + Vec2{-d.y, d.x} * t;
+            d = d2 * (1.0 / len2d(d2));
+        }
+        b.d = d;
+        b.pp = {-d.y, d.x};
+        const double scale = hk(bk, 5) < w_.smallholding_share ? w_.smallholding_scale : lerp(w_.block_scale_min, w_.block_scale_max, hk(bk, 6));
+        b.area_t = w_.field_area_ha * 1e4 * scale * scale;
+        b.rho = lerp(w_.aspect_min, w_.aspect_max, hk(bk, 7));
+        return b;
     }
 
-    // The blocks that cover [lo, hi]; returned so they stay alive.
-    void gather_box(Vec2 lo, Vec2 hi, std::vector<std::shared_ptr<const Block>>& blocks) const {
+    // ---- the cut tree of a block
+    struct Cut {
+        Vec2 pt, n;  // keep (x - pt) . n <= 0 for child 0
+        u64 label = 0;
+    };
+    bool is_leaf(const Block& b, u64 id, const Poly& P, int depth) const {
+        if (depth >= 14) return true;
+        const double a = poly_area(P);
+        return a <= b.area_t * (0.9 + 1.4 * hk(id, 2)) || a < 3000;
+    }
+    Cut make_cut(const Block& b, u64 id, const Poly& P) const {
+        double u0 = 1e18, u1 = -1e18, v0 = 1e18, v1 = -1e18;
+        for (const Vec2& x : P.v) {
+            const Vec2 r = x - b.s.p;
+            const double u = r.dot(b.d), v = r.dot(b.pp);
+            u0 = std::min(u0, u); u1 = std::max(u1, u);
+            v0 = std::min(v0, v); v1 = std::max(v1, v);
+        }
+        const double eu = u1 - u0, ev = std::max(1.0, v1 - v0);
+        const double f = lerp(w_.cut_frac_min, 1.0 - w_.cut_frac_min, hk(id, 3));
+        const double tilt = (hk(id, 4) - 0.5) * 2 * w_.cut_tilt;
+        Cut c;
+        c.label = mix64(id ^ 0xC07C07ull);
+        Vec2 dir, pt;
+        if (eu / ev > b.rho) {  // cut across the grain: the line runs along pp
+            dir = b.pp + b.d * tilt;
+            pt = b.s.p + b.d * (u0 + f * eu) + b.pp * (0.5 * (v0 + v1));
+        } else {                // cut along the grain
+            dir = b.d + b.pp * tilt;
+            pt = b.s.p + b.d * (0.5 * (u0 + u1)) + b.pp * (v0 + f * ev);
+        }
+        dir = dir * (1.0 / len2d(dir));
+        c.pt = pt;
+        c.n = {dir.y, -dir.x};
+        return c;
+    }
+    static u64 child_id(u64 id, int side) { return mix64(id * 3 + 1 + static_cast<u64>(side)); }
+
+    struct Leaf {
+        Poly poly;
+        u64 id = 0;
+    };
+    Leaf locate(const Block& b, Vec2 q) const {
+        Leaf L;
+        L.poly = b.poly;
+        L.id = b.s.id;
+        for (int depth = 0; !is_leaf(b, L.id, L.poly, depth); ++depth) {
+            const Cut c = make_cut(b, L.id, L.poly);
+            const int side = (q - c.pt).dot(c.n) <= 0 ? 0 : 1;
+            L.poly = clip_half(L.poly, c.pt, side == 0 ? c.n : c.n * -1.0, c.label);
+            L.id = child_id(L.id, side);
+            if (L.poly.v.size() < 3) break;
+        }
+        return L;
+    }
+    // Recursion over a block's tree, restricted to polygons that touch [lo, hi] (q space).
+    template <class FL, class FC>
+    void visit_rec(const Block& b, const Poly& P, u64 id, int depth, Vec2 lo, Vec2 hi, FL& on_leaf, FC on_cut) const {
+        if (P.v.size() < 3) return;
+        double x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18;
+        for (const Vec2& x : P.v) { x0 = std::min(x0, x.x); x1 = std::max(x1, x.x); y0 = std::min(y0, x.y); y1 = std::max(y1, x.y); }
+        if (x1 < lo.x || x0 > hi.x || y1 < lo.y || y0 > hi.y) return;
+        if (is_leaf(b, id, P, depth)) {
+            on_leaf(P, id);
+            return;
+        }
+        const Cut c = make_cut(b, id, P);
+        const Poly c0 = clip_half(P, c.pt, c.n, c.label), c1 = clip_half(P, c.pt, c.n * -1.0, c.label);
+        for (std::size_t i = 0; i < c0.v.size(); ++i)
+            if (c0.lab[i] == c.label) on_cut(c0.v[i], c0.v[(i + 1) % c0.v.size()], c.label);
+        visit_rec(b, c0, child_id(id, 0), depth + 1, lo, hi, on_leaf, on_cut);
+        visit_rec(b, c1, child_id(id, 1), depth + 1, lo, hi, on_leaf, on_cut);
+    }
+
+    // ---- land classes
+    Leaf leaf_at(Vec2 q) const {
         const double B = w_.block_m;
-        const i64 i0 = static_cast<i64>(std::floor(lo.x / B)), i1 = static_cast<i64>(std::floor(hi.x / B));
-        const i64 j0 = static_cast<i64>(std::floor(lo.y / B)), j1 = static_cast<i64>(std::floor(hi.y / B));
-        for (i64 j = j0; j <= j1; ++j)
-            for (i64 i = i0; i <= i1; ++i) blocks.push_back(block(i, j));
+        const i64 ci0 = static_cast<i64>(std::floor(q.x / B)), cj0 = static_cast<i64>(std::floor(q.y / B));
+        i64 bi = ci0, bj = cj0;
+        double d1 = 1e300;
+        for (i64 j = cj0 - 2; j <= cj0 + 2; ++j)
+            for (i64 i = ci0 - 2; i <= ci0 + 2; ++i) {
+                const CSite s = csite(i, j);
+                const double d = (s.p.x - q.x) * (s.p.x - q.x) + (s.p.y - q.y) * (s.p.y - q.y);
+                if (d < d1) { d1 = d; bi = i; bj = j; }
+            }
+        const std::shared_ptr<const Block> b = block(bi, bj);
+        Leaf L = locate(*b, q);
+        return L;
     }
 
-    Land site_land(const Site& s) const {
-        if (hk(s.id, 11) < w_.woodland_share) return Land::Wood;
+    Vec2 centroid(const Poly& P) const {
+        Vec2 m{0, 0};
+        for (const Vec2& v : P.v) m = m + v * (1.0 / static_cast<double>(P.v.size()));
+        return m;
+    }
+
+    Land leaf_land(const Leaf& L) const {
+        const u64 id = L.id;
+        const Vec2 c = centroid(L.poly);
+        const double area = poly_area(L.poly);
+        const double Lw = w_.woodland_cluster_wavelength_m;
+        const double wshare = std::clamp(w_.woodland_share * (1.0 + w_.woodland_cluster * (2 * vn(0xC2, c.x / Lw, c.y / Lw) - 1) * 2.0), 0.0, 0.9);
+        if (hk(id, 11) < wshare) return Land::Wood;
+        // narrow strips (mean width = area / longest extent)
+        double ext = 0;
+        for (std::size_t i = 0; i < L.poly.v.size(); ++i)
+            for (std::size_t j = i + 1; j < L.poly.v.size(); ++j) ext = std::max(ext, len2d(L.poly.v[i] - L.poly.v[j]));
+        if (ext > 1e-6 && area / ext < w_.strip_width_m && hk(id, 15) < w_.strip_wood_share) return Land::Wood;
+        if (hints_.wood_propensity) {
+            double s = hints_.wood_propensity(c);
+            for (const Vec2& v : L.poly.v) s += hints_.wood_propensity(v * 0.8 + c * 0.2);
+            s /= 1.0 + static_cast<double>(L.poly.v.size());
+            if (s > 0.5) return Land::Wood;
+        }
         const double Lc = w_.arable_cluster_wavelength_m;
-        const double ab = w_.arable_share + w_.arable_cluster * (2 * vn(0xC1, s.p.x / Lc, s.p.y / Lc) - 1);
-        const double r = hk(s.id, 12);
+        const double ab = w_.arable_share + w_.arable_cluster * (2 * vn(0xC1, c.x / Lc, c.y / Lc) - 1);
+        const double r = hk(id, 12);
         if (r < ab) return Land::Arable;
         if (r < ab + w_.rough_share) return Land::Rough;
         return Land::Pasture;
     }
 
-    Probe probe(Vec2 q) const {
-        std::vector<std::shared_ptr<const Block>> blocks;
-        double reach = w_.block_m;
-        Probe pr;
-        for (int pass = 0; pass < 3; ++pass) {
-            blocks.clear();
-            gather_box({q.x - reach, q.y - reach}, {q.x + reach, q.y + reach}, blocks);
-            double d1 = 1e300;
-            const Site* best = nullptr;
-            for (const auto& b : blocks)
-                for (const Site& s : b->sites) {
-                    const double d = (s.p.x - q.x) * (s.p.x - q.x) + (s.p.y - q.y) * (s.p.y - q.y);
-                    if (d < d1) { d1 = d; best = &s; }
-                }
-            if (best && std::sqrt(d1) <= reach * 0.95) {
-                pr.s = *best;
-                pr.ok = true;
-                for (const auto& b : blocks)
-                    for (const Site& t : b->sites) {
-                        if (t.id == best->id) continue;
-                        const double l = len2d(t.p - best->p);
-                        if (l < 1e-6) continue;
-                        const double dt = (t.p.x - q.x) * (t.p.x - q.x) + (t.p.y - q.y) * (t.p.y - q.y);
-                        const double db = (dt - d1) / (2 * l);
-                        if (db < pr.db) { pr.db = db; pr.n = t; pr.has_n = true; }
-                    }
-                return pr;
-            }
-            reach *= 2;
-        }
-        return pr;  // no sites at all (cannot happen with sane data)
-    }
-
-    // ---- woodland shapes that do not depend on the field cells
-    bool ribbon(Vec2 p) const {
-        if (w_.ribbon_band <= 0) return false;
-        const double L = w_.ribbon_wavelength_m;
-        double n = vn(0xD1, p.x / L, p.y / L);
-        n += 0.012 * (2 * vn(0xD2, p.x / 35, p.y / 35) - 1);
-        if (std::fabs(n - 0.5) >= w_.ribbon_band) return false;
-        return vn(0xD3, p.x / (1.6 * L), p.y / (1.6 * L)) > w_.ribbon_gate;
-    }
-
-    // Rounded / lobed woods on a jittered lattice of `cell` m: one per cell with probability per_km2 * cell^2.
-    bool blob_hit(Vec2 p, double cell, u64 salt, double per_km2, double amin_ha, double amax_ha, double aspect_max) const {
-        const double prob = per_km2 * cell * cell / 1e6;
+    // Large lobed woods on a jittered lattice of 700 m (one per cell with probability per_km2 * cell^2).
+    bool wood_block(Vec2 p) const {
+        const double cell = 700, prob = w_.wood_block_per_km2 * cell * cell / 1e6;
         if (prob <= 0) return false;
         const i64 cx0 = static_cast<i64>(std::floor(p.x / cell)), cy0 = static_cast<i64>(std::floor(p.y / cell));
         for (i64 cy = cy0 - 1; cy <= cy0 + 1; ++cy)
             for (i64 cx = cx0 - 1; cx <= cx0 + 1; ++cx) {
-                const u64 ck = key3(seed_, salt, ui(cx), ui(cy));
+                const u64 ck = key3(seed_, 302, ui(cx), ui(cy));
                 if (hk(ck, 1) >= prob) continue;
                 const Vec2 c{(static_cast<double>(cx) + 0.25 + 0.5 * hk(ck, 2)) * cell, (static_cast<double>(cy) + 0.25 + 0.5 * hk(ck, 3)) * cell};
-                const double area = lerp(amin_ha, amax_ha, hk(ck, 4)) * 1e4;
-                const double asp = 1 + (aspect_max - 1) * hk(ck, 5);
+                const double area = lerp(w_.wood_block_area_min_ha, w_.wood_block_area_max_ha, hk(ck, 4)) * 1e4;
+                const double asp = 1 + hk(ck, 5);
                 const double r = std::sqrt(area / kPi);
                 const double ea = r * std::sqrt(asp), eb = r / std::sqrt(asp);
                 const Vec2 dp = p - c;
@@ -1377,39 +1533,52 @@ private:
             }
         return false;
     }
-    bool copse(Vec2 p) const { return blob_hit(p, 220, 301, w_.copse_per_km2, w_.copse_area_min_ha, w_.copse_area_max_ha, 2.0); }
-    bool wood_block(Vec2 p) const { return blob_hit(p, 700, 302, w_.wood_block_per_km2, w_.wood_block_area_min_ha, w_.wood_block_area_max_ha, 2.0); }
-    bool free_wood(Vec2 p) const { return ribbon(p) || copse(p) || wood_block(p); }
 
     bool belt_edge(u64 ekey) const { return hk(ekey, 0xB1) < w_.belt_share; }
     bool belt_gate_on(Vec2 q) const {
         const double L = w_.belt_length_m;
         return vn(0xB2, q.x / L, q.y / L) > w_.belt_gate;
     }
+    static double dist_seg2(Vec2 p, Vec2 a, Vec2 b) {
+        const Vec2 ab = b - a;
+        const double l2 = ab.dot(ab);
+        const double t = l2 > 1e-18 ? std::clamp((p - a).dot(ab) / l2, 0.0, 1.0) : 0.0;
+        return len2d(p - (a + ab * t));
+    }
 
     Land land_at(Vec2 p) const {
         const Vec2 q = to_q(p);
-        const Probe pr = probe(q);
-        if (!pr.ok) return Land::Pasture;
-        const Land own = site_land(pr.s);
+        const Leaf L = leaf_at(q);
+        if (L.poly.v.size() < 3) return Land::Pasture;
+        const Land own = leaf_land(L);
+        // distance to the field edge and which edge is nearest
+        double db = 1e18;
+        std::size_t ei = 0;
+        for (std::size_t i = 0; i < L.poly.v.size(); ++i) {
+            const double d = dist_seg2(q, L.poly.v[i], L.poly.v[(i + 1) % L.poly.v.size()]);
+            if (d < db) { db = d; ei = i; }
+        }
         const double rg = w_.woodland_edge_ragged_m;
         if (own == Land::Wood) {
+            if (rg <= 0) return Land::Wood;
             const double t = rg * (2 * vn(0x7, p.x / 15, p.y / 15) - 1);
-            if (pr.db > t) return Land::Wood;
-            return Land::Rough;  // eroded fringe
+            return db > t ? Land::Wood : Land::Rough;  // eroded fringe
         }
-        if (pr.has_n && site_land(pr.n) == Land::Wood) {
-            const double t2 = rg * vn(0x8, p.x / 15, p.y / 15);
-            if (pr.db < t2) return Land::Wood;
+        // shelter belt along a flagged boundary (either side of it)
+        const u64 lk = L.poly.lab[ei];
+        if (lk != kClip && belt_edge(lk) && belt_gate_on(q)) {
+            const double hw = 0.5 * lerp(w_.belt_width_min, w_.belt_width_max, hk(lk, 0xB3)) * (0.8 + 0.4 * vn(0xB4, p.x / 30, p.y / 30));
+            if (db < hw) return Land::Wood;
         }
-        if (free_wood(p)) return Land::Wood;
-        if (pr.has_n) {
-            const u64 ek = edge_key(pr.s.id, pr.n.id);
-            if (belt_edge(ek)) {
-                const double hw = 0.5 * lerp(w_.belt_width_min, w_.belt_width_max, hk(ek, 0xB3)) * (0.8 + 0.4 * vn(0xB4, p.x / 30, p.y / 30));
-                if (pr.db < hw && belt_gate_on(q)) return Land::Wood;
-            }
+        // copse in one corner of the field
+        if (hk(L.id, 0xC3) < w_.copse_share && !L.poly.v.empty()) {
+            const std::size_t k = static_cast<std::size_t>(hk(L.id, 0xC4) * static_cast<double>(L.poly.v.size())) % L.poly.v.size();
+            const double ac = lerp(w_.copse_area_min_ha, w_.copse_area_max_ha, hk(L.id, 0xC5)) * 1e4;
+            const double r = std::min(std::sqrt(4 * ac / kPi), 0.45 * std::sqrt(poly_area(L.poly)));
+            const double rag = 1 + 0.3 * (2 * vn(0xE3, p.x / (0.4 * r + 1), p.y / (0.4 * r + 1)) - 1);
+            if (len2d(q - L.poly.v[k]) < r * rag) return Land::Wood;
         }
+        if (wood_block(p)) return Land::Wood;
         return own;
     }
 
@@ -1422,71 +1591,7 @@ private:
         return pts[k - 1] + (pts[k] - pts[k - 1]) * t;
     }
 
-    // ---- Voronoi cell polygon of a site (in q space), clipped to a square of half-size rmax_ around the site.
-    struct Cell {
-        std::vector<Vec2> v;
-        std::vector<u64> label;  // label[i]: neighbour id across the edge v[i] -> v[i+1], or kClip
-        std::vector<Site> nb;    // neighbours used (for their land)
-    };
-    static constexpr u64 kClip = ~0ull;
-
-    Cell cell_of(const Site& s) const {
-        Cell c;
-        const double B = w_.block_m;
-        const double R2 = 2 * rmax_;
-        std::vector<std::shared_ptr<const Block>> blocks;
-        gather_box({s.p.x - R2 - B, s.p.y - R2 - B}, {s.p.x + R2 + B, s.p.y + R2 + B}, blocks);
-        std::vector<std::pair<double, const Site*>> nbs;
-        for (const auto& b : blocks)
-            for (const Site& t : b->sites) {
-                if (t.id == s.id) continue;
-                const double d = len2d(t.p - s.p);
-                if (d < R2 && d > 1e-6) nbs.push_back({d, &t});
-            }
-        std::sort(nbs.begin(), nbs.end(), [](const auto& a, const auto& b) { return a.first < b.first || (a.first == b.first && a.second->id < b.second->id); });
-        c.v = {{s.p.x - rmax_, s.p.y - rmax_}, {s.p.x + rmax_, s.p.y - rmax_}, {s.p.x + rmax_, s.p.y + rmax_}, {s.p.x - rmax_, s.p.y + rmax_}};
-        c.label.assign(4, kClip);
-        double maxr = rmax_ * 1.4143;
-        for (const auto& nd : nbs) {
-            const double d = nd.first;
-            const Site* t = nd.second;
-            if (d * 0.5 > maxr) break;
-            // keep the half plane nearer to s: f(x) = (x - mid) . n <= 0, n = t - s
-            const Vec2 n = t->p - s.p;
-            const Vec2 mid = (s.p + t->p) * 0.5;
-            std::vector<Vec2> nv;
-            std::vector<u64> nl;
-            const std::size_t m = c.v.size();
-            for (std::size_t i = 0; i < m; ++i) {
-                const Vec2 a = c.v[i], b = c.v[(i + 1) % m];
-                const double fa = (a - mid).dot(n), fb = (b - mid).dot(n);
-                const u64 la = c.label[i];
-                if (fa <= 0) {
-                    nv.push_back(a);
-                    nl.push_back(la);
-                    if (fb > 0) {
-                        const double tt = fa / (fa - fb);
-                        nv.push_back(a + (b - a) * tt);
-                        nl.push_back(t->id);
-                    }
-                } else if (fb <= 0) {
-                    const double tt = fa / (fa - fb);
-                    nv.push_back(a + (b - a) * tt);
-                    nl.push_back(la);
-                }
-            }
-            c.v.swap(nv);
-            c.label.swap(nl);
-            c.nb.push_back(*t);
-            if (c.v.size() < 3) break;
-            maxr = 0;
-            for (const Vec2& x : c.v) maxr = std::max(maxr, len2d(x - s.p));
-        }
-        return c;
-    }
-
-    // Intervals [a, b] of arc length along the edge removed from the hedge: gateways, decayed stretches, and wherever a
-    // wood (ribbon, copse, block, belt) stands on it.
+    // Intervals [a, b] of arc length removed from the hedge: gateways, decayed stretches, shelter belts and woods standing on it.
     void make_gaps(Seg& s, bool belt) const {
         std::vector<std::pair<double, double>> g;
         const double len = s.s.back();
@@ -1502,13 +1607,12 @@ private:
             const double gw = lerp(w_.hedge_decay_min, w_.hedge_decay_max, he(s.key, 25, static_cast<u64>(k)));
             g.push_back({std::max(0.0, c - gw / 2), std::min(len, c + gw / 2)});
         }
-        // Wood standing on the edge: sample every ~4 m.
         const int ns = std::max(1, static_cast<int>(std::ceil(len / 4.0)));
         double start = -1;
         for (int k = 0; k <= ns; ++k) {
             const double sv = len * k / ns;
             const Vec2 p = point_at(s.pts, s.s, sv);
-            const bool wood = free_wood(p) || (belt && belt_gate_on(to_q(p)));
+            const bool wood = wood_block(p) || (belt && belt_gate_on(to_q(p)));
             if (wood && start < 0) start = sv;
             if (!wood && start >= 0) { g.push_back({start, sv}); start = -1; }
         }
@@ -1520,52 +1624,58 @@ private:
         }
     }
 
+    // Builds the hedge candidate of the straight q-space edge qa -> qb (key = its label); calls f when it touches the box.
+    template <class F>
+    void emit_edge(u64 key, Vec2 qa, Vec2 qb, Vec2 lo, Vec2 hi, F& f) const {
+        const double L = len2d(qb - qa);
+        if (L < 3.0) return;
+        if (std::max(qa.x, qb.x) + dmax_ + 4 < lo.x || std::min(qa.x, qb.x) - dmax_ - 4 > hi.x ||
+            std::max(qa.y, qb.y) + dmax_ + 4 < lo.y || std::min(qa.y, qb.y) - dmax_ - 4 > hi.y)
+            return;
+        if (hk(key, 10) >= w_.hedge_share) return;
+        Seg seg;
+        seg.key = key;
+        const int np = std::max(1, static_cast<int>(std::ceil(L / 5.0)));
+        Aabb2 bx;
+        for (int k = 0; k <= np; ++k) {
+            const Vec2 p = to_p(qa + (qb - qa) * (static_cast<double>(k) / np));
+            seg.pts.push_back(p);
+            box_add(bx, p);
+        }
+        if (!box_hit(bx, Aabb2{{lo.x - 4, lo.y - 4}, {hi.x + 4, hi.y + 4}})) return;
+        // both sides woodland: no hedge between two woods
+        {
+            const Vec2 m = seg.pts[seg.pts.size() / 2];
+            const Vec2 t = seg.pts.back() - seg.pts.front();
+            const double tl = std::max(1e-9, len2d(t));
+            const Vec2 nrm{-t.y / tl, t.x / tl};
+            if (land_at(m + nrm * 5.0) == Land::Wood && land_at(m - nrm * 5.0) == Land::Wood) return;
+        }
+        seg.s.push_back(0);
+        for (std::size_t k = 1; k < seg.pts.size(); ++k) seg.s.push_back(seg.s.back() + len2d(seg.pts[k] - seg.pts[k - 1]));
+        make_gaps(seg, belt_edge(key));
+        seg.present = true;
+        f(seg);
+    }
+
     template <class F>
     void for_edges(Vec2 lo, Vec2 hi, F f) const {
-        const double m = rmax_ + dmax_ + 4;
-        std::vector<std::shared_ptr<const Block>> blocks;
-        gather_box({lo.x - m, lo.y - m}, {hi.x + m, hi.y + m}, blocks);
-        std::vector<Site> sites;
-        for (const auto& b : blocks)
-            for (const Site& s : b->sites)
-                if (s.p.x >= lo.x - m && s.p.x < hi.x + m && s.p.y >= lo.y - m && s.p.y < hi.y + m) sites.push_back(s);
-        for (const Site& s : sites) {
-            const Cell c = cell_of(s);
-            const std::size_t n = c.v.size();
-            if (n < 3) continue;
-            for (std::size_t i = 0; i < n; ++i) {
-                const u64 t = c.label[i];
-                if (t == kClip || !(s.id < t)) continue;  // each shared edge is built by the lower id only
-                const Vec2 qa = c.v[i], qb = c.v[(i + 1) % n];
-                const double L = len2d(qb - qa);
-                if (L < 3.0) continue;
-                const u64 ekey = edge_key(s.id, t);
-                // Cheap reject on the endpoints' box (the edge is straight in q space; the warp adds at most dmax_).
-                if (std::max(qa.x, qb.x) + dmax_ + 4 < lo.x || std::min(qa.x, qb.x) - dmax_ - 4 > hi.x ||
-                    std::max(qa.y, qb.y) + dmax_ + 4 < lo.y || std::min(qa.y, qb.y) - dmax_ - 4 > hi.y)
-                    continue;
-                if (hk(ekey, 10) >= w_.hedge_share) continue;
-                Land lb = Land::Pasture;
-                for (const Site& x : c.nb)
-                    if (x.id == t) lb = site_land(x);
-                if (site_land(s) == Land::Wood && lb == Land::Wood) continue;
-                Seg seg;
-                seg.key = ekey;
-                const int np = std::max(1, static_cast<int>(std::ceil(L / 5.0)));
-                Aabb2 bx;
-                for (int k = 0; k <= np; ++k) {
-                    const Vec2 p = to_p(qa + (qb - qa) * (static_cast<double>(k) / np));
-                    seg.pts.push_back(p);
-                    box_add(bx, p);
-                }
-                if (!box_hit(bx, Aabb2{{lo.x - 4, lo.y - 4}, {hi.x + 4, hi.y + 4}})) continue;
-                seg.s.push_back(0);
-                for (std::size_t k = 1; k < seg.pts.size(); ++k) seg.s.push_back(seg.s.back() + len2d(seg.pts[k] - seg.pts[k - 1]));
-                make_gaps(seg, belt_edge(ekey));
-                seg.present = true;
-                f(seg);
+        const double B = w_.block_m;
+        const double m = 1.25 * B + dmax_ + 4;
+        const i64 i0 = static_cast<i64>(std::floor((lo.x - m) / B)) - 1, i1 = static_cast<i64>(std::floor((hi.x + m) / B)) + 1;
+        const i64 j0 = static_cast<i64>(std::floor((lo.y - m) / B)) - 1, j1 = static_cast<i64>(std::floor((hi.y + m) / B)) + 1;
+        for (i64 cj = j0; cj <= j1; ++cj)
+            for (i64 ci = i0; ci <= i1; ++ci) {
+                const CSite s = csite(ci, cj);
+                if (s.p.x < lo.x - m || s.p.x >= hi.x + m || s.p.y < lo.y - m || s.p.y >= hi.y + m) continue;
+                const std::shared_ptr<const Block> b = block(ci, cj);
+                const std::size_t n = b->poly.v.size();
+                for (std::size_t i = 0; i < n; ++i)
+                    if (b->owner[i]) emit_edge(b->poly.lab[i], b->poly.v[i], b->poly.v[(i + 1) % n], lo, hi, f);
+                auto on_leaf = [](const Poly&, u64) {};
+                visit_rec(*b, b->poly, b->s.id, 0, {lo.x - dmax_ - 4, lo.y - dmax_ - 4}, {hi.x + dmax_ + 4, hi.y + dmax_ + 4}, on_leaf,
+                          [&](Vec2 qa, Vec2 qb, u64 label) { emit_edge(label, qa, qb, lo, hi, f); });
             }
-        }
     }
 
     CoverPoint make_point(const TreeClass& c, Vec2 pos, u64 seed) const {
@@ -1586,7 +1696,7 @@ private:
     u64 seed_;
     CoverHints hints_;
     Vec2 dir0_{1, 0};
-    double rmax_ = 500, dmax_ = 65;
+    double dmax_ = 45;
     mutable std::mutex mu_;
     mutable std::map<std::pair<i64, i64>, std::shared_ptr<const Block>> cache_;
 };

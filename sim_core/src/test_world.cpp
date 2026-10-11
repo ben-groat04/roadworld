@@ -152,9 +152,10 @@ double TestWorld::slope(double x, double y) const {
 bool TestWorld::valley_ribbon(double x, double y) const {
     const double t = valley_t(x, y);
     if (noise(51, 0, t, 420, 0) <= p_.ribbon_gate) return false;
-    const double e = std::fabs(valley_distance(x, y)) - valley_floor_half_width(t);
-    const double width = p_.ribbon_width_m * (0.6 + 0.6 * noise(50, 0, t, 200, 0)) * (1.0 + 0.5 * noise(52, x, y, 70, 2));
-    return e > -4.0 && e < width;
+    // The stream wanders about the valley axis; the tree line follows it, 8-32 m wide.
+    const double centre = 38.0 * noise(53, 0, t, 240, 0) + 16.0 * noise(54, 0, t, 90, 0);
+    const double width = p_.ribbon_width_m * (0.25 + 0.75 * (0.5 + 0.5 * noise(50, 0, t, 160, 0))) * (1.0 + 0.25 * noise(52, x, y, 40, 2));
+    return std::fabs(valley_distance(x, y) - centre) < 0.5 * width;
 }
 
 bool TestWorld::field_axis(Vec2 p, Vec2& dir) const {
@@ -297,13 +298,14 @@ TestWorldBundle make_test_world(const TestWorldParams& params, std::shared_ptr<c
         auto u = [&](u64 s) { return hash01(mix64(k ^ s)) * 2.0 - 1.0; };
         wc.field_area_ha *= 1.0 + params.field_area_var * u(1);
         wc.wood_block_per_km2 *= 1.0 + params.wood_var * u(2);
-        wc.copse_per_km2 *= 1.0 + params.wood_var * u(3);
+        wc.copse_share *= 1.0 + params.wood_var * u(3);
         wc.belt_share *= 1.0 + params.wood_var * u(4);
-        wc.ribbon_band *= 1.0 + 0.5 * params.wood_var * u(5);
+        wc.woodland_share *= 1.0 + params.wood_var * u(5);
         b.rules = varied;
         auto world = b.world;
         CoverHints hints;
         hints.field_axis = [world](Vec2 p, Vec2& d) { return world->field_axis(p, d); };
+        hints.wood_propensity = [world](Vec2 p) { return smoothstep((world->slope(p.x, p.y) - 0.07) / 0.06); };
         b.cover = make_test_world_cover_source(b.world, b.rules, make_default_cover_source(b.rules, params.seed, std::move(hints)));
     }
     return b;

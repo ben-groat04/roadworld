@@ -54,8 +54,8 @@ struct TestWorldParams {
     double wood_slope_lo = 0.10, wood_slope_hi = 0.20;   // woodland share ramps over this slope range (rise/run)
     double valley_wood_keep = 0.35;        // fraction of default woodland trees kept on the valley floor
     double wet_half_width_m = 7;           // rough/wet ground along the valley line (floor only)
-    double ribbon_width_m = 55;            // woodland ribbon beside the valley floor (both sides, in stretches)
-    double ribbon_gate = 0.1;             // ribbon exists where a noise along the valley exceeds this (-1 = everywhere)
+    double ribbon_width_m = 32;            // stream tree line along the valley: mean width, varies 8-32 m, in stretches
+    double ribbon_gate = -0.1;            // ribbon exists where a noise along the valley exceeds this (-1 = everywhere)
     double field_axis_slope = 0.045;       // fields align with contours where the slope exceeds this
     // Per-seed variation of the cover rules (fractions): field area and wood shapes are scaled within +-.
     double field_area_var = 0.25, wood_var = 0.4;
@@ -84,7 +84,7 @@ public:
     Vec2 world_min() const { return {-p_.size_m / 2, -p_.size_m / 2}; }
     Vec2 world_max() const { return {p_.size_m / 2, p_.size_m / 2}; }
 
-    // Woodland ribbon along the valley sides (in stretches); a pure function of position.
+    // Thin sinuous tree line on the stream (in stretches, width varying); a pure function of position.
     bool valley_ribbon(double x, double y) const;
     // Preferred field direction (contour direction on slopes, valley direction near the valley); false = none.
     bool field_axis(Vec2 p, Vec2& dir) const;
