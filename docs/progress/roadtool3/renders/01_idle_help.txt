@@ -1,0 +1,16 @@
+# sim_core output for the scenario of 01_idle_help.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+Left click  |  Add a point (the clothoid refits through all points). Clicking onto an existing road connects and finishes. Click onto a bridge deck to start from it.
+Double-click / Enter / right-click (no drag)  |  Finish road
+Esc / Backspace  |  Cancel road / remove last point
+Hold Shift  |  Snapping off (angle, length, guidelines, roads)
+PgUp / PgDn  or  ] / [  |  Raise / lower the next point 1 m (Shift: 5 m). In edit mode: the hovered handle.
+1 2 3 4  |  Residential · B road · Dual carriageway · Motorway (dual types: one stroke places two one-way carriageways)
+O  |  Toggle one-way (single-carriageway types)
+C  |  Road colour: plain / curvature / gradient
+Tab  |  Toggle draw / edit. Edit: click a road, drag its handles (terrain regrades on release), Del deletes it.
+Ctrl+Z / Ctrl+Y  |  Undo / redo
+Right drag / middle drag / wheel  |  Orbit / pan / zoom
+W A S D or arrows · Q E  |  Pan along the ground · rotate
+P  |  Toggle the profile panel
+H  |  Toggle this help
+The terrain is graded to follow each road: cuttings and embankments at the batter slope, retaining walls where cut/fill exceeds "wall start", bridges (fill) and tunnels (cut) beyond "wall cap". Curvature and gradient are advisory (amber). Red means the road would break graphically and the click is refused. Profile: blue fill, orange cut, red = over the wall cap, measured against the original ground. Click to close.

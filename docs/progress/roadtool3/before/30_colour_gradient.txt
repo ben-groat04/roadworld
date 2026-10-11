@@ -1,0 +1,2 @@
+# before this round (30_colour_gradient.png)
+Base: no gradient classes or per-vertex values (GAP-7 open).

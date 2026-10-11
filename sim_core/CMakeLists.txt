@@ -32,6 +32,9 @@ add_library(sim_core
   src/stroke.cpp
   src/road_tool.cpp
   src/edit_tool.cpp
+  src/road_heat.cpp
+  src/tool_hud.cpp
+  src/tool_tuning.cpp
 )
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/clipper2 ${CMAKE_BINARY_DIR}/clipper2)
 target_link_libraries(sim_core PUBLIC clipper2)

@@ -1,0 +1,2 @@
+# before this round (17_advisory_tunnel.png)
+Base: advisory text existed; "(-22 m)" offset text was not produced by the engine.

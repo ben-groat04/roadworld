@@ -1,0 +1,2 @@
+# before this round (41_edit_select_viaduct_profile.png)
+Base: selection per engine edge: a road through a junction selected, profiled and deleted in pieces.

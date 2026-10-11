@@ -1,0 +1,2 @@
+# before this round (13_error_too_tight.png)
+Base: Fold error and radius advisory both existed; their exact words together were untested; no HUD lines.

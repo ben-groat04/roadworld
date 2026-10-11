@@ -81,6 +81,22 @@ double norm2(const std::vector<double>& v) {
     return s;
 }
 
+// A span much longer than the straight line between its end points is a runaway spiral, not a road: the G1
+// Hermite solve has no bound on it, and for a stroke that doubles back onto an earlier point (end tangents about
+// opposite, chord about zero) it returns spans of 1e15 m. A real turn is a few times the chord (a half circle is
+// pi / 2 of it), so the bound is generous.
+constexpr double kMaxSpanRatio = 20.0;
+
+bool spans_sane(const std::vector<Clothoid>& spans, const std::vector<Vec2>& pts) {
+    if (spans.size() + 1 != pts.size()) return false;
+    for (std::size_t i = 0; i < spans.size(); ++i) {
+        const double chord = (pts[i + 1] - pts[i]).length();
+        const double len = spans[i].length;
+        if (!(len > 0) || !(len <= kMaxSpanRatio * chord + 1e-6)) return false;  // also catches NaN
+    }
+    return true;
+}
+
 }  // namespace
 
 double ClothoidChain::length() const {
@@ -165,10 +181,15 @@ std::optional<ClothoidChain> fit_clothoid_chain(const std::vector<Vec2>& points,
     }
 
     ClothoidChain chain;
-    if (!ok || !prob.build(h, chain.spans)) {
+    const bool built = ok && prob.build(h, chain.spans);
+    // A solve that built a chain but ran away (a stroke doubling back onto an earlier point) has no sane answer: the
+    // G1 fallback below is for a solve that FAILED to converge on a sane bend, not for a degenerate stroke.
+    if (built && !spans_sane(chain.spans, points)) return std::nullopt;
+    if (!built) {
         // Fall back to G1 with the initial headings.
         h = h_initial;
-        if (!prob.build(h, chain.spans)) return std::nullopt;
+        if (!prob.build(h, chain.spans) || !spans_sane(chain.spans, points)) return std::nullopt;
+        ok = false;
     }
     chain.g2 = ok && converged;
     for (std::size_t i = 1; i < chain.spans.size(); ++i) {

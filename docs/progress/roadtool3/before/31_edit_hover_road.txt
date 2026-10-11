@@ -1,0 +1,2 @@
+# before this round (31_edit_hover_road.png)
+Base: hover reported nodes and interior points of any road; no "road to light up" for them; no HUD line.

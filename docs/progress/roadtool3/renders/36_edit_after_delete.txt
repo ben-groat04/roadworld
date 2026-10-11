@@ -1,0 +1,3 @@
+# sim_core output for the scenario of 36_edit_after_delete.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+EDIT · Residential street · colour: plain
+profile: none (valid = false)

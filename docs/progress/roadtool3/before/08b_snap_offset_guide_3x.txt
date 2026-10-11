@@ -1,0 +1,2 @@
+# before this round (08b_snap_offset_guide_3x.png)
+Base: the offset guide existed but was only tested at 1x spacing; 2x and 3x were untested.

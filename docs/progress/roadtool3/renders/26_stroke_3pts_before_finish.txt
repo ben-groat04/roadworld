@@ -1,0 +1,6 @@
+# sim_core output for the scenario of 26_stroke_3pts_before_finish.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain
+cursor z 0.0 m · snap: free
+span 6.0 m · bearing 90° · R at cursor ∞ m · min R ∞ m
+grade 0.0% · max 0.0% · G2 ✓ · total 86 m
+finish: Enter / right-click / double-click / snap onto a road; a click near the last point adds a point

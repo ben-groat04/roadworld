@@ -1,0 +1,2 @@
+# before this round (22_type2_b_road_ghost.png)
+Base: B-road ghost width untested; type name not in the preview.

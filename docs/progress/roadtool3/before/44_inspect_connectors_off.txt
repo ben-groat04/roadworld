@@ -1,0 +1,2 @@
+# before this round (44_inspect_connectors_off.png)
+Base: no inspect bar text in the engine.

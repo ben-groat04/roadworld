@@ -203,6 +203,7 @@
     {
       "id": "a_road_dual",
       "name": "A road / dual carriageway",
+      "short_name": "A road / dual c'way",
       "dual": true,
       "speed_limit": 70,
       "design_speed_kph": 100,

@@ -1,0 +1,2 @@
+# before this round (34_edit_handle_dragging.png)
+Base: live drag preview existed for one edge; profile was that edge only.

@@ -1,0 +1,2 @@
+# before this round (29_colour_curvature.png)
+Base: no colour modes, no curvature classes, no per-vertex values (GAP-7 open).
