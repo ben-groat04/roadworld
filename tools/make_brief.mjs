@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Prints a brief = docs/templates/BRIEF.md filled from a task file + docs/AGENT_CONTRACT.md pasted in full.
-// Usage: node tools/make_brief.mjs <task-file> --round <name> [--worktree <path>] [--branch <name>]
+// Usage: node tools/make_brief.mjs <task-file> --round <name> [--worktree <path>] [--branch <name>] [--no-visual]
+// Emits a line `HANDIN_DIR: <absolute path of the progress folder in the agent's worktree>` (read by the SubagentStop
+// hook tools/hooks/handin_gate.mjs and the launch gate tools/hooks/brief_gate.mjs) and, with --no-visual, `HANDIN: no-visual`.
 // Task file (markdown): first "# " line is the task; sections "## Owner's words", "## Cases",
 // "## Faults", "## Launched", "## Waiting". Refuses to print if a mandatory section is empty.
 import fs from 'node:fs';
@@ -10,9 +12,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const opt = (n, d = '') => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
-const taskFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
+const valueOpts = ['--round', '--worktree', '--branch'];
+const taskFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && valueOpts.includes(args[i - 1])));
 if (!taskFile || !opt('round')) {
-  console.error('usage: node tools/make_brief.mjs <task-file> --round <name> [--worktree <path>] [--branch <name>]');
+  console.error('usage: node tools/make_brief.mjs <task-file> --round <name> [--worktree <path>] [--branch <name>] [--no-visual]');
   process.exit(2);
 }
 const text = fs.readFileSync(taskFile, 'utf8').replace(/\r\n/g, '\n');
@@ -39,11 +42,16 @@ if (missing.length) {
   console.error('REFUSED. Fix the task file:\n - ' + missing.join('\n - '));
   process.exit(1);
 }
+const round = opt('round');
+const worktree = opt('worktree', path.join(path.dirname(root), 'roadworld-wt-' + round)); // matches new_agent_worktree.ps1
+const handinDir = path.join(path.resolve(worktree), 'docs', 'progress', round);
+const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '');
 const fill = {
   TASK: task,
   ROUND: opt('round'),
-  WORKTREE: opt('worktree', '<set by new_agent_worktree.ps1>'),
+  WORKTREE: worktree,
   BRANCH: opt('branch', 'agent/' + opt('round')),
+  HANDIN_LINES: handinLines,
   OWNER_WORDS: get("owner's words"),
   CASES: get('cases'),
   FAULTS: get('faults'),
