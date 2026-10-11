@@ -11,6 +11,18 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Gate notices: gate failures (FAIL-OPEN), hand-ins released after 3 refusals and exemptions used reach the main session by themselves every turn until acknowledged with what was done; canary for hooks not running at all (owner: "concerns me with its vagueness") | `agent/rules-fix`, `../roadworld-wt-rules` | main | finish gate passes; main session merges and tests live |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
+## Audit step (part of every round, not support)
+Owner, 11 Oct: "is one earthworks agent creating AND auditing? that's wrong. and elsewhere, that's just an expample". Builder and auditor are never the same agent (rule text in CLAUDE.md, Main session). No item above or below is accepted, merged to main or reported as done until a fresh auditor has written `AUDIT.md` in its progress folder. An auditor is started the moment a hand-in passes `check_handin.mjs`, ahead of any new build work.
+Auditors owed:
+- Earthworks round 9, when it hands in: also check the section sheets and disturbance views against the height data they claim to show.
+- Unreal milestone 2 run, when it hands in: composites against the 26 prototype screenshots, and whether the playtest script really exercises what it says it checks.
+- Vegetation kit round 2, when it hands in.
+- Integration, when it hands in: an independent clean build and suite run on both compilers of the merged tip (not the merger's own count).
+- Gate notices and the hooks already merged: an independent live test (the hooks were built and tested by one agent).
+- Junction markings (`agent/junction-markings` d611346): finished with no independent audit; audit now feeds the roundabout brief. Starts in the first free slot.
+- Road tool round 2 (`agent/road-tool-2` d7dfc99): the read-only 45-screenshot check counts as its audit (different agent); nothing more owed.
+Tool change owed (after gate notices merges; same files): `check_handin.mjs --accept` fails without `AUDIT.md`, and the launch gate refuses an auditor brief that hands over the builder's FAULTS.md up front. Build by one agent, test by another.
+
 ## Next, by priority (start when its blocker clears)
 Priority rule (owner, Round 50): the photorealism comes from the road builder placed in the Unreal sandbox. Order = what gets a drawn road, with everything it generates, on screen in the game soonest; then what makes that road look right; everything else is support. A new idea goes where it belongs in this order, not at the top because it was said last.
 
@@ -47,7 +59,6 @@ Priority rule (owner, Round 50): the photorealism comes from the road builder pl
 9. **Milestone 3 onward** per `docs/unreal-game-plan.md` (prototype UI parity: profile panel, readouts, warnings, edit tool).
 
 ### Support (cheap, no file conflicts; start only in a free slot when no critical-path item can start, never ahead of one)
-- **Cold-read reviews** (fresh Sonnet, at least 3 opened photos per case, layout scored apart from look, the open question "what would never be built?") of: earthworks after round 9, roundabout after its round, the M2 playtest pictures. Start each as its hand-in passes the check.
 - **Technical references for the main session's final check** (owner, 11 Oct: "i like the retaining wall side profile thing for earthworks ... maybe allows for more technical drawing style references or general real world guidance to be used as a help for YOU (not the agent) on a final review check"). One research agent: fetch typical cross-section and detail drawings (cutting, embankment, retaining wall with backfill and drainage, benched rock cut, split-level carriageways, roundabout entry with splitter island, T-junction, slip road nose) into `docs/reference/technical/` with sources in the INDEX, and write a one-page list of guidance numbers with their source (slope ratios, bench widths, wall heights, verge widths, island and taper lengths, chevron lengths by speed). Researched from published standards and drawings, not from memory. Use as a SENSE CHECK only (owner: "it doesn't have to match the tech drawings perfectly ofc, they aren't all consistent. but it'll be a good sense check"): plausibility and order of magnitude, not a spec, never a hard test. Then: section, profile and plan diagnostics with dimensions become standard hand-in files for earthworks, structures and junction geometry rounds, and the second gate opens them beside the matching drawing. Waits only for a free agent slot (5 running).
 - **Refresh `docs/HANDOFF.md`** sections 2, 6, 7, 8, 9, 12 to today (they describe the state before the playtest, rounds 8/4, the rules fix and Round 50). After the integration lands.
 
