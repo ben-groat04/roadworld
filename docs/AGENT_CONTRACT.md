@@ -18,3 +18,4 @@ The photo is the target. The list of faults in your brief is a starting list, no
 12. **Every push and commit message carries `[skip ci]`.** Run slow commands (builds, pushes) in the background.
 13. **The browser prototype (`prototypes/road-draw`) is the UI spec** for the game. Prefer free tools and assets; flag any cost.
 14. **Research Unreal, plugin and tool facts from source (`C:\UE_5.8`) or docs, never from memory.**
+15. **Photos outrank tests, audits and fault lists.** If a test, an earlier audit or the brief's fault list disagrees with what the matched photos show, the photos win: say so in STATUS.md and change the test. A test whose expected value has no photo measurement or written rule (for example `docs/road-marking-rules.md`) behind it may be rewritten or deleted; say which and what it pinned. Rebuild a shape from measurements rather than tuning one that did not come from a photo. Never change the design to suit the renderer: fix the view.
