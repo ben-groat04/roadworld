@@ -2,12 +2,13 @@
 
 ROUND: {{ROUND}}   WORKTREE: {{WORKTREE}}   BRANCH: {{BRANCH}}   BASE: current main (run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`, do not start from a stale branch)
 Progress folder for hand-in: docs/progress/{{ROUND}}/
+{{HANDIN_LINES}}
 
 ## Owner's words (verbatim, with date; never paraphrase)
 {{OWNER_WORDS}}
 
 ## Finish line
-Your output matches the reference photos in the cases below. The fault list further down is a starting list, not the task. You are done when the self-audit residual list holds only things you cannot fix (and you name why), or after 3 self-audit passes. There is no time-box in hours. Never mark a listed item "not done" without having attempted it and saying what blocked it.
+Your output matches the reference photos in the cases below. The fault list further down is a starting list, not the task. You are done when the self-audit residual list holds only things you cannot fix (and you name why), or after 3 self-audit passes. There is no time limit in hours. Never mark a listed item "not done" without having attempted it and saying what blocked it.
 
 ## Cases and photos (at least 3 per case, absolute paths in the main checkout)
 Every file listed here must be opened; M = the number of files listed in this brief.

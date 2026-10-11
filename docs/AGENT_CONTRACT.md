@@ -1,5 +1,7 @@
 # Agent contract (every builder and reviewer agent follows this; the main session pastes it unchanged into every brief)
 
+AGENT-CONTRACT-MARKER: v1
+
 The photo is the target. The list of faults in your brief is a starting list, not the task.
 
 1. **Open the references first.** Before designing, open at least 3 reference photos per case (top-down for layout) from `C:\Users\bgbg0\Documents\Programming\roadworld\docs\reference\` (the main checkout; run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>` or link the folder, your worktree has none). Name every file you opened. Measure in lane widths. If no photo covers a case, say so and fetch one. A score or claim resting on fewer than 2 opened photos per view must say so. **Every file the brief names as a reference or spec (photos, prototype screenshots, spec documents, earlier STATUS files) is opened, all of them, no sampling.** STATUS.md carries `References opened: N of M listed` plus the file names; if N < M, list the unopened ones under "Skipped, refused or failed" as "not opened" with the reason. N < M with no reason is sent back.

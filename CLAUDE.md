@@ -23,6 +23,9 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 ## Working rules (read these; the owner has said each of them more than once)
 Source of truth for agents: `docs/AGENT_CONTRACT.md` (pasted unchanged into every brief). Templates: `docs/templates/BRIEF.md`, `docs/templates/STATUS.md`. New session? Read `docs/HANDOFF.md` first, then `docs/QUEUE.md` (the only work queue; anything not written there is not queued).
 
+### Hooks enforce part of both gates (`.claude/settings.json`, scripts in `tools/hooks/`, log `.claude/state/gate.log`)
+- A launch is refused unless the prompt holds the contract (`make_brief.mjs` output, with `HANDIN_DIR:` and the owner's words) or a `NO-CONTRACT: <reason, 20+ chars>` line (research, merges, read-only checks); an agent cannot hand back or stop until `check_handin.mjs` passes (3 refusals, then `HANDIN_FAILED.txt` in the hand-in folder; read it). Hooks fail open: a log line `FAIL-OPEN` means a gate did not run. They cannot show that a file was really opened or an image really looked at: the gates below stay yours.
+
 ### Two gates (the main session runs both, every time, as a checklist)
 **Before sending a brief for visible work** (build it with `node tools/make_brief.mjs <task-file> --round <name>`, create the worktree with `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`; plain invocation is blocked on this machine, the flag is per-process):
 1. At least 3 reference photos named per case, absolute paths in the main checkout (`docs/reference/`); say where none exists. The brief lists EVERY reference file explicitly (photos, screenshots, spec documents), so M is countable.
