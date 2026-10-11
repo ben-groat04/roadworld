@@ -208,7 +208,9 @@ int check_seams(const RoadGraph& g, const RegionPack& r, const JunctionSet& js, 
             for (const SeamVert& b : B) {
                 double duv = 0;
                 if (lat(b) < a_lo - 1e-3 || lat(b) > a_hi + 1e-3) continue;
-                CHECK(near(b, A, duv) < 1e-3);
+                // No paving beside a merge / diverge gore (photos: no footway at a slip nose): the pavement is absent there.
+                if ((j.cls == NodeClass::Merge || j.cls == NodeClass::Diverge) && (lat(b) > arm.kerb_left - 1e-3 || lat(b) < -arm.kerb_right + 1e-3)) continue;
+                CHECK_MESSAGE(near(b, A, duv) < 1e-3, "seam: node ", j.node.value, " cls ", static_cast<int>(j.cls), " arm ", i, " lat ", lat(b), " kl ", arm.kerb_left, " kr ", arm.kerb_right, " hl ", arm.half_width_left, " hr ", arm.half_width_right, " a_lo ", a_lo, " a_hi ", a_hi, " z ", b.p.z);
             }
         }
     }
@@ -699,8 +701,10 @@ TEST_CASE("render mesh: highways have no kerbs, also through merge and diverge j
                 // Pavement polygons reach the arm's full cross-section at the trim line on every side that is
                 // not blocked by a neighbouring carriageway, and at least on one side.
                 CHECK(std::max(hi, -lo) == doctest::Approx(arm.half_width_left).epsilon(1e-3));
-                CHECK(hi >= arm.kerb_left - 1e-3);
+                if (j.cls != NodeClass::Merge && j.cls != NodeClass::Diverge) {  // a slip gore has no pavement beside it
+                    CHECK(hi >= arm.kerb_left - 1e-3);
                 CHECK(-lo >= arm.kerb_right - 1e-3);
+                }
             }
         }
         // Pavement never overlaps the carriageway polygon.
@@ -746,7 +750,13 @@ TEST_CASE("render mesh: roundabout islands take their surfaces from the region p
         check_valid(m);
         CHECK_FALSE(m.count("island"));
         REQUIRE(m.count("grass"));  // planted central island
-        CHECK(plan_area(m.at("grass")) == doctest::Approx(polygon_set_area(l.island)).epsilon(0.02));
+        {
+            double expect = polygon_set_area(l.island);  // splitter islands sharing the grass surface add to it
+            const std::string& stop = l.splitter_surface.empty() ? sc->region->roundabout.splitter_surface : l.splitter_surface;
+            if (stop == "grass")
+                for (const SplitterIsland& sp : l.splitters) expect += polygon_set_area(PolygonSet{sp.polygon});
+            CHECK(plan_area(m.at("grass")) == doctest::Approx(expect).epsilon(0.02));
+        }
         if (!l.splitters.empty()) {
             const std::string& top = l.splitter_surface;  // the size class's surface (UK: asphalt, grass on the largest ring)
             REQUIRE(!top.empty());
@@ -776,6 +786,11 @@ TEST_CASE("render mesh: roundabout islands take their surfaces from the region p
                 if (std::abs(p.z - zr) < 0.01 || std::abs(p.z - (zr + h)) < 0.01) {
                     matched = true;
                     break;
+                }
+            if (!matched)  // splitters stand on the ring node's junction surface (not the arm profile)
+                for (const auto& [nd, jn] : l.ring_junctions) {
+                    const double zj = junction_surface_z(sc->graph, *sc->region, jn, p.xy(), true);
+                    if (std::abs(p.z - zj) < 0.01 || std::abs(p.z - (zj + h)) < 0.01) matched = true;
                 }
             }
             if (matched) ++good;

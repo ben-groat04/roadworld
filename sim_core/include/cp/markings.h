@@ -170,6 +170,7 @@ struct BoundaryRule {
     Relation relation = Relation::Any;
     StyleSel style;
     double inset_m = 0;  // line shifted this far into the lane that carries traffic
+    double keepout_m = 0;  // parking_bay lines: stop this far short of a junction at an open chain end (Highway Code rule 243: 10 m)
     std::vector<ZoneRule> zones;  // first covering zone wins
     std::string source;
 };
@@ -317,6 +318,11 @@ struct SplitterRule {
     double pitch_m = 1.0;
     double angle_deg = 60;
     double ladder_pitch_m = 2.0;  // two-way approach: spacing of the ladder bars across the paint gap round the island
+    // Two-way approach: how far the ladder bars run on beyond the island's nose (the painted taper), by approach speed;
+    // never more than taper_max_island_ratio x the island length. Photos (docs/progress/2026-10-11-junction-markings/
+    // REFERENCE_NOTES.md): the hatched wedge ahead of the nose is 0.5-1x the kerbed island, about 2-4 lane widths.
+    ValueSel taper_length_m;
+    double taper_max_island_ratio = 0.75;
     std::string source;
 };
 
@@ -379,7 +385,8 @@ struct MarkingParams {
     std::set<std::pair<NodeId, EdgeId>> crossing_arms;
     // Optional roundabout priority data (build_roundabout().give_way). When use_roundabout_give_way is
     // false every non-ring approach arm with inbound lanes of a Roundabout junction gets an entry line.
-    bool use_roundabout_give_way = false;
+    // Default true: with an empty roundabout_give_way list every inbound non-ring arm is an entry, so callers need set nothing.
+    bool use_roundabout_give_way = true;
     std::vector<GiveWay> roundabout_give_way;
     // Roundabout group results (find_roundabouts / apply_roundabouts) for splitter outlines and approach
     // hatching. Null = no splitter markings. Not owned; must outlive the call.

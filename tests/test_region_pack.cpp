@@ -188,7 +188,7 @@ TEST_CASE("roundabout island surfaces come from the region pack with defaults") 
     auto uk_pack = load_region_pack_by_id(CP_DATA_DIR, "uk");
     REQUIRE_MESSAGE(uk_pack, uk_pack.error);
     CHECK(uk_pack->roundabout.central_island_surface == "grass");
-    CHECK(uk_pack->roundabout.splitter_surface == "asphalt");  // photos: tarmac inside a kerb (grass only on the largest class)
+    CHECK(uk_pack->roundabout.splitter_surface == "grass");  // photos 28, 41, 09, 175143: planted island inside a pale kerb; the dark-tarmac island of GSV Brynich is the exception
     CHECK(uk_pack->roundabout.island_kerb_upstand == doctest::Approx(0.125));
     auto lt = parse_lane_types(kLaneTypes);
     REQUIRE(lt);

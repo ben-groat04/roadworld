@@ -216,12 +216,15 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
     const double ka = A(a1).kerb_left, kb = A(a2).kerb_right;
     const double d1 = ka / std::tan(theta) + kb / std::sin(theta);
     const double d2 = ka / std::sin(theta) + kb / std::tan(theta);
-    junction.trims[static_cast<std::size_t>(a1)] = clampt(a1, d1 + region.junction.merge.gore_length);
-    junction.trims[static_cast<std::size_t>(a2)] = clampt(a2, d2 + region.junction.merge.gore_length);
     double speed = 0;
     if (const Edge* e = graph.edge(A(pi).edge))
         if (const RoadType* t = region.road_type(e->road_type)) speed = t->design_speed;
     if (speed <= 0) speed = A(pi).road_class / 3.6;
+    // Gore (chevron area) length: region table by main carriageway design speed, or this junction's override.
+    double gore_len = region.junction.merge.gore_length_for(speed);
+    if (const auto git = overrides.gore_length.find(junction.node); git != overrides.gore_length.end() && git->second >= 0) gore_len = git->second;
+    junction.trims[static_cast<std::size_t>(a1)] = clampt(a1, d1 + gore_len);
+    junction.trims[static_cast<std::size_t>(a2)] = clampt(a2, d2 + gore_len);
     junction.trims[static_cast<std::size_t>(oi)] = clampt(oi, merge_taper_length(region, speed));
     const auto& tr = junction.trims;
 
@@ -352,6 +355,17 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
             // The gore is paved (painted nose), not a hole in the carriageway: the markings sit on it.
             PathsD with_gore = to_paths(cw);
             with_gore.push_back(to_path(g));
+            // A long gore follows the curved kerbs: add the curved region (nose, along arm a1's kerb out to its trim, across,
+            // back along arm a2's kerb) to the carriageway so no sliver is left between the straight gore edge and the kerb.
+            {
+                Ring gc;
+                for (double s = d1; s < t1; s += 1.5) gc.push_back(arm_point(A(a1), s, A(a1).kerb_left - 0.03).pos.xy());  // 3 cm into the strip: overlaps, no slivers
+                gc.push_back(arm_point(A(a1), t1, A(a1).kerb_left).pos.xy());
+                gc.push_back(arm_point(A(a2), t2, -A(a2).kerb_right).pos.xy());
+                for (double s = t2 - 1.5; s > d2; s -= 1.5) gc.push_back(arm_point(A(a2), s, -A(a2).kerb_right + 0.03).pos.xy());
+                if (area(gc) < 0) std::reverse(gc.begin(), gc.end());
+                if (area(gc) > 1e-6) with_gore.push_back(to_path(gc));
+            }
             PolygonSet merged = from_paths(Union(with_gore, FillRule::NonZero, 3));
             if (!merged.empty()) {
                 cw = std::move(merged);
@@ -362,7 +376,7 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
         }
     }
     if (!gore_ok)
-        set_degraded(junction, "gore does not fit: the nose is " + std::to_string(std::max(d1, d2) + region.junction.merge.gore_length) +
+        set_degraded(junction, "gore does not fit: the nose is " + std::to_string(std::max(d1, d2) + gore_len) +
                                    " m from the node but the arms can be trimmed to only " +
                                    std::to_string(std::min(t1, t2)) + " m (edges too short for a " +
                                    std::to_string(theta * 180 / kPi) + " degree slip)");
@@ -407,6 +421,20 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
             junction.pavements.erase(std::remove_if(junction.pavements.begin(), junction.pavements.end(),
                                                     [&](const Ring& r) { return is_pavement_sliver(r, trim_pts, trim_dirs); }),
                                      junction.pavements.end());
+            // No footway / paving in or beside the gore: a pavement piece that touches the gore area (the grey raised
+            // wedge at the nose) is dropped; the gore is carriageway-level asphalt with chevrons and a verge beyond
+            // (photos: street 33, GSV M11 175655: no kerb or paving at a slip nose).
+            if (!junction.gore.empty()) {
+                PathsD gore_paths;
+                for (const Ring& g : junction.gore) gore_paths.push_back(to_path(g));
+                const PathsD gore_zone = InflatePaths(gore_paths, delta + 0.3, JoinType::Miter, EndType::Polygon, 2.0, 3);
+                junction.pavements.erase(std::remove_if(junction.pavements.begin(), junction.pavements.end(),
+                                                        [&](const Ring& r) {
+                                                            const PathsD hit = Intersect(PathsD{to_path(r)}, gore_zone, FillRule::NonZero, 3);
+                                                            return std::fabs(Area(hit)) > 0.02;
+                                                        }),
+                                         junction.pavements.end());
+            }
         }
     }
 }
