@@ -9,6 +9,8 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Integration: merge, in order, world cover r4 (`agent/world-cover-r2` 0da3c74), junction markings (`agent/junction-markings` d611346), earthworks r7+r8 (`agent/grading-r6` 2aff581), road tool gaps (`agent/road-tool-2` d7dfc99), then main | `integ/2026-10-11`, `..\roadworld-wt-integ` | main | clean builds, full suite on gcc and MSVC after each merge; then fast-forward main |
 | Unreal milestone 2 code (click-click road drawing, undo), compile only | `agent/unreal-m2`, `..\roadworld-wt-m2` | main 269fa1e | compiles; then merge and playtest (below) |
 | Road tool vs ALL prototype screenshots: read-only check, every image opened against the code (the builder opened only 3) | reads `../roadworld-wt-tool2` | - | gap list in its report; main session adds each gap to item 4 below |
+| Rule fix: "open EVERY reference the brief names" (photos, screenshots, specs), `References opened: N of M` line in STATUS, enforced by `tools/check_handin.mjs` (+ `--no-visual`) | `agent/rules-fix`, `../roadworld-wt-rules` | main | main session merges after reading the diff |
+| Research: can Claude Code hooks block a subagent hand-in or a brief without the contract (mechanical enforcement) | read-only | - | answer with doc links; then the owner decides whether hooks go into `.claude/settings.json` |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
 ## Next, in order (start when its blocker clears)
@@ -36,6 +38,7 @@ Updated by the main session every time an agent is started, an agent reports, or
 - Markings drawn in the road material from lane UVs: spike (idea from the Road Creator Pro research).
 
 ## Waiting on the owner (not blocking)
+- Hooks: if the research says a hook can refuse an incomplete hand-in or brief, OK to add them to the repo (`.claude/settings.json`)?
 - Confirm the five settled contradictions in planning log Round 49 (fresh agent per round; decision split; 3 photos per case; parallel within 3-4 agents and one editor; stop rule replaces time-boxes).
 - Deep cuts on steep hills: rock face (current) vs taller walls or steeper soil banks. Main session will pick a default in round 9 unless told otherwise.
 
