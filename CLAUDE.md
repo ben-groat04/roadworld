@@ -24,8 +24,7 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 Source of truth for agents: `docs/AGENT_CONTRACT.md` (pasted unchanged into every brief). Templates: `docs/templates/BRIEF.md`, `docs/templates/STATUS.md`. New session? Read `docs/HANDOFF.md` first, then `docs/QUEUE.md` (the only work queue; anything not written there is not queued).
 
 ### Two gates (the main session runs both, every time, as a checklist)
-**Before sending a brief for visible work** (build it with `node tools/make_brief.mjs <task-file> --round <name>`, create the worktree with `powershell -NoProfile -ExecutionPolicy Bypass -File tools
-ew_agent_worktree.ps1 <name>`; plain invocation is blocked on this machine, the flag is per-process):
+**Before sending a brief for visible work** (build it with `node tools/make_brief.mjs <task-file> --round <name>`, create the worktree with `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`; plain invocation is blocked on this machine, the flag is per-process):
 1. At least 3 reference photos named per case, absolute paths in the main checkout (`docs/reference/`); say where none exists. The brief lists EVERY reference file explicitly (photos, screenshots, spec documents), so M is countable.
 2. The owner's own words quoted verbatim, with date. Never paraphrase: agents distrust relays.
 3. Finish line = "matches the photo", never "these are the whole task"; no time-box in hours. Stop rule: self-audit residual holds only unfixable items, or 3 passes.

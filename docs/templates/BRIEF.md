@@ -1,7 +1,6 @@
 # BRIEF: {{TASK}}
 
-ROUND: {{ROUND}}   WORKTREE: {{WORKTREE}}   BRANCH: {{BRANCH}}   BASE: current main (run `powershell -NoProfile -ExecutionPolicy Bypass -File tools
-ew_agent_worktree.ps1 <name>`, do not start from a stale branch)
+ROUND: {{ROUND}}   WORKTREE: {{WORKTREE}}   BRANCH: {{BRANCH}}   BASE: current main (run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`, do not start from a stale branch)
 Progress folder for hand-in: docs/progress/{{ROUND}}/
 
 ## Owner's words (verbatim, with date; never paraphrase)
