@@ -19,3 +19,7 @@ tools/blender_kit/preview/
 
 __pycache__/
 *.pyc
+
+# Composite images made from private reference photos
+docs/reference
+docs/reference/_compare/

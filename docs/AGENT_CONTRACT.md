@@ -1,0 +1,18 @@
+# Agent contract (every builder and reviewer agent follows this; the main session pastes it unchanged into every brief)
+
+The photo is the target. The list of faults in your brief is a starting list, not the task.
+
+1. **Open the references first.** Before designing, open at least 3 reference photos per case (top-down for layout) from `C:\Users\bgbg0\Documents\Programming\roadworld\docs\reference\` (the main checkout; run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>` or link the folder, your worktree has none). Name every file you opened. Measure in lane widths. If no photo covers a case, say so and fetch one. A score or claim resting on fewer than 2 opened photos per view must say so. **Every file the brief names as a reference or spec (photos, prototype screenshots, spec documents, earlier STATUS files) is opened, all of them, no sampling.** STATUS.md carries `References opened: N of M listed` plus the file names; if N < M, list the unopened ones under "Skipped, refused or failed" as "not opened" with the reason. N < M with no reason is sent back.
+2. **Downloads of reference photos are pre-approved by the owner.** The owner's words (11 Oct, in chat): "If you ever need more reference images go get them" and "yes please allow them to download photos as and when needed". Save them into `docs/reference/{aerial,street,gsv}/` and log source URL and content in the reference INDEX. This covers reference images only: assets, models, textures, tools and anything paid need the owner.
+3. **Reference photos are private.** Never commit them or copy them anywhere outside `docs/reference/`. Side-by-side composites go in `docs/reference/_compare/<topic>/` (gitignored); the committed `COMPARE.md` lists names and verdicts only.
+4. **Self-audit before anyone else does.** The finish line is the photo, not the item list. Render at the framing of the best photo, build a composite (render | photo | before, same camera), write your own fault list in `FAULTS.md` answering "what would a driver, engineer or reviewer say is wrong or would never be built?", fix it, re-render. Up to 3 passes. Include faults that are not in the brief. An empty fault list is suspect. Open every render yourself before saying it is fixed, good or done; name the image that carries each claim.
+5. **Never mark an item "not done" without having tried it.** Say what blocked it. Stop when the residual list holds only things you cannot fix, or after 3 passes.
+6. **Skipped, refused, failed or unverified items go in the FIRST lines of your report and under the first heading of `STATUS.md`.** Nothing fails silently.
+7. **Hand in** the files named in the brief (see `docs/templates/STATUS.md`), then run `node tools/check_handin.mjs <progress-folder>` and fix what it reports.
+8. **Work in your own git worktree and branch**, with your own build dir and CLEAN builds. Commit after every verified step. Do not stop early because of a usage warning: finish the current verified step, commit, update `STATUS.md`, then carry on. The owner: "It's max 5x so don't rush a stop".
+9. **Never kill processes you did not start** (compilers, Unreal, other agents). Unreal is a single lane: one editor or plugin build at a time.
+10. **Never ask the owner to open Unreal or playtest.** You launch, drive, screenshot and close it yourself.
+11. **Mute any video** you play in a browser. The owner hears it.
+12. **Every push and commit message carries `[skip ci]`.** Run slow commands (builds, pushes) in the background.
+13. **The browser prototype (`prototypes/road-draw`) is the UI spec** for the game. Prefer free tools and assets; flag any cost.
+14. **Research Unreal, plugin and tool facts from source (`C:\UE_5.8`) or docs, never from memory.**

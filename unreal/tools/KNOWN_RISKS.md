@@ -4,10 +4,10 @@
 
 Nothing mandatory must be installed. Findings:
 - Source of truth: `Engine\Config\Windows\Windows_SDK.json` and `Platform\Windows\MicrosoftPlatformSDK.cs`. VS 2026 is recognised (`WindowsCompiler.VisualStudio2026` in `UEBuildWindows.cs`, "14.50 = VS2026 18.0" in the json).
-- Installed MSVC toolset is `14.51.36231` (VS 18 Community). Preferred ranges are 14.50.35717+ and 14.44.35207+; banned are 14.50.0-14.50.35722, 14.44.0-14.44.35210, 14.40-14.43, 14.39. 14.51 is in neither list, so `AddVisualCppToolChain` gives it no error (it is accepted, just not "preferred" rank; UBT may log a warning). It is the only toolset, so it is selected. Minimum is 14.38.33130.
+- **Corrected 11 Oct 2026 (UBT log of the first successful build):** the toolchain actually used is `Visual Studio 14.44.35229 toolchain (C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207) and Windows 10.0.22621.0 SDK`, i.e. the VS 2022 Build Tools, NOT 14.51. The prediction that 14.51 (VS 18 Community) would be selected was wrong for UBT; 14.51 still serves the sim_core/prototype MSVC builds outside Unreal. Original prediction, kept for the version ranges: installed 14.51.36231; preferred 14.50.35717+ and 14.44.35207+; banned 14.50.0-14.50.35722, 14.44.0-14.44.35210, 14.40-14.43, 14.39; minimum 14.38.33130.
 - Windows SDK: json `MainVersion` 10.0.22621.0, range 10.0.19041.0-10.9.99999.0. Installed 10.0.22621.0 and 10.0.26100.0: fine.
 - .NET: UBT uses the engine's bundled `Engine\Binaries\ThirdParty\DotNet\10.0`; the machine has SDK 10.0.401 too. Fine.
-- The only risk is an untested 14.51 compiler bug/ICE. Fallback if the compile hits an internal compiler error or odd STL/SDK errors: in VS Installer > Modify > Individual components add "MSVC Build Tools for x64/x86 (v14.50-18.0)" (component id `Microsoft.VisualStudio.Component.VC.14.50.18.0.x86.x64`, the one UBT itself suggests) and then pin it with `%APPDATA%\Unreal Engine\UnrealBuildTool\BuildConfiguration.xml` (do not create unless needed):
+- (Superseded: no 14.51 risk arose; the build ran on 14.44.) Fallback only if the compile hits an internal compiler error or odd STL/SDK errors: in VS Installer > Modify > Individual components add "MSVC Build Tools for x64/x86 (v14.50-18.0)" (component id `Microsoft.VisualStudio.Component.VC.14.50.18.0.x86.x64`, the one UBT itself suggests) and then pin it with `%APPDATA%\Unreal Engine\UnrealBuildTool\BuildConfiguration.xml` (do not create unless needed):
 
 ```xml
 <?xml version="1.0" encoding="utf-8" ?>
@@ -141,7 +141,9 @@ Standalone re-check of the UE-free part (needs a sim_core build; throwaway CMake
 
 New-wrapper rule: every new `Private/SimCore/Wrap_<name>.cpp` must copy the FULL pragma list from `Wrap_region_pack.cpp` (including `4530 4577`).
 
-## This machine (D:\UE_5.8 on a USB disk, repo on C:)
+## This machine (engine first on D:\UE_5.8 on a USB disk, now C:\UE_5.8; repo on C:)
+
+- **Updated 11 Oct 2026:** the engine now lives at `C:\UE_5.8` (a `D:\UE_5.8` copy still exists); the cold-launch figure below is from the USB disk and no longer applies. RAM is about 15 GB usable: run one editor or `-game` process at a time.
 
 - Engine on a slow USB spinning disk: a cold editor launch takes 5-15 minutes before shader compilation even starts. Later launches are faster once the OS cache is warm. Build and editor steps carry long timeouts for this reason.
 - The derived-data cache lives on C: (default `C:\UEDDC`, via env `UE-LocalDataCachePath`, set by Build-Editor.ps1 and Run-EditorPython.ps1 when unset; override with `-LocalDdcPath`). The DDC is safe to delete: it only costs a rebuild of cooked data and shaders.
@@ -189,3 +191,17 @@ Verified in 5.8.3 by running (probe + the material builds):
 - `CameraActor` + `LevelEditorSubsystem.pilot_level_actor` gives per-view field of view in screenshots (`field_of_view` is the horizontal FOV in degrees). `-ScriptArgs` values are space-separated tokens: `a,b` is ONE token (the level script then builds all material groups).
 - Texture colour facts (measured, sRGB mean): asphalt_01 (89,80,70) warm brown; asphalt_02 (90,90,84); sparse_grass (79,61,21) brown; forest_ground_06 (90,68,47); gravel_floor_02 (171,167,156); concrete_pavement (127,116,102); concrete_wall_009 (161,153,139). All Poly Haven "neutral" notes were wrong: the materials desaturate them (see `mat_defs*.py`).
 - The sim's `marking_rules.json` and the compiled sim_core must match: a stale plugin binary logged `marking rules not loaded (markings disabled): ... unknown key "ladder_pitch_m"` and the level showed NO markings. Rebuild with `Build-Editor.ps1` after sim_core / data changes.
+
+## L. Risks recorded by Unreal milestone 1 and the playtest (11 Oct 2026)
+
+From `docs/progress/2026-10-11-unreal-m1/STATUS.md`, `.../unreal-m1-playtest/` and `.../unreal-fourth/LUMEN_FINDINGS.md`:
+- **UHT / include order:** the first UBT run after the module split failed until the `CPSimApi.h` / UHT include fixes; a header that includes sim_core types must not be seen by UHT. Only the Sim module may include `cp/` headers.
+- **Plugin rename:** `CityPainterSim` -> `CityPainterCore` needs the CoreRedirects in `Config/DefaultEngine.ini` (kept for the old actor in the Legacy module) and a clean rebuild; stale `Intermediate`/`Binaries` under the old name can confuse UBT.
+- **Rebuild after sim_core/data changes** (existing rule, still true for every module that compiles sim_core).
+- **Grey ground / void:** the ground material renders flat pinkish grey and the terrain ends at the 2 km edge with a dark void; the ground skirt layer (`CPGroundSkirtLayer`, snapshot `269fa1e`) is meant to cover the void, not verified by a picture.
+- **Playtest harness:** run 1 had 9 of 36 checks failing (pan distance 124% of expected, Q/E rotate checks, four HUD-vs-pick comparisons off by 4-5 cm). Treat the harness tolerances and the camera maths as unverified until a re-run.
+- **Leak check:** two PIE runs left 65 procedural mesh components and 1 render root each time (no growth); keep `pie_leak_check.py` in the loop for render-subsystem changes.
+- **MCP over HTTP:** the Epic MCP server listens only while the editor runs (port 8000); sessions that start with the editor closed see ECONNREFUSED. `unreal/tools/mcp_call.py` calls it directly.
+- **Hardware RT hit lighting crashed the GPU** (D3D12 device removed, pipeline state creation failed) on the one attempt; the first hardware-RT use stalled the editor for about 5 minutes compiling shaders. Do not enable it in automation.
+- **Runtime meshes and Lumen:** runtime `UStaticMesh` builds cannot produce distance fields or Lumen cards in a shipped game; ProceduralMesh tiles have no surface cache. Accepted for now.
+- **Memory:** 15 GB usable; a second editor/-game process or a parallel UBT run can exhaust it.
