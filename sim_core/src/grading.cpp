@@ -1296,12 +1296,13 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     auto dF = [&](double v, double b, double r, double k) { return v <= -1e8 ? 0.0 : r * (k > 0 ? smax(v - b, k) : std::max(0.0, v - b)); };
     // best candidate (cut_m / e / r) + the second-best weighted displacement (d2) + the largest unweighted one (u): where a structure tapers
     // out and a neighbour's own slope fades in, the two weighted displacements ADD (a crossfade), capped by the largest full one
-    auto recC = [&](std::size_t o, double v, double e, double b, double r) {
+    auto recC = [&](std::size_t o, double v, double e, double b, double r, double dit = 0.0) {
         const double d = dC(v, b, r, rkc), u = dC(v, b, 1, rkc), c = dC(ws.cut_m[o], b, ws.cut_r[o], ws.cut_k2[o]);
         if (u > ws.cut_u[o]) ws.cut_u[o] = static_cast<float>(u);
         if (d > c) {
             if (c > ws.cut_d2[o]) ws.cut_d2[o] = static_cast<float>(c);
             ws.cut_m[o] = static_cast<float>(v); ws.cut_e[o] = static_cast<float>(e); ws.cut_r[o] = static_cast<float>(r); ws.cut_k2[o] = static_cast<float>(rkc);
+            ws.cut_dit[o] = static_cast<float>(dit);
             return true;
         }
         if (d > ws.cut_d2[o]) ws.cut_d2[o] = static_cast<float>(d);
@@ -1333,6 +1334,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     ws.fill_r.assign(N, 1.0f);
     ws.cut_d2.assign(N, 0.0f);
     ws.cut_k2.assign(N, 0.0f);
+    ws.cut_dit.assign(N, 0.0f);
     ws.fill_k2.assign(N, 0.0f);
     ws.fill_d2.assign(N, 0.0f);
     ws.cut_u.assign(N, 0.0f);
@@ -1618,12 +1620,13 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 continue;
             }
             if (cut_t) {  // toe ditch between verge and slope (fades out in shallow cuts), then the slope
-                double v = zf + sv(e) / bt;
+                double v = zf + sv(e) / bt, dit = 0.0;
                 if (d_d > 0 && d_w > 0 && e > verge && e < verge + d_w) {
                     const double u = std::sin(3.14159265358979323846 * (e - verge) / d_w);
-                    v -= d_d * std::min(1.0, b - zf) * u * u;
+                    dit = d_d * std::min(1.0, b - zf) * u * u;
+                    v -= dit;
                 }
-                if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cut_d2[o] && !blk()) recC(o, v, e, b, rfs);
+                if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cut_d2[o] && !blk()) recC(o, v, e, b, rfs, dit);
             } else {
                 const double v = zf - sv(e) / bte;
                 if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fill_d2[o] && !blk()) recF(o, v, e, b, rfs);
@@ -1650,6 +1653,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             else if (df > 0) g += df;
         }
         out[o] = static_cast<float>(g);
+        if (fp_d[o] >= 9 && cut_m[o] < 1e8f && static_cast<double>(ws.cut_dit[o]) * cut_r[o] > 0.01) ws.fix[o] |= 8;  // the toe ditch is a designed feature: the smoothing pass leaves it alone
         if (footprint) footprint[o] = fp_d[o] < 9 ? 1 : (cut_k[o] && g < base[o] - 0.05 ? 2 : 0);  // 2: engineered rock-cut face (renderer: rock material)
     }
 }
@@ -1714,11 +1718,9 @@ std::vector<double> relax_tile(const float* g0, const float* nat, const std::vec
     for (std::size_t o = 0; o < N; ++o) {
         free_[o] = near[o] > 0 && ring[o] == 0 ? 1 : 0;
         const double d = static_cast<double>(g0[o]) - nat[o], g = g0[o];
-        lo[o] = d > 1e-4 ? std::max(static_cast<double>(nat[o]), g - max_d) : g - max_d;
-        hi[o] = d < -1e-4 ? std::min(static_cast<double>(nat[o]), g + max_d) : g + max_d;
-        if (d > 1e-4) hi[o] = g + max_d;
-        if (d < -1e-4) lo[o] = g - max_d;
-        a[o] = g;
+        lo[o] = d > 1e-4 ? std::max(0.0, d - max_d) : d - max_d;
+        hi[o] = d < -1e-4 ? std::min(0.0, d + max_d) : d + max_d;
+        a[o] = d;  // the relaxation works on the displacement from natural ground (see relaxTile in earthworks.js)
     }
     for (int it = 0; it < iters; ++it) {
         for (int j = 0; j < ny; ++j)
@@ -1733,6 +1735,7 @@ std::vector<double> relax_tile(const float* g0, const float* nat, const std::vec
         std::swap(a, b);
     }
     if (free_out) *free_out = free_;
+    for (std::size_t o = 0; o < N; ++o) a[o] += nat[o];
     return a;
 }
 }  // namespace
@@ -1758,7 +1761,7 @@ void grade_tile_smooth_into(const std::vector<GradingRoad>& roads, const Grading
     std::vector<std::uint8_t> fp(NE);
     grade_tile_into(roads, p, e, nat.data(), g0.data(), fp.data(), ws);
     std::vector<std::uint8_t> fix(NE);
-    for (std::size_t o = 0; o < NE; ++o) fix[o] = fp[o] || (ws.fix[o] & 4) ? 1 : 0;
+    for (std::size_t o = 0; o < NE; ++o) fix[o] = fp[o] || (ws.fix[o] & (4 | 8)) ? 1 : 0;
     const std::vector<double> r = relax_tile(g0.data(), nat.data(), fix, e.nx, e.ny, p.relax_iters, p.relax_strength, m_tex, p.relax_max_delta);
     for (int j = 0; j < t.ny; ++j)
         for (int i = 0; i < t.nx; ++i) {

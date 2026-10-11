@@ -443,9 +443,9 @@ function gradeTileCore(baseSampler, roadsData, params, x0, y0, nx, ny, res, out,
   const smax = (d, k) => d >= k ? d : d <= -k ? 0 : (d + k) * (d + k) / (4 * k);   // smooth max(d, 0) over +-rk: rolls the slope over into natural ground
   const dC = (v, b, r, k) => v >= 1e8 ? 0 : r * (k > 0 ? smax(b - v, k) : Math.max(0, b - v)), dF = (v, b, r, k) => v <= -1e8 ? 0 : r * (k > 0 ? smax(v - b, k) : Math.max(0, v - b));   // the displacement a recorded cut / fill surface causes at base b (weight r): the winner across roads is the one that moves the ground most, not the one that is highest (a faded-in neighbour's high slope must not hide a structure's full-weight level)
   // best candidate (cutM/E/R) + the second-best weighted displacement (D2) + the largest unweighted one (U): where a structure tapers out and a neighbour's own slope fades in, the two weighted displacements ADD (a crossfade), capped by the largest full one
-  const recC = (o, v, e, b, r) => { const d = dC(v, b, r, rkc), u = dC(v, b, 1, rkc), c = dC(cutM[o], b, cutR[o], cutK[o]); if (u > cutU[o]) cutU[o] = u; if (d > c) { if (c > cutD2[o]) cutD2[o] = c; cutM[o] = v; cutE[o] = e; cutR[o] = r; cutK[o] = rkc; return true; } else if (d > cutD2[o]) cutD2[o] = d; return false; };
+  const recC = (o, v, e, b, r, dit) => { const d = dC(v, b, r, rkc), u = dC(v, b, 1, rkc), c = dC(cutM[o], b, cutR[o], cutK[o]); if (u > cutU[o]) cutU[o] = u; if (d > c) { if (c > cutD2[o]) cutD2[o] = c; cutM[o] = v; cutE[o] = e; cutR[o] = r; cutK[o] = rkc; cutDit[o] = dit || 0; return true; } else if (d > cutD2[o]) cutD2[o] = d; return false; };
   const recF = (o, v, e, b, r) => { const d = dF(v, b, r, rkc), u = dF(v, b, 1, rkc), c = dF(fillM[o], b, fillR[o], fillK[o]); if (u > fillU[o]) fillU[o] = u; if (d > c) { if (c > fillD2[o]) fillD2[o] = c; fillM[o] = v; fillE[o] = e; fillR[o] = r; fillK[o] = rkc; } else if (d > fillD2[o]) fillD2[o] = d; };
-  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N), rqSp = new Float32Array(N), rqSv = new Float32Array(N), cutR = new Float32Array(N).fill(1), fillR = new Float32Array(N).fill(1), cutD2 = new Float32Array(N), fillD2 = new Float32Array(N), cutU = new Float32Array(N), fillU = new Float32Array(N), cutK = new Float32Array(N), fillK = new Float32Array(N), rqSt = new Uint8Array(N), rockF = new Uint8Array(N), fixF = new Uint8Array(N);   // fixF bits: 1 footprint / wall solid, 2 rock-cut face, 4 beside a structure or past a portal plane (the smoothing pass leaves them alone)
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N), rqSp = new Float32Array(N), rqSv = new Float32Array(N), cutR = new Float32Array(N).fill(1), fillR = new Float32Array(N).fill(1), cutD2 = new Float32Array(N), fillD2 = new Float32Array(N), cutU = new Float32Array(N), fillU = new Float32Array(N), cutK = new Float32Array(N), fillK = new Float32Array(N), cutDit = new Float32Array(N), rqSt = new Uint8Array(N), rockF = new Uint8Array(N), fixF = new Uint8Array(N);   // fixF bits: 1 footprint / wall solid, 2 rock-cut face, 4 beside a structure or past a portal plane, 8 toe ditch (the smoothing pass leaves them alone)
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
   for (let ri = 0; ri < roadsData.length; ri++) {
@@ -549,8 +549,8 @@ function gradeTileCore(baseSampler, roadsData, params, x0, y0, nx, ny, res, out,
         const zff = zf - ww * (zf - b), v = e <= params.wallThick ? zff : zff - (e - verge) / bt; if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fillD2[o] && !blk()) recF(o, v, e, b, rfs);
         continue; }
       if (cutT) {   // toe ditch between verge and slope (fades out in shallow cuts), then the slope
-        let v = zf + sv(e) / bt; if (dD > 0 && dW > 0 && e > verge && e < verge + dW) { const u = Math.sin(Math.PI * (e - verge) / dW); v -= dD * Math.min(1, b - zf) * u * u; }
-        if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cutD2[o] && !blk()) recC(o, v, e, b, rfs); }
+        let v = zf + sv(e) / bt, dit = 0; if (dD > 0 && dW > 0 && e > verge && e < verge + dW) { const u = Math.sin(Math.PI * (e - verge) / dW); dit = dD * Math.min(1, b - zf) * u * u; v -= dit; }
+        if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cutD2[o] && !blk()) recC(o, v, e, b, rfs, dit); }
       else { const v = zf - sv(e) / bte; if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fillD2[o] && !blk()) recF(o, v, e, b, rfs); }
     }
   }
@@ -559,6 +559,7 @@ function gradeTileCore(baseSampler, roadsData, params, x0, y0, nx, ny, res, out,
     if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const dc = cutM[o] < 1e8 ? Math.min(dC(cutM[o], g, cutR[o], cutK[o]) + cutD2[o], Math.max(cutU[o], dC(cutM[o], g, cutR[o], cutK[o]))) : 0, df = fillM[o] > -1e8 ? Math.min(dF(fillM[o], g, fillR[o], fillK[o]) + fillD2[o], Math.max(fillU[o], dF(fillM[o], g, fillR[o], fillK[o]))) : 0;   // dip below natural (cut) / rise above it (fill), rounded near daylight
     if (dc > 0 && df > 0) { const wc = dc / (cutE[o] + 1), wf = df / (fillE[o] + 1); g = g + (df * wf - dc * wc) / (wc + wf); } else if (dc > 0) g = g - dc; else if (df > 0) g = g + df; }   // a cut and a fill slope of two roads meet: blend their displacements, each weighted by its size over its distance to its own road (one continuous surface; a nearer-wins switch left a pit)
     out[o] = g;
+    if (fpD[o] >= 9 && cutM[o] < 1e8 && cutDit[o] * cutR[o] > 0.01) fixF[o] |= 8;   // the toe ditch is a designed feature (depth below formation): the smoothing pass leaves it alone
     if (fpD[o] < 9) fixF[o] |= 1; else if (rockF[o] && g < base[o] - 0.05) fixF[o] |= 2;
   }
   if (fixOut) fixOut.set(fixF);
@@ -586,12 +587,12 @@ function relaxTile(g0, nat, fix, nx, ny, iters, s, mTex, maxD) {
     if (j + 1 < ny && Math.abs(g0[o] - g0[o + nx]) > FACE_STEP) { fixed[o] = 1; fixed[o + nx] = 1; changed[o] = 1; changed[o + nx] = 1; }
   }
   const ring = win(fixed, 2), near = win(changed, mTex), free = new Uint8Array(N), lo = new Float64Array(N), hi = new Float64Array(N);
+  // The relaxation works on the DISPLACEMENT d = graded - natural, not on the height: natural ground that grading did not touch is never altered (d = 0 stays 0), and the daylight edge blends into it.
+  let a = new Float64Array(N), b = new Float64Array(N);
   for (let o = 0; o < N; o++) {
     free[o] = near[o] > 0 && ring[o] === 0 ? 1 : 0;
-    const d = g0[o] - nat[o]; lo[o] = d > 1e-4 ? Math.max(nat[o], g0[o] - maxD) : g0[o] - maxD; hi[o] = d < -1e-4 ? Math.min(nat[o], g0[o] + maxD) : g0[o] + maxD;
-    if (d > 1e-4) hi[o] = g0[o] + maxD; if (d < -1e-4) lo[o] = g0[o] - maxD;
+    const d = g0[o] - nat[o]; a[o] = d; lo[o] = d > 1e-4 ? Math.max(0, d - maxD) : d - maxD; hi[o] = d < -1e-4 ? Math.min(0, d + maxD) : d + maxD;   // a cut texel never rises above natural, a fill texel never sinks below it
   }
-  let a = Float64Array.from(g0), b = new Float64Array(N);
   for (let it = 0; it < iters; it++) {
     for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const o = j * nx + i; if (!free[o]) { b[o] = a[o]; continue; }
@@ -600,6 +601,7 @@ function relaxTile(g0, nat, fix, nx, ny, iters, s, mTex, maxD) {
     }
     const t = a; a = b; b = t;
   }
+  for (let o = 0; o < N; o++) a[o] += nat[o];
   return a;
 }
 function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out, fixOut) {
@@ -608,7 +610,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out, fix
   const mTex = Math.ceil((params.relaxMargin || 0) / res), H = it + mTex + 2, ex = nx + 2 * H, ey = ny + 2 * H;
   const g0 = new Float32Array(ex * ey), fx = new Uint8Array(ex * ey), nat = gradeTileCore(baseSampler, roadsData, params, x0 - H * res, y0 - H * res, ex, ey, res, g0, fx);
   const r = relaxTile(g0, nat, fx, ex, ey, it, params.relaxStrength, mTex, params.relaxMaxDelta);
-  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { out[j * nx + i] = r[(j + H) * ex + i + H]; if (fixOut) fixOut[j * nx + i] = fx[(j + H) * ex + i + H]; }
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const oe = (j + H) * ex + i + H; out[j * nx + i] = r[oe]; if (fixOut) fixOut[j * nx + i] = fx[(j + H) * ex + i + H]; }
 }
 // ---- THREE-facing glue: tiles the box into 64 m tiles, feeds gradeTile, writes GH. ----
 const TILE_M = 64;

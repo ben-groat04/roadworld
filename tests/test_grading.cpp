@@ -667,6 +667,9 @@ TEST_CASE("grading invariants: ground under road, slopes daylight, median flat")
         for (std::size_t ri = 0; ri < c->roads.size(); ++ri) {
             const SampledRoad& r = c->roads[ri];
             const double hw = r.half_width, reach = hw + c->params.wall_start * c->params.batter + 2;
+            // The raw grading daylights by reach + 3.5. The smoothing pass spreads the daylight edge over about two standard deviations of its kernel (sigma = sqrt(iters * strength / 2) texels):
+            // the edge now BLENDS into natural ground over that extra run, so convergence (same 0.15 m tolerance) is required that much further out, not earlier.
+            const double spread = c->params.relax_iters > 0 ? 2.0 * std::sqrt(c->params.relax_iters * c->params.relax_strength / 2.0) * 0.5 : 0.0;
             for (std::size_t si = 0; si < r.samples.size(); ++si) {
                 const RoadSample& s = r.samples[si];
                 if (s.br || s.tu) continue;
@@ -684,13 +687,13 @@ TEST_CASE("grading invariants: ground under road, slopes daylight, median flat")
                     if (sg == 1 ? s.wL : s.wR) continue;
                     bool skip = false, counted = false;
                     double worst = 0;
-                    for (double d = hw + 0.5; d <= reach + 4; d += 0.5) {
+                    for (double d = hw + 0.5; d <= reach + 4 + spread; d += 0.5) {
                         const double x = s.x - std::sin(s.h) * sg * d, y = s.y + std::cos(s.h) * sg * d;
                         if (other_road_near(*c, ri, x, y, c->params.wall_start * c->params.batter + 2)) { skip = true; break; }
                         const double b = c->ground(x, y), gg = g.at(x, y);
                         const bool cut = b > s.z - c->params.formation_drop;
                         worst = std::max(worst, cut ? gg - b : b - gg);
-                        if (d >= reach + 3.5 && std::abs(gg - b) > 0.2 && !counted) {
+                        if (d >= reach + 3.5 + spread && std::abs(gg - b) > 0.15 && !counted) {
                             slopes.bad(std::abs(gg - b), "not converged at road " + std::to_string(ri) + " station " + std::to_string(si));
                             counted = true;
                         }
@@ -1154,7 +1157,6 @@ TEST_CASE("grading: an embankment ends in a run-out along the road, not a steep 
 
 TEST_CASE("grading: a cutting has a shallow ditch at its toe; width / depth 0 disables it") {
     auto c = make_case("cutting_toe");
-    c->params.relax_iters = 0;  // the smoothing pass (sigma about 1.3 m) fills a 0.4 m x 1.5 m ditch: this test looks at the raw grading
     const Graded g = grade_region(*c);
     const RoadSample* mid = nullptr;
     for (const RoadSample& s : c->roads[0].samples)
@@ -1280,14 +1282,14 @@ TEST_CASE("grading: shares cp::TileKey with render_mesh.h and structure_mesh.h")
 // "No crease": the change of ground slope between adjacent FREE texels (second difference / texel size, a slope change per texel) is bounded.
 // Free = not a footprint texel, not within 3 texels of a footprint texel or of a step above 1.2 m (wall faces), not within 25 m of a structure station.
 namespace {
-double max_crease(const Case& c, const Graded& g, const std::vector<float>& h, const std::vector<std::uint8_t>& fp, std::string* where) {
+double max_crease(const Case& c, const Graded& g, const std::vector<float>& h, const std::vector<std::uint8_t>& fp, const std::vector<float>& h_noditch, std::string* where) {
     const int nx = g.t.nx, ny = g.t.ny;
     const double res = g.t.res;
     std::vector<std::uint8_t> mark(h.size(), 0);
     for (int j = 0; j < ny; ++j)
         for (int i = 0; i < nx; ++i) {
             const std::size_t o = static_cast<std::size_t>(j) * nx + i;
-            if (fp[o]) mark[o] = 1;
+            if (fp[o] || std::abs(h[o] - h_noditch[o]) > 1e-3) mark[o] = 1;  // footprint, and the toe ditch (a designed feature: it is the one sharp thing the smoothing leaves)
             if (i + 1 < nx && std::abs(h[o] - h[o + 1]) > 1.2) mark[o] = mark[o + 1] = 1;
             if (j + 1 < ny && std::abs(h[o] - h[o + nx]) > 1.2) mark[o] = mark[o + nx] = 1;
         }
@@ -1322,8 +1324,12 @@ TEST_CASE("grading invariants: no crease (slope change between adjacent free tex
         raw.relax_iters = 0;
         const GradedTile gs = grade_tile_smooth(c->prepared, c->params, g.t, c->ground), gr = grade_tile_smooth(c->prepared, raw, g.t, c->ground);
         std::string ws, wr;
-        const double vs = max_crease(*c, g, gs.height, gs.footprint, &ws), vr = max_crease(*c, g, gr.height, gr.footprint, &wr);
+        GradingParams nod = c->params, nodr = raw;
+        nod.toe_ditch_depth = 0;
+        nodr.toe_ditch_depth = 0;
+        const std::vector<float> hs0 = grade_tile_smooth(c->prepared, nod, g.t, c->ground).height, hr0 = grade_tile_smooth(c->prepared, nodr, g.t, c->ground).height;
+        const double vs = max_crease(*c, g, gs.height, gs.footprint, hs0, &ws), vr = max_crease(*c, g, gr.height, gr.footprint, hr0, &wr);
         MESSAGE(name << " max slope change per texel: smoothed " << vs << " (" << ws << "), raw " << vr << " (" << wr << ")");
-        CHECK_MESSAGE(vs <= 0.35, name << " " << vs << " at " << ws);
+        CHECK_MESSAGE(vs <= 0.3, name << " " << vs << " at " << ws);
     }
 }
