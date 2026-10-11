@@ -92,10 +92,10 @@ VIEWS = INTERCHANGE_VIEWS
 # Diagnostic configurations (argument `diag`, or `diag:<name>,<name>`): each is a list of console commands applied on top
 # of DIAG_RESET, then the views named by `view:<substr>` (default look_08 and look_02) are shot as diag_<config>__<view>.
 # Used for the fourth-run black-shadow diagnosis (docs/progress/2026-10-11-unreal-fourth/LUMEN_FINDINGS.md).
-DIAG_RESET = ["ShowFlag.VisualizeLumen 0", "ShowFlag.LightingOnlyOverride 0", "ShowFlag.DynamicShadows 1", "ShowFlag.Tonemapper 1", "r.Lumen.Visualize.ViewMode 0",
+DIAG_RESET = ["ShowFlag.VisualizeLumen 0", "ShowFlag.LightingOnlyOverride 0", "ShowFlag.DynamicShadows 1", "ShowFlag.Fog 1", "ShowFlag.Cloud 1", "ShowFlag.Atmosphere 1", "ShowFlag.Tonemapper 1", "r.Lumen.Visualize.ViewMode 0",
               "r.Lumen.DiffuseIndirect.Allow 1", "r.SkylightIntensityMultiplier 1", "r.DistanceFieldAO 1",
               "r.Shadow.Virtual.Enable 1", "r.Lumen.HardwareRayTracing 0", "r.Lumen.HardwareRayTracing.LightingMode 0",
-              "r.RayTracing.Geometry.ProceduralMeshes 1"]
+              "r.RayTracing.Geometry.ProceduralMeshes 1", "py:floor_df"]
 DIAG_CONFIGS = {
     "baseline": [],
     "lightingonly": ["ShowFlag.LightingOnlyOverride 1"],
@@ -106,6 +106,13 @@ DIAG_CONFIGS = {
     "lightingonly_noshadows": ["ShowFlag.LightingOnlyOverride 1", "ShowFlag.DynamicShadows 0"],
     "hwrt_lightingonly": ["r.Lumen.HardwareRayTracing 1", "ShowFlag.LightingOnlyOverride 1"],
     "no_tonemapper": ["ShowFlag.Tonemapper 0"],
+    "no_fog": ["ShowFlag.Fog 0"],
+    "no_cloud": ["ShowFlag.Cloud 0"],
+    "no_atmosphere": ["ShowFlag.Atmosphere 0"],
+    "floor_nodf": ["py:floor_nodf"],
+    "no_dfao_sky1": ["r.DistanceFieldAO 0", "r.SkylightIntensityMultiplier 0.333"],
+    "no_dfao_hwrt": ["r.DistanceFieldAO 0", "r.Lumen.HardwareRayTracing 1"],
+    "no_dfao_hwrt_sky1": ["r.DistanceFieldAO 0", "r.Lumen.HardwareRayTracing 1", "r.SkylightIntensityMultiplier 0.333"],
     "no_gi": ["r.Lumen.DiffuseIndirect.Allow 0"],
     "no_sky": ["r.SkylightIntensityMultiplier 0"],
     "sky_x3": ["r.SkylightIntensityMultiplier 3"],
@@ -115,7 +122,16 @@ DIAG_CONFIGS = {
     "hwrt_hitlighting": ["r.Lumen.HardwareRayTracing 1", "r.Lumen.HardwareRayTracing.LightingMode 1"],
     "hwrt_no_pmc": ["r.Lumen.HardwareRayTracing 1", "r.RayTracing.Geometry.ProceduralMeshes 0"],
 }
-DIAG_WARMUP = 300      # frames after switching configuration (Lumen settles over a few seconds)
+def _floor_df(on):
+    """Hook py:floor_df / py:floor_nodf: let the 40 km CP_Floor plane take part in (or leave) distance-field lighting."""
+    eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for a in eas.get_all_level_actors():
+        if a.get_actor_label() == "CP_Floor":
+            a.get_editor_property("static_mesh_component").set_editor_property("affect_distance_field_lighting", on)
+
+
+PY_HOOKS = {"py:floor_df": lambda: _floor_df(True), "py:floor_nodf": lambda: _floor_df(False)}
+DIAG_WARMUP = 300     # frames after switching configuration (Lumen settles over a few seconds)
 
 WARMUP_FIRST = 600   # frames before the first shot (shader compile / Lumen settling)
 WARMUP_NEXT = 120
@@ -278,7 +294,10 @@ def step(s):
         cfg = VIEWS[s["i"]][4] if len(VIEWS[s["i"]]) > 4 else None
         if cfg is not None and cfg != s.get("cfg"):
             for c in DIAG_RESET + DIAG_CONFIGS[cfg]:
-                unreal.SystemLibrary.execute_console_command(None, c)
+                if c in PY_HOOKS:
+                    PY_HOOKS[c]()
+                else:
+                    unreal.SystemLibrary.execute_console_command(None, c)
             s["cfg"] = cfg
             s["wait"] = DIAG_WARMUP
             s["bench"] = []

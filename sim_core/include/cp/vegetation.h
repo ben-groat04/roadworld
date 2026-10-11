@@ -362,6 +362,8 @@ public:
     // Distance to PAVED surface only (cross-section, junction polygons, islands; no verge), skipping one edge.
     double paved_distance(Vec2 p, EdgeId exclude = {}, double cap = 64) const;
     bool in_sight_triangle(Vec2 p) const;
+    // Tall things (trees, hedges) are forbidden here: a visibility triangle, or within junction_clearance of a roundabout / ramp.
+    bool tall_blocked(Vec2 p) const;
     // Density multiplier 0..1: smoothstep(signed_distance / blend_band); `tall` also 0 inside visibility triangles.
     double clear(Vec2 p, bool tall = false) const;
     double band() const;

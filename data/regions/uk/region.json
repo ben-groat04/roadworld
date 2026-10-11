@@ -135,5 +135,443 @@
         { "length_m": 40 }
       ]
     }
+  },
+  "vegetation": {
+    "_comment": "Road-edge scatter (source 2) and world cover (source 1) placement, docs/research/vegetation-plan.md. Values marked [plan] come from its parameter tables (lowland England/Scotland, measured from the aerials/street photos); [tuned] are placeholders until measured.",
+    "types": [
+      {
+        "id": "grass_mown_clump",
+        "kind": "grass",
+        "height_m": [
+          0.03,
+          0.08
+        ],
+        "size_class": 0,
+        "variants": 3
+      },
+      {
+        "id": "grass_rough_tuft",
+        "kind": "grass",
+        "height_m": [
+          0.2,
+          0.6
+        ],
+        "size_class": 1,
+        "variants": 3
+      },
+      {
+        "id": "grass_tussock",
+        "kind": "grass",
+        "height_m": [
+          0.4,
+          0.9
+        ],
+        "size_class": 2,
+        "variants": 3
+      },
+      {
+        "id": "weed_creep",
+        "kind": "grass",
+        "height_m": [
+          0.05,
+          0.2
+        ],
+        "size_class": 0,
+        "variants": 2
+      },
+      {
+        "id": "bracken_patch",
+        "kind": "grass",
+        "height_m": [
+          0.6,
+          1.2
+        ],
+        "size_class": 2,
+        "variants": 2
+      },
+      {
+        "id": "tree_broadleaf_round",
+        "kind": "tree",
+        "height_m": [
+          12,
+          20
+        ],
+        "crown_radius_m": 6,
+        "size_class": 2,
+        "variants": 4
+      },
+      {
+        "id": "tree_broadleaf_open",
+        "kind": "tree",
+        "height_m": [
+          10,
+          18
+        ],
+        "crown_radius_m": 5,
+        "size_class": 1,
+        "variants": 4
+      },
+      {
+        "id": "tree_conifer_plantation",
+        "kind": "tree",
+        "height_m": [
+          15,
+          25
+        ],
+        "crown_radius_m": 3,
+        "size_class": 2,
+        "variants": 3
+      },
+      {
+        "id": "tree_sapling_staked",
+        "kind": "tree",
+        "height_m": [
+          2,
+          3.5
+        ],
+        "crown_radius_m": 0.8,
+        "size_class": 0,
+        "variants": 2
+      },
+      {
+        "id": "canopy_impostor_block",
+        "kind": "tree",
+        "height_m": [
+          15,
+          25
+        ],
+        "crown_radius_m": 20,
+        "size_class": 2,
+        "variants": 2
+      },
+      {
+        "id": "hedge_trimmed",
+        "kind": "hedge",
+        "height_m": [
+          1.5,
+          2.5
+        ],
+        "width_m": [
+          1,
+          2
+        ],
+        "size_class": 0,
+        "variants": 3
+      },
+      {
+        "id": "hedge_overgrown",
+        "kind": "hedge",
+        "height_m": [
+          2.5,
+          4
+        ],
+        "width_m": [
+          2,
+          4
+        ],
+        "size_class": 1,
+        "variants": 3
+      },
+      {
+        "id": "shrub_scrub",
+        "kind": "shrub",
+        "height_m": [
+          0.8,
+          2
+        ],
+        "crown_radius_m": 1.2,
+        "size_class": 0,
+        "variants": 3
+      },
+      {
+        "id": "shrub_gorse",
+        "kind": "shrub",
+        "height_m": [
+          0.8,
+          1.5
+        ],
+        "crown_radius_m": 1,
+        "size_class": 0,
+        "variants": 3
+      }
+    ],
+    "sight": {
+      "height_m": 1.05,
+      "by_speed": [
+        {
+          "max_speed_kph": 50,
+          "distance_m": 35
+        },
+        {
+          "max_speed_kph": 80,
+          "distance_m": 70
+        },
+        {
+          "distance_m": 110
+        }
+      ],
+      "_comment": "[tuned] visibility splay distance by the arm speed limit"
+    },
+    "corridor": {
+      "blend_band_m": 8,
+      "clear_margin_m": 1.5,
+      "cut_edge_m": 4,
+      "junction_clearance_m": 30,
+      "_comment": "[plan] clear margin 1.5 m hard, blend band 6-10 m, junction clearance 20-50 m around roundabouts and ramps"
+    },
+    "default_road": {
+      "verge": {
+        "width_m": 0,
+        "mown_type": "grass_mown_clump",
+        "rough_type": "grass_rough_tuft",
+        "creep_type": "weed_creep",
+        "median_type": "grass_tussock",
+        "creep_density": 0.6
+      }
+    },
+    "road_types": {
+      "residential": {
+        "verge": {
+          "width_m": 0
+        }
+      },
+      "main_street": {
+        "verge": {
+          "width_m": 0
+        }
+      },
+      "b_road": {
+        "verge": {
+          "width_m": 2.5,
+          "mown_width_m": 1.5,
+          "creep_m": 0.25,
+          "creep_overrun_m": 0.15
+        }
+      },
+      "a_road_rural": {
+        "verge": {
+          "width_m": 5,
+          "mown_width_m": 3,
+          "creep_m": 0.3,
+          "creep_overrun_m": 0.2
+        },
+        "scrub": {
+          "enabled": true,
+          "type": "shrub_scrub",
+          "spacing_m": 14,
+          "probability": 0.3,
+          "band_lo": 0.6,
+          "band_hi": 1
+        }
+      },
+      "b_road_rural": {
+        "verge": {
+          "width_m": 3.5,
+          "mown_width_m": 2,
+          "creep_m": 0.25,
+          "creep_overrun_m": 0.2
+        },
+        "scrub": {
+          "enabled": true,
+          "type": "shrub_scrub",
+          "spacing_m": 18,
+          "probability": 0.25,
+          "band_lo": 0.6,
+          "band_hi": 1
+        }
+      },
+      "country_lane": {
+        "verge": {
+          "width_m": 1.5,
+          "mown_width_m": 0.5,
+          "creep_m": 0.3,
+          "creep_overrun_m": 0.3
+        },
+        "scrub": {
+          "enabled": true,
+          "type": "shrub_scrub",
+          "spacing_m": 20,
+          "probability": 0.2,
+          "band_lo": 0.5,
+          "band_hi": 1
+        }
+      },
+      "roundabout_ring": {
+        "verge": {
+          "width_m": 0
+        }
+      },
+      "a_road_dual": {
+        "verge": {
+          "width_m": 4,
+          "mown_width_m": 3,
+          "creep_m": 0.3,
+          "creep_overrun_m": 0.15,
+          "median_height_class": 2
+        },
+        "street_trees": {
+          "enabled": true,
+          "spacing_m": 9,
+          "spacing_jitter": 0.35,
+          "setback_m": 8,
+          "offset_from_back_m": 8,
+          "lateral_jitter_m": 1.5,
+          "rows": 4,
+          "row_spacing_m": 6,
+          "probability": 0.65,
+          "paved_clearance_m": 2,
+          "light_clearance_m": 3,
+          "structure_clearance_m": 6,
+          "scale": [
+            0.9,
+            1.2
+          ],
+          "classes": [
+            {
+              "type": "tree_broadleaf_round",
+              "weight": 0.4
+            },
+            {
+              "type": "tree_broadleaf_open",
+              "weight": 0.35
+            },
+            {
+              "type": "shrub_scrub",
+              "weight": 0.25
+            }
+          ]
+        }
+      },
+      "motorway": {
+        "verge": {
+          "width_m": 4,
+          "mown_width_m": 3,
+          "creep_m": 0.3,
+          "creep_overrun_m": 0.15,
+          "median_height_class": 2
+        },
+        "street_trees": {
+          "enabled": true,
+          "spacing_m": 9,
+          "spacing_jitter": 0.35,
+          "setback_m": 10,
+          "offset_from_back_m": 10,
+          "lateral_jitter_m": 1.5,
+          "rows": 3,
+          "row_spacing_m": 6,
+          "probability": 0.6,
+          "paved_clearance_m": 2,
+          "light_clearance_m": 3,
+          "structure_clearance_m": 6,
+          "scale": [
+            0.9,
+            1.2
+          ],
+          "classes": [
+            {
+              "type": "tree_broadleaf_round",
+              "weight": 0.4
+            },
+            {
+              "type": "tree_broadleaf_open",
+              "weight": 0.35
+            },
+            {
+              "type": "shrub_scrub",
+              "weight": 0.25
+            }
+          ]
+        }
+      }
+    },
+    "island": {
+      "enabled": true,
+      "grass_type": "grass_mown_clump",
+      "grass_density": 1,
+      "grass_height_class": 0,
+      "inset_m": 0.4,
+      "tree_type": "tree_sapling_staked",
+      "tree_min_radius_m": 5,
+      "tree_probability": 0.6,
+      "min_area_m2": 6,
+      "_comment": "[plan] mown flat island, 0-2 small trees"
+    },
+    "splitter": {
+      "enabled": true,
+      "grass_type": "grass_mown_clump",
+      "grass_density": 1,
+      "grass_height_class": 0,
+      "inset_m": 0.3,
+      "min_area_m2": 8
+    },
+    "world_cover": {
+      "_comment": "Default field-grid generator, lowland England [plan \"World cover from above\"]: fields 250-600 x 120-350 m arable / 120-300 pasture (mid values), hedge share 0.75, hedge trees 0.5 per segment at 40-80 m, gateways 1 per 150-300 m 4-6 m wide, woodland 0.15-0.2 with 5-15 m natural edges, scattered trees 0.5-1 per ha, mix pasture 35-45 / arable 35-50 / rough 5-10. Field shape is axis-aligned jittered quads (plan: irregular quads; tuned).",
+      "field_size_x_m": 300,
+      "field_size_y_m": 180,
+      "field_jitter": 0.25,
+      "warp_m": 10,
+      "warp_wavelength_m": 120,
+      "woodland_share": 0.17,
+      "woodland_edge_ragged_m": 8,
+      "arable_share": 0.45,
+      "rough_share": 0.08,
+      "hedge_share": 0.75,
+      "hedge_overgrown_share": 0.4,
+      "hedge_trimmed_type": "hedge_trimmed",
+      "hedge_overgrown_type": "hedge_overgrown",
+      "hedge_tree_share": 0.5,
+      "hedge_tree_spacing_m": 60,
+      "hedge_tree_jitter": 0.4,
+      "hedge_gap_per_km": 4.5,
+      "hedge_gap_m": [
+        4,
+        6
+      ],
+      "scatter_trees_per_ha": 0.7,
+      "woodland_trees_per_ha": 250,
+      "tree_classes": [
+        {
+          "type": "tree_broadleaf_round",
+          "weight": 0.45
+        },
+        {
+          "type": "tree_broadleaf_open",
+          "weight": 0.4
+        },
+        {
+          "type": "tree_conifer_plantation",
+          "weight": 0.15
+        }
+      ],
+      "woodland_classes": [
+        {
+          "type": "tree_broadleaf_round",
+          "weight": 0.35
+        },
+        {
+          "type": "tree_broadleaf_open",
+          "weight": 0.35
+        },
+        {
+          "type": "tree_conifer_plantation",
+          "weight": 0.3
+        }
+      ],
+      "tree_scale": [
+        0.8,
+        1.25
+      ],
+      "open_grass_type": "grass_mown_clump",
+      "rough_grass_type": "grass_rough_tuft",
+      "woodland_floor_type": "grass_rough_tuft",
+      "open_density": 1,
+      "rough_density": 0.9,
+      "woodland_density": 0.5,
+      "open_height_class": 0,
+      "rough_height_class": 1,
+      "woodland_height_class": 1,
+      "ground_cell_m": 16,
+      "min_cell_m": 2
+    }
   }
 }

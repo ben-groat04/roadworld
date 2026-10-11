@@ -117,6 +117,7 @@ Tasks:
 
 **Downloads needing approval** (do not fetch without a yes):
 - Poly Haven CC0 models (via https://polyhaven.com or the Blender MCP search_assets): grass_medium_02, weed_plant_02, nettle_plant, dandelion_01, celandine_01, shrub_01..04, fir_tree_01, pine_tree_01, tree_small_02, moss_01. Sizes not verified, likely tens of MB each.
+- **Fetched 11 Oct 2026 (approved):** grass_medium_02, weed_plant_02, nettle_plant, dandelion_01, celandine_01, shrub_01..04, moss_01 (FBX, 2K) and tree_small_02 (FBX, 1K), 186 MB total, in `unreal/CityPainter/SourceArt/Meshes/PolyHaven/` (see its MANIFEST.md; script `tools/fetch_polyhaven_models.mjs`). **Not fetched, awaiting a decision:** fir_tree_01 (329 MB at 2K, 7.85M polygons) and pine_tree_01 (854 MB at 2K, 17.4M polygons). tree_small_02 is 2.06M triangles and needs decimation or cards.
 - None for PVE: all content ships in `C:\UE_5.8`.
 - Optional: Fab free items (none selected); Blender add-ons Easy Tree / Modular Tree from extensions.blender.org (licences unchecked).
 

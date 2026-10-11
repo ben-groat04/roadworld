@@ -30,6 +30,7 @@ add_executable(sim_core_tests
   test_geom.cpp
   test_region_neutrality.cpp
   test_world_cache.cpp
+  test_vegetation.cpp
 )
 target_link_libraries(sim_core_tests PRIVATE sim_core scene_tools)
 target_include_directories(sim_core_tests SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party)

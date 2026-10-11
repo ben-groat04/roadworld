@@ -1,0 +1,794 @@
+{
+ "source": "Poly Haven (api.polyhaven.com / dl.polyhaven.org)",
+ "license": "CC0",
+ "license_url": "https://polyhaven.com/license",
+ "fetched": "2026-10-11",
+ "fetch_script": "tools/fetch_polyhaven_models.mjs",
+ "normal_convention": "OpenGL (nor_gl) in the FBX archives: flip green channel for Unreal",
+ "assets": {
+  "grass_medium_02": {
+   "name": "Grass Medium 02",
+   "url": "https://polyhaven.com/a/grass_medium_02",
+   "authors": [
+    "Rico Cilliers (All)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 2839586,
+   "files": [
+    {
+     "path": "grass_medium_02/grass_medium_02_2k.fbx",
+     "bytes": 313740,
+     "sha256": "03b014b3f390c9ef9a215371327fae56f03dd2f6dc0569d639c81bc46cca50fc"
+    },
+    {
+     "path": "grass_medium_02/textures/grass_medium_02_alpha_2k.png",
+     "bytes": 303260,
+     "sha256": "c96abf8da86aa750ff6425b8ded78aa98cf61858834e3557ad2dcc5348359337"
+    },
+    {
+     "path": "grass_medium_02/textures/grass_medium_02_diff_2k.jpg",
+     "bytes": 456989,
+     "sha256": "70c0e294fd94b980d01ed91bde30ab19fe7eeed1f2717088cc88ab20bb115c87"
+    },
+    {
+     "path": "grass_medium_02/textures/grass_medium_02_nor_gl_2k.exr",
+     "bytes": 651146,
+     "sha256": "3110a10e925cde287eea2ea079b52abe7f889095e03f961ac8805e6766169fc2"
+    },
+    {
+     "path": "grass_medium_02/textures/grass_medium_02_rough_2k.exr",
+     "bytes": 1114451,
+     "sha256": "f74c5bcb9c021624f5539290e7cd1ae38676b91ea762b9ee4cbb7487b7d72159"
+    }
+   ],
+   "triangles": 7842,
+   "vertices": 7031,
+   "mesh_objects": 5,
+   "materials": [
+    "grass_medium_02"
+   ],
+   "bbox_m_xyz": [
+    1.311,
+    0.433,
+    0.405
+   ],
+   "height_m": 0.405,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "grass_medium_02_diff_2k.jpg",
+     "opaque_fraction": 0.101,
+     "mean_srgb": [
+      147.4,
+      146.5,
+      100.4
+     ]
+    }
+   ],
+   "suggested_type_id": "grass_rough_tuft",
+   "notes": "Also grass_tussock. Rough-verge tuft cluster."
+  },
+  "weed_plant_02": {
+   "name": "Weed Plant 02",
+   "url": "https://polyhaven.com/a/weed_plant_02",
+   "authors": [
+    "Rob Tuytel (Photography)",
+    "Rico Cilliers (Modeling)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 9976211,
+   "files": [
+    {
+     "path": "weed_plant_02/weed_plant_02_2k.fbx",
+     "bytes": 377244,
+     "sha256": "a52bc1420f3adc88574c07cd8c48bbbcb072164516204bf34fcd2a44a5f1744e"
+    },
+    {
+     "path": "weed_plant_02/textures/weed_plant_02_nor_gl_2k.exr",
+     "bytes": 5631811,
+     "sha256": "4942276b9529857d9e3e592f212be73022d0268f419504621486ca88a8c56b69"
+    },
+    {
+     "path": "weed_plant_02/textures/weed_plant_02_alpha_2k.png",
+     "bytes": 420666,
+     "sha256": "8349b29915497305b2e69b45a5f663e37f6c398379514dfb7ffd3003b07827a9"
+    },
+    {
+     "path": "weed_plant_02/textures/weed_plant_02_rough_2k.exr",
+     "bytes": 1980037,
+     "sha256": "e04e614e765a0d79f84923f403bf51e58ea2a62c34814db700a71cff0cf0d5e0"
+    },
+    {
+     "path": "weed_plant_02/textures/weed_plant_02_diff_2k.jpg",
+     "bytes": 1566453,
+     "sha256": "25e4190cddce367d0e161b24de44873425c2179862faf7878aea49cbdc72c0e7"
+    }
+   ],
+   "triangles": 11116,
+   "vertices": 6568,
+   "mesh_objects": 5,
+   "materials": [
+    "weed_plant_02"
+   ],
+   "bbox_m_xyz": [
+    2.125,
+    0.291,
+    0.075
+   ],
+   "height_m": 0.075,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "weed_plant_02_diff_2k.jpg",
+     "opaque_fraction": 0.503,
+     "mean_srgb": [
+      75.7,
+      81.5,
+      34.5
+     ]
+    }
+   ],
+   "suggested_type_id": "weed_creep",
+   "notes": "Flat rosette (7.5 cm tall); road-edge creep strip."
+  },
+  "nettle_plant": {
+   "name": "Nettle Plant",
+   "url": "https://polyhaven.com/a/nettle_plant",
+   "authors": [
+    "Rob Tuytel (Photography)",
+    "Rico Cilliers (modeling)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 20685851,
+   "files": [
+    {
+     "path": "nettle_plant/nettle_plant_2k.fbx",
+     "bytes": 1014364,
+     "sha256": "c89cfc7d292b5176fd266266b376b743e61b1a3ac5e2c4d76bfaa2c7986a1e8c"
+    },
+    {
+     "path": "nettle_plant/textures/nettle_plant_rough_2k.exr",
+     "bytes": 1459528,
+     "sha256": "f662d74222338320c6863b04e54b3e808bf367cb837c9b94594f8cff57e78409"
+    },
+    {
+     "path": "nettle_plant/textures/nettle_plant_nor_gl_2k.exr",
+     "bytes": 4967934,
+     "sha256": "20495585a0b8d6a0f55f74398718b0ede72fbbd670cd30c78a3e9f95820b7985"
+    },
+    {
+     "path": "nettle_plant/textures/nettle_plant_diff_2k.jpg",
+     "bytes": 1197929,
+     "sha256": "7baf0c5bf0695ddbba590baba686e284803244703959092526eb2bc226724351"
+    },
+    {
+     "path": "nettle_plant/textures/nettle_plant_alpha_2k.png",
+     "bytes": 421402,
+     "sha256": "0efece04fcc2780e7a13cd92ad3acd8eb7ad5f84fc4b66beb4402af06b229434"
+    },
+    {
+     "path": "nettle_plant/textures/nettle_plant_dry_diff_2k.png",
+     "bytes": 11624694,
+     "sha256": "2c8152959e4a843d4104c7e26e4aa0db8e2939f5ac03ddf7823abe52d477fe66"
+    }
+   ],
+   "triangles": 31304,
+   "vertices": 18035,
+   "mesh_objects": 6,
+   "materials": [
+    "nettle_plant"
+   ],
+   "bbox_m_xyz": [
+    1.083,
+    0.095,
+    0.218
+   ],
+   "height_m": 0.218,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "nettle_plant_diff_2k.jpg",
+     "opaque_fraction": 0.379,
+     "mean_srgb": [
+      87.9,
+      89.9,
+      50
+     ]
+    }
+   ],
+   "suggested_type_id": "weed_creep",
+   "notes": "Rough-verge / hedge-bottom variant (nettle), low priority."
+  },
+  "dandelion_01": {
+   "name": "Dandelion 01",
+   "url": "https://polyhaven.com/a/dandelion_01",
+   "authors": [
+    "Rob Tuytel (Photography)",
+    "Rico Cilliers (Modeling)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 8798417,
+   "files": [
+    {
+     "path": "dandelion_01/dandelion_01_2k.fbx",
+     "bytes": 2036796,
+     "sha256": "68f6420e501672ea9594ce5141d1d7d73fb7759f96db1f177131fd2f13c9eacd"
+    },
+    {
+     "path": "dandelion_01/textures/dandelion_01_rough_2k.exr",
+     "bytes": 1344648,
+     "sha256": "8550f55713ecf756ece5009e3aba10e2b0a39a92839d196c59973d985fe150c5"
+    },
+    {
+     "path": "dandelion_01/textures/dandelion_01_nor_gl_2k.exr",
+     "bytes": 3626042,
+     "sha256": "0df95b986c786d9a3483179a52df0272b7f9f418a838688cd97d5b97e45e51f0"
+    },
+    {
+     "path": "dandelion_01/textures/dandelion_01_diff_2k.jpg",
+     "bytes": 1466191,
+     "sha256": "565a926562a7a2e7b4af99b85da2a7aabff70d7e2238511245a601901fab182f"
+    },
+    {
+     "path": "dandelion_01/textures/dandelion_01_mask_2k.png",
+     "bytes": 29725,
+     "sha256": "0ca834bd00bec2ca34d88d5221777e28371d6f81349ce063c39ec2a73540b44b"
+    },
+    {
+     "path": "dandelion_01/textures/dandelion_01_alpha_2k.png",
+     "bytes": 295015,
+     "sha256": "e38b2012cf9ab473ccbafb23fbc7a2667ecb0aa1cbc7b5de4b85f721a3ec0c2e"
+    }
+   ],
+   "triangles": 64099,
+   "vertices": 43441,
+   "mesh_objects": 20,
+   "materials": [
+    "dandelion_01"
+   ],
+   "bbox_m_xyz": [
+    4.214,
+    0.258,
+    0.17
+   ],
+   "height_m": 0.17,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "dandelion_01_diff_2k.jpg",
+     "opaque_fraction": 0.489,
+     "mean_srgb": [
+      122.7,
+      109.6,
+      38.2
+     ]
+    }
+   ],
+   "suggested_type_id": "weed_creep",
+   "notes": "Flowering variant for mown-verge speckle."
+  },
+  "celandine_01": {
+   "name": "Celandine 01",
+   "url": "https://polyhaven.com/a/celandine_01",
+   "authors": [
+    "Rob Tuytel (Photography)",
+    "Rico Cilliers (modeling)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 7059881,
+   "files": [
+    {
+     "path": "celandine_01/celandine_01_2k.fbx",
+     "bytes": 361836,
+     "sha256": "240068db21c154d09c25b62e52717c946fe52f02d8aadc48fec4db3f4ce978b7"
+    },
+    {
+     "path": "celandine_01/textures/celandine_01_alpha_2k.png",
+     "bytes": 631611,
+     "sha256": "432b365cb400044ccfd51965084f68b67b05e64f5a4ee3722d16111c946865b5"
+    },
+    {
+     "path": "celandine_01/textures/celandine_01_diff_2k.jpg",
+     "bytes": 1245607,
+     "sha256": "2f602608fcc2d00da1ba65043c6c125f93db226b952db22add1e9396fde3c60e"
+    },
+    {
+     "path": "celandine_01/textures/celandine_01_nor_gl_2k.exr",
+     "bytes": 2762821,
+     "sha256": "1b429d535bd1e34653cd8429e986469f6d204a752368c4ce2139470feca1560f"
+    },
+    {
+     "path": "celandine_01/textures/celandine_01_rough_2k.exr",
+     "bytes": 2058006,
+     "sha256": "e096117e3e816396fde5dc26f6754865cebd25a3c197df47b0fed2108be4e6d5"
+    }
+   ],
+   "triangles": 8966,
+   "vertices": 8499,
+   "mesh_objects": 5,
+   "materials": [
+    "celandine_01"
+   ],
+   "bbox_m_xyz": [
+    2.239,
+    0.307,
+    0.186
+   ],
+   "height_m": 0.186,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "celandine_01_diff_2k.jpg",
+     "opaque_fraction": 0.436,
+     "mean_srgb": [
+      110.2,
+      116.4,
+      45.7
+     ]
+    }
+   ],
+   "suggested_type_id": "weed_creep",
+   "notes": "Spring bank/verge flower variant, low priority."
+  },
+  "shrub_01": {
+   "name": "Shrub 01",
+   "url": "https://polyhaven.com/a/shrub_01",
+   "authors": [
+    "Rico Cilliers (All)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 16316490,
+   "files": [
+    {
+     "path": "shrub_01/shrub_01_2k.fbx",
+     "bytes": 4655388,
+     "sha256": "8244f46a273456ec69d2f31e45b8491c88acc0af5a57f23a5348bcf9becab508"
+    },
+    {
+     "path": "shrub_01/textures/shrub_01_nor_gl_2k.exr",
+     "bytes": 5715155,
+     "sha256": "0add556fb562a5a0058c081d52142d155e37b68f289d5f29f9c2c2d2edf3e350"
+    },
+    {
+     "path": "shrub_01/textures/shrub_01_rough_2k.exr",
+     "bytes": 1073448,
+     "sha256": "15db0d4fb7c5daf62a33b51e8de1d2c69d25dfa5d2eedea1fae9b27c527824ca"
+    },
+    {
+     "path": "shrub_01/textures/shrub_01_diff_2k.jpg",
+     "bytes": 1651989,
+     "sha256": "d464a823982b28832a92d3edacc62461adfb3f99117829127e79eb253051e940"
+    },
+    {
+     "path": "shrub_01/textures/shrub_01_disp_2k.png",
+     "bytes": 2922748,
+     "sha256": "d398d37c70bfd66c3bd21f6001150dccff28883b786e3a2afbec2eafb8412fbc"
+    },
+    {
+     "path": "shrub_01/textures/shrub_01_alpha_2k.png",
+     "bytes": 297762,
+     "sha256": "238e65642075a5317d5a68b509dfef4f369fd6e76b84528bc37eac95587edd24"
+    }
+   ],
+   "triangles": 156012,
+   "vertices": 91962,
+   "mesh_objects": 9,
+   "materials": [
+    "shrub_01"
+   ],
+   "bbox_m_xyz": [
+    2.587,
+    0.219,
+    0.396
+   ],
+   "height_m": 0.396,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "shrub_01_diff_2k.jpg",
+     "opaque_fraction": 0.41,
+     "mean_srgb": [
+      122.4,
+      121,
+      65.6
+     ]
+    }
+   ],
+   "suggested_type_id": "shrub_scrub",
+   "notes": "Low scrub, 0.4 m tall (156k tris: needs decimation/cards)."
+  },
+  "shrub_02": {
+   "name": "Shrub 02",
+   "url": "https://polyhaven.com/a/shrub_02",
+   "authors": [
+    "Rico Cilliers (All)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 6925902,
+   "files": [
+    {
+     "path": "shrub_02/shrub_02_2k.fbx",
+     "bytes": 832300,
+     "sha256": "3199734fcfdc382cc4cedbf17f8a95490993e9b9de9f8f63f57174e5068c288e"
+    },
+    {
+     "path": "shrub_02/textures/shrub_02_rough_2k.exr",
+     "bytes": 975541,
+     "sha256": "3d063014b5b52fb242bb55bc5f3521e3f36a0cadb7b887d24c9f596dcdfb5eef"
+    },
+    {
+     "path": "shrub_02/textures/shrub_02_nor_gl_2k.exr",
+     "bytes": 3565485,
+     "sha256": "2700ab1641f18605eabd04b69335560d7a6241916b63e6601577ef1802b8c5c6"
+    },
+    {
+     "path": "shrub_02/textures/shrub_02_mask_2k.png",
+     "bytes": 33820,
+     "sha256": "981e6acf153cc1732751b0742ab372f8c1f77e72f386033b66f44eef4b024c11"
+    },
+    {
+     "path": "shrub_02/textures/shrub_02_diff_2k.jpg",
+     "bytes": 1319985,
+     "sha256": "ac1f0a16eef67a6e4884f3a5e913d7562f310c7a7a73d1f6039fbcd120445ca5"
+    },
+    {
+     "path": "shrub_02/textures/shrub_02_alpha_2k.png",
+     "bytes": 198771,
+     "sha256": "e4b3970611262ab4869794bba127067774d0cdc4b7b6beb3293153f9eeeff72c"
+    }
+   ],
+   "triangles": 27254,
+   "vertices": 18311,
+   "mesh_objects": 4,
+   "materials": [
+    "shrub_02"
+   ],
+   "bbox_m_xyz": [
+    4.919,
+    1.857,
+    1.383
+   ],
+   "height_m": 1.383,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "shrub_02_diff_2k.jpg",
+     "opaque_fraction": 0.343,
+     "mean_srgb": [
+      106.5,
+      84,
+      59.4
+     ]
+    }
+   ],
+   "suggested_type_id": "shrub_scrub",
+   "notes": "Largest shrub, 1.4 m tall."
+  },
+  "shrub_03": {
+   "name": "Shrub 03",
+   "url": "https://polyhaven.com/a/shrub_03",
+   "authors": [
+    "Rico Cilliers (All)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 5812043,
+   "files": [
+    {
+     "path": "shrub_03/shrub_03_2k.fbx",
+     "bytes": 290956,
+     "sha256": "1ca8b2e70ea6e79976636ec2765ae66cb77f9d6200b2ff1d3fc712dadb1f1282"
+    },
+    {
+     "path": "shrub_03/textures/shrub_03_alpha_2k.png",
+     "bytes": 183836,
+     "sha256": "250606877093a81e791cc52e434f271a843838e6bed460a1c88a1955f52af50c"
+    },
+    {
+     "path": "shrub_03/textures/shrub_03_diff_2k.jpg",
+     "bytes": 1520137,
+     "sha256": "66290b6c5366dd0259f5a2a7d84deaac1dfe35f6be661c97752d98dbcdb427ed"
+    },
+    {
+     "path": "shrub_03/textures/shrub_03_rough_2k.exr",
+     "bytes": 931451,
+     "sha256": "c35c354227c7cc367f758eb9f6fac29b3ed500eb9be14c3cec3417e5be796f54"
+    },
+    {
+     "path": "shrub_03/textures/shrub_03_nor_gl_2k.exr",
+     "bytes": 2885663,
+     "sha256": "b08fdc361b7b63db0cc6c708c414e95470a636aa0a11789ee3c40d9ed36920ec"
+    }
+   ],
+   "triangles": 8287,
+   "vertices": 5882,
+   "mesh_objects": 4,
+   "materials": [
+    "shrub_03"
+   ],
+   "bbox_m_xyz": [
+    1.367,
+    0.151,
+    0.403
+   ],
+   "height_m": 0.403,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "shrub_03_diff_2k.jpg",
+     "opaque_fraction": 0.251,
+     "mean_srgb": [
+      133.1,
+      131,
+      44.6
+     ]
+    }
+   ],
+   "suggested_type_id": "shrub_scrub",
+   "notes": "Low scrub, 0.4 m, cheapest (8k tris)."
+  },
+  "shrub_04": {
+   "name": "Shrub 04",
+   "url": "https://polyhaven.com/a/shrub_04",
+   "authors": [
+    "Rico Cilliers (All)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 6005194,
+   "files": [
+    {
+     "path": "shrub_04/shrub_04_2k.fbx",
+     "bytes": 852556,
+     "sha256": "bb07591834364e3de8898c4dee76b77ca5c45916d497f2e1fa146a5f9ce22d1b"
+    },
+    {
+     "path": "shrub_04/textures/shrub_04_nor_gl_2k.exr",
+     "bytes": 2998775,
+     "sha256": "84234b8e698a4f355877722c755adaa4d53f37b5f7be81d2bd2d8d38fa657adb"
+    },
+    {
+     "path": "shrub_04/textures/shrub_04_alpha_2k.png",
+     "bytes": 91048,
+     "sha256": "6c30e2ffb781b3d54b246a2b1f9bf128e0c814fa9314b8d842e253f4914ac4de"
+    },
+    {
+     "path": "shrub_04/textures/shrub_04_mask_2k.png",
+     "bytes": 19483,
+     "sha256": "1dab74521b98685653257259897d0ea2062a2f9f34f493b23300537d5ccced64"
+    },
+    {
+     "path": "shrub_04/textures/shrub_04_diff_2k.jpg",
+     "bytes": 1202317,
+     "sha256": "a45e95f3c78c31a1d411c58232089bd472bb31ebe146ba4237c3f1a930f49fc9"
+    },
+    {
+     "path": "shrub_04/textures/shrub_04_rough_2k.exr",
+     "bytes": 841015,
+     "sha256": "7926caa1d9b61ac8ac9ad4a6561684f9ddb29b081f2dcd7b0bd3defb106b481a"
+    }
+   ],
+   "triangles": 27327,
+   "vertices": 18287,
+   "mesh_objects": 4,
+   "materials": [
+    "shrub_04"
+   ],
+   "bbox_m_xyz": [
+    0.747,
+    0.187,
+    0.28
+   ],
+   "height_m": 0.28,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "shrub_04_diff_2k.jpg",
+     "opaque_fraction": 0.376,
+     "mean_srgb": [
+      117.5,
+      102.8,
+      80
+     ]
+    }
+   ],
+   "suggested_type_id": "shrub_scrub",
+   "notes": "Small shrub, 0.28 m."
+  },
+  "moss_01": {
+   "name": "Moss 01",
+   "url": "https://polyhaven.com/a/moss_01",
+   "authors": [
+    "Rob Tuytel (All)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "2k",
+   "total_bytes": 5978844,
+   "files": [
+    {
+     "path": "moss_01/moss_01_2k.fbx",
+     "bytes": 51484,
+     "sha256": "8557968c4cd581591d2a081fc9cd5d11872a22aff7f60bdf06de1c9a62f3279b"
+    },
+    {
+     "path": "moss_01/textures/moss_01_alpha_2k.png",
+     "bytes": 167941,
+     "sha256": "43b8d86ec306f39bc9c896906d16aadfb20d00c1c773c9bcdc3122b6eff8a6d0"
+    },
+    {
+     "path": "moss_01/textures/moss_01_diff_2k.jpg",
+     "bytes": 511727,
+     "sha256": "75acf965b37418e1f35401a307d759bb2f7171f231e88e0c327f94d142d2499a"
+    },
+    {
+     "path": "moss_01/textures/moss_01_nor_gl_2k.exr",
+     "bytes": 3625820,
+     "sha256": "13792b9699824eb86188deabb6d71df99721c699eef478cec473ff33ae20b253"
+    },
+    {
+     "path": "moss_01/textures/moss_01_rough_2k.exr",
+     "bytes": 1621872,
+     "sha256": "8a89a210140aeeddd71d25646f09fdb7e96566a5cc14dd959c7abd1d54c7dc6a"
+    }
+   ],
+   "triangles": 204,
+   "vertices": 204,
+   "mesh_objects": 12,
+   "materials": [
+    "moss_01"
+   ],
+   "bbox_m_xyz": [
+    0.215,
+    0.029,
+    0.04
+   ],
+   "height_m": 0.04,
+   "alpha_masking": "yes, all materials",
+   "mean_leaf_colour": [
+    {
+     "texture": "moss_01_diff_2k.jpg",
+     "opaque_fraction": 0.063,
+     "mean_srgb": [
+      85.3,
+      84.7,
+      30.7
+     ]
+    }
+   ],
+   "suggested_type_id": "unassigned",
+   "notes": "Candidate for kerb-base / wall-foot moss decals; not in the plan."
+  },
+  "tree_small_02": {
+   "name": "Tree Small 02",
+   "url": "https://polyhaven.com/a/tree_small_02",
+   "authors": [
+    "Rico Cilliers (All)"
+   ],
+   "license": "CC0",
+   "format": "fbx",
+   "resolution": "1k",
+   "total_bytes": 95795932,
+   "files": [
+    {
+     "path": "tree_small_02/tree_small_02_1k.fbx",
+     "bytes": 75487180,
+     "sha256": "442394b4d39dcefef6c54358becea3c86735f040f2601b2c0c082e3ecf3685c5"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_branch_diff_1k.png",
+     "bytes": 1277270,
+     "sha256": "a93ce54213c4a98cd01cb5c5f7ab46b77defcd66e1dd082e6912f6e60632e630"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_branch_nor_gl_1k.png",
+     "bytes": 5754879,
+     "sha256": "0338a1400391893fdf6c6cbd1c22a573d6ab2300ad771d4916184bf206e1a671"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_branch_rough_1k.png",
+     "bytes": 421614,
+     "sha256": "f285a54d141f30e39c7741e84a813c5cbccd9e9ee397af687176213f77d3e9a5"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_diff_1k.jpg",
+     "bytes": 863246,
+     "sha256": "4e0093f407b3a1120a36de49a48ebe5a465a9a9b77e361c7a3e66866e115e404"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_leaves_alpha_1k.png",
+     "bytes": 264711,
+     "sha256": "4f143e2dda8a6a572f427ac378b92255d21761e4611de0d26e21816c01aa533b"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_leaves_diff_1k.png",
+     "bytes": 2338424,
+     "sha256": "d3fc48522c76aa1f91076c6b86f302669822ebe4e2acabd67d42c4d57eaa5ba0"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_leaves_nor_gl_1k.png",
+     "bytes": 4903387,
+     "sha256": "fa4ad390f2e68b745db8f568cad64c3272696c5e01312ae564795e37724d79b8"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_leaves_rough_1k.png",
+     "bytes": 1043665,
+     "sha256": "f005213467e38bcb355b00c9a6eb9896b8d810ee885d5c7fa308d9f3326ef602"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_nor_gl_1k.exr",
+     "bytes": 2462999,
+     "sha256": "cf999e30663267b55b6fab43ca97c1e96176bdc67268e6c25854d53f15267d64"
+    },
+    {
+     "path": "tree_small_02/textures/tree_small_02_rough_1k.exr",
+     "bytes": 978557,
+     "sha256": "1ed5ad24397c065beb2b2d3521470730f24e957cbd5fb323ad3f9b6d267b4585"
+    }
+   ],
+   "triangles": 2062487,
+   "vertices": 1755568,
+   "mesh_objects": 1,
+   "materials": [
+    "tree_small_02_branches",
+    "tree_small_02_leaves",
+    "tree_small_02_trunk"
+   ],
+   "bbox_m_xyz": [
+    2.917,
+    4.292,
+    4.557
+   ],
+   "height_m": 4.557,
+   "alpha_masking": "leaves material only",
+   "mean_leaf_colour": [
+    {
+     "texture": "tree_small_02_branch_diff_1k.png",
+     "opaque_fraction": 1,
+     "mean_srgb": [
+      115.6,
+      102,
+      90.3
+     ]
+    },
+    {
+     "texture": "tree_small_02_diff_1k.jpg",
+     "opaque_fraction": 1,
+     "mean_srgb": [
+      101.4,
+      88,
+      76.4
+     ]
+    },
+    {
+     "texture": "tree_small_02_leaves_diff_1k.png",
+     "opaque_fraction": 0.535,
+     "mean_srgb": [
+      102.2,
+      119.2,
+      58.5
+     ]
+    }
+   ],
+   "suggested_type_id": "tree_sapling_staked (fallback tree_broadleaf_open)",
+   "notes": "Plan task 3 names it as the fallback if PVE trees fail the packaged-build test. 2.06M tris: must be decimated or converted to cards before use."
+  }
+ },
+ "total_bytes": 186194351
+}
