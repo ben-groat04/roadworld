@@ -32,9 +32,9 @@ void UCPToolHudWidget::NativeOnInitialized()
 	Panel->SetContent(LineBox);
 	if (UCanvasPanelSlot* PanelSlot = Canvas->AddChildToCanvas(Panel))
 	{
-		PanelSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));   // top left like the prototype HUD, below the M1 readout panel
+		PanelSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));   // top left like the prototype HUD, the M1 readout is top right
 		PanelSlot->SetAlignment(FVector2D(0.0, 0.0));
-		PanelSlot->SetPosition(FVector2D(16.0, 84.0));
+		PanelSlot->SetPosition(FVector2D(16.0, 16.0));
 		PanelSlot->SetAutoSize(true);
 	}
 

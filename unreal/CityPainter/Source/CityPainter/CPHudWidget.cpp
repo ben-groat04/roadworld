@@ -30,7 +30,9 @@ void UCPHudWidget::NativeOnInitialized()
 	if (UCanvasPanelSlot* CanvasSlot = Canvas->AddChildToCanvas(Panel))
 	{
 		CanvasSlot->SetAutoSize(true);
-		CanvasSlot->SetPosition(FVector2D(16.0, 16.0));
+		CanvasSlot->SetAnchors(FAnchors(1.f, 0.f, 1.f, 0.f));   // top right: the top left belongs to the road tool HUD (as the prototype)
+		CanvasSlot->SetAlignment(FVector2D(1.0, 0.0));
+		CanvasSlot->SetPosition(FVector2D(-16.0, 16.0));
 	}
 }
 

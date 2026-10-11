@@ -14,7 +14,7 @@ namespace
 {
 using namespace CPPlaytestRoadSteps;
 
-constexpr double Dist = 300.0;      // metres, the prototype's mid-stroke screenshots are about this wide
+constexpr double Dist = 340.0;      // metres, the prototype's mid-stroke screenshots are about this wide
 constexpr double Polar = 0.95;      // radians from straight down (the prototype's start view)
 
 /** One state: pointer position, a settle, a log of the HUD, a picture. */
@@ -35,7 +35,7 @@ void StateHere(FBuilder& B, const FString& Name)
 
 void ScenarioStates(FBuilder& B)
 {
-	B.View(Dist, 0.0, Polar, 0.0, -30.0);
+	B.View(Dist, 0.0, Polar, 0.0, -80.0);
 
 	// 02 idle: the pointer is over the sky or the HUD, not over the ground (viewport top edge).
 	B.PointerFraction(0.5, 0.0);
@@ -100,14 +100,14 @@ void ScenarioStates(FBuilder& B)
 	State(B, TEXT("s15_advisory_grade"), 100, -90);
 	B.Press(EKeys::Escape);
 	// 16 bridge: the cursor 25 m above the ground.
-	B.Click(-140, -170);
+	B.Click(-120, -140);
 	for (int32 I = 0; I < 5; ++I) { B.Press(EKeys::PageUp); }
-	State(B, TEXT("s16_advisory_bridge"), -40, -170);
+	State(B, TEXT("s16_advisory_bridge"), -30, -140);
 	B.Press(EKeys::Escape);
 	// 17 tunnel: the cursor 25 m below the ground.
-	B.Click(-140, -200);
+	B.Click(-120, -150);
 	for (int32 I = 0; I < 5; ++I) { B.Press(EKeys::PageDown); }
-	State(B, TEXT("s17_advisory_tunnel"), -40, -200);
+	State(B, TEXT("s17_advisory_tunnel"), -30, -150);
 	B.Press(EKeys::Escape);
 	B.ShiftUp();
 
@@ -116,9 +116,9 @@ void ScenarioStates(FBuilder& B)
 	{
 		B.Press(Type);
 		if (bOneWay) { B.Press(EKeys::O); }
-		B.Click(-90, -230);
-		B.Click(-50, -215);
-		State(B, Name, 0, -190);
+		B.Click(-90, -150);
+		B.Click(-50, -135);
+		State(B, Name, 0, -105);
 		B.Press(EKeys::Escape);
 		if (bOneWay) { B.Press(EKeys::O); }
 	};
@@ -131,20 +131,20 @@ void ScenarioStates(FBuilder& B)
 
 	// 26 three points before the finish, then 27 finished and idle.
 	B.ShiftDown();
-	B.Click(-100, -260);
-	B.Click(0, -260);
-	B.Click(100, -260);
+	B.Click(-100, -165);
+	B.Click(0, -165);
+	B.Click(100, -165);
 	B.ShiftUp();
-	State(B, TEXT("s26_stroke_3pts_before_finish"), 100, -260);
+	State(B, TEXT("s26_stroke_3pts_before_finish"), 100, -165);
 	B.Press(EKeys::Enter);
 	B.CheckGraph(TEXT("states: second road finished"), 4, 2, TEXT(""));
-	State(B, TEXT("s27_finished_road_idle"), 100, -260);
+	State(B, TEXT("s27_finished_road_idle"), 100, -165);
 
 	// 28 crossing refused: a street across R0 whose height differs by a few metres where they cross.
 	B.ShiftDown();
 	B.Click(-20, -40);
 	B.Press(EKeys::PageUp);
-	B.Pointer(-20, 60);
+	B.Click(-20, 60);
 	B.Press(EKeys::Enter);
 	B.ShiftUp();
 	StateHere(B, TEXT("s28_error_crossing_too_close"));
