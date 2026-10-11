@@ -1,12 +1,15 @@
 // Road tool: ground pick, road index, stroke resolver, DrawSession scripted click sequences.
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <tuple>
 #include <vector>
 
 #include "doctest/doctest.h"
+#include "cp/edge_sampling.h"
 #include "cp/ground_pick.h"
 #include "cp/junction.h"
 #include "cp/lanes.h"
@@ -399,7 +402,19 @@ TEST_CASE("DrawSession: crossing at grade joins, level separation does not, the 
         d.adjust_height(3);
         d.click(at(100, -60), kFree);
         d.adjust_height(3);
-        d.click(at(100, 60), kFree);
+        // the preview now warns before the click, and the click itself is refused with the reason (the
+        // prototype found this only at finish: see the preview-off variant below)
+        CHECK(has_issue(d.hover(at(100, 60), kFree).errors, IssueCode::Crossing));
+        CHECK_FALSE(d.click(at(100, 60), kFree).added);
+        CHECK(d.points().size() == 1);
+        auto r0 = d.finish_at_cursor(at(100, 60), kFree);
+        CHECK_FALSE(r0.ok());
+        CHECK(r0.error.find("crossing too close vertically (3.0 m)") != std::string::npos);
+        CHECK(snap(rig.g) == before);
+        // with the live check off, the refusal comes at finish as before
+        d.params().crossing_feedback = false;
+        d.set_height_offset(3);
+        REQUIRE(d.click(at(100, 60), kFree).added);
         auto r = d.finish();
         CHECK_FALSE(r.ok());
         CHECK(r.error.find("crossing too close vertically (3.0 m)") != std::string::npos);
@@ -764,5 +779,615 @@ TEST_CASE("DrawSession: strokes that meet roads make real junctions (T = 3 arms,
         REQUIRE(r.ok());
         REQUIRE(rig.st.execute(std::move(r.command)));
         CHECK(build_plain_junctions(rig.g, *rig.region, {}).junctions.empty());
+    }
+}
+
+// ================================================================ parity work (11 Oct 2026)
+// Profile series, finish semantics, crossing feedback, readouts, G1 / CannotFit states.
+
+namespace {
+
+double dist_to_polyline_xy(const Vec3& p, const std::vector<Vec3>& poly) {
+    double best = 1e18;
+    for (std::size_t i = 0; i + 1 < poly.size(); ++i) {
+        const Vec2 a = poly[i].xy(), b = poly[i + 1].xy(), ab = b - a;
+        const double l2 = ab.dot(ab);
+        const double t = l2 > 0 ? std::clamp((p.xy() - a).dot(ab) / l2, 0.0, 1.0) : 0.0;
+        best = std::min(best, (p.xy() - (a + ab * t)).length());
+    }
+    return best;
+}
+double max_dev(const std::vector<Vec3>& line, const std::vector<Vec3>& poly) {
+    double m = 0;
+    for (const Vec3& p : line) m = std::max(m, dist_to_polyline_xy(p, poly));
+    return m;
+}
+std::vector<Vec3> ribbon_line(const Ribbon& r) {
+    std::vector<Vec3> v = r.committed;
+    for (std::size_t i = 0; i < r.hover.size(); ++i)
+        if (v.empty() || i > 0 || (r.hover[i].xy() - v.back().xy()).length() > 1e-9) v.push_back(r.hover[i]);
+    return v;
+}
+std::vector<Vec3> edge_line(const Edge& e) {
+    std::vector<Vec3> v;
+    for (const EdgeSample& s : sample_centreline(e)) v.push_back(s.pos);
+    return v;
+}
+void pit_and_hill(Rig& rig) {
+    rig.set_ground([](double x, double y) {
+        const double d1 = std::hypot(x, y - 100), d2 = std::hypot(x, y + 100);
+        return (d1 < 60 ? -40.0 * std::min(1.0, (60 - d1) / 20) : 0.0) + (d2 < 60 ? 40.0 * std::min(1.0, (60 - d2) / 20) : 0.0);
+    });
+}
+
+}  // namespace
+
+TEST_CASE("DrawSession: profile series carries what the panel plots") {
+    Rig rig;
+    rig.set_ground([](double x, double y) { return 10 + 0.05 * x + 3 * std::sin(y / 40); });
+    DrawSession d(rig.g, rig.hf);
+    d.set_road_type("b_road");
+    d.click(at(0, 0), kFree);
+    d.click(at(80, 0), kFree);
+    const DrawPreview pv = d.hover(at(160, 40), kFree);
+    REQUIRE(pv.ok());
+    const ProfileSeries& pr = pv.profile;
+    REQUIRE(pr.valid);
+    CHECK(pr.length == doctest::Approx(pv.readouts.length));
+    CHECK(pr.step == doctest::Approx(2.0));
+    CHECK(pr.wall_cap == doctest::Approx(12));
+    CHECK(pr.max_grade_pct == doctest::Approx(8));
+    REQUIRE(pr.stations.size() > 50);
+    CHECK(pr.stations.front().s == 0);
+    CHECK(pr.stations.back().s == doctest::Approx(pr.length));
+    bool ascending = true, spaced = true, depth_ok = true, ground_ok = true;
+    for (std::size_t i = 0; i < pr.stations.size(); ++i) {
+        const ProfileStation& st = pr.stations[i];
+        if (i > 0) {
+            ascending = ascending && st.s > pr.stations[i - 1].s;
+            spaced = spaced && st.s - pr.stations[i - 1].s <= pr.step + 1e-9;
+        }
+        depth_ok = depth_ok && std::abs(st.depth - (st.road_z - st.ground_z)) < 1e-12;
+    }
+    CHECK(ascending);
+    CHECK(spaced);
+    CHECK(depth_ok);
+    // ground and road at the ends are the clicked / cursor points
+    CHECK(pr.stations.front().ground_z == doctest::Approx(rig.hf.height(0, 0)));
+    CHECK(pr.stations.front().road_z == doctest::Approx(rig.hf.height(0, 0)));
+    CHECK(pr.stations.back().road_z == doctest::Approx(pv.cursor.z));
+    CHECK(pr.stations.back().ground_z == doctest::Approx(rig.hf.height(160, 40)));
+    ground_ok = pr.z_min <= pr.stations.front().ground_z && pr.z_max >= pr.stations.back().road_z;
+    CHECK(ground_ok);
+    // control points, vertical curves, grade labels
+    REQUIRE(pr.curves.size() == 3);
+    CHECK(pr.curves.front().length == 0);
+    CHECK(pr.curves.back().length == 0);
+    CHECK(pr.curves[1].length > 0);
+    CHECK(pr.curves[1].s0 == doctest::Approx(pr.curves[1].s - pr.curves[1].length / 2));
+    CHECK(pr.curves[1].s1 == doctest::Approx(pr.curves[1].s + pr.curves[1].length / 2));
+    CHECK(pr.curves.back().s == doctest::Approx(pr.length));
+    REQUIRE(pr.grades.size() == 2);
+    for (const ProfileGrade& g : pr.grades) {
+        CHECK(g.grade_pct == doctest::Approx((g.z1 - g.z0) / (g.s1 - g.s0) * 100));
+        CHECK(g.s_mid == doctest::Approx((g.s0 + g.s1) / 2));
+        char want[32];
+        std::snprintf(want, sizeof want, "%+.1f%%", g.grade_pct);
+        CHECK(g.label == want);
+        CHECK_FALSE(g.over_limit);  // about 5 % on an 8 % road
+    }
+    CHECK(pr.grades[0].grade_pct == doctest::Approx((rig.hf.height(80, 0) - rig.hf.height(0, 0)) / pr.grades[0].s1 * 100));
+    CHECK(pr.structures.empty());
+    CHECK(pr.authored_structures.empty());
+    // a steeper stroke flags the over-limit label
+    d.cancel();
+    d.click(at(0, 0), kFree);
+    d.adjust_height(10);
+    const DrawPreview steep = d.hover(at(60, 0), kFree);
+    REQUIRE(steep.profile.valid);
+    REQUIRE(steep.profile.grades.size() == 1);
+    CHECK(steep.profile.grades[0].over_limit);
+    CHECK(steep.profile.grades[0].label.rfind("+", 0) == 0);
+    // switching the series off leaves the advisories alone
+    d.params().profile_series = false;
+    const DrawPreview off = d.hover(at(60, 0), kFree);
+    CHECK_FALSE(off.profile.valid);
+    CHECK(off.profile.stations.empty());
+    CHECK(has_issue(off.advisories, IssueCode::GradeAboveAdvisory));
+}
+
+TEST_CASE("DrawSession: profile series marks the bridge and tunnel ranges and matches a committed road") {
+    Rig rig;
+    pit_and_hill(rig);
+    DrawSession d(rig.g, rig.hf);
+    d.set_road_type("b_road");
+    d.click(at(0, 0), kFree);
+    d.adjust_height(40);
+    d.click(at(0, 100), kFree);  // pit centre held at z = 0 (ground -40)
+    const DrawPreview pv = d.hover(at(0, 200), kFree);
+    REQUIRE(pv.profile.valid);
+    REQUIRE_FALSE(pv.profile.structures.empty());
+    for (const ProfileStructure& s : pv.profile.structures) {
+        CHECK(s.kind == StructureKind::Bridge);
+        CHECK(s.s0 >= 0);
+        CHECK(s.s1 <= pv.profile.length + 1e-9);
+        CHECK(s.s1 > s.s0);
+        // the middle of the range is deep fill
+        const double mid = (s.s0 + s.s1) / 2;
+        const auto it = std::min_element(pv.profile.stations.begin(), pv.profile.stations.end(),
+                                         [&](const ProfileStation& a, const ProfileStation& b) { return std::abs(a.s - mid) < std::abs(b.s - mid); });
+        CHECK(it->depth > pv.profile.wall_cap);
+    }
+    // the series of the committed road is the series the preview showed
+    d.set_height_offset(0);
+    auto f = d.finish_at_cursor(at(0, 200), kFree);
+    REQUIRE(f.ok());
+    REQUIRE(rig.st.execute(std::move(f.command)));
+    const EdgeId id = rig.g.edges().rbegin()->first;
+    const ProfileSeries after = profile_of_edge(rig.g, rig.hf, id, 2.0);
+    REQUIRE(after.valid);
+    CHECK(after.length == doctest::Approx(pv.profile.length));
+    REQUIRE(after.stations.size() == pv.profile.stations.size());
+    for (std::size_t i = 0; i < after.stations.size(); ++i) {
+        CHECK(after.stations[i].s == doctest::Approx(pv.profile.stations[i].s));
+        CHECK(after.stations[i].road_z == doctest::Approx(pv.profile.stations[i].road_z).epsilon(1e-6));
+        CHECK(after.stations[i].ground_z == doctest::Approx(pv.profile.stations[i].ground_z).epsilon(1e-6));
+    }
+    CHECK(after.structures.size() == pv.profile.structures.size());
+    CHECK(after.grades.size() == pv.profile.grades.size());
+    CHECK(after.curves.size() == pv.profile.curves.size());
+    // an authored span shows in authored_structures
+    REQUIRE(rig.st.execute(make_set_structure_span(id, 20, 80, StructureKind::Tunnel)));
+    const ProfileSeries authored = profile_of_edge(rig.g, rig.hf, id);
+    REQUIRE(authored.authored_structures.size() == 1);
+    CHECK(authored.authored_structures[0].kind == StructureKind::Tunnel);
+    CHECK_FALSE(profile_of_edge(rig.g, rig.hf, EdgeId{}).valid);
+    // tunnel under the hill
+    Rig rig2;
+    pit_and_hill(rig2);
+    DrawSession d2(rig2.g, rig2.hf);
+    d2.set_road_type("b_road");
+    d2.click(at(0, 0), kFree);
+    d2.set_height_offset(-40);
+    d2.click(at(0, -100), kFree);
+    const DrawPreview tv = d2.hover(at(0, -200), kFree);
+    REQUIRE_FALSE(tv.profile.structures.empty());
+    CHECK(tv.profile.structures[0].kind == StructureKind::Tunnel);
+}
+
+TEST_CASE("DrawSession: hover cost with and without the profile series (printed)") {
+    Rig rig;
+    rig.set_ground([](double x, double y) { return 6 * std::sin(x / 90) + 4 * std::cos(y / 70); });
+    // a busy graph: a 5 x 5 grid of roads, 200 m apart
+    for (int i = 0; i < 5; ++i) {
+        rig.road({-400.0 + i * 200, -400, 0}, {-400.0 + i * 200, 400, 0});
+        rig.road({-400, -400.0 + i * 200, 0}, {400, -400.0 + i * 200, 0});
+    }
+    DrawSession d(rig.g, rig.hf);
+    d.set_road_type("b_road");
+    d.click(at(-350, -350), kFree);
+    d.click(at(-250, -330), kFree);
+    d.click(at(-100, -380), kFree);
+    d.click(at(100, -330), kFree);
+    auto time_ms = [&](bool profile, bool crossings) {
+        d.params().profile_series = profile;
+        d.params().crossing_feedback = crossings;
+        d.hover(at(300, 250), kFree);  // warm the caches
+        const int n = 200;
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; i < n; ++i) d.hover(at(300 + i * 0.3, 250 - i * 0.2), kFree);
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / n;
+    };
+    const double none = time_ms(false, false), prof = time_ms(true, false), cross = time_ms(false, true), both = time_ms(true, true);
+    std::fprintf(stderr, "[hover cost, 4-point stroke ~800 m, 10-road grid] bare %.3f ms, +profile %.3f ms, +crossings %.3f ms, both %.3f ms\n", none,
+                 prof, cross, both);
+    CHECK(both < 50.0);  // generous: a regression guard, not the measurement
+}
+
+TEST_CASE("DrawSession: finish_at_cursor commits exactly the stroke the preview showed") {
+    for (const bool snapped : {false, true}) {
+        Rig rig;
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("b_road");
+        const Modifiers mods = snapped ? Modifiers{} : kFree;
+        d.click(at(0, 0), mods);
+        d.click(at(64, 16), mods);
+        const DrawPreview pv = d.hover(at(131, -23), mods);
+        REQUIRE(pv.ok());
+        REQUIRE(pv.ribbons.size() == 1);
+        const std::vector<Vec3> shown = ribbon_line(pv.ribbons[0]);
+        FinishResult f = d.finish_at_cursor(at(131, -23), mods);
+        REQUIRE(f.ok());
+        CHECK_FALSE(d.active());
+        REQUIRE(rig.st.execute(std::move(f.command)));
+        REQUIRE(rig.g.edges().size() == 1);
+        const Edge& e = rig.g.edges().begin()->second;
+        CHECK(max_dev(shown, edge_line(e)) < 0.02);
+        CHECK(max_dev(edge_line(e), shown) < 0.2);  // the other way round: no part of the road is missing from the ghost
+        CHECK(e.horizontal.length() == doctest::Approx(pv.readouts.length).epsilon(1e-9));
+        // the road ends at the cursor point the preview resolved, at its height
+        bool end_at_cursor = false;
+        for (const auto& [id, n] : rig.g.nodes())
+            end_at_cursor = end_at_cursor || ((n.pos.xy() - pv.cursor.xy()).length() < 1e-6 && std::abs(n.pos.z - pv.cursor.z) < 1e-6);
+        CHECK(end_at_cursor);
+        CHECK(e.interior.size() == 1);
+    }
+}
+
+TEST_CASE("DrawSession: finish() still ends at the last clicked point; the would_finish preview is that road") {
+    Rig rig;
+    DrawSession d(rig.g, rig.hf);
+    d.set_road_type("residential");
+    d.click(at(0, 0), kFree);
+    CHECK(d.hover(at(0, 0), kFree).ribbons.empty());  // one point: nothing to show yet
+    d.click(at(60, 10), kFree);
+    d.click(at(120, -20), kFree);
+    const DrawPreview wf = d.hover(at(120, -20), kFree);
+    REQUIRE(wf.would_finish);
+    REQUIRE(wf.ribbons.size() == 1);
+    CHECK(wf.ribbons[0].hover.empty());  // the whole ribbon is committed geometry
+    CHECK_FALSE(wf.ribbons[0].committed.empty());
+    CHECK(wf.cursor.x == doctest::Approx(120));
+    CHECK(wf.profile.valid);
+    CHECK(wf.readouts.length > 120);
+    CHECK(wf.readouts.g2);
+    CHECK(wf.ok());
+    const std::vector<Vec3> shown = wf.ribbons[0].committed;
+    // a hover further on is a different road; finish() ignores it
+    const DrawPreview further = d.hover(at(200, -20), kFree);
+    CHECK_FALSE(further.would_finish);
+    CHECK(further.readouts.length > wf.readouts.length + 50);
+    auto f = d.finish();
+    REQUIRE(f.ok());
+    REQUIRE(rig.st.execute(std::move(f.command)));
+    const Edge& e = rig.g.edges().begin()->second;
+    CHECK(max_dev(shown, edge_line(e)) < 0.02);
+    CHECK(max_dev(edge_line(e), shown) < 0.2);
+    CHECK(e.horizontal.length() == doctest::Approx(wf.readouts.length).epsilon(1e-9));
+    // a click on the last point finishes with the same geometry
+    Rig rig2;
+    DrawSession d2(rig2.g, rig2.hf);
+    d2.set_road_type("residential");
+    d2.click(at(0, 0), kFree);
+    d2.click(at(60, 10), kFree);
+    d2.click(at(120, -20), kFree);
+    auto c = d2.click(at(120, -20), kFree);
+    REQUIRE(c.finished);
+    REQUIRE(rig2.st.execute(std::move(c.finish.command)));
+    CHECK(rig2.g.edges().begin()->second.horizontal.length() == doctest::Approx(e.horizontal.length()).epsilon(1e-9));
+}
+
+TEST_CASE("DrawSession: finish_at_cursor on a dual road, on a snapped end, on a refusal, off the ground") {
+    {  // dual: two ribbons, two carriageway edges, each ribbon is one of them
+        Rig rig;
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("a_road_dual");
+        d.click(at(0, 0), kFree);
+        d.click(at(80, 0), kFree);
+        const DrawPreview pv = d.hover(at(160, 50), kFree);
+        REQUIRE(pv.ok());
+        REQUIRE(pv.ribbons.size() == 2);
+        auto f = d.finish_at_cursor(at(160, 50), kFree);
+        REQUIRE(f.ok());
+        REQUIRE(rig.st.execute(std::move(f.command)));
+        REQUIRE(rig.g.edges().size() == 2);
+        for (const Ribbon& rb : pv.ribbons) {
+            const std::vector<Vec3> shown = ribbon_line(rb);
+            double best = 1e9;
+            for (const auto& [id, e] : rig.g.edges()) best = std::min(best, max_dev(shown, edge_line(e)));
+            CHECK(best < 0.02);  // the ghost IS one of the two committed carriageways
+        }
+    }
+    {  // snapped to a free end: the same command as clicking there
+        auto build = [](bool by_click) {
+            Rig rig;
+            rig.road({0, 0, 0}, {100, 0, 0});
+            rig.road({200, 0, 0}, {300, 0, 0});
+            DrawSession d(rig.g, rig.hf);
+            d.set_road_type("residential");
+            d.click(at(100, 0));  // continues from the free end heading east
+            const PointerInput in = at(200, 0);
+            const DrawPreview pv = d.hover(in);
+            REQUIRE(pv.snap == SnapKind::End);
+            FinishResult f;
+            if (by_click) {
+                ClickResult c = d.click(in);
+                REQUIRE(c.auto_finished);
+                f = std::move(c.finish);
+            } else {
+                f = d.finish_at_cursor(in);
+            }
+            REQUIRE(f.ok());
+            REQUIRE(rig.st.execute(std::move(f.command)));
+            return snap(rig.g);
+        };
+        CHECK(build(false) == build(true));
+    }
+    {  // a refused cursor: reason returned, stroke untouched
+        Rig rig;
+        rig.road({0, 0, 0}, {200, 0, 0});
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("residential");
+        d.set_height_offset(3);
+        REQUIRE(d.click(at(100, -60), kFree).added);
+        d.set_height_offset(3);
+        const Snap before = snap(rig.g);
+        auto f = d.finish_at_cursor(at(100, 60), kFree);
+        CHECK_FALSE(f.ok());
+        CHECK(f.error_code == IssueCode::Crossing);
+        CHECK(f.error.find("crossing too close vertically (3.0 m)") != std::string::npos);
+        CHECK(d.active());
+        CHECK(d.points().size() == 1);
+        CHECK(snap(rig.g) == before);
+        // too short
+        d.set_height_offset(0);
+        auto g = d.finish_at_cursor(at(100, -58, 0.1), kFree);
+        CHECK_FALSE(g.ok());
+        CHECK(g.error_code == IssueCode::MinSpan);
+        // off the ground
+        PointerInput sky = at(0, 0);
+        sky.ray.dir = {0, 0, 1};
+        CHECK_FALSE(d.finish_at_cursor(sky, kFree).ok());
+        // nothing placed
+        d.cancel();
+        CHECK_FALSE(d.finish_at_cursor(at(0, 0), kFree).ok());
+    }
+    {  // CannotFit on a natural stroke: the second leg runs back along the first (found by random search over free 3-point strokes)
+        Rig rig;
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("residential");
+        REQUIRE(d.click(at(0, 0), kFree).added);
+        REQUIRE(d.click(at(-17.2, -14.4), kFree).added);
+        const DrawPreview pv = d.hover(at(-7.0, -5.7), kFree);
+        CHECK(has_issue(pv.errors, IssueCode::CannotFit));
+        CHECK(pv.ribbons.empty());
+    }
+}
+
+TEST_CASE("DrawSession: crossings are reported while hovering, with verdict, level difference and clearance") {
+    Rig rig;
+    rig.road({0, 0, 0}, {200, 0, 0});
+    DrawSession d(rig.g, rig.hf);
+    d.set_road_type("residential");
+    const Snap before = snap(rig.g);
+    auto place = [&](double z) {
+        d.cancel();
+        d.set_height_offset(z);
+        REQUIRE(d.click(at(100, -60), kFree).added);
+        d.set_height_offset(z);
+    };
+    {  // 3 m above: refused
+        place(3);
+        const DrawPreview pv = d.hover(at(100, 60), kFree);
+        CHECK_FALSE(pv.ok());
+        REQUIRE(pv.crossings.size() == 1);
+        const CrossingReport& c = pv.crossings[0];
+        CHECK(c.verdict == CrossingVerdict::Refused);
+        CHECK(c.level_difference == doctest::Approx(3.0).epsilon(1e-6));
+        CHECK(c.clearance == doctest::Approx(rig.region->headroom_m));
+        CHECK(c.join_limit == doctest::Approx(rig.region->plan_crossing_junction_dz_m));
+        CHECK(c.pos.x == doctest::Approx(100).epsilon(1e-3));
+        CHECK(c.pos.y == doctest::Approx(0).epsilon(1e-3));
+        CHECK(c.edge == rig.g.edges().begin()->first);
+        CHECK(c.edge_s == doctest::Approx(100).epsilon(1e-2));
+        CHECK(c.text.find("crossing too close vertically (3.0 m)") != std::string::npos);
+        CHECK(has_issue(pv.errors, IssueCode::Crossing));
+        CHECK(pv.errors.front().text == c.text);
+        // the click is refused before it lands, with the reason
+        const ClickResult cr = d.click(at(100, 60), kFree);
+        CHECK_FALSE(cr.added);
+        CHECK(has_issue(cr.errors, IssueCode::Crossing));
+        CHECK(d.points().size() == 1);
+    }
+    {  // level with the road: joins
+        place(0.3);
+        const DrawPreview pv = d.hover(at(100, 60), kFree);
+        CHECK(pv.ok());
+        REQUIRE(pv.crossings.size() == 1);
+        CHECK(pv.crossings[0].verdict == CrossingVerdict::Join);
+        CHECK(pv.crossings[0].text.empty());
+        CHECK(pv.crossings[0].level_difference < pv.crossings[0].join_limit);
+    }
+    {  // high enough: clear, with the clearance it has
+        place(8);
+        const DrawPreview pv = d.hover(at(100, 60), kFree);
+        CHECK(pv.ok());
+        REQUIRE(pv.crossings.size() == 1);
+        CHECK(pv.crossings[0].verdict == CrossingVerdict::Clear);
+        CHECK(pv.crossings[0].level_difference == doctest::Approx(8.0).epsilon(1e-6));
+        CHECK(pv.crossings[0].level_difference >= pv.crossings[0].clearance);
+        CHECK(d.click(at(100, 60), kFree).added);
+    }
+    {  // no crossing, no report
+        d.cancel();
+        d.click(at(0, 50), kFree);
+        CHECK(d.hover(at(150, 60), kFree).crossings.empty());
+    }
+    {  // a dual stroke is tested per carriageway
+        d.cancel();
+        d.set_road_type("a_road_dual");
+        d.set_height_offset(3);
+        REQUIRE(d.click(at(100, -80), kFree).added);
+        d.set_height_offset(3);
+        const DrawPreview pv = d.hover(at(100, 80), kFree);
+        CHECK_FALSE(pv.ok());
+        int a = 0, b = 0;
+        for (const CrossingReport& c : pv.crossings) {
+            a += c.carriageway == 1;
+            b += c.carriageway == 2;
+            CHECK(c.verdict == CrossingVerdict::Refused);
+        }
+        CHECK(a == 1);
+        CHECK(b == 1);
+        int crossing_errors = 0;
+        for (const Issue& i : pv.errors) crossing_errors += i.code == IssueCode::Crossing;
+        CHECK(crossing_errors == 1);  // identical refusals are listed once
+    }
+    CHECK(snap(rig.g) == before);
+}
+
+TEST_CASE("DrawSession: a refused finish stays in the preview until its cause is removed") {
+    Rig rig;
+    rig.road({0, 0, 0}, {200, 0, 0});
+    DrawSession d(rig.g, rig.hf);
+    d.set_road_type("residential");
+    d.params().crossing_feedback = false;  // the prototype's behaviour: the refusal only comes at finish
+    d.set_height_offset(3);
+    REQUIRE(d.click(at(100, -60), kFree).added);
+    d.set_height_offset(3);
+    REQUIRE(d.click(at(100, 60), kFree).added);
+    CHECK_FALSE(d.last_refusal().has_value());
+    CHECK(d.hover(at(100, 140), kFree).errors.empty());
+    const FinishResult f = d.finish();
+    REQUIRE_FALSE(f.ok());
+    CHECK(f.error_code == IssueCode::Crossing);
+    REQUIRE(d.last_refusal().has_value());
+    CHECK(d.last_refusal()->code == IssueCode::Crossing);
+    CHECK(d.last_refusal()->text == f.error);
+    // every following mouse move still carries it, wherever the pointer goes
+    for (const auto& [x, y] : std::vector<std::pair<double, double>>{{100, 140}, {160, 120}, {40, 150}, {100, 60}, {300, 300}}) {
+        const DrawPreview pv = d.hover(at(x, y), kFree);
+        CHECK(pv.refusal_active);
+        CHECK(has_issue(pv.errors, IssueCode::Crossing));
+        CHECK_FALSE(pv.ok());
+    }
+    // the stroke can still be extended: a refusal about the points does not freeze the tool
+    CHECK(d.click(at(100, 140), kFree).added);
+    CHECK_FALSE(d.hover(at(100, 200), kFree).refusal_active);
+    CHECK_FALSE(d.last_refusal().has_value());
+    // removing the cause (the offending point) clears it
+    REQUIRE(d.undo_point());
+    CHECK(d.finish().ok() == false);  // still the same bad crossing, 2 points left
+    CHECK(d.last_refusal().has_value());
+    REQUIRE(d.undo_point());
+    CHECK_FALSE(d.last_refusal().has_value());
+    CHECK_FALSE(d.hover(at(100, 60), kFree).refusal_active);
+    // a graph change also ends it
+    d.set_height_offset(3);
+    REQUIRE(d.click(at(100, 60), kFree).added);
+    REQUIRE_FALSE(d.finish().ok());
+    CHECK(d.hover(at(100, 140), kFree).refusal_active);
+    rig.road({1000, 1000, 0}, {1100, 1000, 0});
+    CHECK_FALSE(d.hover(at(100, 140), kFree).refusal_active);
+    // a refusal of a click is remembered for that point only
+    d.cancel();
+    d.params().crossing_feedback = true;
+    CHECK_FALSE(d.last_refusal().has_value());
+}
+
+TEST_CASE("DrawSession: an auto-finish refused at a crossing keeps its reason for that spot") {
+    Rig rig;
+    rig.road({0, 0, 0}, {200, 0, 0});        // the road crossed
+    rig.road({100, 100, 0}, {100, 400, 0});  // a free end at (100, 100)
+    DrawSession d(rig.g, rig.hf);
+    d.set_road_type("residential");
+    d.params().crossing_feedback = false;
+    d.set_height_offset(3);
+    REQUIRE(d.click(at(100, -60), kFree).added);
+    // snap onto the free end at (100, 100): ends the stroke, crossing the first road 3 m above it -> refused
+    const PointerInput on_end = at(100, 100);
+    const ClickResult c = d.click(on_end);
+    CHECK_FALSE(c.auto_finished);
+    CHECK_FALSE(c.added);
+    CHECK(c.finish.error_code == IssueCode::Crossing);
+    CHECK(d.points().size() == 1);
+    REQUIRE(d.last_refusal().has_value());
+    // hovering the same spot shows it again (the prototype lost it on the next mouse move)
+    const DrawPreview pv = d.hover(on_end);
+    CHECK(pv.refusal_active);
+    CHECK(has_issue(pv.errors, IssueCode::Crossing));
+    // elsewhere the point is fine and the memory does not follow the pointer
+    CHECK_FALSE(d.hover(at(100, 30), kFree).refusal_active);
+}
+
+TEST_CASE("DrawSession: readouts carry the G2 flag, the total width and the carriageway width") {
+    {
+        Rig rig;
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("residential");
+        d.click(at(0, 0), kFree);
+        d.click(at(60, 0), kFree);
+        const DrawPreview pv = d.hover(at(120, 30), kFree);
+        CHECK(pv.readouts.g2);
+        CHECK_FALSE(has_issue(pv.advisories, IssueCode::G1Fallback));
+        REQUIRE(pv.ribbons.size() == 1);
+        const Ribbon& rb = pv.ribbons[0];
+        CHECK(rb.total_width == doctest::Approx(14.3));  // the prototype ghost's width (spec section C.1)
+        CHECK(rb.width == rb.total_width);
+        CHECK(rb.carriageway_width == doctest::Approx(10.0));  // 2 x (3.0 driving + 2.0 parking)
+        CHECK(rb.carriageway_width < rb.total_width);
+        CHECK(rb.lift == doctest::Approx(0.35));
+        const RoadWidths w = road_widths(rig.g, "residential", false);
+        CHECK(w.known);
+        CHECK(w.total == doctest::Approx(14.3));
+        CHECK_FALSE(road_widths(rig.g, "no_such_type", false).known);
+    }
+    {  // a dual type: the ribbons are one carriageway each
+        Rig rig;
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("a_road_dual");
+        d.click(at(0, 0), kFree);
+        const DrawPreview pv = d.hover(at(100, 0), kFree);
+        REQUIRE(pv.ribbons.size() == 2);
+        const RoadWidths w = road_widths(rig.g, "a_road_dual", true);
+        CHECK(pv.ribbons[0].total_width == doctest::Approx(w.total));
+        CHECK(pv.ribbons[0].total_width == doctest::Approx(10.8));
+        CHECK(pv.ribbons[0].carriageway_width <= pv.ribbons[0].total_width);
+        d.set_one_way(true);
+        CHECK(d.hover(at(100, 0), kFree).ribbons.size() == 1);
+    }
+}
+
+TEST_CASE("DrawSession: the G1 fallback advisory and the CannotFit error through a session") {
+    {  // G1Fallback: a bend the curvature-continuous solve does not converge on (found by random search over free 3-point
+       // strokes; no error, tightest radius 120 m)
+        Rig rig;
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("residential");
+        REQUIRE(d.click(at(0, 0), kFree).added);
+        REQUIRE(d.click(at(-36.68, -50.77), kFree).added);
+        const DrawPreview pv = d.hover(at(-20.55, -38.79), kFree);
+        REQUIRE(pv.ribbons.size() == 1);
+        CHECK(pv.errors.empty());
+        CHECK(has_issue(pv.advisories, IssueCode::G1Fallback));
+        CHECK_FALSE(pv.readouts.g2);
+        CHECK(pv.advisories.back().text == "G2 solve fell back to G1 (curvature kink)");
+        // an advisory does not stop the click
+        CHECK(d.click(at(-20.55, -38.79), kFree).added);
+    }
+    {  // doubling back exactly onto the first point: the solver returns a ~1e15 m chain there (it hung the sampling);
+       // the tool refuses it as CannotFit
+        Rig rig;
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("residential");
+        REQUIRE(d.click(at(0, 0), kFree).added);
+        REQUIRE(d.click(at(80, 0), kFree).added);
+        const DrawPreview pv = d.hover(at(0, 0), kFree);
+        CHECK(has_issue(pv.errors, IssueCode::CannotFit));
+        CHECK_FALSE(d.click(at(0, 0), kFree).added);
+        CHECK_FALSE(d.finish_at_cursor(at(0, 0), kFree).ok());
+    }
+    {  // CannotFit: two points on top of each other. Only reachable with the guards (min segment, finish radius) switched off:
+       // with the defaults a segment under 4 m is a MinSpan error and a click on the last point finishes instead.
+        Rig rig;
+        DrawSession d(rig.g, rig.hf);
+        d.set_road_type("residential");
+        d.click(at(0, 0), kFree);
+        const DrawPreview guarded = d.hover(at(0.0, 0.0), kFree);
+        CHECK(guarded.would_finish);
+        const DrawPreview short_span = d.hover(at(2, 0, 0.1), kFree);
+        CHECK(has_issue(short_span.errors, IssueCode::MinSpan));
+        d.params().min_span = 0;
+        d.params().finish_pick_px = 0;
+        const DrawPreview pv = d.hover(at(0, 0, 0.0), kFree);
+        CHECK_FALSE(pv.ok());
+        CHECK(has_issue(pv.errors, IssueCode::CannotFit));
+        CHECK(pv.ribbons.empty());
+        const ClickResult c = d.click(at(0, 0, 0.0), kFree);
+        CHECK_FALSE(c.added);
+        CHECK(has_issue(c.errors, IssueCode::CannotFit));
+        auto f = d.finish_at_cursor(at(0, 0, 0.0), kFree);
+        CHECK_FALSE(f.ok());
+        CHECK(f.error_code == IssueCode::CannotFit);
     }
 }

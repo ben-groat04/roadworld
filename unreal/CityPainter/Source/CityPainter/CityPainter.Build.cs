@@ -8,6 +8,7 @@ public class CityPainter : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		CppStandard = CppStandardVersion.Cpp20;
+		PrivateIncludePaths.Add(ModuleDirectory);   // lets files in Tools/ and Playtest/ include each other as "Tools/CPTool.h"
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG", "Slate", "SlateCore", "CityPainterSim", "CityPainterWorld", "ApplicationCore", "Json" });
 		// Loaded (not linked against) so the Render subsystem exists in every City Painter world.
 		PrivateDependencyModuleNames.AddRange(new string[] { "CityPainterRender" });

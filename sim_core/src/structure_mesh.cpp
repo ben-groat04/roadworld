@@ -559,6 +559,7 @@ struct WallSpec {
     bool face_inner = true;  // visible face at the inner side (cut walls, wing walls); false: at the outer side (fill walls)
     bool backing = true;     // fill the rest of the band behind an inner face up to `zback` (hides the pit of a wide band)
     bool joints = false;     // vertical joint pilasters at panel boundaries
+    bool raked = false;      // the top follows each station's zt (a smooth raked line, no steps); false: one flat top per panel
     double joint_w = 0.12, joint_proud = 0.04;
     double coping_t = 0.15;
     double overhang = 0.05;
@@ -628,11 +629,11 @@ void emit_stepped_wall(Sink& sink, std::vector<WStation> st, const WallSpec& w) 
     sink.begin(w.body_kind, w.body_surface, w.edge, w.sk, w.s0, w.s1, true, w.tag);
     for (const auto& [i0, i1] : panels) {
         if (i1 <= i0) continue;
-        const double zt = st[i0].zt - w.coping_t;
-        panel_prism(i0, i1, f0, f1, [&](std::size_t) { return zt; });
+        const auto ztop = [&](std::size_t i) { return (w.raked ? st[i].zt : st[i0].zt) - w.coping_t; };
+        panel_prism(i0, i1, f0, f1, ztop);
         // Backing: the rest of a wide band behind an inner face, up to the ground behind it.
         if (w.backing && w.face_inner && w.T - F > 0.05)
-            panel_prism(i0, i1, f1, w.T, [&](std::size_t i) { return std::clamp(st[i].zback, st[i].zb + 0.05, zt); });
+            panel_prism(i0, i1, f1, w.T, [&](std::size_t i) { return std::clamp(st[i].zback, st[i].zb + 0.05, ztop(i)); });
     }
     sink.end();
     // ---- coping: a thin slab on each panel, overhanging the face by `overhang` (and the free ends)
@@ -640,7 +641,7 @@ void emit_stepped_wall(Sink& sink, std::vector<WStation> st, const WallSpec& w) 
     for (std::size_t pi = 0; pi < panels.size(); ++pi) {
         const auto [i0, i1] = panels[pi];
         if (i1 <= i0) continue;
-        const double zt = st[i0].zt, zb = zt - w.coping_t;
+        const auto zt_at = [&](std::size_t i) { return w.raked ? st[i].zt : st[i0].zt; };
         const auto cp_pt = [&](std::size_t i, double off, double z) {
             Vec3 p = in_pt(st[i], z, off);
             if (i == 0 || i == n - 1) {  // free wall ends overhang along the wall as well
@@ -655,18 +656,20 @@ void emit_stepped_wall(Sink& sink, std::vector<WStation> st, const WallSpec& w) 
         for (std::size_t i = i0; i < i1; ++i) {
             const WStation &p = st[i], &q = st[i + 1];
             const Vec3 hin = Vec3{-(p.u.x + q.u.x), -(p.u.y + q.u.y), 0}, hout = hin * -1.0;
-            sink.quad(vx(cp_pt(i, lo, zt), cum[i], lo), vx(cp_pt(i + 1, lo, zt), cum[i + 1], lo), vx(cp_pt(i + 1, hi, zt), cum[i + 1], hi),
+            const double zt = zt_at(i), zb = zt - w.coping_t, zt1 = zt_at(i + 1), zb1 = zt1 - w.coping_t;
+            sink.quad(vx(cp_pt(i, lo, zt), cum[i], lo), vx(cp_pt(i + 1, lo, zt1), cum[i + 1], lo), vx(cp_pt(i + 1, hi, zt1), cum[i + 1], hi),
                       vx(cp_pt(i, hi, zt), cum[i], hi), kUp);
-            sink.quad(vx(cp_pt(i, lo, zb), cum[i], lo), vx(cp_pt(i + 1, lo, zb), cum[i + 1], lo), vx(cp_pt(i + 1, hi, zb), cum[i + 1], hi),
+            sink.quad(vx(cp_pt(i, lo, zb), cum[i], lo), vx(cp_pt(i + 1, lo, zb1), cum[i + 1], lo), vx(cp_pt(i + 1, hi, zb1), cum[i + 1], hi),
                       vx(cp_pt(i, hi, zb), cum[i], hi), kDown);
-            sink.quad(vx(cp_pt(i, lo, zb), cum[i], zb), vx(cp_pt(i + 1, lo, zb), cum[i + 1], zb), vx(cp_pt(i + 1, lo, zt), cum[i + 1], zt),
+            sink.quad(vx(cp_pt(i, lo, zb), cum[i], zb), vx(cp_pt(i + 1, lo, zb1), cum[i + 1], zb1), vx(cp_pt(i + 1, lo, zt1), cum[i + 1], zt1),
                       vx(cp_pt(i, lo, zt), cum[i], zt), hin);
-            sink.quad(vx(cp_pt(i, hi, zb), cum[i], zb), vx(cp_pt(i + 1, hi, zb), cum[i + 1], zb), vx(cp_pt(i + 1, hi, zt), cum[i + 1], zt),
+            sink.quad(vx(cp_pt(i, hi, zb), cum[i], zb), vx(cp_pt(i + 1, hi, zb1), cum[i + 1], zb1), vx(cp_pt(i + 1, hi, zt1), cum[i + 1], zt1),
                       vx(cp_pt(i, hi, zt), cum[i], zt), hout);
         }
         for (const std::size_t i : {i0, i1}) {
             const Vec2 t = i == i0 ? tangent2(i0, i0 + 1) : tangent2(i1 - 1, i1);
             const double sgn = i == i0 ? -1.0 : 1.0;
+            const double zt = zt_at(i), zb = zt - w.coping_t;
             sink.quad(vx(cp_pt(i, lo, zb), lo, zb), vx(cp_pt(i, hi, zb), hi, zb), vx(cp_pt(i, hi, zt), hi, zt), vx(cp_pt(i, lo, zt), lo, zt),
                       Vec3{t.x * sgn, t.y * sgn, 0});
         }
@@ -1449,8 +1452,8 @@ void build_wall_run(const StructureWallRun& run, const std::vector<WPt>& rs, con
         double nd = std::max(top_raw[i], zb[i] + 0.3);
         // Free ends blend down to the ground they retain.
         double f = 1.0;
-        if (tap_a) f = std::min(f, cum[i] / P.wall_taper);
-        if (tap_b) f = std::min(f, (tot - cum[i]) / P.wall_taper);
+        if (tap_a && P.wall_taper > 1e-6) f = std::min(f, cum[i] / P.wall_taper);
+        if (tap_b && P.wall_taper > 1e-6) f = std::min(f, (tot - cum[i]) / P.wall_taper);
         f = std::clamp(f, 0.0, 1.0);
         const double base = std::max(g_hi[i] + 0.1, zb[i] + 0.3);
         if (nd > base) nd = base + (nd - base) * f;
@@ -1475,16 +1478,49 @@ void build_wall_run(const StructureWallRun& run, const std::vector<WPt>& rs, con
             portal_end.push_back({ie, pi});
         }
     }
-    const PanelPlan plan = plan_panels(need, cum, P);
+    PanelPlan plan = plan_panels(need, cum, P);
+    // Raked top: one smooth line (moving maximum, then moving average, so it never drops below the ground it must hold); the panel plan only places joints.
+    std::vector<double> rake;
+    if (P.wall_raked_top) {
+        const double step = tot / static_cast<double>(m - 1);
+        const std::size_t H = static_cast<std::size_t>(std::lround(P.wall_top_smooth / std::max(step, 1e-6)));
+        std::vector<double> mx(m);
+        for (std::size_t i = 0; i < m; ++i) {
+            double v = -kInf;
+            for (std::size_t j = i > H ? i - H : 0; j <= std::min(m - 1, i + H); ++j) v = std::max(v, need[j]);
+            mx[i] = v;
+        }
+        rake.resize(m);
+        for (std::size_t i = 0; i < m; ++i) {
+            double sum = 0;
+            std::size_t c = 0;
+            for (std::size_t j = i > H ? i - H : 0; j <= std::min(m - 1, i + H); ++j) sum += mx[j], ++c;
+            rake[i] = sum / static_cast<double>(c);
+        }
+    }
     const auto panel_of = [&](std::size_t i) {
         std::size_t p = 0;
         while (p + 1 < plan.level.size() && plan.bnd[p + 1] <= i) ++p;
         return p;
     };
-    for (const auto& [ie, pi] : portal_end) out.wall_ends.push_back({ctx.portals[pi].pos, sg, plan.level[panel_of(ie)]});
+    for (const auto& [ie, pi] : portal_end) out.wall_ends.push_back({ctx.portals[pi].pos, sg, P.wall_raked_top ? rake[ie] : plan.level[panel_of(ie)]});
 
     std::vector<WStation> st;
-    for (std::size_t p = 0; p < plan.level.size(); ++p) {
+    if (P.wall_raked_top) {
+        std::vector<char> is_bnd(m, 0);
+        for (std::size_t p = 1; p + 1 < plan.bnd.size(); ++p) is_bnd[plan.bnd[p]] = 1;
+        for (std::size_t i = 0; i < m; ++i) {
+            WStation w;
+            w.a = {rs[i].x, rs[i].y};
+            w.u = u[i];
+            w.zb = zb[i];
+            w.zt = rake[i];
+            w.zback = zback[i];
+            w.joint = is_bnd[i] != 0;
+            st.push_back(w);
+        }
+    }
+    for (std::size_t p = 0; !P.wall_raked_top && p < plan.level.size(); ++p) {
         for (std::size_t i = plan.bnd[p]; i <= plan.bnd[p + 1]; ++i) {
             const bool first = i == plan.bnd[p];
             if (first && p > 0 && plan.level[p] == plan.level[p - 1]) {  // no step: panels merge, the boundary keeps a joint
@@ -1506,6 +1542,7 @@ void build_wall_run(const StructureWallRun& run, const std::vector<WPt>& rs, con
     ws.face_t = P.wall_face_thickness;
     ws.face_inner = run.cut;  // a cut wall shows its road-side face; a fill wall its outer face
     ws.joints = true;
+    ws.raked = P.wall_raked_top;
     ws.joint_w = P.wall_joint_width;
     ws.joint_proud = P.wall_joint_proud;
     ws.coping_t = P.coping_thickness;
@@ -1571,6 +1608,10 @@ StructureParams structure_params_for(const RegionPack& region) {
     p.wall_joint_width = r.wall_joint_width;
     p.wall_joint_proud = r.wall_joint_proud;
     p.wall_allow_short_panels = r.wall_allow_short_panels;
+    p.wall_raked_top = r.wall_raked_top;
+    p.wall_top_smooth = r.wall_top_smooth;
+    p.wall_close_gap = r.wall_close_gap;
+    p.wall_taper = r.wall_end_taper;
     return p;
 }
 
@@ -1591,11 +1632,39 @@ StructureMeshes build_edge_structures(const RoadGraph& graph, const RegionPack& 
     return out;
 }
 
-StructureMeshes build_retaining_walls(const std::vector<StructureWallRun>& runs, const GroundSampler& ground,
+// A wall run that stops where the retained height dips under the visibility threshold and starts again a little further on leaves a gap of bare bank between two
+// blunt ends. Photos show one continuous wall there: bridge a gap of at most max_gap metres (same side, tier and cut) with points interpolated between the two
+// ends (the wall is then at its minimum height, the ground and the foot decide the rest).
+std::vector<StructureWallRun> close_wall_gaps(const std::vector<StructureWallRun>& in, double max_gap) {
+    std::vector<StructureWallRun> out;
+    for (const StructureWallRun& r : in) {
+        if (r.pts.empty()) continue;
+        if (!out.empty() && max_gap > 0) {
+            StructureWallRun& a = out.back();
+            const StructureWallPoint &e = a.pts.back(), &s = r.pts.front();
+            const double d = std::hypot(s.x - e.x, s.y - e.y);
+            if (a.side == r.side && a.tier == r.tier && a.cut == r.cut && d <= max_gap) {
+                const int n = std::max(1, static_cast<int>(std::ceil(d / 2.0)));
+                for (int k = 1; k < n; ++k) {
+                    const double f = static_cast<double>(k) / n;
+                    a.pts.push_back({e.x + (s.x - e.x) * f, e.y + (s.y - e.y) * f, e.zTop + (s.zTop - e.zTop) * f, e.zBot + (s.zBot - e.zBot) * f,
+                                     e.top + (s.top - e.top) * f, e.h + (s.h - e.h) * f});
+                }
+                a.pts.insert(a.pts.end(), r.pts.begin(), r.pts.end());
+                continue;
+            }
+        }
+        out.push_back(r);
+    }
+    return out;
+}
+
+StructureMeshes build_retaining_walls(const std::vector<StructureWallRun>& runs_in, const GroundSampler& ground,
                                       const StructureParams& params, const WallContext& context) {
     StructureMeshes out;
     Sink sink(out, params.depth_range);
     int tag = 0;
+    const std::vector<StructureWallRun> runs = close_wall_gaps(runs_in, params.wall_close_gap);
     for (const StructureWallRun& run : runs) {
         if (run.pts.size() < 2) continue;
         const int sg = run.side == 'L' ? 1 : -1;

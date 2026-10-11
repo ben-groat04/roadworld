@@ -1,0 +1,9 @@
+[
+ {"name":"s7_adjacent_levels_street","width":1600,"height":900,"pos":[-90,-1.8,3.7],"target":[-10,12,4],"sun":[165,42],"fov":62,"near":0.2,"shadow":110,"shadowCentre":[-40,8,4],"exposure":1.05},
+ {"name":"s7_adjacent_levels_aerial","width":1600,"height":900,"pos":[-60,-55,40],"target":[0,10,5],"sun":[165,42],"fov":50,"near":1,"shadow":110,"shadowCentre":[0,8,5],"exposure":1.05},
+ {"name":"s7_adjacent_levels_alongA","width":1600,"height":900,"pos":[-148,1,3.7],"target":[-70,12,5],"sun":[165,42],"fov":62,"near":0.2,"shadow":110,"shadowCentre":[-90,8,4],"exposure":1.05},
+ {"name":"s7_adjacent_levels_alongB","width":1600,"height":900,"pos":[148,15,9.2],"target":[70,8,5],"sun":[165,42],"fov":62,"near":0.2,"shadow":110,"shadowCentre":[90,8,5],"exposure":1.05},
+ {"name":"s7_adjacent_levels_between","width":1600,"height":900,"pos":[-30,-16,13],"target":[30,12,6],"sun":[165,42],"fov":60,"near":0.5,"shadow":120,"shadowCentre":[0,8,5],"exposure":1.05},
+ {"name":"s7_adjacent_levels_end","width":1600,"height":900,"pos":[105,-48,28],"target":[155,12,6],"sun":[165,42],"fov":55,"near":1,"shadow":120,"shadowCentre":[140,8,5],"exposure":1.05},
+ {"name":"s7_adjacent_levels_end_west","width":1600,"height":900,"pos":[-105,-48,28],"target":[-155,12,6],"sun":[165,42],"fov":55,"near":1,"shadow":120,"shadowCentre":[-140,8,5],"exposure":1.05}
+]

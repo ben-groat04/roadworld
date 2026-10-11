@@ -1,0 +1,4 @@
+[
+  { "name": "L_ref_aerial_like_09_south_arm", "pos": [0, -70, 75], "target": [0, 62, 0], "fov": 42, "near": 1, "shadow": 120, "exposure": 0.9 },
+  { "name": "K_entry_top", "pos": [0, 48, 22], "target": [0, 48.1, 0], "fov": 50, "near": 1, "shadow": 80, "exposure": 0.9 }
+]

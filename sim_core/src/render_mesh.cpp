@@ -902,7 +902,8 @@ std::vector<Vec2> simplify_ring(const std::vector<Vec2>& ring, std::vector<char>
     return out.size() >= 3 ? out : ring;
 }
 
-double junction_edge_length(const RenderMeshParams& P) { return std::clamp(100 * P.chord_tolerance + 4.0, 4.0, 30.0); }
+// Junction triangle edge cap: about 2 m at the default 1 cm chord tolerance (was 5 m: coarse "slab grid" facets), coarser for LODs.
+double junction_edge_length(const RenderMeshParams& P) { return std::clamp(100 * P.chord_tolerance + 1.0, 2.0, 30.0); }
 
 // ---------------------------------------------------------------- junction meshes
 
@@ -1422,8 +1423,20 @@ WorldMeshSet build_roundabout_mesh(const RoadGraph& graph, const RegionPack& reg
         RoadRef r = make_ref(layout.group.arms[static_cast<std::size_t>(sp.arm)].edge);
         if (!r.e || r.prof.segs.empty()) continue;
         const std::vector<RoadRef> one{std::move(r)};
-        add_raised_polygon(out, PolygonSet{sp.polygon}, layout.splitter_surface.empty() ? rules.splitter_surface : layout.splitter_surface,
-                           [&](Vec2 p) { return road_height_at(one, p); }, H, P);
+        const std::string& top = layout.splitter_surface.empty() ? rules.splitter_surface : layout.splitter_surface;
+        // The asphalt round the island is the ring node's junction mesh, which blends the arms' surfaces: stand the island on
+        // that surface (not on the arm's own profile), or its kerb faces leave a dark slot / bury the paint beside it.
+        const RoundaboutArm& ra = layout.group.arms[static_cast<std::size_t>(sp.arm)];
+        const Junction* jn = nullptr;
+        if (ra.ring_index >= 0 && static_cast<std::size_t>(ra.ring_index) < layout.group.nodes.size()) {
+            const auto it = layout.ring_junctions.find(layout.group.nodes[static_cast<std::size_t>(ra.ring_index)]);
+            if (it != layout.ring_junctions.end()) jn = &it->second;
+        }
+        const JunctionSurface jsurf = jn ? JunctionSurface(graph, region, *jn, P) : JunctionSurface(graph, region, Junction{}, P);
+        if (jsurf.valid())
+            add_raised_polygon(out, PolygonSet{sp.polygon}, top, [&](Vec2 p) { return jsurf.z(p, true); }, H, P);
+        else
+            add_raised_polygon(out, PolygonSet{sp.polygon}, top, [&](Vec2 p) { return road_height_at(one, p); }, H, P);
     }
     finish_normals(out);
     drop_empty(out);

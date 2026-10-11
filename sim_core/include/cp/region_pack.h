@@ -182,6 +182,10 @@ struct MergeRules {
     double default_taper_length = 75.0;  // m ("default_taper_length_m"), used only when the table is empty
     double gore_length = 10.0;           // m of gore triangle beyond the nose point ("gore_length_m")
     double taper_length_for(double design_speed) const;  // design_speed in m/s
+    // Gore (nose triangle, chevron area) length by main carriageway design speed ("gore_length" table, same shape as taper_length);
+    // empty table = gore_length. Photos (street 33, GSV M11): the hatched wedge is 8-10 lane widths and longer at speed.
+    std::vector<SpeedFactor> gore_length_table;
+    double gore_length_for(double design_speed) const;  // design_speed in m/s
 };
 
 // Junction shaping rules (region.json "junction" object).
@@ -226,7 +230,10 @@ struct GradingRules {
     double round_hinge = 1.0;          // m (horizontal), parabolic verge -> slope hinge
     // steep ground (grading round 5): at most max_tiers walls; beyond that a rock cut (cut side) or one tall wall / steep fill (fill side)
     int max_tiers = 2;                 // stacked walls per side at most
-    double wall_slope_extra = 15.0;    // m, the slope above / below a wall may run this much farther than a plain slope may before it must daylight
+    double wall_slope_extra = 15.0;    // m, reach / box margin only (the slope beyond a wall is bounded by slope_max_run / slope_max_ratio)
+    double slope_max_ratio = 3.0;      // a slope daylights only if its run <= ratio * flat-ground run for the height it makes up + slope_run_slack, else the wall takes the height (no chasing a steep hillside)
+    double slope_run_slack = 2.0;      // m, added to that run (rounding, back-drain strip)
+    double slope_max_run = 15.0;       // m, a slope above / below a wall never runs more than this beyond the wall's back face
     double berm_slope = 0.25;          // v / h, the strip between two tiers climbs (cut) / falls (fill) away from the lower wall
     double wall_hard_max = 6.0;        // m, tallest single fill wall; beyond it needs_structure (viaduct / half-bridge)
     double rock_cut_batter = 0.5;      // h per 1 v of an engineered rock-cut face
@@ -235,6 +242,10 @@ struct GradingRules {
     double fill_steep_batter = 1.5;    // h per 1 v, steepest stable fill slope graded where a wall cannot hold the fill
     double corridor_max = 90.0;        // m beyond the footprint edge up to which two-tier walls / rock cuts may extend
     double wall_vis_min = 0.35;        // m, a terraced wall lower than this is not built
+    int relax_iterations = 8;          // smoothing passes over the graded ground (0 disables)
+    double relax_strength = 0.8;       // blend per pass
+    double relax_margin = 8.0;         // m into natural ground the smoothing reaches
+    double relax_max_delta = 1.0;      // m, most a texel may move from its graded height
     double reach_fade = 8.0;           // m, a slope that has not met the ground by the end of the road's reach fades into it over this run
 };
 
@@ -253,6 +264,11 @@ struct StructureRules {
     double wall_joint_width = 0.12;     // m along the wall, pilaster at each panel boundary
     double wall_joint_proud = 0.04;     // m the pilaster stands out of the face
     bool wall_allow_short_panels = false;  // true: panels are halved where the step limit is exceeded
+    // retaining wall shape (grading round 8)
+    bool wall_raked_top = true;        // the wall top is a smooth raked line following the ground (no panel steps); false: flat panels stepping in wall_quant
+    double wall_top_smooth = 3.0;      // m, half-window of the top-line smoothing (never lower than the ground it must retain)
+    double wall_close_gap = 30.0;      // m, a gap shorter than this between two wall runs on one side is bridged by a minimum-height wall (0 disables)
+    double wall_end_taper = 0.0;       // m, free wall ends blend down to the ground over this length (0: blunt, buried end, the bank wraps round it)
 };
 
 // Render cross-section shape used when a road type leaves the field unset (region.json "render" object;

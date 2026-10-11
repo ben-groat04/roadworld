@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <fstream>
 #include <limits>
@@ -13,6 +15,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -503,7 +506,7 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
             if (!bs->is_array()) err.set(sctx + ": \"boundaries\" must be a list");
             else
                 for (const json& b : *bs) {
-                    check_keys(b, {"id", "category", "left", "right", "relation", "style", "inset_m", "zones", "source"},
+                    check_keys(b, {"id", "category", "left", "right", "relation", "style", "inset_m", "keepout_m", "zones", "source"},
                                sctx + " boundary", err);
                     if (err.failed()) return;
                     BoundaryRule br;
@@ -520,6 +523,7 @@ void parse_sets(const json& root, double unit, MarkingRules& r, Err& err) {
                     else err.set(ctx + ": relation must be any, opposing or same");
                     br.style = parse_style_sel(member(b, "style"), unit, ctx, err);
                     br.inset_m = num(b, "inset_m", 0, ctx, err);
+                    br.keepout_m = num(b, "keepout_m", 0, ctx, err);
                     br.source = str(b, "source", "", ctx, err);
                     if (br.source.empty()) err.set(ctx + ": missing \"source\"");
                     if (const json* zs = member(b, "zones")) {
@@ -693,7 +697,7 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
     }
     if (const json* g = member(*jn, "splitter")) {
         check_keys(*g, {"outline_style", "outline_gap_m", "hatch_style", "hatch_length_m", "hatch_width_m", "stripe_width_m", "pitch_m",
-                        "angle_deg", "ladder_pitch_m", "source"}, "splitter", err);
+                        "angle_deg", "ladder_pitch_m", "taper_length_m", "taper_max_island_ratio", "source"}, "splitter", err);
         SplitterRule& s = r.splitter;
         s.enabled = true;
         s.outline_style = parse_style_sel(member(*g, "outline_style"), unit, "splitter", err);
@@ -705,6 +709,8 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         s.pitch_m = num(*g, "pitch_m", 1.0, "splitter", err);
         s.angle_deg = num(*g, "angle_deg", 60, "splitter", err);
         s.ladder_pitch_m = num(*g, "ladder_pitch_m", 2.0, "splitter", err);
+        s.taper_length_m = parse_value_sel(member(*g, "taper_length_m"), unit, "splitter taper_length_m", err);
+        s.taper_max_island_ratio = num(*g, "taper_max_island_ratio", 0.75, "splitter", err);
         s.source = str(*g, "source", "", "splitter", err);
         if (!(s.ladder_pitch_m > s.stripe_width_m)) err.set("splitter: need ladder_pitch_m > stripe_width_m");
         if (!(s.pitch_m > s.stripe_width_m) || !(s.stripe_width_m > 0)) err.set("splitter: need 0 < stripe_width_m < pitch_m");
@@ -1251,7 +1257,8 @@ std::vector<ArmLayout> compute_arm_layout(const RoadGraph& g, const RegionPack& 
         if (mt) major_speed = std::max(major_speed, mt->speed_limit), major_class = std::max(major_class, mt->road_class);
     }
     std::set<int> gw_entries;
-    if (params.use_roundabout_give_way)
+    const bool gw_filter = params.use_roundabout_give_way && !params.roundabout_give_way.empty();
+    if (gw_filter)
         for (const GiveWay& gw : params.roundabout_give_way)
             if (gw.node == j.node && gw.connector >= 0 && static_cast<std::size_t>(gw.connector) < j.connectors.size())
                 gw_entries.insert(j.connectors[static_cast<std::size_t>(gw.connector)].arm_from);
@@ -1267,7 +1274,7 @@ std::vector<ArmLayout> compute_arm_layout(const RoadGraph& g, const RegionPack& 
         const double trim = L.clear;
         if (arm.inbound_count() > 0 && !ring) {
             if (j.kind == JunctionKind::Roundabout) {
-                if (rules.roundabout_entry.enabled && (!params.use_roundabout_give_way || gw_entries.count(static_cast<int>(i)))) {
+                if (rules.roundabout_entry.enabled && (!gw_filter || gw_entries.count(static_cast<int>(i)))) {
                     L.style = select_style(rules.roundabout_entry.style, L.ctx);
                     if (L.style) {
                         L.entry = true;
@@ -1801,8 +1808,10 @@ struct EdgeGen {
                     dashes = layout_dashes(Lb - La, sd.mark, sd.gap, min_mark);
                 const LinePoly& lp = *lps[j];
                 const double cj = cum[j], lj = lp.len_of_s(me.hi) - lp.len_of_s(me.lo);
+                const bool bay_line = br.category == MarkingCategory::ParkingBay && br.keepout_m > 0 && !chain.closed;
+                const double keep_a = bay_line && chain.approach_start ? br.keepout_m : 0.0, keep_b = bay_line && chain.approach_end ? br.keepout_m : 0.0;
                 for (const DashSpan& d : dashes) {
-                    const double u0 = std::max(La + d.s0, cj), u1 = std::min(La + d.s1, cj + lj);
+                    const double u0 = std::max({La + d.s0, cj, keep_a}), u1 = std::min({La + d.s1, cj + lj, acc - keep_b});
                     if (u1 - u0 < 1e-4) continue;
                     double l0, l1;
                     if (me.flip) {
@@ -2389,6 +2398,136 @@ struct JGen {
         }
     }
 
+    static Vec3 lerp3(const Vec3& a, const Vec3& c, double f) { return {a.x + (c.x - a.x) * f, a.y + (c.y - a.y) * f, a.z + (c.z - a.z) * f}; }
+
+    // Style id of the boundary line `cat` of arm i's road type as it is drawn on a junction approach (the approach
+    // zone's warning style when it has one, else the base style); nullptr when the road type draws none.
+    const std::string* approach_line_style(std::size_t i, MarkingCategory cat) const {
+        const Edge* e = graph.edge(j.arms[i].edge);
+        const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
+        const RuleSet* rs = rt ? rules.set(rt->markings) : nullptr;
+        if (!rs) return nullptr;
+        const MarkCtx ctx = arm_ctx(i);
+        for (const BoundaryRule& br : rs->boundaries) {
+            if (br.category != cat) continue;
+            for (const ZoneRule& z : br.zones)
+                if (z.kind == ZoneRule::Kind::Approach)
+                    if (const std::string* s = select_style(z.style, ctx)) return s;
+            return select_style(br.style, ctx);
+        }
+        return nullptr;
+    }
+
+    // A dashed (or continuous) line along a plan polyline, whole marks flush at both ends so the gap to the
+    // neighbouring edge's last mark never exceeds the style's own gap.
+    void dashed_polyline(const std::vector<Vec3>& pl, const std::string& sid, MarkingCategory cat) {
+        const LineStyle* st = style_of(rules, sid);
+        if (!st || st->strands.empty() || pl.size() < 2) return;
+        std::vector<double> cum{0.0};
+        for (std::size_t k = 1; k < pl.size(); ++k) cum.push_back(cum.back() + (pl[k].xy() - pl[k - 1].xy()).length());
+        const double total = cum.back();
+        if (total < 0.5) return;
+        const Strand& sd = st->strands[0];
+        const double min_mark = st->min_mark > 0 ? st->min_mark : rules.min_mark_m;
+        auto at = [&](double t) {
+            std::size_t k = 1;
+            while (k + 1 < pl.size() && cum[k] < t) ++k;
+            const double f = std::clamp((t - cum[k - 1]) / std::max(cum[k] - cum[k - 1], 1e-9), 0.0, 1.0);
+            return lerp3(pl[k - 1], pl[k], f);
+        };
+        for (const DashSpan& d : layout_flush(total, sd.mark, sd.gap, min_mark)) {
+            std::vector<Vec3> c;
+            c.push_back(at(d.s0));
+            for (std::size_t k = 0; k < pl.size(); ++k)
+                if (cum[k] > d.s0 + 1e-6 && cum[k] < d.s1 - 1e-6) c.push_back(pl[k]);
+            c.push_back(at(d.s1));
+            for (Vec3& q : c) q.z = surface_z(q.xy());
+            std::vector<Vec3> ring;
+            if (stroke_ring(c, sd.width, ring)) b.add(cat, sid, ring, true);
+        }
+    }
+
+    // The major road's centre line carried straight across a side-road mouth (a T or a crossroads): it does not break at
+    // the junction. Photos: aerial 15, GSV A40 Brynich ghost-island T (180306).
+    void through_centre_lines() {
+        if (j.cls != NodeClass::Junction || j.kind == JunctionKind::Roundabout || j.arms.size() < 3) return;
+        const std::vector<int> prio = priority_arms(j, rules);
+        if (prio.size() != 2) return;
+        const int i = prio[0], k = prio[1];
+        const JunctionArm &ai = j.arms[static_cast<std::size_t>(i)], &ak = j.arms[static_cast<std::size_t>(k)];
+        const double dev = (kPi - std::fabs(wrap_angle(ai.heading_out - ak.heading_out))) * 180 / kPi;
+        if (dev > std::max(rules.mouth_edge.max_deviation_deg, 1.0)) return;
+        // Two-way on both: a centre line exists only between opposing flows.
+        for (const JunctionArm* a : {&ai, &ak})
+            if (a->inbound_count() == 0 || a->outbound_count() == 0) return;
+        const std::string* sid = approach_line_style(static_cast<std::size_t>(i), MarkingCategory::CentreLine);
+        const std::string* sk = approach_line_style(static_cast<std::size_t>(k), MarkingCategory::CentreLine);
+        if (!sid || !sk || *sid != *sk) return;
+        const Vec3 p0 = arm_point(ai, trim_of(j, i), 0).pos, p1 = arm_point(ak, trim_of(j, k), 0).pos;
+        b.edge = EdgeId{};  // a junction-interior line: not tied to one arm
+        dashed_polyline({p0, p1}, *sid, MarkingCategory::CentreLine);
+    }
+
+    // Lane lines carried through a merge / diverge: between each pair of same-direction connectors into / out of the
+    // main carriageway, dashed along the mean of their paths (photos: street 33, GSV M11 175655).
+    void through_lane_lines() {
+        if (j.cls != NodeClass::Merge && j.cls != NodeClass::Diverge) return;
+        struct C { std::size_t idx; double lat; };
+        std::map<std::pair<int, int>, std::vector<C>> groups;
+        for (std::size_t ci = 0; ci < j.connectors.size(); ++ci) {
+            const LaneConnector& c = j.connectors[ci];
+            if (!c.enabled || c.path.size() < 2) continue;
+            const bool merge_node = j.cls == NodeClass::Merge;  // the pair arm (main / slip) is the far end of a merge connector, the near end of a diverge one
+            const int pair_arm = merge_node ? c.arm_from : c.arm_to, pair_lane = merge_node ? c.lane_from : c.lane_to;
+            groups[{c.arm_from, c.arm_to}].push_back({ci, j.arms[static_cast<std::size_t>(pair_arm)].lanes[static_cast<std::size_t>(pair_lane)].lateral});
+        }
+        auto frac = [&](const std::vector<Vec3>& pp, double t) {
+            double L = 0;
+            for (std::size_t k = 1; k < pp.size(); ++k) L += (pp[k].xy() - pp[k - 1].xy()).length();
+            const double want = t * L;
+            double acc2 = 0;
+            for (std::size_t k = 1; k < pp.size(); ++k) {
+                const double seg = (pp[k].xy() - pp[k - 1].xy()).length();
+                if (acc2 + seg >= want || k + 1 == pp.size()) return lerp3(pp[k - 1], pp[k], std::clamp(seg > 1e-9 ? (want - acc2) / seg : 0.0, 0.0, 1.0));
+                acc2 += seg;
+            }
+            return pp.back();
+        };
+        // Only the main carriageway carries lane lines: the pair arm with the strictly highest (road class, lanes). A tie
+        // (a symmetric Y) draws none, so the result is mirror-exact and no line is drawn twice where the two groups share
+        // the odd arm's lanes.
+        auto score = [&](const std::pair<int, int>& k, std::size_t n) {
+            const int pa = j.cls == NodeClass::Merge ? k.first : k.second;
+            return std::make_pair(j.arms[static_cast<std::size_t>(pa)].road_class, n);
+        };
+        std::pair<int, int> best_key{-1, -1};
+        bool unique = true;
+        for (auto& [key, v] : groups) {
+            if (best_key.first < 0) { best_key = key; continue; }
+            const auto a = score(key, v.size()), c0 = score(best_key, groups[best_key].size());
+            if (a == c0) unique = false;
+            else if (a > c0) { best_key = key; unique = true; }
+        }
+        if (!unique) return;
+        for (auto& [key, v] : groups) {
+            if (key != best_key) continue;
+            if (v.size() < 2) continue;
+            std::sort(v.begin(), v.end(), [](const C& a, const C& c2) { return a.lat < c2.lat; });
+            const int style_arm = j.cls == NodeClass::Merge ? key.first : key.second;
+            const std::string* sid = approach_line_style(static_cast<std::size_t>(style_arm), MarkingCategory::LaneLine);
+            if (!sid) continue;
+            for (std::size_t q = 0; q + 1 < v.size(); ++q) {
+                const std::vector<Vec3>& p = j.connectors[v[q].idx].path;
+                const std::vector<Vec3>& r = j.connectors[v[q + 1].idx].path;
+                if (std::fabs(v[q].lat - v[q + 1].lat) < 0.05) continue;
+                std::vector<Vec3> mid;
+                for (int s = 0; s <= 20; ++s) mid.push_back(lerp3(frac(p, s / 20.0), frac(r, s / 20.0), 0.5));
+                b.edge = EdgeId{};
+                dashed_polyline(mid, *sid, MarkingCategory::LaneLine);
+            }
+        }
+    }
+
     MarkCtx arm_ctx(std::size_t i) const {
         const Edge* e = graph.edge(j.arms[i].edge);
         const RoadType* rt = e ? region.road_type(e->road_type) : nullptr;
@@ -2420,6 +2559,8 @@ MarkingSet generate_junction_markings(const RoadGraph& graph, const RegionPack& 
     g.gore();
     g.slip_edges();
     g.mouth_edges();
+    g.through_centre_lines();
+    g.through_lane_lines();
     return out;
 }
 
@@ -2467,7 +2608,12 @@ MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& 
             const Vec2 nrm = left_normal({std::cos(ap.heading_out), std::sin(ap.heading_out)});
             return SL{bs, (p - ap.pos.xy()).dot(nrm)};
         };
+        // The ring node's junction mesh blends the arms' surfaces over the whole flare (the arm is trimmed at the flare
+        // end): follow that surface (as JGen does for entry lines) or the splitter paint is buried under it.
+        const JunctionSurface jsurf(graph, region, *jn);
+        const bool follow_junction = !params_in.surface_height && jsurf.valid();
         auto z_of = [&](Vec2 p) {
+            if (follow_junction) return jsurf.z(p);
             const SL sl = frame(p);
             return arm_surface_z(params, *arm, sl.first, sl.second, arm_point(*arm, sl.first, sl.second).pos.z);
         };
@@ -2507,9 +2653,11 @@ MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& 
                 for (int side = 0; side < 2; ++side) {
                     const double sg = side == 0 ? 1.0 : -1.0;
                     std::vector<Vec3> pts;
-                    for (double sx = sp.ring_s + 0.5; sx < s_end; sx += 1.0) {
+                    // From the ring's outer edge (where the island starts) to the end of the flare, so the line meets the
+                    // ring edge line at one end and the lane's own lines at the other.
+                    for (double sx = sp.ring_s; sx < s_end + 1e-9; sx += 0.5) {
                         const double lat = sg * (flare_spread(*arm, sx, side == 0) + g + w / 2);
-                        const Vec2 q = arm_point(*arm, sx, lat).pos.xy();
+                        const Vec2 q = arm_point(*arm, std::min(sx, s_end), lat).pos.xy();
                         pts.push_back({q.x, q.y, z_of(q)});
                     }
                     std::vector<Vec3> ring;
@@ -2517,31 +2665,41 @@ MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& 
                 }
             }
             if (!sr.hatch_style.empty()) {
-                const double bw = sr.stripe_width_m, inset = g + (ost && !ost->strands.empty() ? ost->strands[0].width : 0.1) + 0.05;
+                const double bw = sr.stripe_width_m, lw = ost && !ost->strands.empty() ? ost->strands[0].width : 0.1;
+                // Painted taper: bars run past the nose only this far (data, by approach speed; at most a share of the
+                // island's length), not along the whole flare.
+                double taper = 6.0;
+                select_value(sr.taper_length_m, ctx, taper);
+                taper = std::min(taper, sr.taper_max_island_ratio * (sp.nose_s - sp.ring_s));
+                const double s_bar_end = std::min(sp.nose_s + std::max(taper, 0.0), s_end - 0.5);
+                // Lateral of a boundary line's centre (the stroke drawn above) and of the island outline's centre.
+                const auto line_lat = [&](double sx, bool left) { return flare_spread(*arm, sx, left) + g + lw / 2; };
                 const auto island_half = [&](double sx) {  // the island's half width at sx (0 beyond its nose)
                     if (sx >= sp.nose_s) return 0.0;
                     const double s_c = sp.nose_s - sp.nose_r;
                     const double h = sx > s_c ? std::sqrt(std::max(0.0, sp.nose_r * sp.nose_r - (sx - s_c) * (sx - s_c)))
-                                              : sp.nose_r + (sp.base_half - sp.nose_r) * (s_c - sx) / std::max(s_c - sp.ring_s, 1e-6);
-                    return std::min(h, flare_spread(*arm, sx, true));
+                                              : sp.nose_r + (sp.base_half - sp.nose_r) * std::pow(std::max(0.0, (s_c - sx) / std::max(s_c - sp.ring_s, 1e-6)), 0.6);  // 0.6 = kIslandShape in junction_roundabout.cpp
+                    return std::min(h, std::max(0.05, flare_spread(*arm, sx, true) - 0.25 * (sp.base_half / 0.75)));
                 };
-                const auto bar = [&](double s0b, double l0, double l1) {
-                    if (l1 - l0 < 0.15) return;
+                // Each bar runs from one boundary stroke's centre line to the other's, so its ends lie on the strokes.
+                const auto bar = [&](double s0b, double a0, double b0, double a1, double b1) {
+                    if (std::min(b0 - a0, b1 - a1) < 0.15) return;
                     std::vector<Vec3> r;
-                    for (const SL& q : {SL{s0b, l0}, SL{s0b + bw, l0}, SL{s0b + bw, l1}, SL{s0b, l1}}) {
+                    for (const SL& q : {SL{s0b, a0}, SL{s0b + bw, a1}, SL{s0b + bw, b1}, SL{s0b, b0}}) {
                         const Vec2 pq = arm_point(*arm, q.first, q.second).pos.xy();
                         r.push_back({pq.x, pq.y, z_of(pq)});
                     }
                     b.add(MarkingCategory::Hatching, sr.hatch_style, r, false);
                 };
-                for (double sx = sp.ring_s + sr.ladder_pitch_m; sx + bw < s_end - 0.5; sx += sr.ladder_pitch_m) {
-                    const double gl = flare_spread(*arm, sx, true) - inset, gr = flare_spread(*arm, sx + bw, false) - inset;
-                    const double ih = island_half(sx) + g + (ost && !ost->strands.empty() ? ost->strands[0].width : 0.1) + 0.05;
+                for (double sx = sp.ring_s + sr.ladder_pitch_m; sx + bw < s_bar_end; sx += sr.ladder_pitch_m) {
+                    const double s1 = sx + bw;
+                    const double ll0 = line_lat(sx, true), ll1 = line_lat(s1, true), lr0 = line_lat(sx, false), lr1 = line_lat(s1, false);
                     if (sx > sp.nose_s) {
-                        bar(sx, -gr, gl);
-                    } else {
-                        bar(sx, ih, gl);
-                        bar(sx, -gr, -ih);
+                        bar(sx, -lr0, ll0, -lr1, ll1);
+                    } else if (s1 < sp.nose_s) {  // a bar straddling the nose has no island outline to end on: leave it out
+                        const double ih0 = island_half(sx) + g + lw / 2, ih1 = island_half(s1) + g + lw / 2;
+                        bar(sx, ih0, ll0, ih1, ll1);
+                        bar(sx, -lr0, -ih0, -lr1, -ih1);
                     }
                 }
             }

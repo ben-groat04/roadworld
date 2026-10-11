@@ -34,9 +34,9 @@ public:
 		}
 		const int32 N = static_cast<int32>(Data.Position.size());
 		TArray<FVector> Vertices, Normals;
-		TArray<FVector2D> UV0;
+		TArray<FVector2D> UV0, UV1;  // UV1 empty when the data has none
 		TArray<FProcMeshTangent> Tangents;
-		TArray<FColor> Colours;  // empty: white
+		TArray<FColor> Colours;      // empty: white
 		TArray<int32> Indices;
 		Vertices.Reserve(N);
 		Normals.Reserve(N);
@@ -49,12 +49,40 @@ public:
 			UV0.Add(FVector2D(Data.UV0[i][0], Data.UV0[i][1]));
 			Tangents.Add(FProcMeshTangent(FVector(Data.TangentX[i][0], Data.TangentX[i][1], Data.TangentX[i][2]), Data.bTangentFlipY));
 		}
+		if (Data.UV1.size() == Data.Position.size())
+		{
+			UV1.Reserve(N);
+			for (const std::array<float, 2>& V : Data.UV1)
+			{
+				UV1.Add(FVector2D(V[0], V[1]));
+			}
+		}
+		if (Data.Colour.size() == Data.Position.size())
+		{
+			Colours.Reserve(N);
+			for (const std::array<std::uint8_t, 4>& K : Data.Colour)
+			{
+				Colours.Add(FColor(K[0], K[1], K[2], K[3]));
+			}
+		}
 		Indices.Append(Data.Indices.data(), static_cast<int32>(Data.Indices.size()));
 		C->SetWorldLocation(FVector(Data.OriginUeCm[0], Data.OriginUeCm[1], Data.OriginUeCm[2]));
-		C->CreateMeshSection(SectionIndex, Vertices, Indices, Normals, UV0, Colours, Tangents, false);
+		const TArray<FVector2D> NoUV;
+		C->CreateMeshSection(SectionIndex, Vertices, Indices, Normals, UV0, UV1, NoUV, NoUV, Colours, Tangents, false);
 		if (Material)
 		{
 			C->SetMaterial(SectionIndex, Material);
+		}
+	}
+
+	virtual void ClearSection(int32 SectionIndex) override
+	{
+		if (UProceduralMeshComponent* C = Component.Get())
+		{
+			if (SectionIndex >= 0 && SectionIndex < C->GetNumSections())
+			{
+				C->ClearMeshSection(SectionIndex);
+			}
 		}
 	}
 

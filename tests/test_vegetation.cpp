@@ -251,7 +251,7 @@ TEST_CASE("vegetation: drawing a road clears world cover in its corridor and onl
     const TileMap before = tiles_of(*n.cache, kLayerWorldCover);
     const double margin = n.rules->clear_margin, band = n.rules->blend_band;
 
-    REQUIRE(n.road({-200, 60, 0}, {450, 80, 0}, "a_road_rural"));
+    REQUIRE(n.road({-330, -280, 0}, {340, 300, 0}, "a_road_rural"));
     const ChangeList cl = n.cache->update();
     const LayerChanges* lc = cl.find(kLayerWorldCover);
     REQUIRE(lc != nullptr);

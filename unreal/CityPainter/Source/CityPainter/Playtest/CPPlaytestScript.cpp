@@ -5,6 +5,7 @@
 // polar 0.05..1.42, camera >= 3 m above ground, zoom factor 0.95^1.1 per notch, zoom to the screen centre).
 
 #include "CPPlaytestScript.h"
+#include "CPPlaytestRoads.h"
 
 #include "../CPCameraPawn.h"
 #include "../CPPlayerController.h"
@@ -522,12 +523,21 @@ void BuildCPPlaytestScript(TArray<FCPPlaytestStep>& Out)
 {
 	FBuilder B{Out};
 	ScenarioStartup(B);
-	ScenarioRotate(B);
-	ScenarioPan(B);
-	ScenarioZoom(B);
-	ScenarioKeys(B);
-	ScenarioEdge(B);
-	ScenarioPicking(B);
-	ScenarioHudClickThrough(B);
-	ScenarioResize(B);
+	// -CPPlaytestM2Only skips the milestone 1 camera / picking scenarios (faster iteration on the road tool).
+	if (!FParse::Param(FCommandLine::Get(), TEXT("CPPlaytestM2Only")))
+	{
+		ScenarioRotate(B);
+		ScenarioPan(B);
+		ScenarioZoom(B);
+		ScenarioKeys(B);
+		ScenarioEdge(B);
+		ScenarioPicking(B);
+		ScenarioHudClickThrough(B);
+		ScenarioResize(B);
+	}
+	if (FParse::Param(FCommandLine::Get(), TEXT("CPPlaytestStates")))
+	{
+		AppendCPPlaytestRoadStates(Out);   // every road tool state, one picture each (Playtest/CPPlaytestRoadStates.cpp)
+	}
+	AppendCPPlaytestRoadScenarios(Out);   // M2: roads, undo / redo (Playtest/CPPlaytestRoads.cpp)
 }

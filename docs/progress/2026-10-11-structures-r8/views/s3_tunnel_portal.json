@@ -1,0 +1,4 @@
+[
+ {"name":"s3_tunnel_portal_street","width":1600,"height":900,"pos":[-135,-1.8,9.7],"target":[-62,0,10],"fov":62,"near":0.2,"shadow":110,"shadowCentre":[-80,0,8],"exposure":1.05},
+ {"name":"s3_tunnel_portal_aerial","width":1600,"height":900,"pos":[-190,-150,95],"target":[-30,0,12],"fov":45,"near":1,"shadow":170,"shadowCentre":[-40,0,10],"exposure":1.05}
+]

@@ -14,6 +14,7 @@
 
 class ACPCameraPawn;
 class UCPInputConfig;
+class UCPToolManager;   // M2 tools hook
 struct FInputActionValue;
 
 UCLASS()
@@ -32,6 +33,9 @@ public:
 
 	/** The text the HUD shows right now (for the playtest and logs). */
 	FString GetHudText() const { return Hud ? Hud->GetShownText() : FString(); }
+
+	/** The road tool HUD text shown right now (for the playtest and logs). */
+	FString GetToolHudText() const;
 
 	/** Console: logs the ground pick at a screen point given as fractions of the viewport (0.5 0.5 = centre). */
 	UFUNCTION(Exec)
@@ -52,6 +56,9 @@ private:
 
 	UPROPERTY(Transient) TObjectPtr<UCPInputConfig> InputConfig;
 	UPROPERTY(Transient) TObjectPtr<UCPHudWidget> Hud;
+
+	// ---- M2 tools hook (see Tools/CPToolManager.h): input, hover, overlay and HUD of the player tools ----
+	UPROPERTY(Transient) TObjectPtr<UCPToolManager> Tools;
 
 	bool bRotating = false, bPanning = false, bFast = false;
 	FVector2D MouseLast = FVector2D::ZeroVector;

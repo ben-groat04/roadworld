@@ -31,6 +31,8 @@ std::string default_ring_road_type(const RegionPack& region) {
 
 namespace {
 
+constexpr double kIslandShape = 0.6;  // splitter island plan: half width ~ ((s_nose - s) / length)^kIslandShape (teardrop; 1 = straight triangle)
+
 using Ring = std::vector<Vec2>;
 
 constexpr double kSampleStep = 0.25;  // m, scan step of the tool along crossing edges
@@ -768,10 +770,11 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
         SplitterIsland sp;
         sp.arm = static_cast<int>(gi);
         sp.length = s_nose - s0;
-        sp.width = 2 * h0;
+        sp.width = 2 * h0;  // the gap between the flared lanes (the island is 0.75 of it: base_half)
         sp.ring_s = s0;
         sp.nose_s = s_nose;
-        sp.base_half = h0;
+        const double h_edge = 0.75 * h0;  // the island leaves a painted flank strip (a quarter of the gap half width) beside each lane edge line
+        sp.base_half = h_edge;
         const auto ring_end = [&](std::vector<Vec2>& poly, Vec2 r0, Vec2 l0) {
             poly.push_back(project(r0));
             for (int q = 1; q < 5; ++q) poly.push_back(project(r0 + (l0 - r0) * (q / 5.0)));
@@ -799,8 +802,9 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
             sp.nose_r = r_nose;
             const double s_c = s_nose - r_nose;
             const auto half = [&](double s) {
-                const double line = r_nose + (h0 - r_nose) * (s_c - s) / (s_c - s0);
-                return std::max(0.05, std::min(line, flare_spread(*ja, s, true)));  // never wider than the gap
+                // A teardrop: widest at the ring, rounding to the nose (exponent < 1 keeps it full for most of its length)
+                const double line = r_nose + (h_edge - r_nose) * std::pow(std::max(0.0, (s_c - s) / (s_c - s0)), kIslandShape);
+                return std::max(0.05, std::min(line, flare_spread(*ja, s, true) - 0.25 * h0));  // never wider than the gap less its flank strip
             };
             std::vector<Vec2> left, right;
             for (double s = s0; s < s_c - 1e-6; s += 1.0) {

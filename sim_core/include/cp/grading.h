@@ -61,7 +61,10 @@ struct GradingParams {
     double wall_max_height = 3.0;  // m, tallest single retaining wall (wall + slope, benching, or flagged over_height beyond it)
     double bench_min_width = 4.5;  // m, berm between two stacked walls (back of the lower wall to the face of the upper one)
     int max_tiers = 2;             // stacked walls per side at most; beyond that: rock cut (cut side) / one tall wall (fill side)
-    double wall_slope_extra = 15.0;  // m, the slope above / below a wall may run this much farther than a plain slope may before it must daylight
+    double wall_slope_extra = 15.0;  // m, reach / box margin only; the slope beyond a wall is bounded by slope_max_run and slope_max_ratio
+    double slope_max_ratio = 3.0;    // a slope daylights only if its run <= ratio * (flat-ground run for the height it starts above / below the ground) + slope_run_slack; else it chases the hillside and the wall takes the height
+    double slope_run_slack = 2.0;    // m, added to that run
+    double slope_max_run = 15.0;     // m, a slope above / below a wall never runs more than this beyond the wall's back face
     double berm_slope = 0.25;      // v / h, the strip between two tiers climbs (cut) / falls (fill) away from the lower wall at this slope
     double wall_hard_max = 6.0;    // m, tallest single fill wall; beyond it the station needs a structure (viaduct / half-bridge): needs_structure
     double rock_cut_batter = 0.5;  // h per 1 v of an engineered rock-cut face
@@ -74,6 +77,10 @@ struct GradingParams {
     double end_taper_batter = 4.0; // horizontal : vertical run-out beyond a free road end
     double corridor_max = 90.0;    // m beyond the footprint edge up to which two-tier walls / rock cuts may extend
     double wall_vis_min = 0.35;    // m, a terraced wall lower than this is not built
+    double relax_strength = 0.8;   // blend per smoothing pass (g' = (1 - s) g + s * mean of the 4 neighbours)
+    int relax_iters = 8;           // smoothing passes (0 disables); sigma about sqrt(iters * s / 2) texels
+    double relax_margin = 8.0;     // m, how far into natural ground the smoothing reaches beyond the changed ground
+    double relax_max_delta = 1.0;  // m, no texel moves more than this from its graded height
     double reach_fade = 8.0;       // m, a plain slope that has not met the ground by the end of the road's reach fades into it over this run
     // ---- sampling ----
     double sample_step = 2.0;      // m, adapter centreline sampling step
@@ -293,7 +300,9 @@ std::vector<float> sample_natural_tile(const GroundFn& ground, const TileSpec& t
 // Scratch arrays of grade_tile_into, reusable between calls (no allocation after the first call
 // of a given size). One workspace per worker thread; never share one between threads.
 struct GradeWorkspace {
-    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey, rq_bt, rq_fw, rq_al, rq_fs, rq_sp, rq_sv, cut_r, fill_r, cut_d2, fill_d2, cut_u, fill_u, cut_k2, fill_k2;
+    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey, rq_bt, rq_fw, rq_al, rq_fs, rq_sp, rq_sv, cut_r, fill_r, cut_d2, fill_d2, cut_u, fill_u, cut_k2, fill_k2, cut_dit, end_ceil;
+    std::vector<std::uint8_t> cap_f;  // 1: texel inside the round end cap of a free road end  // cut_dit: depth of the toe ditch in the winning cut candidate (fix bit 8 marks the ditch texels)
+    std::vector<std::uint8_t> fix, rq_st;  // smoothing: fix bit 4 = beside a structure / past a portal plane, bit 8 = toe ditch (the relaxation pass leaves them alone)
     std::vector<std::uint8_t> rq_w, rq_fl, rq_by, cut_k;
     std::vector<const WallPlan*> rq_p;
 };
@@ -304,6 +313,12 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                      const float* natural, float* out, std::uint8_t* footprint = nullptr);
 GradedTile grade_tile(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t,
                       const std::vector<float>& natural);
+
+// The smoothed ground: the raw grading on the tile grown by a halo of relax_iters + margin + 2 texels, then a constrained relaxation pass over the free texels
+// (relax_tile in grading.cpp), cropped to the tile. Independent of how the world is cut into tiles. `natural` is the natural ground function (the halo needs it).
+void grade_tile_smooth_into(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t, const GroundFn& natural,
+                            float* out, std::uint8_t* footprint, GradeWorkspace& ws);
+GradedTile grade_tile_smooth(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t, const GroundFn& natural);
 
 // ---- wall runs (structure meshes) ----
 

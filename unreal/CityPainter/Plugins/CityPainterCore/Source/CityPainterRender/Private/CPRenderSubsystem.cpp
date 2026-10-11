@@ -1,6 +1,8 @@
 #include "CPRenderSubsystem.h"
 
+#include "CPOverlayComponent.h"
 #include "CPSettings.h"
+#include "CPSimWorld.h"
 #include "CPWorldSubsystem.h"
 #include "CityPainterRender.h"
 
@@ -36,12 +38,35 @@ bool UCPRenderSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 
 void UCPRenderSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
-	Collection.InitializeDependency<UCPWorldSubsystem>();
+	UCPWorldSubsystem* WorldSub = Cast<UCPWorldSubsystem>(Collection.InitializeDependency<UCPWorldSubsystem>());
 	Super::Initialize(Collection);
+	if (WorldSub)
+	{
+		WorldSubsystem = WorldSub;
+		TilesChangedHandle = WorldSub->OnTilesChanged().AddUObject(this, &UCPRenderSubsystem::HandleTilesChanged);
+	}
+}
+
+UCPOverlayComponent* UCPRenderSubsystem::GetOverlay() const
+{
+	return Overlay;
+}
+
+void UCPRenderSubsystem::HandleTilesChanged(const FCPChangeSet& Changes)
+{
+	for (TUniquePtr<ICPRenderLayer>& Layer : Layers)
+	{
+		Layer->OnTilesChanged(Changes);
+	}
 }
 
 void UCPRenderSubsystem::Deinitialize()
 {
+	if (UCPWorldSubsystem* WorldSub = WorldSubsystem.Get())
+	{
+		WorldSub->OnTilesChanged().Remove(TilesChangedHandle);
+	}
+	TilesChangedHandle.Reset();
 	LogCounts(TEXT("before teardown"));
 	for (TUniquePtr<ICPRenderLayer>& Layer : Layers)
 	{
@@ -108,6 +133,20 @@ void UCPRenderSubsystem::BuildLayers()
 	{
 		UE_LOG(LogCPRender, Log, TEXT("Building layer '%s'"), *Layer->LayerName().ToString());
 		Layer->Build(Context);
+	}
+	// The tool overlay lives on the same root actor; it draws whatever the tool last handed it.
+	Overlay = NewObject<UCPOverlayComponent>(RootActor, TEXT("ToolOverlay"));
+	Overlay->SetupAttachment(Scene);
+	Overlay->RegisterComponent();
+	// Layers that follow edits start empty: bring them up to date with edits made before they existed (idempotent).
+	if (const FCPSimWorld* Sim = WorldSub->GetSim())
+	{
+		const FCPChangeSet Catchup = Sim->SnapshotAll();
+		if (!Catchup.IsEmpty())
+		{
+			UE_LOG(LogCPRender, Log, TEXT("Catching up %d existing tiles"), static_cast<int32>(Catchup.Tiles.size()));
+			HandleTilesChanged(Catchup);
+		}
 	}
 	LogCounts(TEXT("after build"));
 }
