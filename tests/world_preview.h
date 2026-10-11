@@ -105,29 +105,45 @@ inline double shade(const cp::Heightfield& hf, double x, double y) {
 
 // Colour of a ground sample by land use (round 4): base colours read off the vertical aerials 46-59, per-field tint, and
 // tramline / furrow hatching along the field's row direction for cropped fields (the stripes that make the aerials look like aerials).
+inline double vnoise(double x, double y, double wl, double salt) {
+    const double u = x / wl + salt * 17.3, v = y / wl + salt * 5.1;
+    const double fu = std::floor(u), fv = std::floor(v);
+    auto h = [&](double i, double j) {
+        const double t = std::sin(i * 127.1 + j * 311.7 + salt * 74.7) * 43758.5453;
+        return t - std::floor(t);
+    };
+    const double tx = (u - fu) * (u - fu) * (3 - 2 * (u - fu)), ty = (v - fv) * (v - fv) * (3 - 2 * (v - fv));
+    return lerp3(lerp3(h(fu, fv), h(fu + 1, fv), tx), lerp3(h(fu, fv + 1), h(fu + 1, fv + 1), tx), ty);
+}
+
 inline Rgb ground_colour(const cp::CoverGround& g, const cp::VegetationRules& r, cp::Vec2 p = {0, 0}, bool hatch = true) {
     (void)r;
-    Rgb c{112, 148, 76};
+    Rgb c{96, 118, 70};
     switch (g.use) {
-        case cp::LandUse::Woodland: c = {48, 80, 46}; break;
-        case cp::LandUse::PermanentPasture: c = {112, 148, 76}; break;
-        case cp::LandUse::ImprovedGrass: c = {146, 180, 92}; break;
-        case cp::LandUse::Ploughed: c = {142, 112, 86}; break;
-        case cp::LandUse::Cereal: c = {78, 124, 72}; break;
-        case cp::LandUse::Stubble: c = {200, 176, 122}; break;
-        case cp::LandUse::OtherCrop: c = {42, 84, 54}; break;
-        case cp::LandUse::RoughGrazing: c = {128, 136, 84}; break;
+        case cp::LandUse::Woodland: c = {50, 72, 46}; break;
+        case cp::LandUse::PermanentPasture: c = {98, 120, 72}; break;
+        case cp::LandUse::ImprovedGrass: c = {114, 138, 80}; break;
+        case cp::LandUse::Ploughed: c = {128, 106, 88}; break;
+        case cp::LandUse::Cereal: c = {84, 112, 70}; break;
+        case cp::LandUse::Stubble: c = {172, 154, 116}; break;
+        case cp::LandUse::OtherCrop: c = {60, 88, 60}; break;
+        case cp::LandUse::RoughGrazing: c = {112, 116, 82}; break;
     }
+    // Per-field tint: modest, as neighbouring fields in the aerials differ in tone but not in hue.
     const double t = g.tint;
-    const double f = 0.78 + 0.44 * t;  // strong per-field variation, as in the aerials
-    c = {c.r * f * (1.0 + 0.20 * (t - 0.5)), c.g * f, c.b * f * (1.0 - 0.20 * (t - 0.5))};
-    if (hatch && g.use >= cp::LandUse::Ploughed && g.use <= cp::LandUse::OtherCrop) {
+    const double f = 0.90 + 0.20 * t;
+    c = {c.r * f * (1.0 + 0.08 * (t - 0.5)), c.g * f, c.b * f * (1.0 - 0.08 * (t - 0.5))};
+    // Mottling inside a field (grazing patches, soil, crop vigour).
+    const double m = 0.93 + 0.14 * (0.6 * vnoise(p.x, p.y, 40, 1) + 0.4 * vnoise(p.x, p.y, 11, 2));
+    c = {c.r * m, c.g * m, c.b * m};
+    const bool cropped = g.use == cp::LandUse::Cereal || g.use == cp::LandUse::OtherCrop || g.use == cp::LandUse::Stubble || g.use == cp::LandUse::Ploughed;
+    if (hatch && cropped) {
         const double across = p.x * -g.row_dir.y + p.y * g.row_dir.x;
-        const double sp = g.use == cp::LandUse::Ploughed ? 7.0 : 24.0;
+        const double sp = g.use == cp::LandUse::Ploughed ? 6.0 : 27.0;  // tramlines about 24-28 m apart
         double ph = std::fmod(across + 1000.0 * static_cast<double>(g.field_id % 977) / 977.0, sp);
         if (ph < 0) ph += sp;
-        if (ph < 2.0) {
-            const double d = g.use == cp::LandUse::Ploughed ? -16 : g.use == cp::LandUse::Cereal ? 30 : g.use == cp::LandUse::Stubble ? -14 : 22;
+        if (ph < 1.2) {
+            const double d = g.use == cp::LandUse::Ploughed ? -8 : g.use == cp::LandUse::Cereal ? 16 : g.use == cp::LandUse::Stubble ? -8 : 10;
             c = {c.r + d, c.g + d, c.b + d};
         }
     }
@@ -253,7 +269,7 @@ inline Img cover_crop(const cp::TestWorld& tw, const cp::Heightfield& hf, const 
         }
     auto disc = [&](cp::Vec2 p, double r, double cr, double cg, double cb) {
         const int ci = static_cast<int>((p.x - origin.x) / px), cj = H - 1 - static_cast<int>((p.y - origin.y) / px);
-        const int ri = std::max(1, static_cast<int>(r / px));
+        const int ri = std::max(2, static_cast<int>(r / px));
         for (int dj = -ri; dj <= ri; ++dj)
             for (int di = -ri; di <= ri; ++di)
                 if (di * di + dj * dj <= ri * ri) im.put(ci + di, cj + dj, cr, cg, cb);
@@ -264,7 +280,7 @@ inline Img cover_crop(const cp::TestWorld& tw, const cp::Heightfield& hf, const 
         for (std::size_t k = 0; k + 1 < l.points.size(); ++k) {
             const cp::Vec2 a = l.points[k], b = l.points[k + 1];
             const int steps = std::max(1, static_cast<int>((b - a).length() / (px * 0.5)));
-            for (int s = 0; s <= steps; ++s) disc(a + (b - a) * (static_cast<double>(s) / steps), 0.5 * l.width, 34, 70, 30);
+            for (int s = 0; s <= steps; ++s) disc(a + (b - a) * (static_cast<double>(s) / steps), 0.42 * l.width, 44, 66, 40);
         }
     std::vector<cp::CoverPoint> pts;
     src.points_in(origin, {origin.x + w_m, origin.y + h_m}, pts);

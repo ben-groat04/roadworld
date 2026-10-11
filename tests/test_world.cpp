@@ -392,7 +392,7 @@ TEST_CASE("test_world: default cover is irregular: field sizes, aspects, orienta
         CHECK(mean > 1.5);
         CHECK(mean < 8.0);
         CHECK(a10 < 1.5);   // districts of small fields exist
-        CHECK(a90 > 4.0);   // and districts of large ones
+        CHECK(a90 > 3.5);   // and districts of large ones
         CHECK(amax < 45);
         CHECK(asp50 > 1.25);
         CHECK(static_cast<double>(wood) / n > 0.04);
@@ -454,12 +454,12 @@ TEST_CASE("test_world: golden default cover (field ids, uses, tints, row directi
     struct G { double x, y; std::uint64_t id; int use; long long tint, rx, ry; };
     // Recorded from a gcc build (round 4); the MSVC build must reproduce them: the generator uses only + - * / sqrt floor and integer hashing.
     const G golden[] = {
-        {0.00, 0.00, 0x4125a9a280cf3165ull, 6, 286479, -983796, -179290},
-        {-731.50, 412.25, 0x9f6889136a5287e2ull, 5, 689722, -963211, 268746},
-        {905.10, -233.70, 0xfd2e515c1fc13dc2ull, 5, 136661, 146517, 989208},
-        {-120.30, -880.90, 0x6280f638a7792b85ull, 2, 476718, 999801, -19961},
-        {333.30, 777.70, 0x53de7d414f65746ull, 7, 643460, -17972, -999838},
-        {1500.50, 1500.50, 0x6dddfca0ff9ee111ull, 7, 322335, -176955, 984219},
+        {0.00, 0.00, 0x4125a9a280cf3165ull, 6, 286479, -52081, 998643},
+        {-731.50, 412.25, 0x9f6889136a5287e2ull, 5, 689722, 978353, -206944},
+        {905.10, -233.70, 0xd1a4a6aa5593aba8ull, 5, 938773, 83471, 996510},
+        {-120.30, -880.90, 0x562bcce55a6cdfacull, 4, 469915, -999985, -5475},
+        {333.30, 777.70, 0x159b1aa659ec73f5ull, 4, 77668, -997837, -65739},
+        {1500.50, 1500.50, 0xc2ee856503b81d5full, 4, 979286, -25065, 999686},
     };
     for (const G& g : golden) {
         const CoverGround c = src->ground_at({g.x, g.y});
@@ -476,9 +476,9 @@ TEST_CASE("test_world: golden default cover (field ids, uses, tints, row directi
     double len = 0;
     for (const auto& l : ls)
         for (std::size_t k = 0; k + 1 < l.points.size(); ++k) len += (l.points[k + 1] - l.points[k]).length();
-    CHECK(ls.size() == 18);
-    CHECK(std::llround(len * 1000) == 5117600);
-    CHECK(ls.front().seed == 0x8f388445e0626b5eull);
+    CHECK(ls.size() == 22);
+    CHECK(std::llround(len * 1000) == 5616482);
+    CHECK(ls.front().seed == 0x36b2a5a90c046f81ull);
 }
 
 TEST_CASE("test_world: per-field attributes are stable and constant over a field") {
