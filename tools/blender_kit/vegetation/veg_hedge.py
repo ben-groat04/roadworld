@@ -38,10 +38,10 @@ def build_hedge(kind, spec, lod):
     R = ((16 if trimmed else 20), 12, 8)[lod]
     nseg = max(2, round(L / seg_len))
     core_mat = "veg_core" if lod < 2 else "veg_canopy_far"
-    amp = 0.035 if trimmed else 0.16
+    amp = 0.04 if trimmed else 0.30
     nexp = 5.0 if trimmed else 2.8
-    fH = periodic_noise(rng, L, 3, 0.0 if trimmed else 0.16)
-    fW = periodic_noise(rng, L, 3, 0.03 if trimmed else 0.14)
+    fH = periodic_noise(rng, L, 3, 0.03 if trimmed else 0.2)
+    fW = periodic_noise(rng, L, 3, 0.04 if trimmed else 0.2)
     fa, fb, fc = [periodic_noise(rng, L, 4, 1.0, 7) for _ in range(3)]
     jit_amp = 0.015 if trimmed else 0.05
     d = min(1.1, L * 0.45)
@@ -98,12 +98,15 @@ def build_hedge(kind, spec, lod):
         for a in range(len(P) - 1):
             area = (P[a] - c0).cross(P[a + 1] - c0).length / 2
             tris.append((c0, P[a], P[a + 1], Vector((1, 0, 0)), area))
-    # core faces with n=None need normals: compute smooth-ish from geometry later (use face normal) -> set per-face
+    ends = [(ids[0], False)] + ([(ids[nseg], True)] if end != "cut" else [])
+    for ring, plus in ends:
+        face = ring[::-1] if plus else list(ring)
+        vm.face(face, core_mat, [(vm.verts[k][1], vm.verts[k][2]) for k in face], [None] * len(face), [(0.3, 0, 0.25)] * len(face))
     _fix_core_normals(vm)
 
     # ---- leaf cards ---------------------------------------------------------------------------------------------
     if lod == 0:
-        dens, csz = (62 if trimmed else 52), (0.19 if trimmed else 0.26)
+        dens, csz = (80 if trimmed else 68), (0.22 if trimmed else 0.25)
     elif lod == 1:
         dens, csz = (14 if trimmed else 12), (0.4 if trimmed else 0.52)
     else:
@@ -133,15 +136,15 @@ def build_hedge(kind, spec, lod):
             rect, sz = LEAF_CELLS[LEAF_HEDGE], csz * rng.uniform(0.8, 1.25)
         shade_n = norm(n * 0.7 + Z * 0.3)
         vm.card(c, cn, Z, sz, sz, rect, "veg_leaf", shade_n, min(1.0, c.z / H) * 0.6 + 0.0, rng.random(),
-                0.55 + 0.45 * min(1, off / 0.1 + 0.2), roll=rng.uniform(0, 6.28), flip_u=rng.random() < 0.5)
+                _shade(p, off, rng, trimmed), roll=rng.uniform(0, 6.28), flip_u=rng.random() < 0.5)
     # ---- emergent shoots -----------------------------------------------------------------------------------------
     if not trimmed and lod < 2:
-        nshoot = int(L * (3.2 if lod == 0 else 1.2))
+        nshoot = int(L * (2.0 if lod == 0 else 0.8))
         for _ in range(nshoot):
             x = rng.uniform(-L / 2 + 0.2, L / 2 - 0.2)
             y = rng.uniform(-W * 0.3, W * 0.3)
             z0 = H * (1 + fH(x)) * 0.92
-            ln = rng.uniform(0.5, 1.5)
+            ln = rng.uniform(0.4, 0.95)
             dirv = norm(Vector((rng.uniform(-0.3, 0.3), rng.uniform(-0.7, 0.7), 1.0)))
             pts, rad = [], []
             p = Vector((x, y, z0 * 0.9))
@@ -189,3 +192,10 @@ def _fix_core_normals(vm):
                 else:
                     vm.nrm[loop] = tuple(fn[fi])
             loop += 1
+
+
+def _shade(p, off, rng, trimmed):
+    """Per-card shade hint (vertex colour B): deeper cards darker, low-frequency patches, random per card."""
+    patch = 0.5 + 0.5 * math.sin(1.9 * p.x + 0.7) * math.sin(2.6 * p.z + 1.3) + 0.25 * math.sin(5.1 * p.x + 3.1 * p.y)
+    depth = min(1.0, off / (0.05 if trimmed else 0.14))
+    return max(0.15, min(1.0, (0.35 + 0.35 * depth) * (0.55 + 0.6 * patch) + rng.uniform(-0.12, 0.2)))

@@ -95,6 +95,35 @@ def get_material(slot):
         links.new(nmap_t.outputs["Color"], nmap.inputs["Color"])
         links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
         col = _tint_node(nt, links, tex.outputs["Color"])
+        wa = nodes.new("ShaderNodeAttribute")
+        wa.attribute_type = "GEOMETRY"
+        wa.attribute_name = "Wind"
+        sp = nodes.new("ShaderNodeSeparateColor")
+        links.new(wa.outputs["Color"], sp.inputs[0])
+        ma = nodes.new("ShaderNodeMath")
+        ma.operation = "MULTIPLY_ADD"
+        ma.inputs[1].default_value = 1.45
+        ma.inputs[2].default_value = 0.2
+        links.new(sp.outputs[2], ma.inputs[0])
+        mx2 = nodes.new("ShaderNodeMix")
+        mx2.data_type = "RGBA"
+        mx2.blend_type = "MULTIPLY"
+        mx2.inputs[0].default_value = 1.0
+        links.new(col, mx2.inputs[6])
+        links.new(ma.outputs[0], mx2.inputs[7])
+        col = mx2.outputs[2]
+        hv = nodes.new("ShaderNodeMix")
+        hv.data_type = "RGBA"
+        hv.inputs[6].default_value = (0.80, 0.93, 0.98, 1)
+        hv.inputs[7].default_value = (1.22, 1.14, 0.74, 1)
+        links.new(sp.outputs[1], hv.inputs[0])
+        mx3 = nodes.new("ShaderNodeMix")
+        mx3.data_type = "RGBA"
+        mx3.blend_type = "MULTIPLY"
+        mx3.inputs[0].default_value = 1.0
+        links.new(col, mx3.inputs[6])
+        links.new(hv.outputs[2], mx3.inputs[7])
+        col = mx3.outputs[2]
         links.new(col, bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = 0.65
         try:
@@ -123,8 +152,8 @@ def get_material(slot):
             pass
         m.use_backface_culling = False
     else:
-        spec = {"veg_bark": ((0.075, 0.06, 0.045), 0.9), "veg_core": ((0.020, 0.032, 0.014), 0.9),
-                "veg_canopy_far": ((0.045, 0.075, 0.025), 0.85), "veg_timber": ((0.20, 0.14, 0.08), 0.8)}[slot]
+        spec = {"veg_bark": ((0.055, 0.04, 0.028), 0.9), "veg_core": ((0.007, 0.012, 0.005), 0.9),
+                "veg_canopy_far": ((0.022, 0.038, 0.012), 0.85), "veg_timber": ((0.20, 0.14, 0.08), 0.8)}[slot]
         at = nodes.new("ShaderNodeAttribute")
         at.attribute_type = 'OBJECT'
         at.attribute_name = '["tint"]'
@@ -136,6 +165,10 @@ def get_material(slot):
         links.new(at.outputs["Color"], mx.inputs[7])
         links.new(mx.outputs[2], bsdf.inputs["Base Color"])
         bsdf.inputs["Roughness"].default_value = spec[1]
+        try:
+            bsdf.inputs["Specular IOR Level"].default_value = 0.15
+        except KeyError:
+            pass
         links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
     return m
 
@@ -317,9 +350,9 @@ def periodic_noise(rng, period, n_terms=4, amp=1.0, max_cycles=6):
     terms = []
     for i in range(n_terms):
         k = rng.randint(1, max_cycles)
-        terms.append((k, rng.uniform(0, 2 * math.pi), amp * rng.uniform(0.4, 1.0) / (0.6 + 0.4 * k)))
-    tot = sum(a for _, _, a in terms)
+        terms.append((k, rng.uniform(0, 2 * math.pi), rng.uniform(0.4, 1.0) / (0.6 + 0.4 * k)))
+    tot = sum(a for _, _, a in terms) or 1.0
 
     def f(x):
-        return sum(a * math.sin(2 * math.pi * k * x / period + ph) for k, ph, a in terms) / tot
+        return amp * sum(a * math.sin(2 * math.pi * k * x / period + ph) for k, ph, a in terms) / tot
     return f

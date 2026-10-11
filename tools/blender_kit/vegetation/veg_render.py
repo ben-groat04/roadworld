@@ -42,7 +42,7 @@ def setup(w=640, h=640, samples=16, sun_elev=38, sun_az=40, sun_strength=3.2, sk
     bg = nt.nodes.new("ShaderNodeBackground")
     sky = nt.nodes.new("ShaderNodeTexSky")
     try:
-        sky.sky_type = 'NISHITA'
+        sky.sky_type = 'MULTIPLE_SCATTERING'
         sky.sun_elevation = math.radians(sun_elev)
         sky.sun_rotation = math.radians(sun_az)
         sky.sun_disc = False
@@ -81,6 +81,10 @@ def flat_material(name, rgb, rough=0.9):
     b = next(n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
     b.inputs['Base Color'].default_value = (*rgb, 1)
     b.inputs['Roughness'].default_value = rough
+    try:
+        b.inputs['Specular IOR Level'].default_value = 0.1
+    except KeyError:
+        pass
     return m
 
 
@@ -108,6 +112,8 @@ def figure(x, y, height=1.8):
 
 
 def import_fbx(path, tint=(1, 1, 1)):
+    for _s in ("veg_leaf", "veg_grass", "veg_bark", "veg_core", "veg_canopy_far", "veg_timber"):
+        get_material(_s)
     before = set(bpy.data.objects)
     bpy.ops.import_scene.fbx(filepath=path, global_scale=1.0, use_custom_normals=True, axis_forward='-Z', axis_up='Y')
     new = [o for o in bpy.data.objects if o not in before and o.type == 'MESH']

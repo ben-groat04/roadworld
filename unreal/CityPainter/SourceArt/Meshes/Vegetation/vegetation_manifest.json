@@ -1,0 +1,4801 @@
+{
+ "generator": "tools/blender_kit/vegetation/build_vegetation.py",
+ "blender": "5.2.2 LTS",
+ "units": "metres in this file; FBX is cm (100 uu per m)",
+ "axes": "+X along the run, +Y toward the carriageway, +Z up",
+ "wind_vertex_colour": {
+  "attribute": "Wind",
+  "R": "wind weight 0 base .. 1 tips",
+  "G": "per-card phase",
+  "B": "shade/AO hint 0..1"
+ },
+ "textures": [
+  "T_Veg_Leaf_BC/N/R.png",
+  "T_Veg_Grass_BC/N/R.png"
+ ],
+ "assets": [
+  {
+   "type_id": "grass_mown_clump",
+   "variant": "V00",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_mown_clump_V00_LOD0.fbx",
+     "tris": 32,
+     "dims_m": [
+      0.254,
+      0.232,
+      0.151
+     ],
+     "bbox_min_m": [
+      -0.124,
+      -0.123,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.129,
+      0.108,
+      0.151
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_mown_clump_V00_LOD1.fbx",
+     "tris": 8,
+     "dims_m": [
+      0.134,
+      0.161,
+      0.132
+     ],
+     "bbox_min_m": [
+      -0.066,
+      -0.08,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.069,
+      0.08,
+      0.132
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_mown_clump_V00_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.114,
+      0.119,
+      0.132
+     ],
+     "bbox_min_m": [
+      -0.045,
+      -0.059,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.069,
+      0.059,
+      0.132
+     ]
+    }
+   ],
+   "dims_m": [
+    0.254,
+    0.232,
+    0.151
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_mown_clump",
+   "variant": "V01",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_mown_clump_V01_LOD0.fbx",
+     "tris": 32,
+     "dims_m": [
+      0.2,
+      0.207,
+      0.119
+     ],
+     "bbox_min_m": [
+      -0.11,
+      -0.09,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.09,
+      0.117,
+      0.119
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_mown_clump_V01_LOD1.fbx",
+     "tris": 8,
+     "dims_m": [
+      0.151,
+      0.153,
+      0.125
+     ],
+     "bbox_min_m": [
+      -0.075,
+      -0.077,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.075,
+      0.077,
+      0.125
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_mown_clump_V01_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.117,
+      0.108,
+      0.115
+     ],
+     "bbox_min_m": [
+      -0.066,
+      -0.054,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.051,
+      0.054,
+      0.115
+     ]
+    }
+   ],
+   "dims_m": [
+    0.2,
+    0.207,
+    0.119
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_mown_clump",
+   "variant": "V02",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_mown_clump_V02_LOD0.fbx",
+     "tris": 32,
+     "dims_m": [
+      0.216,
+      0.203,
+      0.136
+     ],
+     "bbox_min_m": [
+      -0.096,
+      -0.097,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.12,
+      0.106,
+      0.136
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_mown_clump_V02_LOD1.fbx",
+     "tris": 8,
+     "dims_m": [
+      0.159,
+      0.168,
+      0.117
+     ],
+     "bbox_min_m": [
+      -0.079,
+      -0.084,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.079,
+      0.084,
+      0.117
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_mown_clump_V02_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.086,
+      0.125,
+      0.11
+     ],
+     "bbox_min_m": [
+      -0.044,
+      -0.062,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.042,
+      0.062,
+      0.11
+     ]
+    }
+   ],
+   "dims_m": [
+    0.216,
+    0.203,
+    0.136
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_mown_clump",
+   "variant": "V03",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_mown_clump_V03_LOD0.fbx",
+     "tris": 32,
+     "dims_m": [
+      0.214,
+      0.222,
+      0.124
+     ],
+     "bbox_min_m": [
+      -0.099,
+      -0.112,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.115,
+      0.11,
+      0.124
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_mown_clump_V03_LOD1.fbx",
+     "tris": 8,
+     "dims_m": [
+      0.132,
+      0.17,
+      0.123
+     ],
+     "bbox_min_m": [
+      -0.066,
+      -0.085,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.066,
+      0.085,
+      0.123
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_mown_clump_V03_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.092,
+      0.126,
+      0.117
+     ],
+     "bbox_min_m": [
+      -0.052,
+      -0.063,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.04,
+      0.063,
+      0.117
+     ]
+    }
+   ],
+   "dims_m": [
+    0.214,
+    0.222,
+    0.124
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_rough_tuft",
+   "variant": "V00",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_rough_tuft_V00_LOD0.fbx",
+     "tris": 54,
+     "dims_m": [
+      0.5,
+      0.605,
+      0.411
+     ],
+     "bbox_min_m": [
+      -0.241,
+      -0.267,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.259,
+      0.337,
+      0.411
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_rough_tuft_V00_LOD1.fbx",
+     "tris": 16,
+     "dims_m": [
+      0.379,
+      0.375,
+      0.403
+     ],
+     "bbox_min_m": [
+      -0.178,
+      -0.221,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.201,
+      0.154,
+      0.403
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_rough_tuft_V00_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.354,
+      0.228,
+      0.397
+     ],
+     "bbox_min_m": [
+      -0.153,
+      -0.114,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.201,
+      0.114,
+      0.397
+     ]
+    }
+   ],
+   "dims_m": [
+    0.5,
+    0.605,
+    0.411
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_rough_tuft",
+   "variant": "V01",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_rough_tuft_V01_LOD0.fbx",
+     "tris": 54,
+     "dims_m": [
+      0.505,
+      0.575,
+      0.357
+     ],
+     "bbox_min_m": [
+      -0.222,
+      -0.299,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.283,
+      0.275,
+      0.357
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_rough_tuft_V01_LOD1.fbx",
+     "tris": 16,
+     "dims_m": [
+      0.372,
+      0.405,
+      0.385
+     ],
+     "bbox_min_m": [
+      -0.202,
+      -0.237,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.17,
+      0.169,
+      0.385
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_rough_tuft_V01_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.339,
+      0.22,
+      0.385
+     ],
+     "bbox_min_m": [
+      -0.169,
+      -0.11,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.17,
+      0.11,
+      0.385
+     ]
+    }
+   ],
+   "dims_m": [
+    0.505,
+    0.575,
+    0.357
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_rough_tuft",
+   "variant": "V02",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_rough_tuft_V02_LOD0.fbx",
+     "tris": 54,
+     "dims_m": [
+      0.504,
+      0.552,
+      0.377
+     ],
+     "bbox_min_m": [
+      -0.242,
+      -0.256,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.261,
+      0.296,
+      0.377
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_rough_tuft_V02_LOD1.fbx",
+     "tris": 16,
+     "dims_m": [
+      0.301,
+      0.327,
+      0.379
+     ],
+     "bbox_min_m": [
+      -0.151,
+      -0.165,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.151,
+      0.162,
+      0.379
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_rough_tuft_V02_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.284,
+      0.223,
+      0.342
+     ],
+     "bbox_min_m": [
+      -0.162,
+      -0.112,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.123,
+      0.112,
+      0.342
+     ]
+    }
+   ],
+   "dims_m": [
+    0.504,
+    0.552,
+    0.377
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_rough_tuft",
+   "variant": "V03",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_rough_tuft_V03_LOD0.fbx",
+     "tris": 54,
+     "dims_m": [
+      0.543,
+      0.552,
+      0.424
+     ],
+     "bbox_min_m": [
+      -0.251,
+      -0.238,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.292,
+      0.315,
+      0.424
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_rough_tuft_V03_LOD1.fbx",
+     "tris": 16,
+     "dims_m": [
+      0.333,
+      0.322,
+      0.402
+     ],
+     "bbox_min_m": [
+      -0.162,
+      -0.16,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.17,
+      0.162,
+      0.402
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_rough_tuft_V03_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.332,
+      0.184,
+      0.395
+     ],
+     "bbox_min_m": [
+      -0.162,
+      -0.092,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.17,
+      0.092,
+      0.395
+     ]
+    }
+   ],
+   "dims_m": [
+    0.543,
+    0.552,
+    0.424
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_tussock",
+   "variant": "V00",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_tussock_V00_LOD0.fbx",
+     "tris": 66,
+     "dims_m": [
+      1.296,
+      1.225,
+      0.796
+     ],
+     "bbox_min_m": [
+      -0.818,
+      -0.701,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.478,
+      0.524,
+      0.796
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_tussock_V00_LOD1.fbx",
+     "tris": 20,
+     "dims_m": [
+      0.946,
+      1.283,
+      0.824
+     ],
+     "bbox_min_m": [
+      -0.474,
+      -0.663,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.472,
+      0.62,
+      0.824
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_tussock_V00_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      1.008,
+      0.44,
+      0.712
+     ],
+     "bbox_min_m": [
+      -0.556,
+      -0.22,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.453,
+      0.22,
+      0.712
+     ]
+    }
+   ],
+   "dims_m": [
+    1.296,
+    1.225,
+    0.796
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_tussock",
+   "variant": "V01",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_tussock_V01_LOD0.fbx",
+     "tris": 66,
+     "dims_m": [
+      1.138,
+      1.138,
+      0.81
+     ],
+     "bbox_min_m": [
+      -0.605,
+      -0.552,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.533,
+      0.586,
+      0.81
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_tussock_V01_LOD1.fbx",
+     "tris": 20,
+     "dims_m": [
+      1.127,
+      1.225,
+      0.86
+     ],
+     "bbox_min_m": [
+      -0.657,
+      -0.576,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.47,
+      0.649,
+      0.86
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_tussock_V01_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.945,
+      0.451,
+      0.86
+     ],
+     "bbox_min_m": [
+      -0.584,
+      -0.225,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.361,
+      0.225,
+      0.86
+     ]
+    }
+   ],
+   "dims_m": [
+    1.138,
+    1.138,
+    0.81
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_tussock",
+   "variant": "V02",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_tussock_V02_LOD0.fbx",
+     "tris": 66,
+     "dims_m": [
+      1.165,
+      1.06,
+      0.806
+     ],
+     "bbox_min_m": [
+      -0.657,
+      -0.548,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.508,
+      0.513,
+      0.806
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_tussock_V02_LOD1.fbx",
+     "tris": 20,
+     "dims_m": [
+      1.044,
+      1.188,
+      0.865
+     ],
+     "bbox_min_m": [
+      -0.483,
+      -0.615,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.562,
+      0.573,
+      0.865
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_tussock_V02_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      1.065,
+      0.451,
+      0.851
+     ],
+     "bbox_min_m": [
+      -0.504,
+      -0.225,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.562,
+      0.225,
+      0.851
+     ]
+    }
+   ],
+   "dims_m": [
+    1.165,
+    1.06,
+    0.806
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_tussock",
+   "variant": "V03",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_tussock_V03_LOD0.fbx",
+     "tris": 66,
+     "dims_m": [
+      1.391,
+      1.223,
+      0.891
+     ],
+     "bbox_min_m": [
+      -0.7,
+      -0.614,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.691,
+      0.61,
+      0.891
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_tussock_V03_LOD1.fbx",
+     "tris": 20,
+     "dims_m": [
+      1.011,
+      1.235,
+      0.857
+     ],
+     "bbox_min_m": [
+      -0.522,
+      -0.468,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.489,
+      0.767,
+      0.857
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_grass_tussock_V03_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      1.188,
+      0.418,
+      0.791
+     ],
+     "bbox_min_m": [
+      -0.715,
+      -0.209,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.473,
+      0.209,
+      0.791
+     ]
+    }
+   ],
+   "dims_m": [
+    1.391,
+    1.223,
+    0.891
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "weed_creep",
+   "variant": "V00",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_weed_creep_V00_LOD0.fbx",
+     "tris": 24,
+     "dims_m": [
+      0.332,
+      0.362,
+      0.202
+     ],
+     "bbox_min_m": [
+      -0.17,
+      -0.194,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.162,
+      0.169,
+      0.202
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_weed_creep_V00_LOD1.fbx",
+     "tris": 6,
+     "dims_m": [
+      0.372,
+      0.352,
+      0.189
+     ],
+     "bbox_min_m": [
+      -0.205,
+      -0.176,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.167,
+      0.176,
+      0.189
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_weed_creep_V00_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.197,
+      0.286,
+      0.189
+     ],
+     "bbox_min_m": [
+      -0.076,
+      -0.143,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.121,
+      0.143,
+      0.189
+     ]
+    }
+   ],
+   "dims_m": [
+    0.332,
+    0.362,
+    0.202
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "weed_creep",
+   "variant": "V01",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_weed_creep_V01_LOD0.fbx",
+     "tris": 24,
+     "dims_m": [
+      0.378,
+      0.339,
+      0.238
+     ],
+     "bbox_min_m": [
+      -0.194,
+      -0.188,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.183,
+      0.151,
+      0.238
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_weed_creep_V01_LOD1.fbx",
+     "tris": 6,
+     "dims_m": [
+      0.366,
+      0.346,
+      0.182
+     ],
+     "bbox_min_m": [
+      -0.207,
+      -0.171,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.159,
+      0.175,
+      0.182
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_weed_creep_V01_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.222,
+      0.272,
+      0.182
+     ],
+     "bbox_min_m": [
+      -0.096,
+      -0.136,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.126,
+      0.136,
+      0.182
+     ]
+    }
+   ],
+   "dims_m": [
+    0.378,
+    0.339,
+    0.238
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "weed_creep",
+   "variant": "V02",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_weed_creep_V02_LOD0.fbx",
+     "tris": 24,
+     "dims_m": [
+      0.362,
+      0.385,
+      0.193
+     ],
+     "bbox_min_m": [
+      -0.195,
+      -0.195,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.167,
+      0.189,
+      0.193
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_weed_creep_V02_LOD1.fbx",
+     "tris": 6,
+     "dims_m": [
+      0.334,
+      0.395,
+      0.215
+     ],
+     "bbox_min_m": [
+      -0.191,
+      -0.198,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.143,
+      0.198,
+      0.215
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_weed_creep_V02_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.197,
+      0.293,
+      0.215
+     ],
+     "bbox_min_m": [
+      -0.098,
+      -0.146,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.099,
+      0.146,
+      0.215
+     ]
+    }
+   ],
+   "dims_m": [
+    0.362,
+    0.385,
+    0.193
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "weed_creep",
+   "variant": "V03",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_weed_creep_V03_LOD0.fbx",
+     "tris": 24,
+     "dims_m": [
+      0.357,
+      0.37,
+      0.21
+     ],
+     "bbox_min_m": [
+      -0.176,
+      -0.198,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.181,
+      0.171,
+      0.21
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_weed_creep_V03_LOD1.fbx",
+     "tris": 6,
+     "dims_m": [
+      0.396,
+      0.352,
+      0.187
+     ],
+     "bbox_min_m": [
+      -0.224,
+      -0.163,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.172,
+      0.188,
+      0.187
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_weed_creep_V03_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.169,
+      0.295,
+      0.187
+     ],
+     "bbox_min_m": [
+      -0.102,
+      -0.148,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.067,
+      0.148,
+      0.187
+     ]
+    }
+   ],
+   "dims_m": [
+    0.357,
+    0.37,
+    0.21
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "bracken_patch",
+   "variant": "V00",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_bracken_patch_V00_LOD0.fbx",
+     "tris": 72,
+     "dims_m": [
+      1.583,
+      1.339,
+      0.862
+     ],
+     "bbox_min_m": [
+      -0.838,
+      -0.619,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.745,
+      0.72,
+      0.862
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_bracken_patch_V00_LOD1.fbx",
+     "tris": 24,
+     "dims_m": [
+      0.948,
+      1.137,
+      0.999
+     ],
+     "bbox_min_m": [
+      -0.458,
+      -0.578,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.49,
+      0.558,
+      0.999
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_bracken_patch_V00_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      1.048,
+      0.521,
+      0.999
+     ],
+     "bbox_min_m": [
+      -0.558,
+      -0.26,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.49,
+      0.26,
+      0.999
+     ]
+    }
+   ],
+   "dims_m": [
+    1.583,
+    1.339,
+    0.862
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "bracken_patch",
+   "variant": "V01",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_bracken_patch_V01_LOD0.fbx",
+     "tris": 72,
+     "dims_m": [
+      1.606,
+      1.687,
+      0.987
+     ],
+     "bbox_min_m": [
+      -0.77,
+      -0.927,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.836,
+      0.76,
+      0.987
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_bracken_patch_V01_LOD1.fbx",
+     "tris": 24,
+     "dims_m": [
+      1.279,
+      1.068,
+      1.004
+     ],
+     "bbox_min_m": [
+      -0.587,
+      -0.595,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.692,
+      0.473,
+      1.004
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_bracken_patch_V01_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      1.165,
+      0.547,
+      0.957
+     ],
+     "bbox_min_m": [
+      -0.473,
+      -0.274,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.692,
+      0.274,
+      0.957
+     ]
+    }
+   ],
+   "dims_m": [
+    1.606,
+    1.687,
+    0.987
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "bracken_patch",
+   "variant": "V02",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_bracken_patch_V02_LOD0.fbx",
+     "tris": 72,
+     "dims_m": [
+      1.38,
+      1.364,
+      0.98
+     ],
+     "bbox_min_m": [
+      -0.601,
+      -0.636,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.779,
+      0.728,
+      0.98
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_bracken_patch_V02_LOD1.fbx",
+     "tris": 24,
+     "dims_m": [
+      1.258,
+      1.129,
+      0.882
+     ],
+     "bbox_min_m": [
+      -0.782,
+      -0.653,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.476,
+      0.477,
+      0.882
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_bracken_patch_V02_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      0.953,
+      0.473,
+      0.78
+     ],
+     "bbox_min_m": [
+      -0.477,
+      -0.236,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.476,
+      0.236,
+      0.78
+     ]
+    }
+   ],
+   "dims_m": [
+    1.38,
+    1.364,
+    0.98
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "bracken_patch",
+   "variant": "V03",
+   "role": "cluster",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_bracken_patch_V03_LOD0.fbx",
+     "tris": 72,
+     "dims_m": [
+      1.594,
+      1.8,
+      0.877
+     ],
+     "bbox_min_m": [
+      -0.79,
+      -0.862,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.804,
+      0.937,
+      0.877
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_bracken_patch_V03_LOD1.fbx",
+     "tris": 24,
+     "dims_m": [
+      1.094,
+      1.2,
+      0.991
+     ],
+     "bbox_min_m": [
+      -0.677,
+      -0.545,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.418,
+      0.655,
+      0.991
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_bracken_patch_V03_LOD2.fbx",
+     "tris": 4,
+     "dims_m": [
+      1.073,
+      0.568,
+      0.991
+     ],
+     "bbox_min_m": [
+      -0.655,
+      -0.284,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.418,
+      0.284,
+      0.991
+     ]
+    }
+   ],
+   "dims_m": [
+    1.594,
+    1.8,
+    0.877
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "Crossed/bent cards, blade tips wind weight 1. Fade out by distance (grass only under ~30 m camera height)."
+  },
+  {
+   "type_id": "grass_edge_creep_strip",
+   "variant": "V00",
+   "role": "strip",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_edge_creep_strip_V00_LOD0.fbx",
+     "tris": 120,
+     "dims_m": [
+      1.017,
+      0.4,
+      0.13
+     ],
+     "bbox_min_m": [
+      -0.5,
+      -0.3,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.517,
+      0.1,
+      0.13
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_edge_creep_strip_V00_LOD1.fbx",
+     "tris": 12,
+     "dims_m": [
+      1.0,
+      0.412,
+      0.12
+     ],
+     "bbox_min_m": [
+      -0.5,
+      -0.3,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.5,
+      0.112,
+      0.12
+     ]
+    }
+   ],
+   "dims_m": [
+    1.017,
+    0.4,
+    0.13
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "1 m long along +X; +Y toward the carriageway: ragged edge over the asphalt, pivot on the edge line."
+  },
+  {
+   "type_id": "grass_edge_creep_strip",
+   "variant": "V01",
+   "role": "strip",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_edge_creep_strip_V01_LOD0.fbx",
+     "tris": 120,
+     "dims_m": [
+      1.019,
+      0.475,
+      0.13
+     ],
+     "bbox_min_m": [
+      -0.519,
+      -0.3,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.5,
+      0.175,
+      0.13
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_edge_creep_strip_V01_LOD1.fbx",
+     "tris": 12,
+     "dims_m": [
+      1.0,
+      0.465,
+      0.13
+     ],
+     "bbox_min_m": [
+      -0.5,
+      -0.3,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.5,
+      0.165,
+      0.13
+     ]
+    }
+   ],
+   "dims_m": [
+    1.019,
+    0.475,
+    0.13
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "1 m long along +X; +Y toward the carriageway: ragged edge over the asphalt, pivot on the edge line."
+  },
+  {
+   "type_id": "grass_edge_creep_strip",
+   "variant": "V02",
+   "role": "strip",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_grass_edge_creep_strip_V02_LOD0.fbx",
+     "tris": 120,
+     "dims_m": [
+      1.029,
+      0.406,
+      0.13
+     ],
+     "bbox_min_m": [
+      -0.5,
+      -0.3,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.529,
+      0.106,
+      0.13
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_grass_edge_creep_strip_V02_LOD1.fbx",
+     "tris": 12,
+     "dims_m": [
+      1.0,
+      0.471,
+      0.13
+     ],
+     "bbox_min_m": [
+      -0.5,
+      -0.3,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.5,
+      0.171,
+      0.13
+     ]
+    }
+   ],
+   "dims_m": [
+    1.029,
+    0.406,
+    0.13
+   ],
+   "material_slots": [
+    "veg_grass"
+   ],
+   "notes": "1 m long along +X; +Y toward the carriageway: ragged edge over the asphalt, pivot on the edge line."
+  },
+  {
+   "type_id": "shrub_scrub",
+   "variant": "V00",
+   "role": "shrub",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_shrub_scrub_V00_LOD0.fbx",
+     "tris": 648,
+     "dims_m": [
+      2.484,
+      2.17,
+      1.5
+     ],
+     "bbox_min_m": [
+      -1.204,
+      -1.068,
+      -0.03
+     ],
+     "bbox_max_m": [
+      1.28,
+      1.102,
+      1.47
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_shrub_scrub_V00_LOD1.fbx",
+     "tris": 108,
+     "dims_m": [
+      1.926,
+      2.154,
+      1.65
+     ],
+     "bbox_min_m": [
+      -0.921,
+      -1.107,
+      -0.282
+     ],
+     "bbox_max_m": [
+      1.006,
+      1.047,
+      1.368
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_shrub_scrub_V00_LOD2.fbx",
+     "tris": 24,
+     "dims_m": [
+      1.95,
+      1.95,
+      1.3
+     ],
+     "bbox_min_m": [
+      -0.975,
+      -0.975,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.975,
+      0.975,
+      1.3
+     ]
+    }
+   ],
+   "dims_m": [
+    2.484,
+    2.17,
+    1.5
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "shrub_scrub",
+   "variant": "V01",
+   "role": "shrub",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_shrub_scrub_V01_LOD0.fbx",
+     "tris": 858,
+     "dims_m": [
+      3.715,
+      2.828,
+      2.148
+     ],
+     "bbox_min_m": [
+      -1.909,
+      -1.372,
+      -0.02
+     ],
+     "bbox_max_m": [
+      1.807,
+      1.456,
+      2.128
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_shrub_scrub_V01_LOD1.fbx",
+     "tris": 132,
+     "dims_m": [
+      2.854,
+      2.752,
+      2.565
+     ],
+     "bbox_min_m": [
+      -1.476,
+      -1.326,
+      -0.385
+     ],
+     "bbox_max_m": [
+      1.377,
+      1.426,
+      2.179
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_shrub_scrub_V01_LOD2.fbx",
+     "tris": 24,
+     "dims_m": [
+      3.0,
+      3.0,
+      2.0
+     ],
+     "bbox_min_m": [
+      -1.5,
+      -1.5,
+      0.0
+     ],
+     "bbox_max_m": [
+      1.5,
+      1.5,
+      2.0
+     ]
+    }
+   ],
+   "dims_m": [
+    3.715,
+    2.828,
+    2.148
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "shrub_scrub",
+   "variant": "V02",
+   "role": "shrub",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_shrub_scrub_V02_LOD0.fbx",
+     "tris": 1014,
+     "dims_m": [
+      3.707,
+      4.208,
+      3.488
+     ],
+     "bbox_min_m": [
+      -2.064,
+      -2.098,
+      -0.209
+     ],
+     "bbox_max_m": [
+      1.643,
+      2.11,
+      3.28
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_shrub_scrub_V02_LOD1.fbx",
+     "tris": 156,
+     "dims_m": [
+      4.014,
+      4.049,
+      3.368
+     ],
+     "bbox_min_m": [
+      -2.056,
+      -2.132,
+      -0.241
+     ],
+     "bbox_max_m": [
+      1.957,
+      1.917,
+      3.128
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_shrub_scrub_V02_LOD2.fbx",
+     "tris": 24,
+     "dims_m": [
+      4.2,
+      4.2,
+      2.8
+     ],
+     "bbox_min_m": [
+      -2.1,
+      -2.1,
+      0.0
+     ],
+     "bbox_max_m": [
+      2.1,
+      2.1,
+      2.8
+     ]
+    }
+   ],
+   "dims_m": [
+    3.707,
+    4.208,
+    3.488
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "shrub_gorse",
+   "variant": "V00",
+   "role": "shrub",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_shrub_gorse_V00_LOD0.fbx",
+     "tris": 1112,
+     "dims_m": [
+      1.62,
+      1.933,
+      1.344
+     ],
+     "bbox_min_m": [
+      -0.908,
+      -0.902,
+      -0.288
+     ],
+     "bbox_max_m": [
+      0.711,
+      1.031,
+      1.056
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_shrub_gorse_V00_LOD1.fbx",
+     "tris": 176,
+     "dims_m": [
+      1.692,
+      2.136,
+      1.489
+     ],
+     "bbox_min_m": [
+      -0.927,
+      -1.014,
+      -0.388
+     ],
+     "bbox_max_m": [
+      0.764,
+      1.122,
+      1.101
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_shrub_gorse_V00_LOD2.fbx",
+     "tris": 24,
+     "dims_m": [
+      1.35,
+      1.35,
+      0.9
+     ],
+     "bbox_min_m": [
+      -0.675,
+      -0.675,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.675,
+      0.675,
+      0.9
+     ]
+    }
+   ],
+   "dims_m": [
+    1.62,
+    1.933,
+    1.344
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_canopy_far",
+    "veg_leaf"
+   ]
+  },
+  {
+   "type_id": "shrub_gorse",
+   "variant": "V01",
+   "role": "shrub",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_shrub_gorse_V01_LOD0.fbx",
+     "tris": 1280,
+     "dims_m": [
+      2.537,
+      2.599,
+      1.587
+     ],
+     "bbox_min_m": [
+      -1.307,
+      -1.217,
+      -0.257
+     ],
+     "bbox_max_m": [
+      1.23,
+      1.382,
+      1.33
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_shrub_gorse_V01_LOD1.fbx",
+     "tris": 200,
+     "dims_m": [
+      2.716,
+      2.747,
+      1.781
+     ],
+     "bbox_min_m": [
+      -1.387,
+      -1.431,
+      -0.385
+     ],
+     "bbox_max_m": [
+      1.329,
+      1.315,
+      1.397
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_shrub_gorse_V01_LOD2.fbx",
+     "tris": 24,
+     "dims_m": [
+      1.95,
+      1.95,
+      1.3
+     ],
+     "bbox_min_m": [
+      -0.975,
+      -0.975,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.975,
+      0.975,
+      1.3
+     ]
+    }
+   ],
+   "dims_m": [
+    2.537,
+    2.599,
+    1.587
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_canopy_far",
+    "veg_leaf"
+   ]
+  },
+  {
+   "type_id": "shrub_gorse",
+   "variant": "V02",
+   "role": "shrub",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_shrub_gorse_V02_LOD0.fbx",
+     "tris": 1448,
+     "dims_m": [
+      3.637,
+      3.378,
+      2.304
+     ],
+     "bbox_min_m": [
+      -1.725,
+      -1.581,
+      -0.274
+     ],
+     "bbox_max_m": [
+      1.913,
+      1.797,
+      2.03
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_shrub_gorse_V02_LOD1.fbx",
+     "tris": 224,
+     "dims_m": [
+      3.302,
+      3.273,
+      2.374
+     ],
+     "bbox_min_m": [
+      -1.757,
+      -1.705,
+      -0.649
+     ],
+     "bbox_max_m": [
+      1.545,
+      1.568,
+      1.725
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_shrub_gorse_V02_LOD2.fbx",
+     "tris": 24,
+     "dims_m": [
+      2.55,
+      2.55,
+      1.7
+     ],
+     "bbox_min_m": [
+      -1.275,
+      -1.275,
+      0.0
+     ],
+     "bbox_max_m": [
+      1.275,
+      1.275,
+      1.7
+     ]
+    }
+   ],
+   "dims_m": [
+    3.637,
+    3.378,
+    2.304
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_canopy_far",
+    "veg_leaf"
+   ]
+  },
+  {
+   "type_id": "tree_broadleaf_round",
+   "variant": "S0",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_round_S0_LOD0.fbx",
+     "tris": 5854,
+     "dims_m": [
+      4.813,
+      4.629,
+      4.953
+     ],
+     "bbox_min_m": [
+      -2.798,
+      -2.074,
+      -0.018
+     ],
+     "bbox_max_m": [
+      2.015,
+      2.555,
+      4.935
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_round_S0_LOD1.fbx",
+     "tris": 836,
+     "dims_m": [
+      4.822,
+      4.962,
+      5.114
+     ],
+     "bbox_min_m": [
+      -2.783,
+      -2.293,
+      -0.017
+     ],
+     "bbox_max_m": [
+      2.039,
+      2.669,
+      5.097
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_round_S0_LOD2.fbx",
+     "tris": 380,
+     "dims_m": [
+      5.041,
+      4.644,
+      4.21
+     ],
+     "bbox_min_m": [
+      -2.688,
+      -2.053,
+      -0.021
+     ],
+     "bbox_max_m": [
+      2.353,
+      2.591,
+      4.189
+     ]
+    }
+   ],
+   "dims_m": [
+    4.813,
+    4.629,
+    4.953
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "S",
+   "nominal_height_m": 5.0
+  },
+  {
+   "type_id": "tree_broadleaf_round",
+   "variant": "S1",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_round_S1_LOD0.fbx",
+     "tris": 6896,
+     "dims_m": [
+      5.253,
+      5.163,
+      4.356
+     ],
+     "bbox_min_m": [
+      -2.863,
+      -2.403,
+      -0.009
+     ],
+     "bbox_max_m": [
+      2.389,
+      2.76,
+      4.347
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_round_S1_LOD1.fbx",
+     "tris": 952,
+     "dims_m": [
+      4.9,
+      4.884,
+      4.297
+     ],
+     "bbox_min_m": [
+      -2.566,
+      -2.422,
+      -0.008
+     ],
+     "bbox_max_m": [
+      2.334,
+      2.463,
+      4.289
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_round_S1_LOD2.fbx",
+     "tris": 440,
+     "dims_m": [
+      5.255,
+      5.166,
+      4.028
+     ],
+     "bbox_min_m": [
+      -2.73,
+      -2.589,
+      -0.005
+     ],
+     "bbox_max_m": [
+      2.525,
+      2.576,
+      4.023
+     ]
+    }
+   ],
+   "dims_m": [
+    5.253,
+    5.163,
+    4.356
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "S",
+   "nominal_height_m": 5.0
+  },
+  {
+   "type_id": "tree_broadleaf_round",
+   "variant": "M0",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_round_M0_LOD0.fbx",
+     "tris": 6692,
+     "dims_m": [
+      7.962,
+      9.677,
+      8.82
+     ],
+     "bbox_min_m": [
+      -4.117,
+      -4.976,
+      -0.047
+     ],
+     "bbox_max_m": [
+      3.845,
+      4.701,
+      8.772
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_round_M0_LOD1.fbx",
+     "tris": 940,
+     "dims_m": [
+      9.162,
+      10.115,
+      9.405
+     ],
+     "bbox_min_m": [
+      -4.721,
+      -5.1,
+      -0.043
+     ],
+     "bbox_max_m": [
+      4.441,
+      5.015,
+      9.362
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_round_M0_LOD2.fbx",
+     "tris": 280,
+     "dims_m": [
+      7.657,
+      9.775,
+      7.949
+     ],
+     "bbox_min_m": [
+      -4.656,
+      -4.97,
+      -0.036
+     ],
+     "bbox_max_m": [
+      3.001,
+      4.805,
+      7.913
+     ]
+    }
+   ],
+   "dims_m": [
+    7.962,
+    9.677,
+    8.82
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "M",
+   "nominal_height_m": 10.0
+  },
+  {
+   "type_id": "tree_broadleaf_round",
+   "variant": "M1",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_round_M1_LOD0.fbx",
+     "tris": 4734,
+     "dims_m": [
+      9.506,
+      7.744,
+      9.011
+     ],
+     "bbox_min_m": [
+      -4.473,
+      -4.147,
+      -0.037
+     ],
+     "bbox_max_m": [
+      5.033,
+      3.597,
+      8.974
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_round_M1_LOD1.fbx",
+     "tris": 672,
+     "dims_m": [
+      10.999,
+      8.206,
+      9.339
+     ],
+     "bbox_min_m": [
+      -5.467,
+      -4.547,
+      -0.026
+     ],
+     "bbox_max_m": [
+      5.532,
+      3.659,
+      9.312
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_round_M1_LOD2.fbx",
+     "tris": 334,
+     "dims_m": [
+      9.884,
+      7.696,
+      8.154
+     ],
+     "bbox_min_m": [
+      -4.677,
+      -4.893,
+      -0.015
+     ],
+     "bbox_max_m": [
+      5.207,
+      2.803,
+      8.139
+     ]
+    }
+   ],
+   "dims_m": [
+    9.506,
+    7.744,
+    9.011
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "M",
+   "nominal_height_m": 10.0
+  },
+  {
+   "type_id": "tree_broadleaf_round",
+   "variant": "L0",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_round_L0_LOD0.fbx",
+     "tris": 13402,
+     "dims_m": [
+      17.072,
+      14.678,
+      14.969
+     ],
+     "bbox_min_m": [
+      -8.723,
+      -8.133,
+      -0.055
+     ],
+     "bbox_max_m": [
+      8.349,
+      6.545,
+      14.914
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_round_L0_LOD1.fbx",
+     "tris": 2540,
+     "dims_m": [
+      18.205,
+      14.795,
+      14.579
+     ],
+     "bbox_min_m": [
+      -9.435,
+      -7.878,
+      -0.076
+     ],
+     "bbox_max_m": [
+      8.77,
+      6.917,
+      14.503
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_round_L0_LOD2.fbx",
+     "tris": 354,
+     "dims_m": [
+      16.333,
+      12.059,
+      13.125
+     ],
+     "bbox_min_m": [
+      -8.305,
+      -8.061,
+      -0.091
+     ],
+     "bbox_max_m": [
+      8.028,
+      3.998,
+      13.034
+     ]
+    }
+   ],
+   "dims_m": [
+    17.072,
+    14.678,
+    14.969
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "L",
+   "nominal_height_m": 16.0
+  },
+  {
+   "type_id": "tree_broadleaf_round",
+   "variant": "L1",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_round_L1_LOD0.fbx",
+     "tris": 17902,
+     "dims_m": [
+      13.575,
+      15.124,
+      13.619
+     ],
+     "bbox_min_m": [
+      -5.953,
+      -6.931,
+      -0.029
+     ],
+     "bbox_max_m": [
+      7.623,
+      8.192,
+      13.59
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_round_L1_LOD1.fbx",
+     "tris": 3308,
+     "dims_m": [
+      13.73,
+      15.577,
+      14.53
+     ],
+     "bbox_min_m": [
+      -6.04,
+      -7.001,
+      -0.043
+     ],
+     "bbox_max_m": [
+      7.69,
+      8.576,
+      14.487
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_round_L1_LOD2.fbx",
+     "tris": 360,
+     "dims_m": [
+      11.962,
+      15.407,
+      12.623
+     ],
+     "bbox_min_m": [
+      -3.902,
+      -7.542,
+      -0.057
+     ],
+     "bbox_max_m": [
+      8.059,
+      7.865,
+      12.565
+     ]
+    }
+   ],
+   "dims_m": [
+    13.575,
+    15.124,
+    13.619
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "L",
+   "nominal_height_m": 16.0
+  },
+  {
+   "type_id": "tree_broadleaf_open",
+   "variant": "S0",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_open_S0_LOD0.fbx",
+     "tris": 4750,
+     "dims_m": [
+      4.127,
+      3.747,
+      4.845
+     ],
+     "bbox_min_m": [
+      -1.6,
+      -1.78,
+      -0.004
+     ],
+     "bbox_max_m": [
+      2.527,
+      1.967,
+      4.841
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_open_S0_LOD1.fbx",
+     "tris": 832,
+     "dims_m": [
+      3.902,
+      3.692,
+      4.971
+     ],
+     "bbox_min_m": [
+      -1.571,
+      -1.872,
+      -0.005
+     ],
+     "bbox_max_m": [
+      2.332,
+      1.82,
+      4.966
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_open_S0_LOD2.fbx",
+     "tris": 512,
+     "dims_m": [
+      4.425,
+      4.313,
+      4.737
+     ],
+     "bbox_min_m": [
+      -2.003,
+      -2.148,
+      -0.004
+     ],
+     "bbox_max_m": [
+      2.422,
+      2.165,
+      4.733
+     ]
+    }
+   ],
+   "dims_m": [
+    4.127,
+    3.747,
+    4.845
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "S",
+   "nominal_height_m": 5.0
+  },
+  {
+   "type_id": "tree_broadleaf_open",
+   "variant": "S1",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_open_S1_LOD0.fbx",
+     "tris": 5178,
+     "dims_m": [
+      3.743,
+      2.754,
+      5.312
+     ],
+     "bbox_min_m": [
+      -1.605,
+      -1.841,
+      -0.005
+     ],
+     "bbox_max_m": [
+      2.139,
+      0.913,
+      5.306
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_open_S1_LOD1.fbx",
+     "tris": 880,
+     "dims_m": [
+      3.567,
+      2.57,
+      5.31
+     ],
+     "bbox_min_m": [
+      -1.804,
+      -1.566,
+      -0.003
+     ],
+     "bbox_max_m": [
+      1.764,
+      1.004,
+      5.308
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_open_S1_LOD2.fbx",
+     "tris": 372,
+     "dims_m": [
+      3.678,
+      3.241,
+      5.577
+     ],
+     "bbox_min_m": [
+      -1.397,
+      -2.166,
+      -0.002
+     ],
+     "bbox_max_m": [
+      2.281,
+      1.076,
+      5.575
+     ]
+    }
+   ],
+   "dims_m": [
+    3.743,
+    2.754,
+    5.312
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "S",
+   "nominal_height_m": 5.0
+  },
+  {
+   "type_id": "tree_broadleaf_open",
+   "variant": "M0",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_open_M0_LOD0.fbx",
+     "tris": 5014,
+     "dims_m": [
+      5.698,
+      5.473,
+      10.13
+     ],
+     "bbox_min_m": [
+      -3.286,
+      -2.684,
+      -0.007
+     ],
+     "bbox_max_m": [
+      2.412,
+      2.79,
+      10.123
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_open_M0_LOD1.fbx",
+     "tris": 816,
+     "dims_m": [
+      5.305,
+      5.232,
+      10.586
+     ],
+     "bbox_min_m": [
+      -2.483,
+      -2.78,
+      -0.005
+     ],
+     "bbox_max_m": [
+      2.821,
+      2.452,
+      10.581
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_open_M0_LOD2.fbx",
+     "tris": 352,
+     "dims_m": [
+      6.636,
+      5.015,
+      10.125
+     ],
+     "bbox_min_m": [
+      -3.877,
+      -2.598,
+      -0.002
+     ],
+     "bbox_max_m": [
+      2.76,
+      2.417,
+      10.123
+     ]
+    }
+   ],
+   "dims_m": [
+    5.698,
+    5.473,
+    10.13
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "M",
+   "nominal_height_m": 10.0
+  },
+  {
+   "type_id": "tree_broadleaf_open",
+   "variant": "M1",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_open_M1_LOD0.fbx",
+     "tris": 4494,
+     "dims_m": [
+      6.289,
+      5.149,
+      9.717
+     ],
+     "bbox_min_m": [
+      -2.797,
+      -2.444,
+      -0.002
+     ],
+     "bbox_max_m": [
+      3.492,
+      2.705,
+      9.714
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_open_M1_LOD1.fbx",
+     "tris": 776,
+     "dims_m": [
+      6.59,
+      6.263,
+      9.967
+     ],
+     "bbox_min_m": [
+      -2.983,
+      -2.912,
+      -0.006
+     ],
+     "bbox_max_m": [
+      3.607,
+      3.351,
+      9.961
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_open_M1_LOD2.fbx",
+     "tris": 332,
+     "dims_m": [
+      6.5,
+      4.869,
+      9.573
+     ],
+     "bbox_min_m": [
+      -2.396,
+      -2.308,
+      -0.007
+     ],
+     "bbox_max_m": [
+      4.104,
+      2.562,
+      9.566
+     ]
+    }
+   ],
+   "dims_m": [
+    6.289,
+    5.149,
+    9.717
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "M",
+   "nominal_height_m": 10.0
+  },
+  {
+   "type_id": "tree_broadleaf_open",
+   "variant": "L0",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_open_L0_LOD0.fbx",
+     "tris": 9294,
+     "dims_m": [
+      10.639,
+      12.82,
+      16.011
+     ],
+     "bbox_min_m": [
+      -5.034,
+      -6.403,
+      -0.011
+     ],
+     "bbox_max_m": [
+      5.604,
+      6.417,
+      15.999
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_open_L0_LOD1.fbx",
+     "tris": 2300,
+     "dims_m": [
+      11.403,
+      14.691,
+      16.08
+     ],
+     "bbox_min_m": [
+      -5.363,
+      -7.001,
+      -0.006
+     ],
+     "bbox_max_m": [
+      6.04,
+      7.69,
+      16.074
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_open_L0_LOD2.fbx",
+     "tris": 532,
+     "dims_m": [
+      12.715,
+      15.121,
+      16.317
+     ],
+     "bbox_min_m": [
+      -6.145,
+      -7.585,
+      -0.008
+     ],
+     "bbox_max_m": [
+      6.57,
+      7.537,
+      16.309
+     ]
+    }
+   ],
+   "dims_m": [
+    10.639,
+    12.82,
+    16.011
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "L",
+   "nominal_height_m": 16.0
+  },
+  {
+   "type_id": "tree_broadleaf_open",
+   "variant": "L1",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_broadleaf_open_L1_LOD0.fbx",
+     "tris": 8660,
+     "dims_m": [
+      9.126,
+      12.267,
+      16.546
+     ],
+     "bbox_min_m": [
+      -5.212,
+      -5.995,
+      -0.014
+     ],
+     "bbox_max_m": [
+      3.914,
+      6.272,
+      16.532
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_broadleaf_open_L1_LOD1.fbx",
+     "tris": 2204,
+     "dims_m": [
+      9.717,
+      12.431,
+      16.85
+     ],
+     "bbox_min_m": [
+      -5.603,
+      -6.002,
+      -0.02
+     ],
+     "bbox_max_m": [
+      4.114,
+      6.429,
+      16.83
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_broadleaf_open_L1_LOD2.fbx",
+     "tris": 452,
+     "dims_m": [
+      11.061,
+      13.842,
+      15.266
+     ],
+     "bbox_min_m": [
+      -6.323,
+      -6.686,
+      -0.015
+     ],
+     "bbox_max_m": [
+      4.738,
+      7.157,
+      15.252
+     ]
+    }
+   ],
+   "dims_m": [
+    9.126,
+    12.267,
+    16.546
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Leaf state: leaf only (a bare variant is not built).",
+   "size_class": "L",
+   "nominal_height_m": 16.0
+  },
+  {
+   "type_id": "tree_sapling_staked",
+   "variant": "V00",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_sapling_staked_V00_LOD0.fbx",
+     "tris": 160,
+     "dims_m": [
+      1.193,
+      1.166,
+      2.595
+     ],
+     "bbox_min_m": [
+      -0.613,
+      -0.549,
+      -0.001
+     ],
+     "bbox_max_m": [
+      0.58,
+      0.618,
+      2.594
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_sapling_staked_V00_LOD1.fbx",
+     "tris": 70,
+     "dims_m": [
+      1.234,
+      0.875,
+      2.566
+     ],
+     "bbox_min_m": [
+      -0.574,
+      -0.315,
+      -0.001
+     ],
+     "bbox_max_m": [
+      0.66,
+      0.56,
+      2.565
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_sapling_staked_V00_LOD2.fbx",
+     "tris": 26,
+     "dims_m": [
+      0.898,
+      0.983,
+      2.491
+     ],
+     "bbox_min_m": [
+      -0.454,
+      -0.504,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.444,
+      0.479,
+      2.491
+     ]
+    }
+   ],
+   "dims_m": [
+    1.193,
+    1.166,
+    2.595
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_timber",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "tree_sapling_staked",
+   "variant": "V01",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_sapling_staked_V01_LOD0.fbx",
+     "tris": 160,
+     "dims_m": [
+      1.068,
+      1.043,
+      3.043
+     ],
+     "bbox_min_m": [
+      -0.433,
+      -0.535,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.635,
+      0.507,
+      3.043
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_sapling_staked_V01_LOD1.fbx",
+     "tris": 70,
+     "dims_m": [
+      1.015,
+      1.133,
+      3.106
+     ],
+     "bbox_min_m": [
+      -0.483,
+      -0.518,
+      -0.0
+     ],
+     "bbox_max_m": [
+      0.532,
+      0.615,
+      3.106
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_sapling_staked_V01_LOD2.fbx",
+     "tris": 26,
+     "dims_m": [
+      0.954,
+      0.96,
+      2.832
+     ],
+     "bbox_min_m": [
+      -0.504,
+      -0.449,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.45,
+      0.511,
+      2.832
+     ]
+    }
+   ],
+   "dims_m": [
+    1.068,
+    1.043,
+    3.043
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_timber",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "tree_sapling_staked",
+   "variant": "V02",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_sapling_staked_V02_LOD0.fbx",
+     "tris": 160,
+     "dims_m": [
+      1.103,
+      1.101,
+      3.484
+     ],
+     "bbox_min_m": [
+      -0.553,
+      -0.515,
+      -0.001
+     ],
+     "bbox_max_m": [
+      0.549,
+      0.587,
+      3.483
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_sapling_staked_V02_LOD1.fbx",
+     "tris": 70,
+     "dims_m": [
+      1.144,
+      1.104,
+      3.442
+     ],
+     "bbox_min_m": [
+      -0.521,
+      -0.469,
+      -0.001
+     ],
+     "bbox_max_m": [
+      0.623,
+      0.635,
+      3.441
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_sapling_staked_V02_LOD2.fbx",
+     "tris": 26,
+     "dims_m": [
+      0.939,
+      1.007,
+      3.23
+     ],
+     "bbox_min_m": [
+      -0.488,
+      -0.496,
+      0.0
+     ],
+     "bbox_max_m": [
+      0.451,
+      0.511,
+      3.23
+     ]
+    }
+   ],
+   "dims_m": [
+    1.103,
+    1.101,
+    3.484
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_timber",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "tree_conifer_plantation",
+   "variant": "V00",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_conifer_plantation_V00_LOD0.fbx",
+     "tris": 2162,
+     "dims_m": [
+      3.972,
+      3.964,
+      11.11
+     ],
+     "bbox_min_m": [
+      -2.145,
+      -2.058,
+      0.0
+     ],
+     "bbox_max_m": [
+      1.827,
+      1.907,
+      11.11
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_conifer_plantation_V00_LOD1.fbx",
+     "tris": 172,
+     "dims_m": [
+      4.088,
+      3.782,
+      11.11
+     ],
+     "bbox_min_m": [
+      -2.063,
+      -2.029,
+      0.0
+     ],
+     "bbox_max_m": [
+      2.025,
+      1.754,
+      11.11
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_conifer_plantation_V00_LOD2.fbx",
+     "tris": 32,
+     "dims_m": [
+      3.756,
+      3.756,
+      12.98
+     ],
+     "bbox_min_m": [
+      -1.878,
+      -1.878,
+      0.0
+     ],
+     "bbox_max_m": [
+      1.878,
+      1.878,
+      12.98
+     ]
+    }
+   ],
+   "dims_m": [
+    3.972,
+    3.964,
+    11.11
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "tree_conifer_plantation",
+   "variant": "V01",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_conifer_plantation_V01_LOD0.fbx",
+     "tris": 2162,
+     "dims_m": [
+      5.062,
+      4.904,
+      14.14
+     ],
+     "bbox_min_m": [
+      -2.44,
+      -2.451,
+      0.0
+     ],
+     "bbox_max_m": [
+      2.622,
+      2.453,
+      14.14
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_conifer_plantation_V01_LOD1.fbx",
+     "tris": 172,
+     "dims_m": [
+      4.991,
+      4.89,
+      14.14
+     ],
+     "bbox_min_m": [
+      -2.244,
+      -2.325,
+      0.0
+     ],
+     "bbox_max_m": [
+      2.747,
+      2.565,
+      14.14
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_conifer_plantation_V01_LOD2.fbx",
+     "tris": 32,
+     "dims_m": [
+      4.527,
+      4.527,
+      16.52
+     ],
+     "bbox_min_m": [
+      -2.264,
+      -2.264,
+      0.0
+     ],
+     "bbox_max_m": [
+      2.264,
+      2.264,
+      16.52
+     ]
+    }
+   ],
+   "dims_m": [
+    5.062,
+    4.904,
+    14.14
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "tree_conifer_plantation",
+   "variant": "V02",
+   "role": "tree",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_tree_conifer_plantation_V02_LOD0.fbx",
+     "tris": 2162,
+     "dims_m": [
+      5.439,
+      6.098,
+      17.17
+     ],
+     "bbox_min_m": [
+      -2.644,
+      -3.204,
+      0.0
+     ],
+     "bbox_max_m": [
+      2.794,
+      2.894,
+      17.17
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_tree_conifer_plantation_V02_LOD1.fbx",
+     "tris": 172,
+     "dims_m": [
+      6.109,
+      5.881,
+      17.17
+     ],
+     "bbox_min_m": [
+      -2.96,
+      -2.864,
+      0.0
+     ],
+     "bbox_max_m": [
+      3.149,
+      3.017,
+      17.17
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_tree_conifer_plantation_V02_LOD2.fbx",
+     "tris": 32,
+     "dims_m": [
+      5.738,
+      5.738,
+      20.06
+     ],
+     "bbox_min_m": [
+      -2.869,
+      -2.869,
+      0.0
+     ],
+     "bbox_max_m": [
+      2.869,
+      2.869,
+      20.06
+     ]
+    }
+   ],
+   "dims_m": [
+    5.439,
+    6.098,
+    17.17
+   ],
+   "material_slots": [
+    "veg_bark",
+    "veg_leaf",
+    "veg_canopy_far"
+   ]
+  },
+  {
+   "type_id": "canopy_impostor_block",
+   "variant": "V00",
+   "role": "block",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_canopy_impostor_block_V00_LOD0.fbx",
+     "tris": 244,
+     "dims_m": [
+      24.0,
+      16.0,
+      13.008
+     ],
+     "bbox_min_m": [
+      -12.0,
+      -8.0,
+      0.0
+     ],
+     "bbox_max_m": [
+      12.0,
+      8.0,
+      13.008
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_canopy_impostor_block_V00_LOD1.fbx",
+     "tris": 52,
+     "dims_m": [
+      24.0,
+      16.0,
+      12.663
+     ],
+     "bbox_min_m": [
+      -12.0,
+      -8.0,
+      0.0
+     ],
+     "bbox_max_m": [
+      12.0,
+      8.0,
+      12.663
+     ]
+    }
+   ],
+   "dims_m": [
+    24.0,
+    16.0,
+    13.008
+   ],
+   "material_slots": [
+    "veg_canopy_far"
+   ],
+   "notes": "Distant woodland volume; opaque, vertex colour B gives per-face shade variation."
+  },
+  {
+   "type_id": "canopy_impostor_block",
+   "variant": "V01",
+   "role": "block",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_canopy_impostor_block_V01_LOD0.fbx",
+     "tris": 244,
+     "dims_m": [
+      20.0,
+      18.0,
+      14.613
+     ],
+     "bbox_min_m": [
+      -10.0,
+      -9.0,
+      0.0
+     ],
+     "bbox_max_m": [
+      10.0,
+      9.0,
+      14.613
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_canopy_impostor_block_V01_LOD1.fbx",
+     "tris": 52,
+     "dims_m": [
+      20.0,
+      18.0,
+      14.436
+     ],
+     "bbox_min_m": [
+      -10.0,
+      -9.0,
+      0.0
+     ],
+     "bbox_max_m": [
+      10.0,
+      9.0,
+      14.436
+     ]
+    }
+   ],
+   "dims_m": [
+    20.0,
+    18.0,
+    14.613
+   ],
+   "material_slots": [
+    "veg_canopy_far"
+   ],
+   "notes": "Distant woodland volume; opaque, vertex colour B gives per-face shade variation."
+  },
+  {
+   "type_id": "canopy_impostor_block",
+   "variant": "V02",
+   "role": "block",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_canopy_impostor_block_V02_LOD0.fbx",
+     "tris": 244,
+     "dims_m": [
+      28.0,
+      14.0,
+      14.209
+     ],
+     "bbox_min_m": [
+      -14.0,
+      -7.0,
+      0.0
+     ],
+     "bbox_max_m": [
+      14.0,
+      7.0,
+      14.209
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_canopy_impostor_block_V02_LOD1.fbx",
+     "tris": 52,
+     "dims_m": [
+      28.0,
+      14.0,
+      14.184
+     ],
+     "bbox_min_m": [
+      -14.0,
+      -7.0,
+      0.0
+     ],
+     "bbox_max_m": [
+      14.0,
+      7.0,
+      14.184
+     ]
+    }
+   ],
+   "dims_m": [
+    28.0,
+    14.0,
+    14.209
+   ],
+   "material_slots": [
+    "veg_canopy_far"
+   ],
+   "notes": "Distant woodland volume; opaque, vertex colour B gives per-face shade variation."
+  },
+  {
+   "type_id": "hedge_trimmed",
+   "variant": "V00",
+   "role": "module",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_trimmed_V00_LOD0.fbx",
+     "tris": 2950,
+     "dims_m": [
+      4.329,
+      1.451,
+      1.954
+     ],
+     "bbox_min_m": [
+      -2.165,
+      -0.719,
+      -0.177
+     ],
+     "bbox_max_m": [
+      2.164,
+      0.732,
+      1.776
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_trimmed_V00_LOD1.fbx",
+     "tris": 614,
+     "dims_m": [
+      4.489,
+      1.565,
+      2.154
+     ],
+     "bbox_min_m": [
+      -2.234,
+      -0.771,
+      -0.281
+     ],
+     "bbox_max_m": [
+      2.255,
+      0.794,
+      1.873
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_trimmed_V00_LOD2.fbx",
+     "tris": 136,
+     "dims_m": [
+      4.956,
+      1.913,
+      2.669
+     ],
+     "bbox_min_m": [
+      -2.565,
+      -0.969,
+      -0.571
+     ],
+     "bbox_max_m": [
+      2.391,
+      0.945,
+      2.098
+     ]
+    }
+   ],
+   "dims_m": [
+    4.329,
+    1.451,
+    1.954
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 4 m along +X, pivot at ground centre of the module. Tiles end to end (noise is periodic in X).",
+   "module_length_m": 4.0,
+   "nominal_core_height_m": 1.6,
+   "nominal_width_m": 1.1
+  },
+  {
+   "type_id": "hedge_trimmed",
+   "variant": "V01",
+   "role": "module",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_trimmed_V01_LOD0.fbx",
+     "tris": 4048,
+     "dims_m": [
+      4.311,
+      1.834,
+      2.693
+     ],
+     "bbox_min_m": [
+      -2.143,
+      -0.921,
+      -0.176
+     ],
+     "bbox_max_m": [
+      2.168,
+      0.913,
+      2.517
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_trimmed_V01_LOD1.fbx",
+     "tris": 802,
+     "dims_m": [
+      4.589,
+      2.024,
+      2.813
+     ],
+     "bbox_min_m": [
+      -2.281,
+      -1.013,
+      -0.289
+     ],
+     "bbox_max_m": [
+      2.308,
+      1.012,
+      2.524
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_trimmed_V01_LOD2.fbx",
+     "tris": 164,
+     "dims_m": [
+      4.958,
+      2.35,
+      3.255
+     ],
+     "bbox_min_m": [
+      -2.42,
+      -1.133,
+      -0.512
+     ],
+     "bbox_max_m": [
+      2.538,
+      1.217,
+      2.743
+     ]
+    }
+   ],
+   "dims_m": [
+    4.311,
+    1.834,
+    2.693
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 4 m along +X, pivot at ground centre of the module. Tiles end to end (noise is periodic in X).",
+   "module_length_m": 4.0,
+   "nominal_core_height_m": 2.3,
+   "nominal_width_m": 1.5
+  },
+  {
+   "type_id": "hedge_trimmed",
+   "variant": "V02",
+   "role": "module",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_trimmed_V02_LOD0.fbx",
+     "tris": 1746,
+     "dims_m": [
+      2.308,
+      1.641,
+      2.243
+     ],
+     "bbox_min_m": [
+      -1.146,
+      -0.813,
+      -0.155
+     ],
+     "bbox_max_m": [
+      1.162,
+      0.829,
+      2.088
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_trimmed_V02_LOD1.fbx",
+     "tris": 368,
+     "dims_m": [
+      2.571,
+      1.687,
+      2.359
+     ],
+     "bbox_min_m": [
+      -1.301,
+      -0.866,
+      -0.231
+     ],
+     "bbox_max_m": [
+      1.27,
+      0.822,
+      2.128
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_trimmed_V02_LOD2.fbx",
+     "tris": 80,
+     "dims_m": [
+      3.161,
+      2.048,
+      2.602
+     ],
+     "bbox_min_m": [
+      -1.616,
+      -0.968,
+      -0.364
+     ],
+     "bbox_max_m": [
+      1.545,
+      1.081,
+      2.238
+     ]
+    }
+   ],
+   "dims_m": [
+    2.308,
+    1.641,
+    2.243
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 2 m along +X, pivot at ground centre of the module. Tiles end to end (noise is periodic in X).",
+   "module_length_m": 2.0,
+   "nominal_core_height_m": 1.9,
+   "nominal_width_m": 1.3
+  },
+  {
+   "type_id": "hedge_trimmed",
+   "variant": "V03",
+   "role": "module",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_trimmed_V03_LOD0.fbx",
+     "tris": 5136,
+     "dims_m": [
+      4.33,
+      2.254,
+      3.409
+     ],
+     "bbox_min_m": [
+      -2.168,
+      -1.13,
+      -0.16
+     ],
+     "bbox_max_m": [
+      2.162,
+      1.125,
+      3.249
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_trimmed_V03_LOD1.fbx",
+     "tris": 992,
+     "dims_m": [
+      4.521,
+      2.391,
+      3.529
+     ],
+     "bbox_min_m": [
+      -2.242,
+      -1.188,
+      -0.25
+     ],
+     "bbox_max_m": [
+      2.279,
+      1.203,
+      3.279
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_trimmed_V03_LOD2.fbx",
+     "tris": 196,
+     "dims_m": [
+      5.062,
+      2.971,
+      4.148
+     ],
+     "bbox_min_m": [
+      -2.581,
+      -1.563,
+      -0.492
+     ],
+     "bbox_max_m": [
+      2.481,
+      1.408,
+      3.656
+     ]
+    }
+   ],
+   "dims_m": [
+    4.33,
+    2.254,
+    3.409
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 4 m along +X, pivot at ground centre of the module. Tiles end to end (noise is periodic in X).",
+   "module_length_m": 4.0,
+   "nominal_core_height_m": 3.0,
+   "nominal_width_m": 1.9
+  },
+  {
+   "type_id": "hedge_trimmed",
+   "variant": "E00",
+   "role": "end_taper",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_trimmed_E00_LOD0.fbx",
+     "tris": 1806,
+     "dims_m": [
+      2.285,
+      1.605,
+      2.263
+     ],
+     "bbox_min_m": [
+      -1.173,
+      -0.799,
+      -0.173
+     ],
+     "bbox_max_m": [
+      1.112,
+      0.806,
+      2.09
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_trimmed_E00_LOD1.fbx",
+     "tris": 372,
+     "dims_m": [
+      2.427,
+      1.773,
+      2.401
+     ],
+     "bbox_min_m": [
+      -1.3,
+      -0.888,
+      -0.246
+     ],
+     "bbox_max_m": [
+      1.127,
+      0.884,
+      2.155
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_trimmed_E00_LOD2.fbx",
+     "tris": 74,
+     "dims_m": [
+      2.739,
+      2.209,
+      2.809
+     ],
+     "bbox_min_m": [
+      -1.52,
+      -1.075,
+      -0.67
+     ],
+     "bbox_max_m": [
+      1.219,
+      1.134,
+      2.139
+     ]
+    }
+   ],
+   "dims_m": [
+    2.285,
+    1.605,
+    2.263
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 2 m along +X, pivot at ground centre of the module. Closed end at +X (mirror for the other end).",
+   "module_length_m": 2.0,
+   "nominal_core_height_m": 1.9,
+   "nominal_width_m": 1.3
+  },
+  {
+   "type_id": "hedge_trimmed",
+   "variant": "E01",
+   "role": "end_cut",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_trimmed_E01_LOD0.fbx",
+     "tris": 1970,
+     "dims_m": [
+      2.34,
+      1.641,
+      2.22
+     ],
+     "bbox_min_m": [
+      -1.165,
+      -0.817,
+      -0.153
+     ],
+     "bbox_max_m": [
+      1.174,
+      0.824,
+      2.066
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_trimmed_E01_LOD1.fbx",
+     "tris": 410,
+     "dims_m": [
+      2.509,
+      1.75,
+      2.458
+     ],
+     "bbox_min_m": [
+      -1.252,
+      -0.861,
+      -0.285
+     ],
+     "bbox_max_m": [
+      1.258,
+      0.889,
+      2.173
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_trimmed_E01_LOD2.fbx",
+     "tris": 86,
+     "dims_m": [
+      2.981,
+      2.077,
+      3.041
+     ],
+     "bbox_min_m": [
+      -1.524,
+      -1.019,
+      -0.513
+     ],
+     "bbox_max_m": [
+      1.456,
+      1.058,
+      2.529
+     ]
+    }
+   ],
+   "dims_m": [
+    2.34,
+    1.641,
+    2.22
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 2 m along +X, pivot at ground centre of the module. Closed end at +X (mirror for the other end).",
+   "module_length_m": 2.0,
+   "nominal_core_height_m": 1.9,
+   "nominal_width_m": 1.3
+  },
+  {
+   "type_id": "hedge_overgrown",
+   "variant": "V00",
+   "role": "module",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_overgrown_V00_LOD0.fbx",
+     "tris": 4346,
+     "dims_m": [
+      4.451,
+      2.551,
+      3.009
+     ],
+     "bbox_min_m": [
+      -2.183,
+      -1.273,
+      -0.18
+     ],
+     "bbox_max_m": [
+      2.267,
+      1.278,
+      2.829
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_overgrown_V00_LOD1.fbx",
+     "tris": 840,
+     "dims_m": [
+      4.704,
+      2.931,
+      3.327
+     ],
+     "bbox_min_m": [
+      -2.311,
+      -1.45,
+      -0.346
+     ],
+     "bbox_max_m": [
+      2.393,
+      1.481,
+      2.98
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_overgrown_V00_LOD2.fbx",
+     "tris": 152,
+     "dims_m": [
+      4.964,
+      3.182,
+      3.602
+     ],
+     "bbox_min_m": [
+      -2.57,
+      -1.513,
+      -0.738
+     ],
+     "bbox_max_m": [
+      2.394,
+      1.67,
+      2.864
+     ]
+    }
+   ],
+   "dims_m": [
+    4.451,
+    2.551,
+    3.009
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_bark",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 4 m along +X, pivot at ground centre of the module. Tiles end to end (noise is periodic in X).",
+   "module_length_m": 4.0,
+   "nominal_core_height_m": 2.2,
+   "nominal_width_m": 1.8
+  },
+  {
+   "type_id": "hedge_overgrown",
+   "variant": "V01",
+   "role": "module",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_overgrown_V01_LOD0.fbx",
+     "tris": 6164,
+     "dims_m": [
+      4.414,
+      3.363,
+      4.325
+     ],
+     "bbox_min_m": [
+      -2.181,
+      -1.682,
+      -0.177
+     ],
+     "bbox_max_m": [
+      2.234,
+      1.68,
+      4.149
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_overgrown_V01_LOD1.fbx",
+     "tris": 1056,
+     "dims_m": [
+      4.751,
+      3.54,
+      4.16
+     ],
+     "bbox_min_m": [
+      -2.337,
+      -1.758,
+      -0.329
+     ],
+     "bbox_max_m": [
+      2.414,
+      1.782,
+      3.831
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_overgrown_V01_LOD2.fbx",
+     "tris": 194,
+     "dims_m": [
+      5.403,
+      3.962,
+      5.186
+     ],
+     "bbox_min_m": [
+      -2.674,
+      -1.85,
+      -0.629
+     ],
+     "bbox_max_m": [
+      2.729,
+      2.113,
+      4.558
+     ]
+    }
+   ],
+   "dims_m": [
+    4.414,
+    3.363,
+    4.325
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_bark",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 4 m along +X, pivot at ground centre of the module. Tiles end to end (noise is periodic in X).",
+   "module_length_m": 4.0,
+   "nominal_core_height_m": 3.0,
+   "nominal_width_m": 2.4
+  },
+  {
+   "type_id": "hedge_overgrown",
+   "variant": "V02",
+   "role": "module",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_overgrown_V02_LOD0.fbx",
+     "tris": 6994,
+     "dims_m": [
+      4.503,
+      3.724,
+      4.534
+     ],
+     "bbox_min_m": [
+      -2.255,
+      -1.861,
+      -0.2
+     ],
+     "bbox_max_m": [
+      2.249,
+      1.864,
+      4.334
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_overgrown_V02_LOD1.fbx",
+     "tris": 1166,
+     "dims_m": [
+      4.788,
+      4.144,
+      4.629
+     ],
+     "bbox_min_m": [
+      -2.383,
+      -2.058,
+      -0.364
+     ],
+     "bbox_max_m": [
+      2.404,
+      2.086,
+      4.266
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_overgrown_V02_LOD2.fbx",
+     "tris": 206,
+     "dims_m": [
+      5.539,
+      4.311,
+      5.13
+     ],
+     "bbox_min_m": [
+      -2.877,
+      -2.181,
+      -0.736
+     ],
+     "bbox_max_m": [
+      2.663,
+      2.13,
+      4.394
+     ]
+    }
+   ],
+   "dims_m": [
+    4.503,
+    3.724,
+    4.534
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_bark",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 4 m along +X, pivot at ground centre of the module. Tiles end to end (noise is periodic in X).",
+   "module_length_m": 4.0,
+   "nominal_core_height_m": 3.6,
+   "nominal_width_m": 2.8
+  },
+  {
+   "type_id": "hedge_overgrown",
+   "variant": "V03",
+   "role": "module",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_overgrown_V03_LOD0.fbx",
+     "tris": 2118,
+     "dims_m": [
+      2.385,
+      2.591,
+      2.988
+     ],
+     "bbox_min_m": [
+      -1.231,
+      -1.281,
+      -0.187
+     ],
+     "bbox_max_m": [
+      1.154,
+      1.31,
+      2.801
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_overgrown_V03_LOD1.fbx",
+     "tris": 388,
+     "dims_m": [
+      2.721,
+      2.721,
+      2.881
+     ],
+     "bbox_min_m": [
+      -1.319,
+      -1.365,
+      -0.344
+     ],
+     "bbox_max_m": [
+      1.401,
+      1.356,
+      2.536
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_overgrown_V03_LOD2.fbx",
+     "tris": 80,
+     "dims_m": [
+      3.237,
+      3.101,
+      3.292
+     ],
+     "bbox_min_m": [
+      -1.596,
+      -1.549,
+      -0.544
+     ],
+     "bbox_max_m": [
+      1.641,
+      1.552,
+      2.748
+     ]
+    }
+   ],
+   "dims_m": [
+    2.385,
+    2.591,
+    2.988
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_bark",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 2 m along +X, pivot at ground centre of the module. Tiles end to end (noise is periodic in X).",
+   "module_length_m": 2.0,
+   "nominal_core_height_m": 2.0,
+   "nominal_width_m": 1.8
+  },
+  {
+   "type_id": "hedge_overgrown",
+   "variant": "E00",
+   "role": "end_taper",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_overgrown_E00_LOD0.fbx",
+     "tris": 5332,
+     "dims_m": [
+      4.469,
+      3.054,
+      3.674
+     ],
+     "bbox_min_m": [
+      -2.194,
+      -1.508,
+      -0.193
+     ],
+     "bbox_max_m": [
+      2.276,
+      1.546,
+      3.481
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_overgrown_E00_LOD1.fbx",
+     "tris": 980,
+     "dims_m": [
+      4.718,
+      3.224,
+      3.742
+     ],
+     "bbox_min_m": [
+      -2.392,
+      -1.621,
+      -0.343
+     ],
+     "bbox_max_m": [
+      2.326,
+      1.603,
+      3.399
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_overgrown_E00_LOD2.fbx",
+     "tris": 178,
+     "dims_m": [
+      5.221,
+      3.977,
+      3.946
+     ],
+     "bbox_min_m": [
+      -2.691,
+      -1.999,
+      -0.294
+     ],
+     "bbox_max_m": [
+      2.53,
+      1.977,
+      3.652
+     ]
+    }
+   ],
+   "dims_m": [
+    4.469,
+    3.054,
+    3.674
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_bark",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 4 m along +X, pivot at ground centre of the module. Closed end at +X (mirror for the other end).",
+   "module_length_m": 4.0,
+   "nominal_core_height_m": 2.6,
+   "nominal_width_m": 2.2
+  },
+  {
+   "type_id": "hedge_overgrown",
+   "variant": "E01",
+   "role": "end_cut",
+   "pivot": "ground contact, centre of footprint",
+   "lods": [
+    {
+     "lod": 0,
+     "file": "SM_Veg_hedge_overgrown_E01_LOD0.fbx",
+     "tris": 5480,
+     "dims_m": [
+      4.547,
+      3.13,
+      3.523
+     ],
+     "bbox_min_m": [
+      -2.209,
+      -1.594,
+      -0.156
+     ],
+     "bbox_max_m": [
+      2.339,
+      1.536,
+      3.367
+     ]
+    },
+    {
+     "lod": 1,
+     "file": "SM_Veg_hedge_overgrown_E01_LOD1.fbx",
+     "tris": 1000,
+     "dims_m": [
+      4.832,
+      3.42,
+      3.579
+     ],
+     "bbox_min_m": [
+      -2.364,
+      -1.635,
+      -0.316
+     ],
+     "bbox_max_m": [
+      2.468,
+      1.786,
+      3.264
+     ]
+    },
+    {
+     "lod": 2,
+     "file": "SM_Veg_hedge_overgrown_E01_LOD2.fbx",
+     "tris": 182,
+     "dims_m": [
+      5.44,
+      3.922,
+      4.165
+     ],
+     "bbox_min_m": [
+      -2.619,
+      -1.795,
+      -0.776
+     ],
+     "bbox_max_m": [
+      2.821,
+      2.127,
+      3.389
+     ]
+    }
+   ],
+   "dims_m": [
+    4.547,
+    3.13,
+    3.523
+   ],
+   "material_slots": [
+    "veg_core",
+    "veg_leaf",
+    "veg_bark",
+    "veg_canopy_far"
+   ],
+   "notes": "Module length 4 m along +X, pivot at ground centre of the module. Closed end at +X (mirror for the other end).",
+   "module_length_m": 4.0,
+   "nominal_core_height_m": 2.6,
+   "nominal_width_m": 2.2
+  }
+ ]
+}
