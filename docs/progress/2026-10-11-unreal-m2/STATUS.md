@@ -2,7 +2,7 @@
 
 Branch `agent/unreal-m2` (worktree `../roadworld-wt-m2`), from 269fa1e. Not pushed, not merged.
 
-## Skipped, not built, not run, not opened (read first)
+## Skipped, refused or failed
 
 - COMPILED: yes. `Build-Editor.ps1 -MaxParallelActions 2` on the worktree: `Result: Succeeded`, zero errors, zero warnings (log `unreal/CityPainter/Saved/Logs/build-20261011-161400.log`; the first full build (log 151724) had 2 real errors, both fixed: a non-literal `FString::Printf` format and a missing deleted copy constructor on an exported class holding a `TMap` of unique pointers; a third build fixed the `Tools/` include path).
 - NOT RUN: no editor, no `-game`, no automation test, no playtest was executed (told not to: 15 GB RAM, other editor running). Every behaviour claim below is from code reading plus sim_core and engine headers, none from a run. No M2 screenshots exist.
@@ -93,3 +93,10 @@ Also changed outside the game module (not known to be edited by the other agent)
 - `Readouts` has no G2/G1 flag (GAP-6); no profile series (GAP-1); `Crossing` only arrives from `finish()` (GAP-3), kept visible by the host for 5 s.
 - Unknown: whether `DrawSession::hover` returns no ribbon on a MinSpan error (the prototype removes the ghost); if it does return one, the Unreal ghost will show red where the prototype shows none.
 - `WorldCache` vegetation layers: time to build on the 2 km world unmeasured.
+
+## Cases and references
+
+Case: ghost, snapping, guides and rings | Opened: 03_hover_free.png, 04_midstroke.png, 05_snap_end.png, 06_snap_road.png, 07_snap_extension_guide.png, 08_snap_parallel_offset_guide.png, 08b_snap_offset_guide_3x.png, 09_hover_free_second.png, 10_snap_angle_length.png, 11_shift_snap_off.png
+Case: errors and advisories | Opened: 12_error_min_span.png, 13_error_too_tight.png, 14_advisory_radius.png, 15_advisory_grade.png, 16_advisory_bridge.png, 17_advisory_tunnel.png, 28_error_crossing_too_close.png
+Case: road types, dual, one-way | Opened: 18_type3_dual_ghost.png, 19_type4_motorway_ghost.png, 20_type3_single_carriageway_O.png, 21_type1_oneway.png, 22_type2_b_road_ghost.png
+Case: finishing and finished road | Opened: 02_idle.png, 25_profile_hidden_P.png, 26_stroke_3pts_before_finish.png, 27_finished_road_idle.png
