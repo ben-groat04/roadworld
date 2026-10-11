@@ -7,7 +7,7 @@ SKIPPED / NOT DONE (first, by rule)
 - Item 1c "wall END as in the photos": the wall end is blunt and buried only because the retained height dies to the minimum there (raked top, no taper); the grading side (WALL_RAMP bank blend) was NOT changed; no ground wraps round a wall end as in photos 46 / 55. Tier-2 walls start / end as sharp wedges.
 - No clean close photo of a highway retaining-wall END in a soil cutting was found (searched Commons and geograph tags); 6 new photos (52-57) fetched and opened, strongest are 55, 56 (Bhutan), 53, 57.
 - Self-audit: one audit pass only (not 3): fault list below; I fixed what was cheap (s6 cameras, steep-fill reach 45 -> 15 m) and ran out of time for the rest.
-- MSVC: see the commit message / report for the suite result.
+- Suites: gcc 16 clean build + full ctest passes (sim_core_tests, 303 s); MSVC (VS 18, Release) clean build + full ctest passes (256 s), both on the code of commit 2 (later commits only docs, views, renders).
 
 DONE
 1. Slope efficiency rule (owner item 4) in JS + C++ + region data: slope_max_ratio 3.0, slope_run_slack_m 2.0, slope_max_run_m 15 (grading block of region.json, region_pack.h/.cpp, GradingParams). slopeFits refuses a slope whose run exceeds ratio x the flat-ground run for the height it makes up (+ slack); after a wall the slope may run 15 m at most; wall_slope_extra only widens the box. A refused slope escalates to the existing wall / two tiers / rock cut / needs_structure. steep fill reach 45 -> 15 m.
