@@ -13,6 +13,11 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Audit gate mechanism: auditor briefs (`make_brief --audit`), finish gate refuses builder = auditor, an audit-owed notice on every prompt until AUDIT.md exists, `check_handin --accept` | `agent/auditgate`, `../roadworld-wt-auditgate` | agent/rules-fix 24f60aa | hand-in passes; then its own auditor |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
+| Matched junction reference set (owner, 11 Oct: "it isn't even getting relevant ref images!!!"): at least 3 UK photos per case AND view that match our junction type, size and a reproducible camera; `docs/reference/MATCHED.md` with measurements and the render camera per photo; existing photos classified usable / not usable | research agent, writes only under `docs/reference` | - | MATCHED.md exists; main session opens the photos; BLOCKS every junction builder |
+
+## Reference relevance (blocks visible rounds)
+A comparison pair is valid only when photo and render show the same junction type, size class and viewpoint. A case with no matching photo is reported as "no matching photo" and one is fetched; a near miss is never paired. Junction rounds are briefed from `docs/reference/MATCHED.md`, with render cameras set to match each photo. To make mechanical in the audit gate work: COMPARE.md rows carry type / scale / view match fields and the check fails on a row without them. The same relevance check is owed for the earthworks and vegetation references when those rounds are audited.
+
 ## Audit step (part of every round, not support)
 Owner, 11 Oct: "is one earthworks agent creating AND auditing? that's wrong. and elsewhere, that's just an expample". Builder and auditor are never the same agent (rule text in CLAUDE.md, Main session). No item above or below is accepted, merged to main or reported as done until a fresh auditor has written `AUDIT.md` in its progress folder. An auditor is started the moment a hand-in passes `check_handin.mjs`, ahead of any new build work.
 Auditors owed:
