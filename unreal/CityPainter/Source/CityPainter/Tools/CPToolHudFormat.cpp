@@ -35,7 +35,8 @@ FString FormatRadius(double RadiusM)
 {
 	if (!std::isfinite(RadiusM) || RadiusM > 100000.0)
 	{
-		return TEXT("inf");
+		const TCHAR InfinityGlyph = 0x221E;   // the prototype prints the infinity sign
+		return FString(1, &InfinityGlyph);
 	}
 	return FString::Printf(TEXT("%.0f"), RadiusM);
 }
