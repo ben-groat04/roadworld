@@ -15,6 +15,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -2476,7 +2477,9 @@ struct JGen {
         for (std::size_t ci = 0; ci < j.connectors.size(); ++ci) {
             const LaneConnector& c = j.connectors[ci];
             if (!c.enabled || c.path.size() < 2) continue;
-            groups[{c.arm_from, c.arm_to}].push_back({ci, j.arms[static_cast<std::size_t>(c.arm_from)].lanes[static_cast<std::size_t>(c.lane_from)].lateral});
+            const bool merge_node = j.cls == NodeClass::Merge;  // the pair arm (main / slip) is the far end of a merge connector, the near end of a diverge one
+            const int pair_arm = merge_node ? c.arm_from : c.arm_to, pair_lane = merge_node ? c.lane_from : c.lane_to;
+            groups[{c.arm_from, c.arm_to}].push_back({ci, j.arms[static_cast<std::size_t>(pair_arm)].lanes[static_cast<std::size_t>(pair_lane)].lateral});
         }
         auto frac = [&](const std::vector<Vec3>& pp, double t) {
             double L = 0;
@@ -2490,14 +2493,33 @@ struct JGen {
             }
             return pp.back();
         };
+        // Only the main carriageway carries lane lines: the pair arm with the strictly highest (road class, lanes). A tie
+        // (a symmetric Y) draws none, so the result is mirror-exact and no line is drawn twice where the two groups share
+        // the odd arm's lanes.
+        auto score = [&](const std::pair<int, int>& k, std::size_t n) {
+            const int pa = j.cls == NodeClass::Merge ? k.first : k.second;
+            return std::make_pair(j.arms[static_cast<std::size_t>(pa)].road_class, n);
+        };
+        std::pair<int, int> best_key{-1, -1};
+        bool unique = true;
         for (auto& [key, v] : groups) {
+            if (best_key.first < 0) { best_key = key; continue; }
+            const auto a = score(key, v.size()), c0 = score(best_key, groups[best_key].size());
+            if (a == c0) unique = false;
+            else if (a > c0) { best_key = key; unique = true; }
+        }
+        if (!unique) return;
+        for (auto& [key, v] : groups) {
+            if (key != best_key) continue;
             if (v.size() < 2) continue;
             std::sort(v.begin(), v.end(), [](const C& a, const C& c2) { return a.lat < c2.lat; });
-            const std::string* sid = approach_line_style(static_cast<std::size_t>(key.first), MarkingCategory::LaneLine);
+            const int style_arm = j.cls == NodeClass::Merge ? key.first : key.second;
+            const std::string* sid = approach_line_style(static_cast<std::size_t>(style_arm), MarkingCategory::LaneLine);
             if (!sid) continue;
             for (std::size_t q = 0; q + 1 < v.size(); ++q) {
                 const std::vector<Vec3>& p = j.connectors[v[q].idx].path;
                 const std::vector<Vec3>& r = j.connectors[v[q + 1].idx].path;
+                if (std::fabs(v[q].lat - v[q + 1].lat) < 0.05) continue;
                 std::vector<Vec3> mid;
                 for (int s = 0; s <= 20; ++s) mid.push_back(lerp3(frac(p, s / 20.0), frac(r, s / 20.0), 0.5));
                 b.edge = EdgeId{};

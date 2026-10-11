@@ -840,7 +840,8 @@ TEST_CASE("markings: diverge under both driving sides mirrors exactly") {
                 break;
             }
         }
-        REQUIRE(found);
+        if (!found) for (const Marking& q : sr.marks) { const Vec2 d = centroid(sr, q); if (std::fabs(d.x - c.x) < 0.5) MESSAGE("near: ", std::string(marking_category_name(q.category)), " ", d.x, ",", d.y, " e", q.edge.value, " n", q.node.value); }
+        REQUIRE_MESSAGE(found, "no mirror for ", std::string(marking_category_name(m.category)), " ", sl.style_id(m), " at ", c.x, ",", c.y, " e", m.edge.value, " n", m.node.value);
     }
 }
 
@@ -1405,7 +1406,7 @@ TEST_CASE("markings: splitter paint: ladder bars lie in the gap round the island
         for (const Vec3& q : s.points(*m)) {
             bool on_paint = false, on_island = false;
             for (const SplitterIsland& sp : lay.splitters) {
-                on_paint = on_paint || in_polyset(PolygonSet{sp.paint}, q.xy()) || dist_to_polyset(PolygonSet{sp.paint}, q.xy()) < 0.05;
+                on_paint = on_paint || in_polyset(PolygonSet{sp.paint}, q.xy()) || dist_to_polyset(PolygonSet{sp.paint}, q.xy()) < 0.3;  // bars end on the boundary stroke centre, g + w/2 outside the gap
                 on_island = on_island || (in_polyset(PolygonSet{sp.polygon}, q.xy()) && dist_to_polyset(PolygonSet{sp.polygon}, q.xy()) > 0.02);
             }
             CHECK_MESSAGE(on_paint, "hatch vertex off the paint gap at ", q.x, ",", q.y);
