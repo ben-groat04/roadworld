@@ -26,7 +26,7 @@ STATUS.md (use docs/templates/STATUS.md; first heading "Skipped, refused or fail
 
 ## Parallelism note (main session fills; one line per independent item)
 Launched now: {{LAUNCHED}}
-Waiting, and why (Unreal lane, shared file, usage limit): {{WAITING}}
+Waiting, and why (Unreal lane, shared file): {{WAITING}}
 
 ## Report
 First lines: skipped, refused, failed, unverified. Then what changed, with the image that carries each claim.
