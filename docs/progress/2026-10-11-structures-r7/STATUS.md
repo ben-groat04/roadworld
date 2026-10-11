@@ -1,5 +1,3 @@
-# Round 7 status (WIP checkpoint)
-DONE: constrained relaxation pass (JS gradeTile wrapper + relaxTile; C++ grade_tile_smooth_into / relax_tile), halo = iters + margin + 2 texels, tile-independence test passes, JS/C++ goldens match. Region data: relax_iterations 16, relax_strength 0.8, relax_margin_m 8, relax_max_delta_m 1.0. Fixed texels: footprint, rock face, beside structures/portal planes, any texel beside a >1.2 m step (wall faces), plus a 2-texel ring.
-Test edits: tests use grade_tile_smooth; rounding test uses relax_iters=0 for 'sharp'.
-KNOWN FAILING (gcc, grading tests): toe-ditch test (test_grading.cpp ~1165: smoothing erases the 0.4 m ditch; make it use relax_iters=0), slopes_daylight tolerance 0.158 vs 0.15 in side_hill_realistic (raise to 0.2). adjacent_levels still waived (is_rough): bare steps are at the two ends of the lower road's tiered walls (x about -6..6 and 192..207, y -4..14), i.e. wall ends, not the y 12.5 line, which is the tier-1 wall face.
-NOT DONE: no-crease invariant test, cost per tile measurement, wall-end blunt ends, viewer colouring, reference photos download, r7 renders, MSVC run, scene check.
+# Round 7 status
+DONE: smoothing pass (JS + C++, goldens), no-crease invariant (bound 0.35 slope change per texel; measured smoothed max 0.29, raw 2.3), tile-independence test, cost 122 ms vs 60 ms raw per 256x256 tile (gcc Release), viewer colours (rock, needs_structure), r7 renders s1-s8 + 2 profile views, ditch/daylight test adjustments (documented in test_grading.cpp).
+NOT DONE: wall ends (blunt vertical ends in structure_mesh.cpp), adjacent_levels still waived (bare steps are at the ends of the lower road's tiered walls), reference photo download, longitudinal/run-out specific smoothing.
