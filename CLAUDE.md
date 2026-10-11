@@ -21,7 +21,7 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - Lane graph and junction rules are driving-side agnostic: one setting per save, everything mirrors from it.
 
 ## Working rules (read these; the owner has said each of them more than once)
-Source of truth for agents: `docs/AGENT_CONTRACT.md` (pasted unchanged into every brief). Templates: `docs/templates/BRIEF.md`, `docs/templates/STATUS.md`. New session? Read `docs/HANDOFF.md` first.
+Source of truth for agents: `docs/AGENT_CONTRACT.md` (pasted unchanged into every brief). Templates: `docs/templates/BRIEF.md`, `docs/templates/STATUS.md`. New session? Read `docs/HANDOFF.md` first, then `docs/QUEUE.md` (the only work queue; anything not written there is not queued).
 
 ### Two gates (the main session runs both, every time, as a checklist)
 **Before sending a brief for visible work** (build it with `node tools/make_brief.mjs <task-file> --round <name>`, create the worktree with `tools/new_agent_worktree.ps1 <name>`):
@@ -36,7 +36,7 @@ Source of truth for agents: `docs/AGENT_CONTRACT.md` (pasted unchanged into ever
 2. Read STATUS first lines for anything skipped, refused or failed; raise it with the owner at once.
 3. Open the headline images yourself (every time an agent says good, fixed or done), ask "what here would never be built?", and log it in `docs/ACCEPTANCE.md`. Name the reference files you opened.
 4. Same-camera before/after must show real movement, else change method, not another tuning round.
-5. Commit with `[skip ci]` and push in background (never end a turn with uncommitted changes); check with `git status -sb`, not the exit code. Send pictures as files (the owner often follows from a phone) with your own fault list.
+5. Update `docs/QUEUE.md` (the only queue: started, reported, new follow-ups, dropped). Commit with `[skip ci]` and push in background (never end a turn with uncommitted changes); check with `git status -sb`, not the exit code. Send pictures as files (the owner often follows from a phone) with your own fault list.
 
 ### For every agent (full text: `docs/AGENT_CONTRACT.md`)
 - Photos are the target, all the time: open >=3 per case before designing, name them, measure in lane widths, render at the same framing, compare item by item; layout/markings scored apart from look; "joins up" properties become tests. A claim about what the photos show names the files opened; a score on fewer than 2 opened per view says so.
