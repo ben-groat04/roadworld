@@ -57,7 +57,7 @@ async function main() {
 
   const args = [path.join(ROOT, 'tools', 'check_handin.mjs'), handinDir, '--main', ROOT];
   if (noVisual) args.push('--no-visual');
-  const r = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', timeout: 30000 });
+  const r = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', timeout: 30000, env: { ...process.env, CP_FROM_HOOK: '1' } });
   const passed = r.status === 0 && /HAND-IN CHECK PASSED/.test(r.stdout || "");
   const failed = r.status === 1 && /HAND-IN CHECK FAILED/.test(r.stderr || "");
   if (r.error || (!passed && !failed)) {

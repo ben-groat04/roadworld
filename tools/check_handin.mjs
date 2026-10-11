@@ -131,6 +131,17 @@ if (noVisual) { /* skipped */ } else if (compare === null) {
   });
 }
 
+// Canary (tools/hooks/notice_lib.mjs): loud warning on stderr when gate.log suggests the hooks are not running.
+// Does not change the exit code (the hand-in is judged on its own); skipped when the hand-in gate itself calls this.
+if (!process.env.CP_FROM_HOOK) {
+  try {
+    const nl = await import('./hooks/notice_lib.mjs');
+    const rep = nl.canaryReport(path.join(main, '.claude', 'state'));
+    // only the canary: pending gate notices are the main session's business, not the agent's
+    if (rep.problems.length) console.error('\n!!! HOOK CANARY: the enforcement hooks may NOT be running (say so in your report) !!!\n' + rep.problems.map((p) => ' - ' + p).join('\n') + '\n');
+  } catch { /* the canary must never break the check */ }
+}
+
 if (fails.length) {
   console.error(`HAND-IN CHECK FAILED (${fails.length}) for ${folder}:\n - ` + fails.join('\n - '));
   console.error('Send this list back to the agent unread; do not read the report.');
