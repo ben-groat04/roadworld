@@ -45,7 +45,7 @@ if (-not (Test-Path -LiteralPath $editor)) { Write-Host "Missing $editor"; exit 
 $log = Join-Path $Out 'game.log'
 $args = @(
     ('"' + $uproject + '"'), $Map, '-game', '-CPPlaytest', ('-CPPlaytestOut="' + $Out + '"'),
-    '-benchmark', '-fps=30', '-windowed', '-ForceRes', "-ResX=$ResX", "-ResY=$ResY", '-RenderOffscreen',
+    '-benchmark', '-fps=30', '-windowed', '-ForceRes', "-ResX=$ResX", "-ResY=$ResY", '-RenderOffscreen', '-WinX=20000', '-WinY=20000',   # window parked far off screen: the operator's real mouse can never reach it and fight the synthetic events
     '-unattended', '-nosplash', '-NoSound', '-nosourcecontrol', '-NoLoadingScreen', '-stdout', '-FullStdOutLogOutput',
     ('-abslog="' + $log + '"')
 )

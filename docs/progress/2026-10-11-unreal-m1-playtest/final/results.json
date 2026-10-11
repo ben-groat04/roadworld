@@ -1,0 +1,293 @@
+{
+	"checks_total": 37,
+	"checks_failed": 0,
+	"checks": [
+		{
+			"control": "cursor: shown, not locked",
+			"expected": "bShowMouseCursor, lock mode DoNotLock",
+			"observed": "show=1 lock=0 capture=3",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "rotate: right-drag +200 px",
+			"expected": "azimuth -1.396 rad (OrbitControls: one viewport height = one turn, dragging right decreases it)",
+			"observed": "azimuth -1.396 rad; polar change +0.000",
+			"pass": true,
+			"image": "01_rotate_after.png"
+		},
+		{
+			"control": "rotate: left-drag -200 px",
+			"expected": "azimuth +1.396 rad",
+			"observed": "azimuth +1.396 rad",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "orbit pitch: drag down +100 px",
+			"expected": "polar -0.698 rad (camera rises toward overhead)",
+			"observed": "polar -0.698 rad",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "pitch limit: drag down far (overhead)",
+			"expected": "polar clamps at 0.05 rad, view looks down at the target, no flip",
+			"observed": "polar 0.050, forward.z -0.999, forward.target dot 1.0000, roll -0.00 deg",
+			"pass": true,
+			"image": "02_pitch_overhead.png"
+		},
+		{
+			"control": "pitch limit: drag up far (horizon)",
+			"expected": "polar clamps at 1.42 rad; camera at least 3 m above the ground; looking down, not flipped",
+			"observed": "polar 1.420, clearance 29.08 m, forward.z -0.150, roll -0.00 deg",
+			"pass": true,
+			"image": "02_pitch_horizon.png"
+		},
+		{
+			"control": "camera never under the terrain (15 m, polar 1.42)",
+			"expected": "clearance >= 3 m",
+			"observed": "clearance 3.00 m",
+			"pass": true,
+			"image": "02_near_ground.png"
+		},
+		{
+			"control": "frame time while orbiting (wall clock)",
+			"expected": "p95 under 120 ms: only a guard against gross regressions, the number itself is informational (this machine also runs a CFD job; p95 varied 27..80 ms between identical runs; max includes a first-frame hitch)",
+			"observed": "mean 18.2, p95 19.2, max 402.4 ms over 307 frames",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "pan: middle-drag +100 px at 20 m",
+			"expected": "ground follows the cursor: old target moves +100 px on screen; target moves 2.07 m; target z on the ground",
+			"observed": "old target moved +100.0 px; target moved 2.07 m (100% of expected); target z error 0.00 cm",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "pan: middle-drag +100 px at 400 m",
+			"expected": "ground follows the cursor: old target moves +100 px on screen; target moves 41.45 m; target z on the ground",
+			"observed": "old target moved +100.0 px; target moved 41.45 m (100% of expected); target z error 0.00 cm",
+			"pass": true,
+			"image": "03_pan_after.png"
+		},
+		{
+			"control": "pan: middle-drag +100 px at 3000 m",
+			"expected": "ground follows the cursor: old target moves +100 px on screen; target moves 310.87 m; target z on the ground",
+			"observed": "old target moved +99.1 px; target moved 310.87 m (100% of expected); target z error 0.00 cm",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "zoom: wheel +5 notches (pointer off centre)",
+			"expected": "distance 452.5 m (x0.95^1.1 per notch); zooms toward the screen centre like the prototype: target unchanged",
+			"observed": "distance 452.5 m; target moved 0.00 cm",
+			"pass": true,
+			"image": "04_zoom_after.png"
+		},
+		{
+			"control": "zoom: minimum distance",
+			"expected": "15 m, camera 3 m above ground",
+			"observed": "15.00 m, clearance 8.09 m",
+			"pass": true,
+			"image": "04_zoom_min.png"
+		},
+		{
+			"control": "zoom: maximum distance",
+			"expected": "3800 m",
+			"observed": "3800.0 m",
+			"pass": true,
+			"image": "04_zoom_max.png"
+		},
+		{
+			"control": "keyboard pan: W for 1 s at 400 m",
+			"expected": "moves 360 m forward (0.9 x distance per second)",
+			"observed": "moved 372.0 m, forward dot 1.000",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard pan: Shift+W",
+			"expected": "3x the plain pan",
+			"observed": "1116.0 m vs 372.0 m, ratio 3.00",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard pan: A (left)",
+			"expected": "moves in the matching ground direction",
+			"observed": "direction dot expected 1.000, moved 192.0 m",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard pan: S (back)",
+			"expected": "moves in the matching ground direction",
+			"observed": "direction dot expected 1.000, moved 192.0 m",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard pan: D (right)",
+			"expected": "moves in the matching ground direction",
+			"observed": "direction dot expected 1.000, moved 192.0 m",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard pan: Up arrow",
+			"expected": "moves in the matching ground direction",
+			"observed": "direction dot expected 1.000, moved 192.0 m",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard pan: Down arrow",
+			"expected": "moves in the matching ground direction",
+			"observed": "direction dot expected 1.000, moved 192.0 m",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard pan: Left arrow",
+			"expected": "moves in the matching ground direction",
+			"observed": "direction dot expected 1.000, moved 192.0 m",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard pan: Right arrow",
+			"expected": "moves in the matching ground direction",
+			"observed": "direction dot expected 1.000, moved 192.0 m",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard rotate: E for 1 s",
+			"expected": "azimuth -1.3 rad (prototype: camera orbits clockwise seen from above), target fixed",
+			"observed": "azimuth -1.343 rad, target moved 0.00 cm",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "keyboard rotate: Q for 1 s",
+			"expected": "azimuth +1.3 rad",
+			"observed": "azimuth +1.343 rad",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "world edge: Shift+W north until clamped",
+			"expected": "target stops at the world edge; camera stays 3 m above the ground",
+			"observed": "target x 102400.0 of max 102400.0 cm; camera x 88419.4; clearance 54.64 m",
+			"pass": true,
+			"image": "05_edge.png"
+		},
+		{
+			"control": "pick 1 (0.50, 0.50)",
+			"expected": "pick height equals sim height at the picked x,y (cm); point reprojects to the pointer (px); HUD text equals the pick (cm)",
+			"observed": "sim x 0.00 y -0.00 h -1.519 m; height error 0.00 cm; surface z error 0.00 cm; reprojection 0.00 px; HUD vs pick 0.1 cm",
+			"pass": true,
+			"image": "06_pick_centre.png"
+		},
+		{
+			"control": "pick 2 (0.25, 0.30)",
+			"expected": "pick height equals sim height at the picked x,y (cm); point reprojects to the pointer (px); HUD text equals the pick (cm)",
+			"observed": "sim x -239.83 y -47.62 h 51.365 m; height error -0.00 cm; surface z error -0.00 cm; reprojection 0.00 px; HUD vs pick 0.5 cm",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "pick 3 (0.75, 0.30)",
+			"expected": "pick height equals sim height at the picked x,y (cm); point reprojects to the pointer (px); HUD text equals the pick (cm)",
+			"observed": "sim x 111.96 y 320.16 h -4.105 m; height error 0.00 cm; surface z error 0.00 cm; reprojection 0.00 px; HUD vs pick 0.5 cm",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "pick 4 (0.25, 0.80)",
+			"expected": "pick height equals sim height at the picked x,y (cm); point reprojects to the pointer (px); HUD text equals the pick (cm)",
+			"observed": "sim x -31.67 y -224.17 h -0.491 m; height error 0.00 cm; surface z error 0.00 cm; reprojection 0.00 px; HUD vs pick 0.5 cm",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "pick 5 (0.75, 0.80)",
+			"expected": "pick height equals sim height at the picked x,y (cm); point reprojects to the pointer (px); HUD text equals the pick (cm)",
+			"observed": "sim x 220.41 y -50.20 h -2.210 m; height error -0.00 cm; surface z error -0.00 cm; reprojection 0.00 px; HUD vs pick 0.1 cm",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "HUD updates every frame",
+			"expected": "text changes on at least 9 of 11 frame steps while the pointer moves",
+			"observed": "11 of 11 changed; last: x -35.37 m   y -130.17 m   height -0.51 m   slope 2.0 % (1.2 deg) | frame 33.3 ms (30 fps)",
+			"pass": true,
+			"image": "06_hud.png"
+		},
+		{
+			"control": "pick over the sky",
+			"expected": "no pick, HUD says the cursor is not over the ground",
+			"observed": "pick=0 hud: cursor not over the ground | frame 33.3 ms (30 fps)",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "HUD does not swallow clicks: right-drag starting on the HUD panel",
+			"expected": "azimuth -0.698 rad",
+			"observed": "azimuth -0.698 rad",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "window resize",
+			"expected": "viewport becomes about 1000x600",
+			"observed": "1000x600",
+			"pass": true,
+			"image": ""
+		},
+		{
+			"control": "pick after resize (0.60, 0.70)",
+			"expected": "pick height equals sim height at the picked x,y (cm); point reprojects to the pointer (px); HUD text equals the pick (cm)",
+			"observed": "sim x 120.56 y -64.82 h -1.413 m; height error 0.00 cm; surface z error 0.00 cm; reprojection 0.00 px; HUD vs pick 0.3 cm",
+			"pass": true,
+			"image": "07_resized.png"
+		},
+		{
+			"control": "rotate after resize: right-drag +150 px",
+			"expected": "azimuth -1.571 rad (uses the new height)",
+			"observed": "azimuth -1.571 rad",
+			"pass": true,
+			"image": ""
+		}
+	],
+	"metrics":
+	{
+		"frame_ms_mean_while_orbiting": 18.172167095959381,
+		"frame_ms_p95_while_orbiting": 19.226200878620148,
+		"frame_ms_max_while_orbiting": 402.37580239772797
+	},
+	"notes":
+	{
+		"viewport": "1600x900"
+	},
+	"screenshots": [
+		"00_start.png",
+		"01_rotate_before.png",
+		"01_rotate_after.png",
+		"02_pitch_overhead.png",
+		"02_pitch_horizon.png",
+		"02_near_ground.png",
+		"03_pan_after.png",
+		"04_zoom_before.png",
+		"04_zoom_after.png",
+		"04_zoom_min.png",
+		"04_zoom_max.png",
+		"05_edge.png",
+		"05_edge_horizon.png",
+		"06_pick_centre.png",
+		"06_hud.png",
+		"07_resized.png"
+	]
+}

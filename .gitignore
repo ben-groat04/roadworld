@@ -19,3 +19,10 @@ tools/blender_kit/preview/
 
 __pycache__/
 *.pyc
+
+# Composite images made from private reference photos
+docs/reference
+docs/reference/_compare/
+
+# Hook state and gate log (per machine)
+.claude/state/
