@@ -50,8 +50,8 @@ public:
 	double GroundZCm(double XCm, double YCm) const;
 
 	/** Terrain height in metres at a sim position (x east, y north). For editor scripts and tests; 0 without a sim. */
-	UFUNCTION(BlueprintCallable, Category = "CityPainter")
-	double GetTerrainHeightM(double SimX, double SimY) const;
+	UFUNCTION(BlueprintCallable, Category = "CityPainter", meta = (WorldContext = "WorldContextObject"))
+	static double GetTerrainHeightM(const UObject* WorldContextObject, double SimX, double SimY);
 
 	/** Terrain extent in Unreal centimetres (X north, Y east); an invalid box without a sim. */
 	FBox2D WorldBoundsCm() const;

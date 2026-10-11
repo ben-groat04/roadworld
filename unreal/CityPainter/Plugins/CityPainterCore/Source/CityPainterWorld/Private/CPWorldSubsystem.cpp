@@ -3,6 +3,7 @@
 #include "CPSettings.h"
 #include "CityPainterWorld.h"
 
+#include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "HAL/PlatformTime.h"
 #include "Misc/PackageName.h"
@@ -127,7 +128,9 @@ FBox2D UCPWorldSubsystem::WorldBoundsCm() const
 	return FBox2D(FVector2D(FMath::Min(A.X, B.X), FMath::Min(A.Y, B.Y)), FVector2D(FMath::Max(A.X, B.X), FMath::Max(A.Y, B.Y)));
 }
 
-double UCPWorldSubsystem::GetTerrainHeightM(double SimX, double SimY) const
+double UCPWorldSubsystem::GetTerrainHeightM(const UObject* WorldContextObject, double SimX, double SimY)
 {
-	return Sim ? Sim->HeightM(SimX, SimY) : 0.0;
+	const UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
+	const UCPWorldSubsystem* Sub = World ? World->GetSubsystem<UCPWorldSubsystem>() : nullptr;
+	return Sub && Sub->Sim ? Sub->Sim->HeightM(SimX, SimY) : 0.0;
 }

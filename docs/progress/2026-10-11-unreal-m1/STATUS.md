@@ -13,3 +13,6 @@
 
 ## Next
 Fix compile errors (first UBT run predates the CPSimApi.h/UHT include fixes), run setup_sandbox_level.py, automation test, captures into this folder, INDEX.md.
+- Plugin and game module BUILD (Build-Editor.ps1 succeeded).
+- L_Sandbox created by setup_sandbox_level.py (6 environment actors, game mode CPGameMode on the map).
+- Automation test CityPainter.World.Terrain passes (64 tiles, 524288 triangles, all CCW from above, borders coincide, picks agree).

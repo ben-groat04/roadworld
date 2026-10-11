@@ -54,13 +54,13 @@ SANDBOX_VIEWS = [
 
 def sandbox_views():
     world = subsystem("UnrealEditorSubsystem").get_editor_world()
-    sub = unreal.SubsystemBlueprintLibrary.get_world_subsystem(world, unreal.CPWorldSubsystem)
-    if sub is None:
-        raise cp.ScriptError("no CPWorldSubsystem in %s (is the map path under UCPSettings.MapPathPrefix, and the plugin built?)" % SANDBOX_LEVEL)
+    sub = unreal.CPWorldSubsystem
+    if abs(sub.get_terrain_height_m(world, 0.0, 0.0)) > 1.0e6:
+        raise cp.ScriptError("terrain height query failed")
     views = []
     for name, e, t, focal in SANDBOX_VIEWS:
-        ez = sub.get_terrain_height_m(e[0], e[1]) + e[2]
-        tz = sub.get_terrain_height_m(t[0], t[1]) + t[2]
+        ez = sub.get_terrain_height_m(world, e[0], e[1]) + e[2]
+        tz = sub.get_terrain_height_m(world, t[0], t[1]) + t[2]
         if name.endswith("straight_down"):
             ez = e[2]; tz = 0.0   # absolute: straight down from 2500 m
         cp.log("SANDBOX VIEW %s eye=(%g,%g,%.1f) target=(%g,%g,%.1f) focal=%g" % (name, e[0], e[1], ez, t[0], t[1], tz, focal))

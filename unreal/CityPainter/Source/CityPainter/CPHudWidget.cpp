@@ -25,10 +25,10 @@ void UCPHudWidget::NativeOnInitialized()
 	Text->SetText(FText::FromString(TEXT("City Painter")));
 	Panel->SetContent(Text);
 
-	if (UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(Panel))
+	if (UCanvasPanelSlot* CanvasSlot = Canvas->AddChildToCanvas(Panel))
 	{
-		Slot->SetAutoSize(true);
-		Slot->SetPosition(FVector2D(16.0, 16.0));
+		CanvasSlot->SetAutoSize(true);
+		CanvasSlot->SetPosition(FVector2D(16.0, 16.0));
 	}
 }
 

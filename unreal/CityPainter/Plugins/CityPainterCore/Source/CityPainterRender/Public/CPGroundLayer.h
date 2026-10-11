@@ -10,6 +10,9 @@
 class CITYPAINTERRENDER_API FCPGroundLayer : public ICPRenderLayer
 {
 public:
+	FCPGroundLayer() = default;
+	FCPGroundLayer(const FCPGroundLayer&) = delete;
+	FCPGroundLayer& operator=(const FCPGroundLayer&) = delete;
 	static FName Name() { return FName(TEXT("Ground")); }
 	virtual FName LayerName() const override { return Name(); }
 	virtual void Build(const FCPRenderContext& Context) override;
