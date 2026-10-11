@@ -1318,6 +1318,30 @@ PanelPlan plan_panels(const std::vector<double>& need, const std::vector<double>
     plan.bnd.push_back(m - 1);
     const double step_len = tot / static_cast<double>(std::max<std::size_t>(1, m - 1));
     const std::size_t min_idx = std::max<std::size_t>(1, static_cast<std::size_t>(std::lround(P.wall_min_panel / std::max(step_len, 1e-6))));
+    // Where the retained ground itself rises or falls faster than a panel can follow (a wall end diagonally into a slope, a stepped
+    // cut), a panel is split in halves (never below wall_min_panel) so its top follows the ground instead of floating above the
+    // lower end. Ordinary ground (spread within a panel <= 2 * the step limit) keeps its panels exactly wall_panel long.
+    for (int pass = 0; pass < 4; ++pass) {
+        std::vector<std::size_t> nb{plan.bnd.front()};
+        bool any = false;
+        for (std::size_t p = 0; p + 1 < plan.bnd.size(); ++p) {
+            const std::size_t a = plan.bnd[p], b = plan.bnd[p + 1];
+            double lo = kInf, hi = -kInf, jump = 0;
+            for (std::size_t i = a; i <= std::min(b, m - 1); ++i) {
+                lo = std::min(lo, need[i]);
+                hi = std::max(hi, need[i]);
+                if (i > a) jump = std::max(jump, std::abs(need[i] - need[i - 1]));
+            }
+            // a slope (small change from station to station), not a cliff edge (which the step rules below handle)
+            if (hi - lo > 2 * max_step && jump <= 2 * max_step && b - a >= 2 * min_idx) {
+                nb.push_back(a + (b - a) / 2);
+                any = true;
+            }
+            nb.push_back(b);
+        }
+        if (!any) break;
+        plan.bnd = std::move(nb);
+    }
     std::vector<double> pl = panel_levels(plan.bnd, need, q);
     for (int pass = 0; pass < (P.wall_allow_short_panels ? 6 : 0); ++pass) {
         const std::size_t np = pl.size();
@@ -1339,11 +1363,20 @@ PanelPlan plan_panels(const std::vector<double>& need, const std::vector<double>
         pl = panel_levels(plan.bnd, need, q);
     }
     // Enforce the step limit by raising the lower of two neighbours (always safe: tops only go up).
+    // Panels that were shortened to follow a steep slope (above) may step 0.75 m per metre of panel: the wall end then follows a 35 degree
+    // slope in fine steps instead of standing proud of it (the 0.5 m rule is for full-length panels).
+    std::vector<double> lim(pl.size() > 1 ? pl.size() - 1 : 0, max_step);
+    if (!P.wall_allow_short_panels)
+        for (std::size_t p = 0; p + 1 < pl.size(); ++p) {
+            const double l0 = cum[plan.bnd[p + 1]] - cum[plan.bnd[p]], l1 = cum[plan.bnd[p + 2 < plan.bnd.size() ? p + 2 : p + 1]] - cum[plan.bnd[p + 1]];
+            const double shorter = std::min(l0, l1);
+            if (shorter < P.wall_panel - 1e-6) lim[p] = std::max(max_step, 0.75 * shorter);
+        }
     for (int it = 0; it < 200; ++it) {
         bool ch = false;
         for (std::size_t p = 0; p + 1 < pl.size(); ++p) {
-            if (pl[p] < pl[p + 1] - max_step - 1e-9) pl[p] = pl[p + 1] - max_step, ch = true;
-            else if (pl[p + 1] < pl[p] - max_step - 1e-9) pl[p + 1] = pl[p] - max_step, ch = true;
+            if (pl[p] < pl[p + 1] - lim[p] - 1e-9) pl[p] = pl[p + 1] - lim[p], ch = true;
+            else if (pl[p + 1] < pl[p] - lim[p] - 1e-9) pl[p + 1] = pl[p] - lim[p], ch = true;
         }
         if (!ch) break;
     }

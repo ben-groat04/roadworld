@@ -1194,6 +1194,17 @@ WorldMeshSet build_junction_mesh(const RoadGraph& graph, const RegionPack& regio
             run += l;
             if (l < 1e-4 || (on_trim(A) && on_trim(B))) continue;
             if (min_dist(pav, (A + B) * 0.5) >= along_tol) continue;
+            // An arm without pavement (dual carriageway, motorway) has no kerb along its outer edge, even where a
+            // neighbouring arm's pavement piece (the tip of a gore wedge) touches it.
+            const Vec2 mid = (A + B) * 0.5;
+            bool bare_edge = false;
+            for (const ArmCtx& a : arms) {
+                if (a.arm.half_width_left - a.arm.kerb_left > 1e-3 || a.arm.half_width_right - a.arm.kerb_right > 1e-3) continue;
+                const Vec2 rr = mid - a.tc.xy();
+                const double t = rr.dot(a.dir), l = rr.dot(a.left);
+                if (t < 0 && t > -a.trim && (std::abs(std::abs(l) - a.hl) < 0.06 || std::abs(std::abs(l) - a.hr) < 0.06)) bare_edge = true;
+            }
+            if (bare_edge) continue;
             const Blended ba = blend(arms, A, true, P.lowfreq_period), bb = blend(arms, B, true, P.lowfreq_period);
             const double dza = blend(arms, A, false, P.lowfreq_period).z - ba.z;
             const double dzb = blend(arms, B, false, P.lowfreq_period).z - bb.z;
@@ -1411,7 +1422,7 @@ WorldMeshSet build_roundabout_mesh(const RoadGraph& graph, const RegionPack& reg
         RoadRef r = make_ref(layout.group.arms[static_cast<std::size_t>(sp.arm)].edge);
         if (!r.e || r.prof.segs.empty()) continue;
         const std::vector<RoadRef> one{std::move(r)};
-        add_raised_polygon(out, PolygonSet{sp.polygon}, rules.splitter_surface,
+        add_raised_polygon(out, PolygonSet{sp.polygon}, layout.splitter_surface.empty() ? rules.splitter_surface : layout.splitter_surface,
                            [&](Vec2 p) { return road_height_at(one, p); }, H, P);
     }
     finish_normals(out);
@@ -1547,6 +1558,8 @@ int SurfaceTable::id(const std::string& name) const {
 SurfaceTable make_surface_table(const RegionPack& region, const RenderMeshParams& params) {
     std::set<std::string> s{params.default_surface, params.island_kerb_surface, region.roundabout.central_island_surface,
                             region.roundabout.splitter_surface};
+    for (const RoundaboutSizeClass& k : region.roundabout.size_classes)
+        if (!k.splitter_surface.empty()) s.insert(k.splitter_surface);
     for (const auto& [id, lt] : region.lane_types)
         if (!lt.surface.empty()) s.insert(lt.surface);
     SurfaceTable t;

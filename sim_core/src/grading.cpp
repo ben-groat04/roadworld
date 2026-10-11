@@ -286,6 +286,75 @@ TierResult solve_tiers(bool cut, double z0, double E, double bt, const Probe& gr
     }
 }
 
+// ---- terraced sections (port of earthworks.js stairProfile / stairHeight / stairsPlanH) ----
+struct StairTier {
+    double a, f, u, eps;  // lateral start, front level, top level, ground still unretained above the top (0: reaches the ground)
+};
+struct StairResult {
+    std::vector<StairTier> tiers;
+    bool ok = true;
+};
+
+double tier_pitch(const GradingParams& p) { return p.wall_thickness + p.bench_min_width; }
+
+StairResult stair_profile(bool cut, double zf, double h, const Probe& N, bool force, const GradingParams& p) {
+    const double sg = cut ? 1.0 : -1.0, T = p.wall_thickness, P = tier_pitch(p);
+    StairResult r;
+    double F = zf;
+    for (int k = 0; k < p.stair_max; ++k) {
+        const double a = k * P, eb = a + T;
+        const bool last = k == p.stair_max - 1 || eb + P > p.corridor_max;
+        const double rise = sg * (N(eb) - F);
+        if (rise <= 0) { r.ok = true; return r; }  // natural ground at the back face is at or below the front level: nothing to retain here
+        if (rise <= h || (last && force)) { r.tiers.push_back({a, F, F + sg * rise, 0.0}); r.ok = true; return r; }
+        const double u = F + sg * h, eps = rise - h;
+        r.tiers.push_back({a, F, u, eps});
+        if (last) { r.ok = false; return r; }
+        const double e1 = (k + 1) * P, n1 = N(e1);
+        F = cut ? std::min(n1, std::max(u, n1 - p.stair_k * eps)) : std::max(n1, std::min(u, n1 + p.stair_k * eps));
+    }
+    r.ok = false;
+    return r;
+}
+
+// Smallest tier height >= cap that reaches the ground inside the tier and corridor limits (bisection), plus whether the hard limit was needed.
+void stair_height(bool cut, double zf, const Probe& N, double cap, const GradingParams& p, double& h_out, bool& force_out) {
+    if (stair_profile(cut, zf, cap, N, false, p).ok) { h_out = cap; force_out = false; return; }
+    const double top = cap * p.over_grow;
+    if (!stair_profile(cut, zf, top, N, false, p).ok) { h_out = top; force_out = true; return; }
+    double lo = cap, hi = top;
+    for (int i = 0; i < 20; ++i) {
+        const double m = (lo + hi) / 2;
+        if (stair_profile(cut, zf, m, N, false, p).ok) hi = m; else lo = m;
+    }
+    h_out = hi;
+    force_out = false;
+}
+
+WallPlan stairs_plan_h(bool cut, double z0, const Probe& N, double h0, double h, bool force, const GradingParams& p) {
+    const StairResult pr = stair_profile(cut, z0, h, N, force, p);
+    const double sg = cut ? 1.0 : -1.0;
+    WallPlan o;
+    o.present = true;
+    o.cut = cut;
+    o.t.cut = cut;
+    o.stairs = true;
+    o.force = force;
+    o.h = h;
+    o.n_stairs = static_cast<int>(pr.tiers.size());
+    o.over = h > h0 + 1e-9 || force;
+    o.reach_e = pr.tiers.empty() ? 0.0 : pr.tiers.back().a + p.wall_thickness;
+    o.along_max = std::max(0.0, sg * (N(p.wall_thickness) - z0)) * std::max(p.end_taper_batter, 1.0);
+    return o;
+}
+
+WallPlan stairs_plan(bool cut, double z0, const Probe& N, double h0, const GradingParams& p) {
+    double h = 0;
+    bool force = false;
+    stair_height(cut, z0, N, h0, p, h, force);
+    return stairs_plan_h(cut, z0, N, h0, h, force, p);
+}
+
 // One structure between two roads at different levels, built by the lower one.
 bool owner_tiers(double Dz, double ec, const GradingParams& p, WallPlan& out) {
     const double T = p.wall_thickness;
@@ -375,15 +444,22 @@ bool plan_side(const RoadSample& s, double hw, int sg, const GroundFn& ground, c
         // it needs no wall of its own and the upper road retains its embankment as usual
         if (std::abs(Dz) >= 0.25) {
             if (Dz > 0) return owner_tiers(Dz, owner_ec, p, out);
+            {
+                WallPlan tmp;
+                if (owner_tiers(-Dz, owner_ec, p, tmp)) {  // the lower road builds the structure up to this road: nothing to do on this side
+                    out = WallPlan{};
+                    out.sup = true;
+                    return true;
+                }
+            }
             if (owner_nat > owner_bz + 0.25) return false;
         }
     }
     out = WallPlan{};
     out.present = true;
     out.cut = cut;
-    if (r.kind == TierResult::Fail) {
-        out.full = true;
-        out.over = true;
+    if (r.kind == TierResult::Fail || (r.kind == TierResult::Tiers && r.t.n >= 2)) {  // one wall and a slope cannot keep the cap: terraces
+        out = stairs_plan(cut, z0, gB, p.wall_max_height, p);
         return true;
     }
     out.t = r.t;
@@ -394,14 +470,17 @@ bool plan_side(const RoadSample& s, double hw, int sg, const GroundFn& ground, c
 }
 
 // Drop true runs whose arc length (plus one nominal step) is under min_len metres.
-void drop_short_len(Flags& a, const std::vector<RoadSample>& S, double min_len, double step) {
+// ... unless a station of the run really needs a wall (keep): a plain slope could not daylight there.
+void drop_short_len(Flags& a, const std::vector<RoadSample>& S, double min_len, double step, const Flags& keep) {
     const int n = static_cast<int>(a.size());
     int i = 0;
     while (i < n) {
         if (!a[static_cast<std::size_t>(i)]) { ++i; continue; }
         int j = i;
         while (j < n && a[static_cast<std::size_t>(j)]) ++j;
-        if (S[static_cast<std::size_t>(j - 1)].s - S[static_cast<std::size_t>(i)].s + step < min_len - 1e-9)
+        bool need = false;
+        for (int k = i; k < j; ++k) need = need || keep[static_cast<std::size_t>(k)];
+        if (!need && S[static_cast<std::size_t>(j - 1)].s - S[static_cast<std::size_t>(i)].s + step < min_len - 1e-9)
             for (int k = i; k < j; ++k) a[static_cast<std::size_t>(k)] = 0;
         i = j;
     }
@@ -506,19 +585,24 @@ void classify_walls(SampledRoad& road, const GroundFn& ground, const GradingPara
     for (std::size_t i = 0; i < n; ++i) lock[i] = S[i].br || S[i].tu;
     std::vector<int> typ[2] = {std::vector<int>(n, 0), std::vector<int>(n, 0)};
     std::vector<WallPlan> plans[2] = {std::vector<WallPlan>(n), std::vector<WallPlan>(n)};
+    std::vector<int> sup[2] = {std::vector<int>(n, 0), std::vector<int>(n, 0)};
     const int ni = static_cast<int>(n);
     auto idx = [](int i) { return static_cast<std::size_t>(i); };
     for (int k = 0; k < 2; ++k) {
         const int sg = k == 0 ? 1 : -1;
         std::vector<int>& t = typ[k];
         std::vector<WallPlan>& pl = plans[k];
-        Flags w(n, 0), wing(n, 0);
+        Flags w(n, 0), wing(n, 0), need_raw(n, 0);
         for (std::size_t i = 0; i < n; ++i)
             if (!lock[i]) {
                 WallPlan wp;
-                if (plan_side(S[i], hw, sg, ground, &ng, -1, 0, p, wp)) pl[i] = wp;
+                if (plan_side(S[i], hw, sg, ground, &ng, -1, 0, p, wp)) {
+                    if (wp.sup) sup[k][i] = 1;
+                    else pl[i] = wp;
+                }
                 t[i] = pl[i].present ? (pl[i].cut ? 1 : 2) : 0;
                 w[i] = t[i] > 0;
+                need_raw[i] = w[i];
             }
         close_gaps(w, p.wall_gap);
         for (std::size_t i = 0; i < n; ++i)
@@ -554,7 +638,7 @@ void classify_walls(SampledRoad& road, const GroundFn& ground, const GradingPara
         close_gaps(w, p.wall_gap);
         for (std::size_t i = 0; i < n; ++i)
             if (lock[i]) w[i] = 0;
-        drop_short_len(w, S, p.wall_min_length, p.sample_step);  // a wall run shorter than one panel is a slope
+        drop_short_len(w, S, p.wall_min_length, p.sample_step, need_raw);  // a wall run shorter than one panel is a slope (unless the ground needs a wall there)
         for (std::size_t i = 0; i < n; ++i) {
             if (!w[i]) { t[i] = 0; pl[i] = WallPlan{}; continue; }
             if (t[i] == 0) {  // bridged / grown sample: type from the ground at the wall's outer face
@@ -589,6 +673,61 @@ void classify_walls(SampledRoad& road, const GroundFn& ground, const GradingPara
                 if (!wing[idx(q)]) t[idx(q)] = pl[idx(q)].cut ? 1 : 2;
             i = j;
         }
+        // one tier height per terraced run (a continuous run keeps one set of benches); the hard-limit flag is shared too
+        for (int i = 0; i < ni;) {
+            if (!(w[idx(i)] && pl[idx(i)].stairs)) { ++i; continue; }
+            const bool cut0 = pl[idx(i)].cut;
+            int j = i;
+            double h = 0;
+            bool fo = false;
+            while (j < ni && w[idx(j)] && pl[idx(j)].stairs && pl[idx(j)].cut == cut0) {
+                h = std::max(h, pl[idx(j)].h);
+                fo = fo || pl[idx(j)].force;
+                ++j;
+            }
+            for (int q = i; q < j; ++q) {
+                const RoadSample& s = S[idx(q)];
+                const double nx = -std::sin(s.h) * sg, ny = std::cos(s.h) * sg, z0 = s.z - p.formation_drop;
+                const Probe N = [&](double e) { return ground(s.x + nx * (hw + e), s.y + ny * (hw + e)); };
+                pl[idx(q)] = stairs_plan_h(cut0, z0, N, p.wall_max_height, h, fo, p);
+            }
+            i = j;
+        }
+        // beyond either end of a terraced run the neighbouring stations (one wall and a slope, or a single wall to the ground) blend into the terraces over wall_ramp: ground = alt + sw * (terraces - alt)
+        {
+            std::vector<double> nearv(n, 1e9);
+            for (int pass = 0; pass < 2; ++pass)
+                for (int q = pass ? ni - 1 : 0; pass ? q >= 0 : q < ni; q += pass ? -1 : 1) {
+                    if (w[idx(q)] && !wing[idx(q)] && pl[idx(q)].stairs) { nearv[idx(q)] = 0; continue; }
+                    const int pq = q - (pass ? -1 : 1);
+                    if (pq >= 0 && pq < ni && nearv[idx(pq)] < 1e8)
+                        nearv[idx(q)] = std::min(nearv[idx(q)], nearv[idx(pq)] + std::abs(S[idx(q)].s - S[idx(pq)].s));
+                }
+            for (int q = 0; q < ni; ++q) {
+                const WallPlan alt = pl[idx(q)];
+                if (!(w[idx(q)] && !wing[idx(q)] && alt.present && !alt.stairs && !alt.full && !alt.t.plat && nearv[idx(q)] > 0 &&
+                      nearv[idx(q)] < p.wall_ramp))
+                    continue;
+                int src = -1;
+                double bd = 1e9;
+                for (int j = 0; j < ni; ++j)
+                    if (w[idx(j)] && !wing[idx(j)] && pl[idx(j)].stairs && pl[idx(j)].cut == alt.cut &&
+                        std::abs(S[idx(j)].s - S[idx(q)].s) < bd) {
+                        bd = std::abs(S[idx(j)].s - S[idx(q)].s);
+                        src = j;
+                    }
+                if (src < 0) continue;
+                const double u = 1 - nearv[idx(q)] / p.wall_ramp;
+                const RoadSample& s = S[idx(q)];
+                const double nx = -std::sin(s.h) * sg, ny = std::cos(s.h) * sg;
+                const Probe N = [&](double e) { return ground(s.x + nx * (hw + e), s.y + ny * (hw + e)); };
+                WallPlan np = stairs_plan_h(alt.cut, s.z - p.formation_drop, N, p.wall_max_height, pl[idx(src)].h, pl[idx(src)].force, p);
+                np.has_alt = true;
+                np.alt = alt.t;
+                np.sw = u * u * (3 - 2 * u);
+                pl[idx(q)] = np;
+            }
+        }
         // wing walls: legacy full wall blended in from the earthworks beside it by the funnel weight
         for (int i = 0; i < ni;) {
             if (!(w[idx(i)] && wing[idx(i)])) { ++i; continue; }
@@ -600,12 +739,16 @@ void classify_walls(SampledRoad& road, const GroundFn& ground, const GradingPara
                 cum.push_back(cum[idx(q - i - 1)] + std::hypot(S[idx(q)].x - S[idx(q - 1)].x, S[idx(q)].y - S[idx(q - 1)].y));
             const double tot = cum.back(), ramp = tot < 1e-6 ? p.wall_ramp : std::min(p.wall_ramp, tot);
             const int far_idx = from_start && !from_end ? j : i - 1;
-            bool has_base = false;
+            bool has_base = false, base_stairs = false, base_force = false;
+            double base_h = 0;
             TierSet base;
             if (far_idx >= 0 && far_idx < ni && w[idx(far_idx)] && !wing[idx(far_idx)] && t[idx(far_idx)] == t[idx(i)] &&
                 pl[idx(far_idx)].present && !pl[idx(far_idx)].full) {
                 has_base = true;
                 base = pl[idx(far_idx)].t;
+                base_stairs = pl[idx(far_idx)].stairs;
+                base_h = pl[idx(far_idx)].h;
+                base_force = pl[idx(far_idx)].force;
             }
             for (int q = i; q < j; ++q) {
                 double fw = 1;
@@ -622,6 +765,9 @@ void classify_walls(SampledRoad& road, const GroundFn& ground, const GradingPara
                 wp.fw = fw;
                 wp.has_base = has_base;
                 wp.base = base;
+                wp.base_stairs = base_stairs;
+                wp.base_h = base_h;
+                wp.base_force = base_force;
                 pl[idx(q)] = wp;
             }
             i = j;
@@ -633,6 +779,8 @@ void classify_walls(SampledRoad& road, const GroundFn& ground, const GradingPara
         S[i].wR = S[i].wR0 = typ[1][i];
         S[i].pL = plans[0][i];
         S[i].pR = plans[1][i];
+        S[i].sL = sup[0][i] && !S[i].wL;
+        S[i].sR = sup[1][i] && !S[i].wR;
         if (S[i].pL.over || S[i].pR.over) road.over_height = true;
     }
 }
@@ -642,8 +790,26 @@ void classify_road(SampledRoad& road, const GroundFn& ground, const GradingParam
     classify_walls(road, ground, p, {});
 }
 
+// [lateral reach beyond the footprint edge, run-out beyond a free end] of the terraced sides
+static void stair_extent(const SampledRoad& r, double& e, double& al) {
+    e = 0;
+    al = 0;
+    const std::vector<RoadSample>& S = r.samples;
+    for (std::size_t i = 0; i < S.size(); ++i)
+        for (int side = 0; side < 2; ++side) {
+            const WallPlan& pp = side == 0 ? S[i].pL : S[i].pR;
+            if (!(side == 0 ? S[i].wL : S[i].wR) || !pp.present || !pp.stairs) continue;
+            e = std::max(e, pp.reach_e);
+            if (i == 0 || i + 1 == S.size()) al = std::max(al, pp.along_max);
+        }
+}
+
 Box2 road_box(const SampledRoad& road, const GradingParams& p) {
-    const double m = reach_cap(road.half_width, p) + p.box_margin, me = end_reach_cap(road.half_width, p) + p.box_margin;
+    double s_e = 0, s_a = 0;
+    stair_extent(road, s_e, s_a);
+    const double hw0 = road.half_width;
+    const double m = std::max(reach_cap(hw0, p), hw0 + s_e + 4) + p.box_margin,
+                 me = std::max({end_reach_cap(hw0, p), hw0 + s_e + 4, s_a + hw0 + 4}) + p.box_margin;
     Box2 b{1e9, 1e9, -1e9, -1e9};
     for (const RoadSample& s : road.samples) {
         b.x0 = std::min(b.x0, s.x);
@@ -736,8 +902,11 @@ void compute_wall_weights(SampledRoad& road, const GradingParams& p) {
             }
             const double tot = cum.back();
             // only free run ends (incl. the road's own ends) taper: structures (abutment, portal) hide the wall end
-            const bool free0 = i == 0 || (!S[static_cast<std::size_t>(i - 1)].br && !S[static_cast<std::size_t>(i - 1)].tu);
-            const bool free1 = j == n || (!S[static_cast<std::size_t>(j)].br && !S[static_cast<std::size_t>(j)].tu);
+            // a terraced run keeps full weight up to the road's own end (its walls end diagonally beyond it)
+            const WallPlan& p0 = side == 0 ? S[static_cast<std::size_t>(i)].pL : S[static_cast<std::size_t>(i)].pR;
+            const bool stairs_run = p0.present && p0.stairs;
+            const bool free0 = (i == 0 && !stairs_run) || (i > 0 && !S[static_cast<std::size_t>(i - 1)].br && !S[static_cast<std::size_t>(i - 1)].tu);
+            const bool free1 = (j == n && !stairs_run) || (j < n && !S[static_cast<std::size_t>(j)].br && !S[static_cast<std::size_t>(j)].tu);
             const double ramp = (free0 && free1) || tot < 1e-6 ? p.wall_ramp : std::min(p.wall_ramp, tot);
             for (int k = i; k < j; ++k) {
                 const double c = cum[static_cast<std::size_t>(k - i)];
@@ -753,7 +922,7 @@ void compute_wall_weights(SampledRoad& road, const GradingParams& p) {
 double slope_reach(const SampledRoad& road, const GroundFn& ground, const GradingParams& p) {
     const std::vector<RoadSample>& S = road.samples;
     const double hw = road.half_width, cap = reach_cap(hw, p), cap_e = end_reach_cap(hw, p), bt = p.batter;
-    double mx = 0;
+    double mx = 0, stair_e = 0;
     bool tiers = false;
     const std::size_t n = S.size();
     auto struct_at = [&](std::size_t i) { return S[i].br || S[i].tu; };
@@ -770,6 +939,7 @@ double slope_reach(const SampledRoad& road, const GroundFn& ground, const Gradin
             if (sg == 1 ? s.wL : sg == -1 ? s.wR : 0) {
                 const WallPlan& pp = sg == 1 ? s.pL : s.pR;
                 if (pp.present && !pp.full) tiers = true;
+                if (pp.present && pp.stairs) stair_e = std::max(stair_e, pp.reach_e);
                 continue;
             }
             const double nx = sg > 1 ? std::cos(s.h) * (sg == 2 ? 1 : -1) : -std::sin(s.h) * sg;
@@ -791,7 +961,9 @@ double slope_reach(const SampledRoad& road, const GroundFn& ground, const Gradin
     for (const RoadSample& s : S) any = any || s.br || s.tu;
     // embankment ends at bridges fall away along the road too: full reach
     const double meas = std::min(cap_e, hw + mx + p.reach_pad + round_reach(p) + p.toe_ditch_width);
-    return any || tiers ? std::max(cap, meas) : meas;
+    double reach = any || tiers ? std::max(cap, meas) : meas;
+    if (stair_e > 0) reach = std::max(reach, hw + stair_e + 4);  // terraced sides reach as far as their last tier
+    return reach;
 }
 
 std::vector<GradingRoad> prepare_grading_roads(std::vector<SampledRoad>& roads, const GroundFn& ground,
@@ -818,6 +990,30 @@ std::vector<GradingRoad> prepare_grading_roads(std::vector<SampledRoad>& roads, 
     mark_medians(roads, p);
     for (SampledRoad& r : roads)
         if (r.samples.size() > 1) compute_wall_weights(r, p);
+    {  // the upper road of a shared structure builds nothing on that side while the lower road's structure is at full weight (its own earthworks come back as the structure tapers at the ends)
+        std::vector<SampledRoad*> rs;
+        std::vector<Box2> boxes;
+        for (SampledRoad& r : roads)
+            if (r.samples.size() > 1) { rs.push_back(&r); boxes.push_back(road_box(r, p)); }
+        for (std::size_t a = 0; a < rs.size(); ++a)
+            for (RoadSample& s : rs[a]->samples) {
+                s.supL = s.supR = 0;
+                if (!(s.sL || s.sR)) continue;
+                double best = 1e18, w = 0;
+                for (std::size_t b = 0; b < rs.size(); ++b) {
+                    if (a == b) continue;
+                    const Box2 &x = boxes[a], &y = boxes[b];
+                    if (y.x1 < x.x0 || y.x0 > x.x1 || y.y1 < x.y0 || y.y0 > x.y1) continue;
+                    for (const RoadSample& q : rs[b]->samples) {
+                        const int pl = q.wL && q.pL.present && q.pL.t.plat ? 1 : q.wR && q.pR.present && q.pR.t.plat ? 2 : 0;
+                        if (!pl) continue;
+                        const double d = (q.x - s.x) * (q.x - s.x) + (q.y - s.y) * (q.y - s.y);
+                        if (d < best) { best = d; w = pl == 1 ? q.wwL : q.wwR; }
+                    }
+                }
+                if (best < 1e17) { if (s.sL) s.supL = w; if (s.sR) s.supR = w; }
+            }
+    }
     std::vector<GradingRoad> out;
     for (const SampledRoad& r : roads) {
         if (r.samples.size() < 2) continue;
@@ -826,6 +1022,13 @@ std::vector<GradingRoad> prepare_grading_roads(std::vector<SampledRoad>& roads, 
         g.half_width = r.half_width;
         g.reach = slope_reach(r, ground, p);
         g.bbox = road_box(r, p);
+        g.ground = ground;
+        {
+            const RoadSample* ends[2] = {&full.front(), &full.back()};
+            for (const RoadSample* q : ends)
+                for (const WallPlan* pp : {q->wL ? &q->pL : nullptr, q->wR ? &q->pR : nullptr})
+                    if (pp && pp->present && pp->stairs) g.end_ext = std::max(g.end_ext, pp->along_max + r.half_width + 2);
+        }
         g.core = {1e9, 1e9, -1e9, -1e9};
         for (const RoadSample& q : full) {
             g.core.x0 = std::min(g.core.x0, q.x - r.half_width);
@@ -838,11 +1041,12 @@ std::vector<GradingRoad> prepare_grading_roads(std::vector<SampledRoad>& roads, 
         // every 2nd sample, plus the last graded / first tunnel sample at each portal (the portal plane stays exact)
         for (std::size_t i = 0; i < n; ++i) {
             const RoadSample& a = full[i];
-            if (!(i % 2 == 0 || i == n - 1 || full[i - 1].tu != a.tu || full[i + 1].tu != a.tu)) continue;
+            if (!(i % 2 == 0 || i == n - 1 || full[i - 1].tu != a.tu || full[i + 1].tu != a.tu || full[i - 1].br != a.br || full[i + 1].br != a.br)) continue;
             GradingSample d;
             d.x = a.x; d.y = a.y; d.z = a.z;
             d.wwL = a.wwL; d.wwR = a.wwR;
             d.wL = static_cast<std::int8_t>(a.wL); d.wR = static_cast<std::int8_t>(a.wR);
+            d.supL = a.supL; d.supR = a.supR;
             d.pL = a.pL; d.pR = a.pR;
             d.fwL = a.pL.wing ? a.pL.fw : 0.0; d.fwR = a.pR.wing ? a.pR.fw : 0.0;
             d.br = a.br; d.tu = a.tu;
@@ -972,6 +1176,19 @@ Eval full_eval(bool cut_p, double e, double zf, double b, double res, double wal
     return {3, e <= wall_t ? b : b - (e - verge) / bt};
 }
 
+// Ground value of a terraced section at lateral e: same convention as tier_eval. zf: formation level (lifted beyond a free end); N(e): natural ground along the normal.
+Eval stair_eval(bool cut, double h, bool force, double e, double zf, double b, double res, double wall_t, const Probe& N,
+                const GradingParams& p) {
+    const StairResult pr = stair_profile(cut, zf, h, N, force, p);
+    const int k = static_cast<int>(std::floor(e / tier_pitch(p) + 1e-12));
+    if (k >= static_cast<int>(pr.tiers.size())) return {0, 0};
+    const StairTier& t = pr.tiers[static_cast<std::size_t>(k)];
+    if (e <= t.a + wall_t - res) return {1, t.f};
+    if (e <= t.a + wall_t) return cut ? Eval{1, t.u} : Eval{3, t.u};
+    if (t.eps <= 0) return {0, 0};
+    return cut ? Eval{2, std::max(t.u, b - p.stair_k * t.eps)} : Eval{3, std::min(t.u, b + p.stair_k * t.eps)};
+}
+
 }  // namespace
 
 void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t,
@@ -1002,15 +1219,21 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     ws.fp_z.assign(N, 1e9f);
     ws.cut_m.assign(N, 1e9f);
     ws.fill_m.assign(N, -1e9f);
+    ws.cut_r.assign(N, 1.0f);
+    ws.fill_r.assign(N, 1.0f);
     ws.rq_d.assign(N, 1e9f);  // per road: nearest-station formation (reset after each road); across roads: lowest wins
-    for (std::vector<float>* v : {&ws.rq_ww, &ws.rq_z, &ws.cut_e, &ws.fill_e, &ws.rq_ex, &ws.rq_ey, &ws.rq_bt, &ws.rq_fw})
+    for (std::vector<float>* v : {&ws.rq_ww, &ws.rq_z, &ws.cut_e, &ws.fill_e, &ws.rq_ex, &ws.rq_ey, &ws.rq_bt, &ws.rq_fw, &ws.rq_al, &ws.rq_fs, &ws.rq_sp, &ws.rq_sv})
         if (v->size() < N) v->resize(N);
     if (ws.rq_w.size() < N) ws.rq_w.resize(N);
+    if (ws.rq_fl.size() < N) ws.rq_fl.resize(N);
+    if (ws.rq_by.size() < N) ws.rq_by.resize(N);
     if (ws.rq_p.size() < N) ws.rq_p.resize(N);
     std::vector<float> &fp_d = ws.fp_d, &fp_z = ws.fp_z, &cut_m = ws.cut_m, &fill_m = ws.fill_m, &rq_ww = ws.rq_ww,
                        &rq_d = ws.rq_d, &rq_z = ws.rq_z, &cut_e = ws.cut_e, &fill_e = ws.fill_e, &rq_ex = ws.rq_ex,
-                       &rq_ey = ws.rq_ey, &rq_bt = ws.rq_bt, &rq_fw = ws.rq_fw;
+                       &rq_ey = ws.rq_ey, &rq_bt = ws.rq_bt, &rq_fw = ws.rq_fw, &rq_al = ws.rq_al, &rq_fs = ws.rq_fs, &rq_sp = ws.rq_sp, &rq_sv = ws.rq_sv, &cut_r = ws.cut_r, &fill_r = ws.fill_r;
     std::vector<std::uint8_t>& rq_w = ws.rq_w;
+    std::vector<std::uint8_t>& rq_fl = ws.rq_fl;
+    std::vector<std::uint8_t>& rq_by = ws.rq_by;
     std::vector<const WallPlan*>& rq_p = ws.rq_p;
     std::vector<const PortalPlane*> ap;
     int ri0 = 0, ri1 = -1, rj0 = 0, rj1 = -1;  // texel rectangle the current road touched
@@ -1053,10 +1276,11 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             if ((A.br || A.tu) && (B.br || B.tu)) continue;  // bridge / tunnel stations are not graded; a segment with one structure end is graded up to the abutment / portal
             const double dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy;
             if (L2 < 1e-12) continue;
-            const int i0 = std::max(0, static_cast<int>(std::floor((std::min(A.x, B.x) - R - x0) / res)));
-            const int i1 = std::min(nx - 1, static_cast<int>(std::ceil((std::max(A.x, B.x) + R - x0) / res)));
-            const int j0 = std::max(0, static_cast<int>(std::floor((std::min(A.y, B.y) - R - y0) / res)));
-            const int j1 = std::min(ny - 1, static_cast<int>(std::ceil((std::max(A.y, B.y) + R - y0) / res)));
+            const double Rs = (k == 0 || k == S.size() - 2) && rd.end_ext > R ? rd.end_ext : R;  // beyond a free end the terraces carry on straight (diagonal wall ends)
+            const int i0 = std::max(0, static_cast<int>(std::floor((std::min(A.x, B.x) - Rs - x0) / res)));
+            const int i1 = std::min(nx - 1, static_cast<int>(std::ceil((std::max(A.x, B.x) + Rs - x0) / res)));
+            const int j0 = std::max(0, static_cast<int>(std::floor((std::min(A.y, B.y) - Rs - y0) / res)));
+            const int j1 = std::min(ny - 1, static_cast<int>(std::ceil((std::max(A.y, B.y) + Rs - y0) / res)));
             ri0 = std::min(ri0, i0); ri1 = std::max(ri1, i1); rj0 = std::min(rj0, j0); rj1 = std::max(rj1, j1);
             const double dz = B.z - A.z;
             ap.clear();
@@ -1082,11 +1306,40 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                     if ((B.tu && !A.tu && tt > t_hi) || (A.tu && !B.tu && tt < t_lo)) continue;
                     const double t_raw = tt;
                     tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
-                    const double ex = rx - tt * dx, ey = ry - tt * dy, d2 = ex * ex + ey * ey;
-                    if (d2 > R2) continue;
+                    double ex = rx - tt * dx, ey = ry - tt * dy, d2 = ex * ex + ey * ey;
+                    int pro = 0;
+                    double along_v = 0, fs = 0;
+                    if ((k == 0 && t_raw < 0 && !A.br && !A.tu) || (k == S.size() - 2 && t_raw > 1 && !B.br && !B.tu)) {
+                        // beyond a free end: a terraced side carries on straight, its levels rising (cut) / falling (fill) at the run-out batter, so the walls end diagonally into the ground
+                        const GradingSample& Eq = k == 0 ? A : B;
+                        const bool sdL = Eq.wL && Eq.pL.present && Eq.pL.stairs, sdR = Eq.wR && Eq.pR.present && Eq.pR.stairs;
+                        if (sdL || sdR) {
+                            const double crs = dx * ry - dy * rx, perp = crs / sq,
+                                         along = t_raw < 0 ? -(rx * dx + ry * dy) / sq : (rx * dx + ry * dy) / sq - sq;
+                            const double aL = sdL ? Eq.pL.along_max : 0.0, aR = sdR ? Eq.pR.along_max : 0.0;
+                            if (std::abs(perp) <= R && along <= (perp > 0 ? aL : aR) + hw) {
+                                pro = 1;
+                                along_v = along;
+                                ex = rx - t_raw * dx;
+                                ey = ry - t_raw * dy;
+                                d2 = perp * perp;
+                                if (std::abs(perp) < hw) {
+                                    pro = 2;
+                                    const double sL = sdL ? (Eq.pL.cut ? 1.0 : -1.0) : 0.0, sR = sdR ? (Eq.pR.cut ? 1.0 : -1.0) : 0.0,
+                                                 u = (perp + hw) / (2 * hw);
+                                    fs = sR + (sL - sR) * u;
+                                }
+                            }
+                        }
+                    }
+                    if (!pro && d2 > R2) continue;
                     const double dd = std::sqrt(d2);
                     const std::size_t o = static_cast<std::size_t>(j) * static_cast<std::size_t>(nx) + static_cast<std::size_t>(i);
                     if (dd >= rq_d[o]) continue;  // nearest station of this road decides (one zf, one wall flag per texel)
+                    rq_al[o] = static_cast<float>(along_v);
+                    rq_fl[o] = pro == 2 ? 1 : 0;
+                    rq_fs[o] = static_cast<float>(fs);
+                    rq_by[o] = !pro && (t_raw < 0 || t_raw > 1) ? 1 : 0;
                     rq_d[o] = static_cast<float>(dd);
                     rq_ex[o] = static_cast<float>(ex);
                     rq_ey[o] = static_cast<float>(ey);
@@ -1103,6 +1356,12 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                     const GradingSample& E = a_str ? B : b_str ? A : tt < 0.5 ? A : B;
                     const bool lf = (dx * ry - dy * rx) > 0;  // cross > 0: texel on the left
                     rq_w[o] = static_cast<std::uint8_t>(lf ? E.wL : E.wR);
+                    rq_sp[o] = static_cast<float>(lf ? E.supL : E.supR);
+                    {  // the terraces' share beside a terraced run, interpolated between the stations like the other weights
+                        const WallPlan &pa = lf ? A.pL : A.pR, &pb = lf ? B.pL : B.pR;
+                        const double ya = pa.present && pa.stairs ? (pa.has_alt ? pa.sw : 1.0) : 0.0, yb = pb.present && pb.stairs ? (pb.has_alt ? pb.sw : 1.0) : 0.0;
+                        rq_sv[o] = static_cast<float>(a_str ? yb : b_str ? ya : ya + (yb - ya) * tt);
+                    }
                     rq_p[o] = lf ? &E.pL : &E.pR;
                     {
                         const double fa = lf ? A.fwL : A.fwR, fb = lf ? B.fwL : B.fwR;
@@ -1119,11 +1378,21 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             const double dd = rq_d[o];
             if (dd > 1e8) continue;
             const double zf = rq_z[o];
+            if (rq_fl[o]) {  // ahead of a free end of a terraced road: the floor rises / falls with the run-out batter (cut / fill side), across the width it is a crossfall between the two
+                const double lift = rq_al[o] / e_b, fs = rq_fs[o], zl = zf + fs * lift, b0 = base[o];
+                double zz = zf;
+                if (fs > 0) zz = std::min(b0, zl);
+                else if (fs < 0) zz = std::max(b0, zl);
+                fp_d[o] = 0;
+                if (zz < fp_z[o]) fp_z[o] = static_cast<float>(zz);
+                continue;
+            }
             if (dd <= hw) {  // union of footprints: lowest formation wins (never pokes through any road)
                 fp_d[o] = 0;
                 if (zf < fp_z[o]) fp_z[o] = static_cast<float>(zf);
                 continue;
             }
+            if (rq_sp[o] >= 1) continue;  // the neighbour's structure reaches this road: no earthworks of its own on this side (they fade back in as the structure tapers)
             const double e = dd - hw, b = base[o];
             const bool cut_t = b > zf;
             auto blk = [&]() {  // evaluated only when a slope would be recorded
@@ -1133,32 +1402,65 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             double ww = wf ? static_cast<double>(rq_ww[o]) : 0.0;
             const WallPlan* pl = wf ? rq_p[o] : nullptr;
             const double bte = rq_bt[o];
+            // a plain slope that has not met the ground by the end of the road's reach fades into it (no cut face / pit at the reach limit)
+            double rf = 1.0;
+            if (p.reach_fade > 0 && dd > R - p.reach_fade) {
+                const double u = (R - dd) / p.reach_fade;
+                rf = u <= 0 ? 0.0 : u * u * (3 - 2 * u);
+            }
+            const double rfs = rf * (1.0 - static_cast<double>(rq_sp[o]));
+            if (wf && pl && pl->stairs && rq_by[o]) { wf = 0; ww = 0; pl = nullptr; }  // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
             if (wf && !(pl && pl->t.plat) && (wf == 1) != cut_t) { wf = 0; ww = 0; pl = nullptr; }  // flag says cut but this texel is fill (or vice versa): plain slope
             if (wf && pl && (!pl->full || pl->wing)) {  // stacked walls (plan_side), or a wing wall blended in from the earthworks beside it
                 Eval ev;
-                if (!pl->full) {
+                const double tx = x0 + (o % static_cast<std::size_t>(nx)) * res, ty = y0 + static_cast<double>(o / static_cast<std::size_t>(nx)) * res;
+                const double fxs = tx - rq_ex[o], fys = ty - rq_ey[o], uxs = rq_ex[o] / dd, uys = rq_ey[o] / dd;
+                const Probe Ns = [&](double q) { return rd.ground(fxs + uxs * (hw + q), fys + uys * (hw + q)); };
+                if (pl->stairs) {
+                    ev = stair_eval(pl->cut, pl->h, pl->force, e, zf + (pl->cut ? 1.0 : -1.0) * rq_al[o] / e_b, b, res, wall_t, Ns, p);
+                    auto eff = [&](const Eval& q) { return q.kind == 1 ? q.v : q.kind == 0 ? b : pl->cut ? std::min(b, q.v) : std::max(b, q.v); };
+                    if (pl->has_alt && rq_sv[o] < 1) {  // beside a terraced run: blend with the station's own plan (one wall and a slope, or a wall to the ground)
+                        TierSet alt = pl->alt;
+                        const Eval ea = tier_eval(alt, ww, e, zf, b, res, wall_t, bt);
+                        const double ga = eff(ea), gs2 = eff(ev);
+                        ev.kind = pl->cut ? 2 : 3;
+                        ev.v = ga + static_cast<double>(rq_sv[o]) * (gs2 - ga);
+                    }
+                    if (ww < 1) {  // run ends: the terraced ground and the plain slope blend by the run weight
+                        const double gs = eff(ev), gp = pl->cut ? std::min(b, zf + sv(e) / bt) : std::max(b, zf - sv(e) / bt);
+                        ev.kind = pl->cut ? 2 : 3;
+                        ev.v = gp + ww * (gs - gp);
+                    }
+                } else if (!pl->full) {
                     ev = tier_eval(pl->t, ww, e, zf, b, res, wall_t, bt);
                 } else {  // wing: (1 - fw) * ordinary earthworks (adjacent run's tiers, else the plain slope) + fw * full wall
-                    Eval eb = pl->has_base ? tier_eval(pl->base, ww, e, zf, b, res, wall_t, bt)
-                                           : Eval{pl->cut ? 2 : 3, pl->cut ? zf + sv(e) / bt : zf - sv(e) / bt};
+                    Eval eb;
+                    if (pl->has_base && !(pl->base_stairs && rq_by[o]))
+                        eb = pl->base_stairs ? stair_eval(pl->cut, pl->base_h, pl->base_force, e, zf, b, res, wall_t, Ns, p)
+                                             : tier_eval(pl->base, ww, e, zf, b, res, wall_t, bt);
+                    else
+                        eb = Eval{pl->cut ? 2 : 3, pl->cut ? zf + sv(e) / bt : zf - sv(e) / bt};
                     const Eval ef = full_eval(pl->cut, e, zf, b, res, wall_t, verge, bt);
                     if (eb.kind == 0) { eb.kind = ef.kind; eb.v = pl->cut ? b + rk : b - rk; }  // natural ground carries on beside the adjacent wall
                     ev.kind = eb.kind == 1 || ef.kind == 1 ? 1 : ef.kind;
-                    ev.v = eb.v + static_cast<double>(rq_fw[o]) * (ef.v - eb.v);
+                    // a solid of the adjacent terraces beside the wing: where the full wall has only a slope, the ground there is natural, not the slope level
+                    const double vfe = eb.kind == 1 && ef.kind != 1 ? (pl->cut ? std::min(ef.v, b) : std::max(ef.v, b)) : ef.v;
+                    ev.v = eb.v + static_cast<double>(rq_fw[o]) * (vfe - eb.v);
                 }
                 if (ev.kind == 0) continue;
                 const double v = ev.v;
                 if (ev.kind == 1) {
                     fp_d[o] = 0;
-                    const double zw = pl->cut ? std::min(v, b) : v;
+                    const double zw = pl->cut && !pl->t.plat ? std::min(v, b) : v;  // a shared structure (plat) builds the ground up to the neighbour whatever the natural ground does
                     if (zw < fp_z[o]) fp_z[o] = static_cast<float>(zw);
                     continue;
                 }
                 if (ev.kind == 2) {
-                    if (v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); }
+                    if (v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); cut_r[o] = 1.0f; }
                 } else if (v > b - rk && v > fill_m[o] && !blk()) {
                     fill_m[o] = static_cast<float>(v);
                     fill_e[o] = static_cast<float>(e);
+                    fill_r[o] = 1.0f;
                 }
                 continue;
             }
@@ -1174,7 +1476,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                     continue;
                 }
                 const double v = zfw + (e - verge) / bt;
-                if (v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); }
+                if (rfs > 0 && v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); cut_r[o] = static_cast<float>(rfs); }
                 continue;
             }
             if (wf == 2) {
@@ -1185,19 +1487,19 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 }
                 const double zff = zf - ww * (zf - b);
                 const double v = e <= wall_t ? zff : zff - (e - verge) / bt;
-                if (v > b - rk && v > fill_m[o] && !blk()) { fill_m[o] = static_cast<float>(v); fill_e[o] = static_cast<float>(e); }
+                if (rfs > 0 && v > b - rk && v > fill_m[o] && !blk()) { fill_m[o] = static_cast<float>(v); fill_e[o] = static_cast<float>(e); fill_r[o] = static_cast<float>(rfs); }
                 continue;
             }
             if (cut_t) {  // toe ditch between verge and slope (fades out in shallow cuts), then the slope
-                double v = zf + sv(e - d_w) / bt;
+                double v = zf + sv(e) / bt;
                 if (d_d > 0 && d_w > 0 && e > verge && e < verge + d_w) {
                     const double u = std::sin(3.14159265358979323846 * (e - verge) / d_w);
                     v -= d_d * std::min(1.0, b - zf) * u * u;
                 }
-                if (v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); }
+                if (rfs > 0 && v < b + rk && v < cut_m[o] && !blk()) { cut_m[o] = static_cast<float>(v); cut_e[o] = static_cast<float>(e); cut_r[o] = static_cast<float>(rfs); }
             } else {
                 const double v = zf - sv(e) / bte;
-                if (v > b - rk && v > fill_m[o] && !blk()) { fill_m[o] = static_cast<float>(v); fill_e[o] = static_cast<float>(e); }
+                if (rfs > 0 && v > b - rk && v > fill_m[o] && !blk()) { fill_m[o] = static_cast<float>(v); fill_e[o] = static_cast<float>(e); fill_r[o] = static_cast<float>(rfs); }
             }
         }
         for (int jj = rj0; jj <= rj1; ++jj)  // reset the touched rectangle for the next road
@@ -1210,8 +1512,8 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
         } else {
             g = base[o];
             // dip below natural (cut) / rise above it (fill), rounded near daylight
-            const double dc = cut_m[o] < 1e8f ? (rk > 0 ? smax(g - cut_m[o]) : std::max(0.0, g - cut_m[o])) : 0.0;
-            const double df = fill_m[o] > -1e8f ? (rk > 0 ? smax(fill_m[o] - g) : std::max(0.0, fill_m[o] - g)) : 0.0;
+            const double dc = cut_m[o] < 1e8f ? (rk > 0 ? smax(g - cut_m[o]) : std::max(0.0, g - cut_m[o])) * cut_r[o] : 0.0;
+            const double df = fill_m[o] > -1e8f ? (rk > 0 ? smax(fill_m[o] - g) : std::max(0.0, fill_m[o] - g)) * fill_r[o] : 0.0;
             // never cross the base to the wrong side: take the nearer of a cut and a fill slope
             if (dc > 0 && df > 0) g = cut_e[o] <= fill_e[o] ? g - dc : g + df;
             else if (dc > 0) g -= dc;
@@ -1265,7 +1567,8 @@ std::vector<WallRun> wall_runs(const SampledRoad& road, const GroundFn& ground, 
             return w_flag(a) && w_flag(b) ? (val(S[static_cast<std::size_t>(a)], key) + val(S[static_cast<std::size_t>(b)], key)) / 2
                                           : val(r, key);
         };
-        for (int k = 0; k < kMaxWallTiers; ++k) {
+        const int k_max = std::max(kMaxWallTiers, p.stair_max);
+        for (int k = 0; k < k_max; ++k) {
             int cur = -1;
             for (int i = 0; i < n; ++i) {
                 const RoadSample& s = S[static_cast<std::size_t>(i)];
@@ -1280,8 +1583,117 @@ std::vector<WallRun> wall_runs(const SampledRoad& road, const GroundFn& ground, 
                 const WallPlan& pp = plan_of(pref);
                 const double w = chord(i, ref, Ww);
                 const double nx = -std::sin(s.h) * sg, ny = std::cos(s.h) * sg, zf = s.z - p.formation_drop;
+                if (pp.present && pp.stairs) {  // terraced section: the walls come from the same profile the grading evaluates
+                    const auto sw_of = [&](const RoadSample& q) {
+                        const WallPlan& pq = plan_of(q);
+                        return pq.present && pq.stairs ? (pq.has_alt ? pq.sw : 1.0) : 0.0;
+                    };
+                    const double wwo = w, sgT = pp.cut ? 1.0 : -1.0;
+                    const double sw = (i % 2 == 1 && i + 1 < n && w_flag(i - 1) && w_flag(i + 1))
+                                          ? (sw_of(S[static_cast<std::size_t>(i - 1)]) + sw_of(S[static_cast<std::size_t>(i + 1)])) / 2
+                                          : (pp.has_alt ? pp.sw : 1.0);
+                    const auto tier_pt = [&](double ox, double oy, double zfq, WallPoint& o) {
+                        const Probe Nq = [&](double e) { return ground(ox + nx * (hw + e), oy + ny * (hw + e)); };
+                        // the ground the grading makes at the wall's front / back face: terraces, blended beside a terraced run with the station's own plan (sw) and with the plain slope at run ends (ww)
+                        const auto g_at = [&](double e, double gs) {
+                            double g = gs;
+                            const double nb = Nq(e);
+                            if (sw < 1) {
+                                double ga = nb;
+                                if (pp.has_alt) {
+                                    const Eval ea = tier_eval(pp.alt, wwo, e, zfq, nb, 0.5, p.wall_thickness, p.batter);
+                                    ga = ea.kind == 1 ? ea.v : ea.kind == 0 ? nb : pp.cut ? std::min(nb, ea.v) : std::max(nb, ea.v);
+                                }
+                                g = ga + sw * (g - ga);
+                            }
+                            if (wwo < 1) {
+                                const double sv_e = e <= p.verge ? 0.0 : p.round_hinge > 0 ? (e < p.verge + p.round_hinge ? (e - p.verge) * (e - p.verge) / (2 * p.round_hinge) : e - p.verge - p.round_hinge / 2) : e - p.verge;
+                                const double gp = pp.cut ? std::min(nb, zfq + sv_e / p.batter) : std::max(nb, zfq - sv_e / p.batter);
+                                g = gp + wwo * (g - gp);
+                            }
+                            return g;
+                        };
+                        const StairResult pr = stair_profile(pp.cut, zfq, pp.h, Nq, pp.force, p);
+                        const bool has_alt = pp.has_alt && k == 0 && pp.alt.n > 0;
+                        StairTier t{0, zfq, zfq, 0};
+                        if (k < static_cast<int>(pr.tiers.size())) t = pr.tiers[static_cast<std::size_t>(k)];
+                        else if (!has_alt) return false;
+                        const double T = p.wall_thickness;
+                        const double gB = g_at(t.a + T, t.u), gF = g_at(t.a, t.f);
+                        if (std::abs(gB - gF) < p.wall_vis_min) return false;
+                        {
+                            const double hS = std::abs(t.u - t.f);
+                            const double h_struct = has_alt ? (1 - sw) * wwo * std::abs(pp.alt.z[0]) + sw * wwo * hS : sw * wwo * hS;
+                            if (h_struct < p.wall_vis_min) return false;
+                        }
+                        // the ground just behind the back face (ground the wall must still hide: natural where it carries on, else the bench)
+                        const auto beyond = [&](double d) {
+                            const double eBe = t.a + T + d, nBe = Nq(eBe);
+                            return g_at(eBe, t.eps <= 0 ? nBe : pp.cut ? std::max(t.u, nBe - p.stair_k * t.eps) : std::min(t.u, nBe + p.stair_k * t.eps));
+                        };
+                        const double g_beyond = std::max(beyond(0.5), beyond(0.25) + 0.3);
+                        double g_front = gF;  // fill: the bench of the tier above, just in front of the wall
+                        if (!pp.cut && k > 0 && k - 1 < static_cast<int>(pr.tiers.size())) {
+                            const StairTier& tp0 = pr.tiers[static_cast<std::size_t>(k - 1)];
+                            g_front = std::max(g_at(t.a - 0.1, tp0.u), tp0.u);
+                        }
+                        o.x = ox + nx * (hw + t.a);
+                        o.y = oy + ny * (hw + t.a);
+                        o.zTop = pp.cut ? gB : gF;
+                        o.zBot = pp.cut ? gF : gB;
+                        o.top = pp.cut ? std::max(gB + 0.35, g_beyond + 0.02) : (k == 0 ? s.z + 1.0 : std::max(gF + 0.4, g_front + 0.32));
+                        o.h = s.h;
+                        o.nat = t.eps <= 0;
+                        return true;
+                    };
+                    WallPoint main_pt;
+                    std::vector<WallPoint> ext;  // beyond a free road end the wall carries on straight while it still retains something
+                    const bool has_main = tier_pt(s.x, s.y, zf, main_pt);
+                    if ((i == 0 || i == n - 1) && has_main)
+                        for (double a = p.sample_step; a <= pp.along_max + 2; a += p.sample_step) {
+                            const double dirx = std::cos(s.h) * (i == 0 ? -1 : 1), diry = std::sin(s.h) * (i == 0 ? -1 : 1);
+                            WallPoint e1;
+                            if (!tier_pt(s.x + dirx * a, s.y + diry * a, zf + sgT * a / p.end_taper_batter, e1)) break;
+                            ext.push_back(e1);
+                        }
+                    if (!has_main) { cur = -1; continue; }
+                    if (cur < 0 || runs[static_cast<std::size_t>(cur)].cut != pp.cut) {
+                        WallRun r;
+                        r.side = side;
+                        r.cut = pp.cut;
+                        r.lo = 0;
+                        r.hi = p.wall_thickness;
+                        r.tier = k;
+                        runs.push_back(std::move(r));
+                        cur = static_cast<int>(runs.size()) - 1;
+                    }
+                    WallRun& rr = runs[static_cast<std::size_t>(cur)];
+                    if (pp.over) rr.over = true;
+                    if (i == 0)
+                        for (std::size_t q = ext.size(); q-- > 0;) rr.pts.push_back(ext[q]);
+                    rr.pts.push_back(main_pt);
+                    if (i != 0)
+                        for (const WallPoint& e1 : ext) rr.pts.push_back(e1);
+                    continue;
+                }
                 const bool wing = pp.present && pp.wing;
-                const TierSet* tp = wing ? (pp.has_base ? &pp.base : nullptr) : (pp.present && !pp.full ? &pp.t : nullptr);
+                struct TierView {
+                    int n = 0;
+                    std::vector<double> a, z;
+                } tv;
+                bool has_tp = false;
+                if (wing && pp.has_base) {  // the adjacent run's tiers (old tiers, or terraces at this station)
+                    has_tp = true;
+                    if (pp.base_stairs) {
+                        const Probe Nq = [&](double e) { return ground(s.x + nx * (hw + e), s.y + ny * (hw + e)); };
+                        const StairResult pr = stair_profile(pp.cut, zf, pp.base_h, Nq, pp.base_force, p);
+                        for (const StairTier& t : pr.tiers) { tv.a.push_back(t.a); tv.z.push_back(t.u - zf); }
+                    } else {
+                        for (int q = 0; q < pp.base.n; ++q) { tv.a.push_back(pp.base.a[q]); tv.z.push_back(pp.base.z[q]); }
+                    }
+                    tv.n = static_cast<int>(tv.a.size());
+                }
+                const TierView* tp = has_tp ? &tv : nullptr;
                 const double fw = wing ? chord(i, ref, Fw) : 0.0;
                 const double out = ground(s.x + nx * (hw + p.wall_thickness), s.y + ny * (hw + p.wall_thickness));
                 const bool cut = pp.present ? pp.cut : out > zf;
@@ -1294,10 +1706,27 @@ std::vector<WallRun> wall_runs(const SampledRoad& road, const GroundFn& ground, 
                     const double Lp = zf + w * (k ? t.z[k - 1] : 0.0), Lk = zf + w * t.z[k];
                     if (cut) { zTop = Lk; zBot = Lp; top = Lk + 0.4 + std::max(0.0, 0.5 - (Lk - Lp)); }
                     else { zTop = Lp; zBot = Lk; top = k == 0 ? zf + 0.3 + w * (s.z + 1.0 - zf - 0.3) : Lp + 0.4; }
+                } else if (k > 0 && wing && pp.has_base && pp.base_stairs) {
+                    // wing beside terraces: tiers k >= 1 are (1 - fw) of the terraces and fw of the natural ground (what the grading makes outside the full wall)
+                    const Probe Nn = [&](double e) { return ground(s.x + nx * (hw + e), s.y + ny * (hw + e)); };
+                    const StairResult pr = stair_profile(pp.cut, zf, pp.base_h, Nn, pp.base_force, p);
+                    if (k >= static_cast<int>(pr.tiers.size())) { cur = -1; continue; }
+                    const StairTier& t = pr.tiers[static_cast<std::size_t>(k)];
+                    const double T = p.wall_thickness;
+                    const double gB = (1 - fw) * t.u + fw * Nn(t.a + T), gF = (1 - fw) * t.f + fw * Nn(t.a);
+                    if (std::abs(gB - gF) < p.wall_vis_min || (1 - fw) * std::abs(t.u - t.f) < p.wall_vis_min) { cur = -1; continue; }
+                    off = t.a;
+                    zTop = cut ? gB : gF;
+                    zBot = cut ? gF : gB;
+                    const StairTier& tq = pr.tiers[static_cast<std::size_t>(k - 1)];
+                    const double gFr = (1 - fw) * tq.u + fw * Nn(t.a - 0.1);
+                    const double eBe = t.a + T + 0.5, nBe = Nn(eBe);
+                    const double gBe = (1 - fw) * (t.eps <= 0 ? nBe : cut ? std::max(t.u, nBe - p.stair_k * t.eps) : std::min(t.u, nBe + p.stair_k * t.eps)) + fw * nBe;
+                    top = cut ? std::max(gB + 0.35, gBe + 0.02) : std::max(gF + 0.4, gFr + 0.32);
                 } else {
                     if (k > 0 && !(wing && tp && k < tp->n && std::abs(tp->z[k] - tp->z[k - 1]) > 1e-9)) { cur = -1; continue; }
                     const double H = cut ? std::max(out - zf, 0.0) : std::max(zf - out, 0.0), wf = wing ? fw : w;  // legacy full wall; a wing blends (1 - fw) of the adjacent tiers with fw of the full wall
-                    const double H0 = wing ? (1 - fw) * (tp ? w * std::abs(tp->z[0]) : 0.0) + fw * H : w * H, L0 = zf + sgn * H0;
+                    const double H0 = wing ? (1 - fw) * (tp && tp->n > 0 ? w * std::abs(tp->z[0]) : 0.0) + fw * H : w * H, L0 = zf + sgn * H0;
                     if (k == 0) {
                         if (cut) { zTop = L0; zBot = zf; top = L0 + 0.4 + std::max(0.0, 0.5 - (L0 - zf)); }
                         else { zTop = zf; zBot = L0; top = zf + 0.3 + wf * (s.z + 1.0 - zf - 0.3); }

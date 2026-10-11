@@ -748,10 +748,14 @@ TEST_CASE("render mesh: roundabout islands take their surfaces from the region p
         REQUIRE(m.count("grass"));  // planted central island
         CHECK(plan_area(m.at("grass")) == doctest::Approx(polygon_set_area(l.island)).epsilon(0.02));
         if (!l.splitters.empty()) {
-            REQUIRE(m.count("paving"));  // splitters are paved
+            const std::string& top = l.splitter_surface;  // the size class's surface (UK: asphalt, grass on the largest ring)
+            REQUIRE(!top.empty());
+            REQUIRE(m.count(top));
             double a = 0;
             for (const auto& s : l.splitters) a += polygon_set_area(PolygonSet{s.polygon});
-            CHECK(plan_area(m.at("paving")) == doctest::Approx(a).epsilon(0.05));
+            // (a splitter surface equal to the central island's, e.g. grass, shares one mesh with it)
+            const double expect = top == "grass" ? a + polygon_set_area(l.island) : a;
+            CHECK(plan_area(m.at(top)) == doctest::Approx(expect).epsilon(0.05));
         }
         REQUIRE(m.count("kerb"));
         ++checked;

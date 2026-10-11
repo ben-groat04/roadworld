@@ -66,8 +66,9 @@ const CASES = [
   { name: 'short_run_between_bridges', off: NOISE_OFF, authored: [[10, 20], [22, 40]], terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0 }, { k: 'slopeEnv', slope: 0.62, yc: 0, cx: 100, sig: 80 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [200, 0, 30]] }] },
 ];
 
-// compact plan serialisation: 0 | [full, wing, over, plat, nat, cut, n, fw, ...a, ...z, base]
-const ser = p => !p ? 0 : [+!!p.full, +!!p.wing, +!!p.over, +!!p.plat, +!!p.nat, +!!p.cut, p.n, p.fw ?? 0, ...p.a.map(r4), ...p.z.map(r4), ser(p.base)];
+// compact plan serialisation: 0 | [full, wing, over, plat, nat, cut, n (0 for terraces), fw, ...a, ...z, base, stairs, force, h, (top level only: nStairs, reachE, alongMax, sw, hasAlt, altN, ...altA, ...altZ)]
+const ser = (p, isBase = false) => !p ? 0 : [+!!p.full, +!!p.wing, +!!p.over, +!!p.plat, +!!p.nat, +!!p.cut, p.stairs ? 0 : p.n, p.fw ?? 0, ...p.a.map(r4), ...p.z.map(r4), ser(p.base, true),
+  +!!p.stairs, +!!p.force, r4(p.h ?? 0), ...(isBase ? [] : [p.stairs ? p.n : 0, r4(p.reachE ?? 0), r4(p.alongMax ?? 0), r4(p.sw ?? 1), +!!p.alt, p.alt ? p.alt.n : 0, ...(p.alt ? p.alt.a.map(r4) : []), ...(p.alt ? p.alt.z.map(r4) : [])])];
 const q4 = v => Math.round(v * 1e4);
 const r4 = v => Math.round(v * 1e4) / 1e4;
 
@@ -85,7 +86,7 @@ function buildCase(c) {
   }
   const rd = run('roadsData()');   // markMedians, wallWeights, slopeReach, decimation, portal planes
   const rsJs = run('roads');
-  const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER'), roundK: run('ROUND_DAYLIGHT / (2 * T.batter)'), roundHinge: run('ROUND_HINGE'), ditchD: run('DITCH_D'), ditchW: run('DITCH_W'), endBatter: run('END_BATTER') };
+  const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER'), roundK: run('ROUND_DAYLIGHT / (2 * T.batter)'), roundHinge: run('ROUND_HINGE'), ditchD: run('DITCH_D'), ditchW: run('DITCH_W'), endBatter: run('END_BATTER'), reachFade: run('REACH_FADE') };
   const out = {
     name: c.name, version: 2, authored: c.authored || null, quant: 1e-4, terrain,
     params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingRatio: run('WING_RATIO'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundHinge: run('ROUND_HINGE'), roundReach: run('ROUND_REACH'), wallRamp: run('WALL_RAMP'), planeMargin: run('PLANE_MARGIN'), wallMaxHeight: run('WALL_MAX_H'), benchMinWidth: run('BENCH_MIN'), wallMinLength: run('WALL_MIN_LEN'), sampleStep: run('SAMPLE_STEP'), toeDitchDepth: run('DITCH_D'), toeDitchWidth: run('DITCH_W'), endTaperBatter: run('END_BATTER'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
@@ -99,7 +100,7 @@ function buildCase(c) {
       samples: S.map(s => [s.s, s.x, s.y, s.z, s.h]),
       expect: {
         br: col(s => +!!s.br), tu: col(s => +!!s.tu), portal: col(s => +!!s.portal), wL: col(s => s.wL), wR: col(s => s.wR), wL0: col(s => s.wL0), wR0: col(s => s.wR0),
-        plL: col(s => ser(s.pL)), plR: col(s => ser(s.pR)), overHeight: !!r.overHeight, wwL: col(s => s.wwL), wwR: col(s => s.wwR), mL: col(s => +!!s.mL), mR: col(s => +!!s.mR),
+        plL: col(s => ser(s.pL)), plR: col(s => ser(s.pR)), overHeight: !!r.overHeight, wwL: col(s => s.wwL), wwR: col(s => s.wwR), mL: col(s => +!!s.mL), mR: col(s => +!!s.mR), sL: col(s => +!!s.sL), sR: col(s => +!!s.sR), supL: col(s => r4(s.supL || 0)), supR: col(s => r4(s.supR || 0)),
         portals: r.portals, reach: rd[ri].reach, bbox: [rd[ri].bbox.x0, rd[ri].bbox.y0, rd[ri].bbox.x1, rd[ri].bbox.y1],
         ndec: rd[ri].samples.length, planes: rd[ri].planes.map(p => [p.k0, p.k1, p.x, p.y, p.nx, p.ny]),
       },
@@ -113,7 +114,7 @@ function buildCase(c) {
       const ch = i === 0 || i === S.length - 1 || a.br !== b.br || a.tu !== b.tu || a.wL !== b.wL || a.wR !== b.wR;
       if (ch && picks.length < 5 && farFromPicked(a.x, a.y)) picks.push([a.x, a.y]); } });
   rsJs.forEach(r => { const m = r.samples[r.samples.length >> 1]; if (picks.length < 5 && farFromPicked(m.x, m.y)) picks.push([m.x, m.y]); });
-  const gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER })');
+  const gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER, reachFade: REACH_FADE })');
   for (const [cx, cy] of picks) {
     const x0 = Math.round(cx / 0.5) * 0.5 - 16, y0 = Math.round(cy / 0.5) * 0.5 - 16, nx = 64, ny = 64, res = 0.5, o = new Float32Array(nx * ny);
     ctx.__gp = gp; ctx.__rd = rd; ctx.__o = o;

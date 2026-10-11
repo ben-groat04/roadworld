@@ -30,10 +30,28 @@ namespace {
 
 using Ring = std::vector<Vec2>;
 
+double area(const Ring& r);
+// A pavement piece the boolean ops left behind: a millimetre sliver, or a thin shard (mean width under 0.3 m and
+// under 2 m2, e.g. the band grown behind a node or past a trim line). Real pavement pieces are far wider.
+bool is_pavement_sliver(const Ring& r, const std::vector<Vec2>& trim_point, const std::vector<Vec2>& trim_dir);
+
 double area(const Ring& r) {
     double a = 0;
     for (std::size_t i = 0; i < r.size(); ++i) a += r[i].cross(r[(i + 1) % r.size()]);
     return a / 2;
+}
+
+bool is_pavement_sliver(const Ring& r, const std::vector<Vec2>& trim_point, const std::vector<Vec2>& trim_dir) {
+    const double a = std::fabs(area(r));
+    if (a < 0.03) return true;
+    if (a >= 2.0) return false;
+    // A piece that reaches a trim line joins the pavement of that arm's edge mesh: keep it however thin.
+    for (const Vec2& v : r)
+        for (std::size_t i = 0; i < trim_point.size(); ++i)
+            if (std::fabs((v - trim_point[i]).dot(trim_dir[i])) < 3e-3) return false;
+    double perimeter = 0;
+    for (std::size_t i = 0; i < r.size(); ++i) perimeter += (r[(i + 1) % r.size()] - r[i]).length();
+    return perimeter > 0 && 2 * a / perimeter < 0.3;
 }
 
 Clipper2Lib::PathD to_path(const Ring& r) {
@@ -331,6 +349,14 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
                arm_point(A(a2), t2, -A(a2).kerb_right).pos.xy()};
         if (area(g) < 0) std::reverse(g.begin(), g.end());
         if (area(g) > 1e-6) {
+            // The gore is paved (painted nose), not a hole in the carriageway: the markings sit on it.
+            PathsD with_gore = to_paths(cw);
+            with_gore.push_back(to_path(g));
+            PolygonSet merged = from_paths(Union(with_gore, FillRule::NonZero, 3));
+            if (!merged.empty()) {
+                cw = std::move(merged);
+                junction.carriageway = cw;
+            }
             junction.gore.push_back(std::move(g));
             gore_ok = true;
         }
@@ -352,6 +378,12 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
         // offset): an arm without pavement (dual carriageway, motorway) gets none, and an arm with
         // pavement gets its full cross-section at the trim line. Beyond its trim line an arm blocks only
         // its own cross-section, so a neighbour's pavement can pass.
+        std::vector<Vec2> trim_pts, trim_dirs;
+        for (int i = 0; i < 3; ++i) {
+            const ArmPoint tp = arm_point(A(i), tr[static_cast<std::size_t>(i)], 0);
+            trim_pts.push_back(tp.pos.xy());
+            trim_dirs.push_back({std::cos(tp.heading_out), std::sin(tp.heading_out)});
+        }
         PathsD bands, caps;
         for (int i = 0; i < 3; ++i) {
             const JunctionArm& a = A(i);
@@ -373,7 +405,7 @@ void generate_merge_diverge(Junction& junction, const RoadGraph& graph, const Re
             junction.pavements = from_paths(Difference(Union(bands, FillRule::NonZero, 3), cut, FillRule::NonZero, 3));
             // Drop the millimetre slivers the boolean ops leave along the trim lines.
             junction.pavements.erase(std::remove_if(junction.pavements.begin(), junction.pavements.end(),
-                                                    [](const Ring& r) { return std::fabs(area(r)) < 0.03; }),
+                                                    [&](const Ring& r) { return is_pavement_sliver(r, trim_pts, trim_dirs); }),
                                      junction.pavements.end());
         }
     }

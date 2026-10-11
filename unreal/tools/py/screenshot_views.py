@@ -1,9 +1,9 @@
 """Take high-resolution screenshots from fixed camera transforms into <project>/Saved/Screenshots/look/.
 
 Files (default, interchange layout of CPRoadMeshActor; deterministic names, overwritten each run):
-  look_01_aerial, look_02_roundabout_oblique, look_03_roundabout_approach, look_04_tee_minor_arm,
-  look_07_underside (camera below the road looking up),
-  look_05_slip_merge, look_06_kerb_closeup.
+  look_01_aerial, look_02_roundabout_oblique, look_03_roundabout_approach, look_04_tee_minor_arm, look_05_slip_merge,
+  look_06_kerb_closeup, look_08_dual_carriageway, look_09_tee_oblique. Argument `underside` adds look_07_underside.
+Each view has a focal length (mm, full frame) and is shot through a transient CameraActor piloted by the level viewport.
 The former "old" argument (views of the removed CPRoadNetworkActor) now fails with a clear message.
 
 Run (needs a rendering editor, NOT nullrhi):
@@ -51,22 +51,41 @@ def sim(x, y, z):
     return (y * 100.0, x * 100.0, z * 100.0)
 
 
-# Interchange layout (sim_core/include/cp/test_layouts.h; node positions printed by the standalone check):
-#   dual carriageway along y = +-5.5 (x -400..400), minor road along x = 0 (y -250..350) on a bridge over the dual
-#   (deck z = 7 m at y = +-30), slip merge/diverge nodes at (+-260, +-5.5), roundabout ring radius 25 m centred
-#   (0, 80) at z ~ 6.2 m (entry nodes (0, 55) south and (0, 105) north), residential T-junction at (0, 230) with a
-#   side road running east. Left-hand traffic. Heights below the bridge/ring are the layout's nominal levels
-#   (kerb view z is approximate: VERIFY by looking at the shot).
-# name -> (eye location, target). Edit freely.
+def focal_to_hfov(mm, sensor_mm=36.0):
+    """Horizontal field of view in degrees of a full-frame (36 mm wide) camera with the given focal length."""
+    return math.degrees(2.0 * math.atan(sensor_mm / (2.0 * mm)))
+
+
+# Interchange layout (sim_core/include/cp/test_layouts.h; sim_core/src/test_layouts.cpp):
+#   dual carriageway along the x axis: eastbound (left-hand traffic) on the NORTH side, edge centre-lines y = +-6.65
+#   (x -400..400, z = 0), lanes of the eastbound edge: hard strip y 1.25..1.75, overtaking lane centre y = 3.575, nearside
+#   lane centre y = 7.225; minor road along x = 0 (y -250..350) on a bridge over the dual (deck z = 7 m at y = +-30,
+#   z = 6.25 on the terminals at y -95 / 105 and the ring); roundabout ring radius 25 m centred (0, 80) at z ~ 6.2 m;
+#   east on-slip: terminal (0,80) -> (50,72) -> (120,52, z 3.7) -> (190,23, z 1.5) -> merge (260, 6.65, z 0) heading
+#   east then south-east; residential T-junction at (0, 230) (z = 0), side road running east.
+# name -> (eye, target, focal length mm full-frame equivalent). Eye height notes in the comments. Edit freely.
 INTERCHANGE_VIEWS = [
-    ("look_01_aerial", sim(0, 100, 750), sim(1, 100, 0)),                     # whole layout from 750 m, straight down
-    ("look_02_roundabout_oblique", sim(-70, 10, 40), sim(0, 80, 6.2)),       # ~100 m out, ~20 degrees down
-    ("look_03_roundabout_approach", sim(-1.8, 28, 8.5), sim(0, 54, 7.5)),    # driver height (1.5 m) on the bridge approach, northbound, left lane
-    ("look_04_tee_minor_arm", sim(50, 228.6, 1.8), sim(0, 230, 1.6)),        # on the side road looking west at the T, 1.6 m up
-    ("look_05_slip_merge", sim(215, 60, 25), sim(255, 8, 0.5)),              # oblique over the east on-slip merging into the dual
-    ("look_06_kerb_closeup", sim(-2.4, 148, 4.3), sim(-3.3, 153, 3.7)),      # 0.5 m above the road, 1 m from the west kerb of the minor road
-    ("look_07_underside", sim(150, -5.5, -600), sim(150, 5.5, 0)),             # 6 m BELOW the dual carriageway looking up: the underside must be culled (sky/floor show through)
+    # Oblique aerial ~300 m up, 58 degrees down, 35 mm (review: the Partney reference is oblique from about that height).
+    ("look_01_aerial", sim(0, -100, 296), sim(0, 80, 6.2), 35.0),
+    # ~100 m out and 35 m up at 50 mm: calmer perspective.
+    ("look_02_roundabout_oblique", sim(-70, 10, 40), sim(0, 80, 6.2), 50.0),
+    # Driver on the bridge approach, 2.2 m eye (road z 7 here), 24 mm (hfov 73.7), looking slightly down so the horizon sits ~1/3 from the top.
+    ("look_03_roundabout_approach", sim(-1.8, 28, 9.2), sim(0, 54, 6.0), 24.0),
+    # On the side road looking west at the T, 1.8 m eye, 24 mm.
+    ("look_04_tee_minor_arm", sim(50, 228.6, 1.8), sim(0, 230, -0.2), 24.0),
+    # Driver view on the east on-slip approaching the merge, 2.2 m eye (slip z 1.5 at x=190), 24 mm.
+    ("look_05_slip_merge", sim(190, 23, 3.7), sim(262, 5.0, 0.4), 24.0),
+    # Kerb close-up: 1.4 m eye, ~3 m from the west kerb of the minor road, ~25 degrees down, 35 mm. Road z at y=148 is ~3.8.
+    ("look_06_kerb_closeup", sim(-0.4, 146, 5.2), sim(-3.4, 148, 3.9), 35.0),
+    # Along the dual carriageway at driver eye height (eastbound, overtaking lane centre, 1.8 m), 24 mm.
+    ("look_08_dual_carriageway", sim(-330, 3.575, 1.8), sim(-200, 3.575, 1.2), 24.0),
+    # Oblique of the T junction from ~15 m up, 35 mm.
+    ("look_09_tee_oblique", sim(-24, 205, 15.5), sim(5, 230, 0.0), 35.0),
 ]
+# Kept available by name, not in the default set: pass the argument `underside` to shoot it as well.
+EXTRA_VIEWS = {
+    "underside": ("look_07_underside", sim(150, -5.5, -600), sim(150, 5.5, 0), 24.0),  # 6 m below the dual looking up (road is back-face culled)
+}
 
 VIEWS = INTERCHANGE_VIEWS
 
@@ -129,7 +148,40 @@ def subsystem(name):
     return unreal.get_editor_subsystem(cls) if cls is not None else None
 
 
-def set_camera(eye, target, pie):
+CAMERA = {"actor": None, "piloted": False}
+
+
+def ensure_camera():
+    """One transient CameraActor in the editor world, piloted by the level viewport, so each view gets a real field of
+    view (the plain viewport camera has no scripted FOV). Removed again when the run finishes."""
+    if CAMERA["actor"] is None:
+        eas = subsystem("EditorActorSubsystem")
+        cam = eas.spawn_actor_from_class(unreal.CameraActor, unreal.Vector(0, 0, 0), unreal.Rotator(0, 0, 0))
+        cam.set_actor_label("CP_ShotCamera")
+        comp = cam.get_editor_property("camera_component")
+        comp.set_editor_property("constrain_aspect_ratio", False)
+        CAMERA["actor"] = cam
+    return CAMERA["actor"]
+
+
+def release_camera():
+    cam = CAMERA["actor"]
+    if cam is None:
+        return
+    try:
+        les = subsystem("LevelEditorSubsystem")
+        les.eject_pilot_level_actor()
+    except Exception as e:  # noqa
+        cp.warn("eject pilot failed: %s" % e)
+    try:
+        subsystem("EditorActorSubsystem").destroy_actor(cam)
+    except Exception as e:  # noqa
+        cp.warn("destroy camera failed: %s" % e)
+    CAMERA["actor"] = None
+    CAMERA["piloted"] = False
+
+
+def set_camera(eye, target, focal_mm, pie):
     roll, pitch, yaw = look_at(eye, target)
     loc = unreal.Vector(eye[0], eye[1], eye[2])
     rot = unreal.Rotator(roll=roll, pitch=pitch, yaw=yaw)
@@ -143,11 +195,13 @@ def set_camera(eye, target, pie):
         pawn.set_actor_location_and_rotation(loc, rot, False, False)
         pc.set_control_rotation(rot)
         return
-    ues = subsystem("UnrealEditorSubsystem")
-    try:
-        ues.set_level_viewport_camera_info(loc, rot)  # VERIFY: UnrealEditorSubsystem.set_level_viewport_camera_info
-    except Exception:
-        unreal.EditorLevelLibrary.set_level_viewport_camera_info(loc, rot)  # deprecated fallback
+    cam = ensure_camera()
+    cam.set_actor_location_and_rotation(loc, rot, False, False)
+    cam.get_editor_property("camera_component").set_editor_property("field_of_view", focal_to_hfov(focal_mm))
+    if not CAMERA["piloted"]:
+        les = subsystem("LevelEditorSubsystem")
+        les.pilot_level_actor(cam)
+        CAMERA["piloted"] = True
 
 
 def request_shot(path, mult):
@@ -166,6 +220,7 @@ def tick(delta):
         step(s)
     except Exception as e:  # noqa
         unreal.unregister_slate_post_tick_callback(s["handle"])
+        release_camera()
         cp.err("screenshot state machine failed: %s" % e)
         cp.finish(False, str(e))
 
@@ -184,12 +239,13 @@ def step(s):
     if phase == "place":
         if s["i"] >= len(VIEWS):
             unreal.unregister_slate_post_tick_callback(s["handle"])
+            release_camera()
             done = [v[0] for v in VIEWS]
             cp.log("screenshots written: %s" % ", ".join(os.path.join(OUT_DIR, n + ".png") for n in done))
             cp.finish(True)
             return
-        name, eye, target = VIEWS[s["i"]]
-        set_camera(eye, target, s["pie"])
+        name, eye, target, focal = VIEWS[s["i"]]
+        set_camera(eye, target, focal, s["pie"])
         s["phase"] = "warm"
         return
     if phase == "probe":
@@ -270,7 +326,7 @@ def main():
     global VIEWS
     if "old" in args:
         raise cp.ScriptError("the 'old' argument was removed together with CPRoadNetworkActor; run without it for the interchange views")
-    VIEWS = INTERCHANGE_VIEWS
+    VIEWS = list(INTERCHANGE_VIEWS) + [v for k, v in EXTRA_VIEWS.items() if k in args]
     mult = 1
     for a in args:
         if a.isdigit():
@@ -286,6 +342,11 @@ def main():
     # plugin requests QUIT_EDITOR on the tick after the script returns, killing the state machine below.
     unreal.EditorPythonScripting.set_keep_python_script_alive(True)
 
+    for a in args:
+        if a.startswith("cvar:"):   # e.g. cvar:r.Lumen.HardwareRayTracing=1 (several allowed, comma-free)
+            k, v = a[5:].split("=", 1)
+            unreal.SystemLibrary.execute_console_command(None, "%s %s" % (k, v))
+            cp.log("console: %s %s" % (k, v))
     STATE.update(frame=0, i=0, wait=WARMUP_FIRST, phase="place", pie=pie, mult=mult)
     if pie:
         les.editor_request_begin_play()  # VERIFY: LevelEditorSubsystem.editor_request_begin_play

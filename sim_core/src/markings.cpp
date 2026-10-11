@@ -693,7 +693,7 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
     }
     if (const json* g = member(*jn, "splitter")) {
         check_keys(*g, {"outline_style", "outline_gap_m", "hatch_style", "hatch_length_m", "hatch_width_m", "stripe_width_m", "pitch_m",
-                        "angle_deg", "source"}, "splitter", err);
+                        "angle_deg", "ladder_pitch_m", "source"}, "splitter", err);
         SplitterRule& s = r.splitter;
         s.enabled = true;
         s.outline_style = parse_style_sel(member(*g, "outline_style"), unit, "splitter", err);
@@ -704,7 +704,9 @@ void parse_junction(const json& root, double unit, MarkingRules& r, Err& err) {
         s.stripe_width_m = num(*g, "stripe_width_m", 0.3, "splitter", err);
         s.pitch_m = num(*g, "pitch_m", 1.0, "splitter", err);
         s.angle_deg = num(*g, "angle_deg", 60, "splitter", err);
+        s.ladder_pitch_m = num(*g, "ladder_pitch_m", 2.0, "splitter", err);
         s.source = str(*g, "source", "", "splitter", err);
+        if (!(s.ladder_pitch_m > s.stripe_width_m)) err.set("splitter: need ladder_pitch_m > stripe_width_m");
         if (!(s.pitch_m > s.stripe_width_m) || !(s.stripe_width_m > 0)) err.set("splitter: need 0 < stripe_width_m < pitch_m");
     }
     if (const json* g = member(*jn, "arrows")) {
@@ -848,10 +850,10 @@ Loaded<MarkingRules> parse_marking_rules(const std::string& text) {
     if (const json* w = member(root, "wear")) {
         check_keys(*w, {"strength", "patch_period_m", "patch_weight", "wheel_boost", "wheel_offset_m", "wheel_half_width_m", "source"}, "wear", err);
         WearRule& wr = r.wear;
-        wr.strength = num(*w, "strength", 0.3, "wear", err);
+        wr.strength = num(*w, "strength", 0.08, "wear", err);
         wr.patch_period_m = num(*w, "patch_period_m", 60, "wear", err);
         wr.patch_weight = num(*w, "patch_weight", 0.5, "wear", err);
-        wr.wheel_boost = num(*w, "wheel_boost", 0.35, "wear", err);
+        wr.wheel_boost = num(*w, "wheel_boost", 0.14, "wear", err);
         wr.wheel_offset_m = num(*w, "wheel_offset_m", 0.8, "wear", err);
         wr.wheel_half_width_m = num(*w, "wheel_half_width_m", 0.25, "wear", err);
         wr.source = str(*w, "source", "", "wear", err);
@@ -1022,6 +1024,7 @@ struct Builder {
         const double patch = value_noise(cx / w.patch_period_m, cy / w.patch_period_m, 0x51ED270Bull);
         double wear = w.strength * 2 * ((1 - w.patch_weight) * per_mark + w.patch_weight * patch);
         wear += w.wheel_boost * std::clamp(wheel, 0.0, 1.0);
+        wear *= params.wear_scale;
         m.wear = static_cast<float>(std::clamp(wear, 0.0, 1.0));
         out.vertices.insert(out.vertices.end(), ring.begin(), ring.end());
         out.marks.push_back(m);
@@ -1268,7 +1271,15 @@ std::vector<ArmLayout> compute_arm_layout(const RoadGraph& g, const RegionPack& 
                     L.style = select_style(rules.roundabout_entry.style, L.ctx);
                     if (L.style) {
                         L.entry = true;
-                        L.line_s0 = trim + rules.roundabout_entry.setback_m;
+                        // The line crosses the entry at the ring's outer kerb, not at the trim line: a shaped
+                        // (splitter) approach is trimmed tens of metres out, where its flare ends.
+                        double ring_ext = 0;
+                        for (const JunctionArm& ra : j.arms) {
+                            const Edge* re = g.edge(ra.edge);
+                            const RoadType* rrt = re ? region.road_type(re->road_type) : nullptr;
+                            if (rrt && rrt->roundabout_ring) ring_ext = std::max({ring_ext, ra.kerb_left, ra.kerb_right});
+                        }
+                        L.line_s0 = std::min(trim, ring_ext) + rules.roundabout_entry.setback_m;
                     }
                 }
             } else if (params.stop_arms.count({j.node, arm.edge}) && rules.stop_line.enabled) {
@@ -1944,6 +1955,12 @@ struct JGen {
             if (!lane_extent(arm, true, lo, hi)) continue;
             b.edge = arm.edge;
             const MarkingCategory cat = L.stop ? MarkingCategory::StopLine : L.entry ? MarkingCategory::RoundaboutEntry : MarkingCategory::GiveWayLine;
+            if (L.entry) {  // a flared approach: the lanes lie further out beside the splitter
+                const bool left_side = lo + hi > 0;  // the whole lane band moves out with its side's kerb
+                const double shift = left_side ? flare_spread(arm, L.line_s0, true) : -flare_spread(arm, L.line_s0, false);
+                lo += shift;
+                hi += shift;
+            }
             emit_transverse(b, rules, cat, *L.style, arm, L.line_s0, lo, hi);
             if (L.give_way && L.triangle)
                 for (const LaneRef& lane : arm.lanes)
@@ -2470,6 +2487,56 @@ MarkingSet generate_splitter_markings(const RoadGraph& graph, const RegionPack& 
             }
         }
 
+        // Two-way approach: the flared gap round the kerbed island is paint. A solid line along the inner edge of each
+        // lane, and ladder bars (perpendicular to the road) across the gap, left and right of the island and then
+        // across the whole gap beyond its nose.
+        if (!sp.paint.empty() && sp.nose_s > sp.ring_s) {
+            const double s_end = std::min(arm->flare.length, arm->edge_length - 1.0);
+            const double g = sr.outline_gap_m;
+            if (ost && !ost->strands.empty()) {
+                const double w = ost->strands[0].width;
+                for (int side = 0; side < 2; ++side) {
+                    const double sg = side == 0 ? 1.0 : -1.0;
+                    std::vector<Vec3> pts;
+                    for (double sx = sp.ring_s + 0.5; sx < s_end; sx += 1.0) {
+                        const double lat = sg * (flare_spread(*arm, sx, side == 0) + g + w / 2);
+                        const Vec2 q = arm_point(*arm, sx, lat).pos.xy();
+                        pts.push_back({q.x, q.y, z_of(q)});
+                    }
+                    std::vector<Vec3> ring;
+                    if (pts.size() >= 2 && stroke_ring(pts, w, ring)) b.add(MarkingCategory::EdgeLine, *osid, ring, true);
+                }
+            }
+            if (!sr.hatch_style.empty()) {
+                const double bw = sr.stripe_width_m, inset = g + (ost && !ost->strands.empty() ? ost->strands[0].width : 0.1) + 0.05;
+                const auto island_half = [&](double sx) {  // the island's half width at sx (0 beyond its nose)
+                    if (sx >= sp.nose_s) return 0.0;
+                    const double s_c = sp.nose_s - sp.nose_r;
+                    const double h = sx > s_c ? std::sqrt(std::max(0.0, sp.nose_r * sp.nose_r - (sx - s_c) * (sx - s_c)))
+                                              : sp.nose_r + (sp.base_half - sp.nose_r) * (s_c - sx) / std::max(s_c - sp.ring_s, 1e-6);
+                    return std::min(h, flare_spread(*arm, sx, true));
+                };
+                const auto bar = [&](double s0b, double l0, double l1) {
+                    if (l1 - l0 < 0.15) return;
+                    std::vector<Vec3> r;
+                    for (const SL& q : {SL{s0b, l0}, SL{s0b + bw, l0}, SL{s0b + bw, l1}, SL{s0b, l1}}) {
+                        const Vec2 pq = arm_point(*arm, q.first, q.second).pos.xy();
+                        r.push_back({pq.x, pq.y, z_of(pq)});
+                    }
+                    b.add(MarkingCategory::Hatching, sr.hatch_style, r, false);
+                };
+                for (double sx = sp.ring_s + sr.ladder_pitch_m; sx + bw < s_end - 0.5; sx += sr.ladder_pitch_m) {
+                    const double gl = flare_spread(*arm, sx, true) - inset, gr = flare_spread(*arm, sx + bw, false) - inset;
+                    const double ih = island_half(sx) + g + (ost && !ost->strands.empty() ? ost->strands[0].width : 0.1) + 0.05;
+                    if (sx > sp.nose_s) {
+                        bar(sx, -gr, gl);
+                    } else {
+                        bar(sx, ih, gl);
+                        bar(sx, -gr, -ih);
+                    }
+                }
+            }
+        } else
         // Approach hatching: a tapering triangle ahead of the nose, bars at an angle.
         if (!sr.hatch_style.empty() && sr.hatch_length_m > 1.0) {
             double s_nose = 0, lat_sum = 0;

@@ -76,11 +76,13 @@ void CreateSection(UProceduralMeshComponent* Comp, int32 SectionIndex, const CPB
 	TArray<FVector> Verts;
 	TArray<FVector> Normals;
 	TArray<FVector2D> UV0;
+	TArray<FVector2D> UV1;
 	TArray<FColor> Colors;
 	TArray<FProcMeshTangent> Tangents;
 	Verts.Reserve(N);
 	Normals.Reserve(N);
 	UV0.Reserve(N);
+	UV1.Reserve(static_cast<int32>(S.UV1.size()));
 	Colors.Reserve(N);
 	Tangents.Reserve(N);
 	for (int32 i = 0; i < N; ++i)
@@ -88,6 +90,10 @@ void CreateSection(UProceduralMeshComponent* Comp, int32 SectionIndex, const CPB
 		Verts.Add(FVector(S.Position[i].X, S.Position[i].Y, S.Position[i].Z));
 		Normals.Add(FVector(S.Normal[i].X, S.Normal[i].Y, S.Normal[i].Z));
 		UV0.Add(FVector2D(S.UV0[i].X, S.UV0[i].Y));
+		if (i < static_cast<int32>(S.UV1.size()))
+		{
+			UV1.Add(FVector2D(S.UV1[i].X, S.UV1[i].Y));  // lane-relative: x = metres from lane centre, y = lane width
+		}
 		Colors.Add(FColor(S.Colour[i][0], S.Colour[i][1], S.Colour[i][2], S.Colour[i][3]));
 		Tangents.Add(FProcMeshTangent(FVector(S.TangentX[i].X, S.TangentX[i].Y, S.TangentX[i].Z), S.TangentFlipY[i] != 0));
 	}
@@ -98,7 +104,8 @@ void CreateSection(UProceduralMeshComponent* Comp, int32 SectionIndex, const CPB
 		Tris.Add(Idx);
 	}
 	// Winding follows the rule in CPRoadMeshBuild.h (indices unchanged from sim); do not reorder here.
-	Comp->CreateMeshSection(SectionIndex, Verts, Tris, Normals, UV0, Colors, Tangents, /*bCreateCollision=*/false);
+	TArray<FVector2D> NoUV;
+	Comp->CreateMeshSection(SectionIndex, Verts, Tris, Normals, UV0, UV1, NoUV, NoUV, Colors, Tangents, /*bCreateCollision=*/false);
 }
 
 }  // namespace

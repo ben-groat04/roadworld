@@ -71,6 +71,7 @@ struct FSection
 	std::vector<FFloat3> TangentX;                // unit, UE frame, direction of +u
 	std::vector<std::uint8_t> TangentFlipY;       // 1 = FProcMeshTangent::bFlipTangentY
 	std::vector<FFloat2> UV0;                     // metres (u across, v along); markings: tile-relative sim metres
+	std::vector<FFloat2> UV1;                     // surfaces: x = metres from lane centre, y = lane width ((0,0) elsewhere); markings: empty
 	std::vector<std::array<std::uint8_t, 4>> Colour;  // R, G, B, A
 	std::vector<std::int32_t> Indices;            // UE winding (CCW seen from outside, same order as sim), triples
 };

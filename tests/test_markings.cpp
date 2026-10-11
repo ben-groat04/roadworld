@@ -1263,8 +1263,17 @@ TEST_CASE("markings: roundabout entry lines span the entering lanes; ring lines 
             for (const Marking& m : s.marks)
                 if (m.category == MarkingCategory::RoundaboutEntry && m.edge == m0->edge)
                     for (const Vec3& p : s.points(m)) l0 = std::min(l0, fr.rel(p).y), l1 = std::max(l1, fr.rel(p).y);
-            CHECK(std::fabs(l0 - lo) < 0.05);
-            CHECK(std::fabs(l1 - hi) < 0.05);
+            // The lanes lie further out beside the splitter (flare): the line spans them, shifted by the spread.
+            const double shift = (lo + hi > 0) ? flare_spread(arm, 0.0, true) : -flare_spread(arm, 0.0, false);
+            CHECK(std::fabs(l0 - (lo + shift)) < 0.05);
+            CHECK(std::fabs(l1 - (hi + shift)) < 0.05);
+            // ... and it crosses the entry at the ring's outer kerb, not out at the end of the flare.
+            double s_line = 1e9;
+            for (const Marking& m : s.marks)
+                if (m.category == MarkingCategory::RoundaboutEntry && m.edge == m0->edge)
+                    for (const Vec3& p : s.points(m)) s_line = std::min(s_line, fr.rel(p).x);
+            CHECK(s_line < 8.0);
+            CHECK(s_line > 0.5);
             ++entries;
         }
         CHECK(entries == c.arms);
@@ -1351,6 +1360,63 @@ TEST_CASE("markings: splitter islands get an outline and approach hatching when 
     MarkingResult cache = without;
     rebuild_dirty_markings(cache, n.g, *n.region, uk_rules(), plain, {rr.layouts[0].group.nodes[0]}, {}, p);
     CHECK(cache.splitters.size() == 1);
+}
+
+TEST_CASE("markings: splitter paint: ladder bars lie in the gap round the island, none on the kerbed island") {
+    Net n;
+    for (double d : {0.0, 90.0, 180.0, 270.0}) REQUIRE(n.polar(d, 110, "b_road"));
+    REQUIRE(n.st.execute(make_place_roundabout({0, 0, 0}, 25, "roundabout_ring", *n.region)));
+    JunctionSet plain = build_plain_junctions(n.g, *n.region, {});
+    RoundaboutResult rr = apply_roundabouts(plain, n.g, *n.region, {});
+    MarkingParams p;
+    p.roundabouts = &rr;
+    const MarkingResult res = generate_markings(n.g, *n.region, uk_rules(), plain, p);
+    REQUIRE(res.splitters.size() == 1);
+    const MarkingSet& s = res.splitters.begin()->second;
+    REQUIRE(rr.layouts.size() == 1);
+    const RoundaboutLayout& lay = rr.layouts[0];
+    REQUIRE(lay.splitters.size() == 4);
+    int bars = 0;
+    for (const Marking* m : of(s, MarkingCategory::Hatching)) {
+        ++bars;
+        for (const Vec3& q : s.points(*m)) {
+            bool on_paint = false, on_island = false;
+            for (const SplitterIsland& sp : lay.splitters) {
+                on_paint = on_paint || in_polyset(PolygonSet{sp.paint}, q.xy()) || dist_to_polyset(PolygonSet{sp.paint}, q.xy()) < 0.05;
+                on_island = on_island || (in_polyset(PolygonSet{sp.polygon}, q.xy()) && dist_to_polyset(PolygonSet{sp.polygon}, q.xy()) > 0.02);
+            }
+            CHECK_MESSAGE(on_paint, "hatch vertex off the paint gap at ", q.x, ",", q.y);
+            CHECK_MESSAGE(!on_island, "hatch bar on the kerbed island at ", q.x, ",", q.y);
+        }
+    }
+    CHECK(bars >= 4 * 5);  // a ladder on every approach (the old single 12 m triangle was about 10 bars on one)
+}
+
+TEST_CASE("markings: default paint wear is 5-15% on a normal road and wear_scale gives an old minor road") {
+    TJunction t;
+    const JunctionSet js = t.n.junctions();
+    const auto mean_of = [&](double scale, bool wheel) {
+        MarkingParams p;
+        p.wear_scale = scale;
+        const MarkingSet s = generate_markings(t.n.g, *t.n.region, uk_rules(), js, p).merged();
+        double sum = 0;
+        int cnt = 0;
+        for (const Marking& m : s.marks) {
+            const bool is_wheel = m.category == MarkingCategory::GiveWayLine || m.category == MarkingCategory::GiveWayTriangle ||
+                                  m.category == MarkingCategory::Arrow;
+            const bool is_line = m.category == MarkingCategory::CentreLine || m.category == MarkingCategory::LaneLine ||
+                                 m.category == MarkingCategory::EdgeLine;
+            if ((wheel && is_wheel) || (!wheel && is_line)) sum += m.wear, ++cnt;
+        }
+        REQUIRE(cnt > 0);
+        return sum / cnt;
+    };
+    const double lines = mean_of(1.0, false);
+    CHECK(lines >= 0.05);
+    CHECK(lines <= 0.15);
+    CHECK(mean_of(1.0, true) <= 0.30);
+    CHECK(mean_of(4.0, false) >= 0.25);  // an old minor road: 30-50% eroded
+    CHECK(mean_of(4.0, false) <= 0.60);
 }
 
 TEST_CASE("markings: marks of different edges never overlap in random junctions") {

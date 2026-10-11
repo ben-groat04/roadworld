@@ -106,6 +106,7 @@ struct RoundaboutSizeClass {
     double splitter_length = 12.0;       // m, base splitter island length before the approach-speed factor
     double splitter_width = 1.8;         // m, island width at the ring end (each side's kerb spreads out by half of it)
     double apron_width = 0.0;            // m, over-run apron collar round the central island (0 = none)
+    std::string splitter_surface;        // render surface of this class's splitter islands; empty = RoundaboutRules::splitter_surface
 };
 
 // Splitter length factor by approach speed (region.json roundabout.splitter_speed_factors).
@@ -130,7 +131,7 @@ struct RoundaboutRules {
     double splitter_width = 1.8;             // m at the ring end
     // Render surfaces (lane-type surface class names, e.g. "grass", "paving") and kerb height.
     std::string central_island_surface = "grass";  // planted central island
-    std::string splitter_surface = "paving";       // splitter islands on the approaches
+    std::string splitter_surface = "asphalt";      // splitter islands on the approaches (a size class may override it)
     double island_kerb_upstand = 0;                // m; 0 = the render default
     // Size classes (entry/exit radii, splitter and apron by ring radius). Empty = one class made from the
     // scalar fields above (entry_corner_radius, exit_corner_radius, splitter_length, splitter_width).

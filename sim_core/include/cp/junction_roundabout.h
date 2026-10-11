@@ -86,16 +86,26 @@ std::string check_place_roundabout(const RoadGraph& graph, Vec3 centre, double r
 RoadCommandPtr make_place_roundabout(Vec3 centre, double radius, const std::string& ring_road_type,
                                      const RegionPack& region);
 
-// A splitter island. Two-way approach: a teardrop centred on the arm, widest at the ring (half the class width on
-// each side), its sides following the shifted kerbs of the flared approach (ArmFlare), nose at the flare end.
-// Dual-carriageway approach (two one-way arms at adjacent ring nodes): the central reservation between the two
-// carriageways carried into the ring, `arm` and `arm_b` being the two arms.
+// A splitter island. Two-way approach: a short kerbed teardrop (roughly a triangle with a rounded nose) on the
+// arm's centreline, widest at the ring (the full width of the flare's gap between the two lanes) and tapering to
+// the nose `length` metres from the ring's outer kerb. The flare's gap is longer than the island when the corner
+// fillets need it (the lanes keep their width, the outer kerbs flare), so the rest is paint, not kerb: `paint` is
+// the whole gap between the two flared lanes (ring end to the end of the flare), of which the island is the
+// kerbed part; markings put the ladder hatching and the lane-edge lines on it. Dual-carriageway approach (two
+// one-way arms at adjacent ring nodes): the central reservation between the two carriageways carried into the
+// ring, `arm` and `arm_b` being the two arms (no paint area).
 struct SplitterIsland {
     int arm = 0;                 // index into JunctionGroup::arms
     int arm_b = -1;              // dual-carriageway pair: the other arm
     double length = 0;           // m, from the ring edge to the nose
     double width = 0;            // m, at the ring end
-    std::vector<Vec2> polygon;   // CCW
+    std::vector<Vec2> polygon;   // CCW: the kerbed island
+    // Two-way approach only (empty / 0 for a dual-carriageway median):
+    std::vector<Vec2> paint;     // CCW: the whole gap between the flared lanes, ring end to flare end (contains polygon)
+    double ring_s = 0;           // m along the arm from the ring node: the ring's outer kerb, where the island starts
+    double nose_s = 0;           // m along the arm: the island's nose
+    double base_half = 0;        // m: the island's half width at ring_s
+    double nose_r = 0;           // m: radius of the rounded nose (centre at nose_s - nose_r on the arm centreline)
 };
 
 // Which connectors of a ring node give way, and to what. Priority data only (no lane choice or

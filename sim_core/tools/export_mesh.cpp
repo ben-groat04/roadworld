@@ -100,6 +100,7 @@ int main(int argc, char** argv) {
         if (!rules) {
             std::fprintf(stderr, "export_mesh: markings skipped: %s\n", rules.error.c_str());
         } else {
+            mark_params.roundabouts = &rr;  // splitter outlines and approach hatching (as the world cache does)
             const cp::MarkingSet ms = cp::generate_markings(*graph, *region, *rules, js, mark_params).merged();
             for (const auto& w : ms.warnings) std::fprintf(stderr, "export_mesh: marking warning: %s\n", w.c_str());
             for (const auto& m : ms.marks) {

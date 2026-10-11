@@ -173,6 +173,7 @@ void ConvertBuffers(const cp::MeshBuffers& Src, FSection& Dst)
 	Dst.TangentX.resize(N);
 	Dst.TangentFlipY.resize(N);
 	Dst.UV0.resize(N);
+	Dst.UV1.resize(N);
 	Dst.Colour.resize(N);
 	for (std::size_t i = 0; i < N; ++i)
 	{
@@ -186,6 +187,7 @@ void ConvertBuffers(const cp::MeshBuffers& Src, FSection& Dst)
 		Dst.TangentX[i] = {T.y, T.x, T.z};
 		Dst.TangentFlipY[i] = T.w > 0.f ? 1 : 0;  // see header: sim w=+1 needs bFlipTangentY in UE
 		Dst.UV0[i] = {Src.uv0[i].x, Src.uv0[i].y};
+		Dst.UV1[i] = Src.uv1.size() == N ? FFloat2{Src.uv1[i].x, Src.uv1[i].y} : FFloat2{0.f, 0.f};
 		Dst.Colour[i] = Src.colours.empty() ? std::array<std::uint8_t, 4>{0, 0, 0, 255} : Src.colours[i];
 	}
 	const std::size_t Base = Dst.Indices.size();
@@ -413,7 +415,7 @@ FOutput BuildRender(FWorld& W, const FSettings& S)
 				Sec.TangentX.push_back({0.f, 1.f, 0.f});
 				Sec.TangentFlipY.push_back(0);
 				Sec.UV0.push_back({static_cast<float>(P.x - O.x), static_cast<float>(P.y - O.y)});
-				Sec.Colour.push_back({255, 255, 255, 255});
+				Sec.Colour.push_back({0, 0, 0, 255});  // R = wear (0 = new paint); the sim has no marking wear yet
 			}
 			for (std::size_t i = 0; i + 2 < Tri.size(); i += 3)
 			{

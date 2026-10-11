@@ -706,7 +706,7 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
     // ---- island: the ring centreline offset to the inner kerb face
     if (bad_type) return fail(lay, "ring edge has an unknown road type");
     lay.island_surface = prm.central_island_surface;
-    lay.splitter_surface = prm.splitter_surface;
+    lay.splitter_surface = cls.splitter_surface.empty() ? prm.splitter_surface : cls.splitter_surface;
     lay.apron_surface = prm.apron_surface;
     lay.island_kerb_upstand = prm.island_kerb_upstand;
     if (group.radius - in_ext < prm.min_island_radius)
@@ -759,27 +759,68 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
         if (!ja || !ja->flare.active()) continue;
         const double s0 = std::min(out_ext, ja->flare.length - 2.0), s1 = ja->flare.length;
         const double h0 = std::max(ja->flare.spread_left, ja->flare.spread_right);
+        const Edge* ge = graph.edge(arm.edge);
+        const RoadType* gt = ge ? region.road_type(ge->road_type) : nullptr;
+        // The kerbed island is a short teardrop: its length comes from the data (class length x approach speed
+        // factor), never from the flare. The flare gap beyond it (corner fillets need it) is paint.
+        const double want = cls.splitter_length * prm.splitter_speed_factor(gt ? gt->speed_limit : 0.0);
+        const double s_nose = std::max(std::min(s0 + want, s1 - 0.5), s0 + 3.0);
         SplitterIsland sp;
         sp.arm = static_cast<int>(gi);
-        sp.length = s1 - s0;
+        sp.length = s_nose - s0;
         sp.width = 2 * h0;
-        std::vector<Vec2> left, right;
-        for (double s = s0; s < s1; s += 1.0) {
-            left.push_back(arm_point(*ja, s, flare_spread(*ja, s, true)).pos.xy());
-            right.push_back(arm_point(*ja, s, -flare_spread(*ja, s, false)).pos.xy());
+        sp.ring_s = s0;
+        sp.nose_s = s_nose;
+        sp.base_half = h0;
+        const auto ring_end = [&](std::vector<Vec2>& poly, Vec2 r0, Vec2 l0) {
+            poly.push_back(project(r0));
+            for (int q = 1; q < 5; ++q) poly.push_back(project(r0 + (l0 - r0) * (q / 5.0)));
+        };
+        const auto fix_ccw = [&](std::vector<Vec2>& poly) {
+            if (signed_area(poly) < 0) std::reverse(poly.begin(), poly.end());
+        };
+        // ---- the whole gap between the flared lanes (paint area): ring end to the end of the flare
+        {
+            std::vector<Vec2> left, right;
+            for (double s = s0; s < s1; s += 1.0) {
+                left.push_back(arm_point(*ja, s, flare_spread(*ja, s, true)).pos.xy());
+                right.push_back(arm_point(*ja, s, -flare_spread(*ja, s, false)).pos.xy());
+            }
+            left.push_back(arm_point(*ja, s1, 0).pos.xy());
+            sp.paint = left;
+            for (std::size_t q = right.size(); q-- > 1;) sp.paint.push_back(right[q]);
+            ring_end(sp.paint, right.front(), left.front());
+            sp.paint.front() = project(sp.paint.front());
+            fix_ccw(sp.paint);
         }
-        left.push_back(arm_point(*ja, s1, 0).pos.xy());
-        sp.polygon = left;
-        for (std::size_t q = right.size(); q-- > 1;) sp.polygon.push_back(right[q]);
-        // ring end: from the right corner round to the left corner along the ring circle
-        const Vec2 r0 = right.front(), l0 = left.front();
-        sp.polygon.push_back(project(r0));
-        for (int q = 1; q < 5; ++q) {
-            const double t = q / 5.0;
-            sp.polygon.push_back(project(r0 + (l0 - r0) * t));
+        // ---- the kerbed island: a triangle from the full gap width at the ring to a small rounded nose
+        {
+            const double r_nose = std::min(0.45, 0.5 * h0);
+            sp.nose_r = r_nose;
+            const double s_c = s_nose - r_nose;
+            const auto half = [&](double s) {
+                const double line = r_nose + (h0 - r_nose) * (s_c - s) / (s_c - s0);
+                return std::max(0.05, std::min(line, flare_spread(*ja, s, true)));  // never wider than the gap
+            };
+            std::vector<Vec2> left, right;
+            for (double s = s0; s < s_c - 1e-6; s += 1.0) {
+                const double h = half(s);
+                left.push_back(arm_point(*ja, s, h).pos.xy());
+                right.push_back(arm_point(*ja, s, -h).pos.xy());
+            }
+            const double hc = half(s_c);
+            left.push_back(arm_point(*ja, s_c, hc).pos.xy());
+            right.push_back(arm_point(*ja, s_c, -hc).pos.xy());
+            sp.polygon = left;
+            for (int q = 1; q < 6; ++q) {  // the rounded nose: half circle of radius hc about (s_c, 0)
+                const double phi = kPi * q / 6.0;
+                sp.polygon.push_back(arm_point(*ja, s_c + hc * std::sin(phi), hc * std::cos(phi)).pos.xy());
+            }
+            for (std::size_t q = right.size(); q-- > 0;) sp.polygon.push_back(right[q]);
+            ring_end(sp.polygon, right.front(), left.front());
+            sp.polygon.front() = project(sp.polygon.front());
+            fix_ccw(sp.polygon);
         }
-        sp.polygon.front() = project(sp.polygon.front());
-        if (signed_area(sp.polygon) < 0) std::reverse(sp.polygon.begin(), sp.polygon.end());
         lay.splitters.push_back(std::move(sp));
     }
     // Dual-carriageway approach: two one-way arms (one in, one out) on adjacent ring nodes, roughly parallel.
@@ -819,14 +860,26 @@ RoundaboutLayout build_roundabout(const JunctionGroup& group, const RoadGraph& g
             sp.arm = static_cast<int>(ga);
             sp.arm_b = static_cast<int>(gb);
             sp.length = len - s0;
-            for (double s = s0; s < len; s += 2.0) sp.polygon.push_back(arm_point(*ja, s, lat_a).pos.xy());
+            // Side points inside the ring's outer circle belong to the carriageway: drop them, the ring end is the circle.
+            const auto outside_ring = [&](Vec2 p) { return (p - group.centre).length() > ring_out_r + 0.02; };
+            std::vector<Vec2> side_a, side_b;
+            for (double s = s0; s < len; s += 2.0) {
+                const Vec2 pa = arm_point(*ja, s, lat_a).pos.xy(), pb = arm_point(*jb, s, lat_b).pos.xy();
+                if (outside_ring(pa) && outside_ring(pb)) {
+                    side_a.push_back(pa);
+                    side_b.push_back(pb);
+                }
+            }
+            if (side_a.empty()) continue;
+            const Vec2 b0 = side_b.front(), a0 = side_a.front();
+            sp.width = (b0 - a0).length();
+            sp.polygon = side_a;
             sp.polygon.push_back(arm_point(*ja, len, lat_a).pos.xy());
             sp.polygon.push_back(arm_point(*jb, len, lat_b).pos.xy());
-            for (double s = len - 2.0; s > s0; s -= 2.0) sp.polygon.push_back(arm_point(*jb, s, lat_b).pos.xy());
-            const Vec2 b0 = arm_point(*jb, s0, lat_b).pos.xy(), a0 = arm_point(*ja, s0, lat_a).pos.xy();
-            sp.width = (b0 - a0).length();
+            for (std::size_t q = side_b.size(); q-- > 0;) sp.polygon.push_back(side_b[q]);
             sp.polygon.push_back(project(b0));
             for (int q = 1; q < 5; ++q) sp.polygon.push_back(project(b0 + (a0 - b0) * (q / 5.0)));
+            sp.polygon.push_back(project(a0));
             if (signed_area(sp.polygon) < 0) std::reverse(sp.polygon.begin(), sp.polygon.end());
             paired[ga] = paired[gb] = true;
             lay.splitters.push_back(std::move(sp));

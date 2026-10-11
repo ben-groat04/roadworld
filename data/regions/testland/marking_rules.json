@@ -122,7 +122,7 @@
     "splitter": {
       "outline_style": [ { "if": { "speed_min": 50 }, "style": "edge_thick" }, { "style": "edge_thin" } ],
       "outline_gap_m": 0.2,
-      "hatch_style": "fill_pale", "hatch_length_m": 14, "hatch_width_m": 1.7, "stripe_width_m": 0.25, "pitch_m": 0.9, "angle_deg": 55
+      "hatch_style": "fill_pale", "hatch_length_m": 14, "hatch_width_m": 1.7, "stripe_width_m": 0.25, "pitch_m": 0.9, "angle_deg": 55, "ladder_pitch_m": 2.6
     },
     "gore": {
       "same_direction": "diagonal",

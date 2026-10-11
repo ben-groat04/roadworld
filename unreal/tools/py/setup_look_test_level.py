@@ -22,6 +22,7 @@ import sys
 
 sys.path.insert(0, os.environ.get("CP_PY_DIR", os.path.dirname(os.path.abspath(__file__))))
 import cp_common as cp  # noqa: E402
+import mat_defs  # noqa: E402
 
 try:
     import unreal
@@ -36,13 +37,14 @@ PLANE_MESH = "/Engine/BasicShapes/Plane.Plane"
 EXPOSURE_MIN_EV100 = 8.0   # tunable: bright sunny street ~ 13-15, deep shade ~ 9-10
 EXPOSURE_MAX_EV100 = 15.0
 
+CP_MAT_ROOT = "/Game/CityPainter/Materials"
 SURFACE_ROOT = "/Game/Materials/Surfaces"
 MARKING_ROOT = "/Game/Materials/Markings"
 # mesh surface class (data/lane_types.json "surface" + the mesh builder's island_surface) -> texture slot
 # (import_textures.py / PolyHaven manifest slots). Keep in step with SlotForSurface() in CPRoadMeshActor.cpp.
 SURFACE_SLOTS = {"asphalt": "asphalt_new", "paving": "pavement", "kerb": "kerb_concrete", "grass": "grass", "island": "grass"}
 # marking colour id -> sRGB (data/regions/uk/marking_rules.json "colours"); read from the file when found.
-DEFAULT_MARKING_COLOURS = {"white": (0.90, 0.90, 0.88), "yellow": (0.93, 0.78, 0.15)}
+DEFAULT_MARKING_COLOURS = {"white": (0.88, 0.88, 0.86), "yellow": (0.93, 0.78, 0.15)}
 MARKING_DEPTH_OFFSET_CM = -3.0  # VERIFY sign: PixelDepthOffset > 0 moves the pixel AWAY from the camera, so negative pulls it forward
 
 
@@ -147,17 +149,30 @@ def setp(obj, name, value, what=""):
         return False
 
 
+SUN_ELEVATION_DEG = 45.0   # tunable. Light travels toward yaw SUN_TRAVEL_YAW (UE yaw 0 = +X = sim north, 90 = east): 40 = toward the
+SUN_TRAVEL_YAW = 40.0      # north-east, i.e. the sun stands south-west (review: GSV/aerial shadows), so shadows fall across both axes of the layout
+SUN_LUX = 100000.0
+SUN_SOURCE_ANGLE = 1.2     # degrees: soft shadow edges (real sun 0.53; a little more reads like thin high cloud)
+SKY_INTENSITY = 3.0  # skylight with real-time capture; 1.0 left shadows black, 6.0 washed the scene out
+FOG_DENSITY = 0.006
+FOG_HEIGHT_FALLOFF = 0.2
+FOG_START_DISTANCE_CM = 3000.0
+FOG_MAX_OPACITY = 0.92
+FOG_INSCATTER = (0.50, 0.58, 0.68)  # linear; pale grey-blue haze (the atmosphere contribution is added on top)
+
+
 def configure_sun(sun):
     comp = sun.get_editor_property("light_component")
     comp.set_mobility(unreal.ComponentMobility.MOVABLE)
     setp(comp, "atmosphere_sun_light", True, "sun")
     setp(comp, "atmosphere_sun_light_index", 0, "sun")
-    setp(comp, "intensity", 100000.0, "sun")        # lux: real daylight; 10 (the engine default) is for non-extended exposure and rendered black here
+    setp(comp, "intensity", SUN_LUX, "sun")        # lux: real daylight; 10 (the engine default) is for non-extended exposure and rendered black here
     setp(comp, "cast_shadows", True, "sun")
     setp(comp, "use_temperature", True, "sun")
-    setp(comp, "temperature", 6500.0, "sun")
+    setp(comp, "temperature", 6200.0, "sun")
     setp(comp, "cast_cloud_shadows", True, "sun")  # VERIFY name
-    sun.set_actor_rotation(unreal.Rotator(roll=0.0, pitch=-45.0, yaw=-30.0), False)
+    setp(comp, "light_source_angle", SUN_SOURCE_ANGLE, "sun")
+    sun.set_actor_rotation(unreal.Rotator(roll=0.0, pitch=-SUN_ELEVATION_DEG, yaw=SUN_TRAVEL_YAW), False)
 
 
 def configure_sky_light(sky):
@@ -167,13 +182,22 @@ def configure_sky_light(sky):
     src = getattr(unreal, "SkyLightSourceType", None)
     if src is not None:
         setp(comp, "source_type", src.SLS_CAPTURED_SCENE, "skylight")
-    setp(comp, "cast_shadows", True, "skylight")
+    setp(comp, "cast_shadows", False, "skylight")  # experiment 1: runtime road meshes have no distance field, so skylight shadowing left the median black
+    setp(comp, "intensity", SKY_INTENSITY, "skylight")
+    setp(comp, "lower_hemisphere_is_black", False, "skylight")  # the ground bounces light up; black here makes shadows too dark
 
 
 def configure_fog(fog):
     comp = fog.get_editor_property("component")
-    setp(comp, "enable_volumetric_fog", True, "fog")  # verified: bEnableVolumetricFog, ExponentialHeightFogComponent.h:136
-    setp(comp, "fog_density", 0.01, "fog")
+    # Volumetric fog off: froxel cost for no visible gain in a daytime look test; height fog alone gives the haze.
+    setp(comp, "enable_volumetric_fog", False, "fog")  # verified: bEnableVolumetricFog, ExponentialHeightFogComponent.h:136
+    setp(comp, "fog_density", FOG_DENSITY, "fog")
+    setp(comp, "fog_height_falloff", FOG_HEIGHT_FALLOFF, "fog")
+    setp(comp, "start_distance", FOG_START_DISTANCE_CM, "fog")
+    setp(comp, "fog_max_opacity", FOG_MAX_OPACITY, "fog")
+    setp(comp, "fog_inscattering_luminance", unreal.LinearColor(FOG_INSCATTER[0], FOG_INSCATTER[1], FOG_INSCATTER[2], 1.0), "fog")
+    setp(comp, "sky_atmosphere_ambient_contribution_color_scale", unreal.LinearColor(1.0, 1.0, 1.0, 1.0), "fog")
+    cp.log("FOG readback: density=%s falloff=%s start=%s maxop=%s inscatter=%s volumetric=%s actors=%d" % (comp.get_editor_property("fog_density"), comp.get_editor_property("fog_height_falloff"), comp.get_editor_property("start_distance"), comp.get_editor_property("fog_max_opacity"), comp.get_editor_property("fog_inscattering_luminance"), comp.get_editor_property("enable_volumetric_fog"), len(unreal.get_editor_subsystem(unreal.EditorActorSubsystem).get_all_level_actors())))
 
 
 def configure_cloud(cloud):
@@ -185,18 +209,38 @@ def configure_cloud(cloud):
         setp(comp, "material", mat, "cloud")
 
 
+FIXED_EV100 = 14.0   # tunable: sunny day 13-14.5 (overcast 11-12). min == max pins auto exposure to this EV100.
+
+
 def configure_post_process(ppv):
     setp(ppv, "unbound", True, "ppv")
     settings = ppv.get_editor_property("settings")
     ok = True
     ok &= setp(settings, "override_auto_exposure_min_brightness", True, "ppv.settings")
     ok &= setp(settings, "override_auto_exposure_max_brightness", True, "ppv.settings")
-    ok &= setp(settings, "auto_exposure_min_brightness", EXPOSURE_MIN_EV100, "ppv.settings")
-    ok &= setp(settings, "auto_exposure_max_brightness", EXPOSURE_MAX_EV100, "ppv.settings")
+    ok &= setp(settings, "auto_exposure_min_brightness", FIXED_EV100, "ppv.settings")
+    ok &= setp(settings, "auto_exposure_max_brightness", FIXED_EV100, "ppv.settings")
     setp(settings, "override_auto_exposure_method", True, "ppv.settings")
-    setp(settings, "auto_exposure_method", unreal.AutoExposureMethod.AEM_HISTOGRAM, "ppv.settings")
+    setp(settings, "auto_exposure_method", unreal.AutoExposureMethod.AEM_BASIC, "ppv.settings")
     setp(settings, "override_auto_exposure_bias", True, "ppv.settings")
     setp(settings, "auto_exposure_bias", 0.0, "ppv.settings")
+    # Mild post: no heavy bloom / vignette / fringing, a trace of film grain, no motion blur in stills.
+    for flag, prop, value in (("override_bloom_intensity", "bloom_intensity", 0.2),
+                              ("override_vignette_intensity", "vignette_intensity", 0.15),
+                              ("override_scene_fringe_intensity", "scene_fringe_intensity", 0.0),
+                              ("override_film_grain_intensity", "film_grain_intensity", 0.06),
+                              ("override_motion_blur_amount", "motion_blur_amount", 0.0)):
+        setp(settings, flag, True, "ppv.settings")
+        setp(settings, prop, value, "ppv.settings")
+    # Make sure Lumen GI / reflections are the active methods for this volume (shadowed areas were pure black: no skylight GI).
+    for flag, prop, enum_name, member in (("override_dynamic_global_illumination_method", "dynamic_global_illumination_method", "DynamicGlobalIlluminationMethod", "LUMEN"),
+                                          ("override_reflection_method", "reflection_method", "ReflectionMethod", "LUMEN")):
+        en = getattr(unreal, enum_name, None)
+        if en is not None and hasattr(en, member):
+            setp(settings, flag, True, "ppv.settings")
+            setp(settings, prop, getattr(en, member), "ppv.settings")
+        else:
+            cp.warn("enum unreal.%s.%s not available" % (enum_name, member))
     ppv.set_editor_property("settings", settings)  # structs are copies in Python: assign back
     if not ok:
         cp.warn("exposure limits may not have been applied (property names differ?); set them in the volume's Details panel")
@@ -215,16 +259,27 @@ def strip_template_terrain(eas):
         cp.log("removed %d template terrain/sky actors (Landscape*, SM_SkySphere)" % n)
 
 
-FLOOR_Z_CM = -3000.0  # the interchange has cuttings/underpasses; a floor at z=-10 cm hid the road in the first screenshots
-FLOOR_SCALE = 20000.0  # plane is 100 cm: 20000x => 20 km square, so the horizon is floor, not the blue sky-atmosphere ground
+# STAND-IN GROUND. The sim's test layout has no terrain yet (grading output is not rendered), so a flat plane sits just
+# below the road formation. Road z is ~0 on the dual carriageway and the minor road's ends; the layout's verge lanes
+# fall 5% over 2.5 m and a one-way carriageway falls ~2.5% over 7.3 m (about 18 cm), so -45 cm leaves a margin and
+# nothing z-fights. The minor road's bridge/approach (z up to 7 m) floats over it with no embankment until grading is
+# meshed. Replace by real terrain; then this actor, MI_Ground_Floor and FLOOR_* go away.
+FLOOR_Z_CM = -45.0
+FLOOR_SCALE = 40000.0  # plane is 100 cm: 40000x => 40 km square (horizon at ~20 km; fog has taken over long before)
+FLOOR_CENTRE_CM = (10000.0, 0.0)  # layout centre (sim 0, 100 m north), UE X north / Y east
 
 
 def ensure_floor(eas):
-    mat_path = "%s/grass/MI_grass" % SURFACE_ROOT
-    mat = unreal.load_asset(mat_path) if asset_exists(mat_path) else None
+    mat = None
+    for p in ("%s/MI_Ground_Floor" % CP_MAT_ROOT, "%s/grass/MI_grass" % SURFACE_ROOT):
+        if asset_exists(p):
+            mat = unreal.load_asset(p)
+            break
     for a in find_actors(eas, unreal.StaticMeshActor):
         if a.get_actor_label() == "CP_Floor":
-            if abs(a.get_actor_location().z - FLOOR_Z_CM) < 1.0 and abs(a.get_actor_scale3d().x - FLOOR_SCALE) < 1.0:
+            cur = a.get_editor_property("static_mesh_component").get_material(0)
+            same_mat = (cur is not None and mat is not None and cur.get_path_name() == mat.get_path_name())
+            if abs(a.get_actor_location().z - FLOOR_Z_CM) < 1.0 and abs(a.get_actor_scale3d().x - FLOOR_SCALE) < 1.0 and same_mat:
                 cp.log("reuse floor CP_Floor")
                 return a
             # Moving an external (World Partition) actor does not mark it dirty, so the move was silently not saved:
@@ -236,13 +291,14 @@ def ensure_floor(eas):
     mesh = unreal.load_asset(PLANE_MESH)
     if mesh is None:
         raise cp.ScriptError("engine plane mesh %s not found" % PLANE_MESH)
-    a = eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(10000.0, 12500.0, FLOOR_Z_CM), unreal.Rotator(roll=0.0, pitch=0.0, yaw=0.0))
+    a = eas.spawn_actor_from_class(unreal.StaticMeshActor, unreal.Vector(FLOOR_CENTRE_CM[0], FLOOR_CENTRE_CM[1], FLOOR_Z_CM), unreal.Rotator(roll=0.0, pitch=0.0, yaw=0.0))
     a.set_actor_label("CP_Floor")
     a.get_editor_property("static_mesh_component").set_static_mesh(mesh)
     if mat is not None:
         a.get_editor_property("static_mesh_component").set_material(0, mat)
     a.set_actor_scale3d(unreal.Vector(FLOOR_SCALE, FLOOR_SCALE, 1.0))
-    cp.log("spawned floor CP_Floor (20 km)")
+    setp(a.get_editor_property("static_mesh_component"), "cast_shadow", False, "floor")
+    cp.log("spawned floor CP_Floor (40 km)")
     return a
 
 
@@ -313,16 +369,26 @@ def ensure_marking_materials(colours):
     return out
 
 
+# surface class -> City Painter master-material instance under CP_MAT_ROOT (first that exists wins; else the Poly Haven
+# slot instance, else the engine default inside the actor).
+CP_CLASS_MATERIALS = {"asphalt": "MI_RoadAsphalt", "paving": "MI_Footway", "kerb": "MI_Kerb", "grass": "MI_Ground", "island": "MI_Ground"}
+
+
 def assign_materials(actor, marking_mis):
     """Fill SurfaceMaterials / MarkingMaterials on a CPRoadMeshActor from assets that exist. Missing ones are left
     unset (the actor logs and falls back by itself)."""
     surf = {}
     for cls, slot in SURFACE_SLOTS.items():
-        path = "%s/%s/MI_%s" % (SURFACE_ROOT, slot, slot)
-        if asset_exists(path):
+        cands = []
+        if cls in CP_CLASS_MATERIALS:
+            cands.append("%s/%s" % (CP_MAT_ROOT, CP_CLASS_MATERIALS[cls]))
+        cands.append("%s/%s/MI_%s" % (SURFACE_ROOT, slot, slot))
+        path = next((p for p in cands if asset_exists(p)), None)
+        if path:
             surf[unreal.Name(cls)] = unreal.load_asset(path)
+            cp.log("surface '%s' -> %s" % (cls, path))
         else:
-            cp.warn("surface material %s not found (run import_textures.py); class '%s' will use the engine default" % (path, cls))
+            cp.warn("no surface material for class '%s' (tried %s)" % (cls, ", ".join(cands)))
     if surf:
         setp(actor, "surface_materials", surf, "road")  # VERIFY: Python dict -> TMap<FName, UMaterialInterface*>
     marks = {unreal.Name(k): v for k, v in marking_mis.items() if v is not None}
@@ -348,18 +414,30 @@ def main():
 
     sun = ensure(eas, unreal.DirectionalLight, "CP_Sun", (0, 0, 5000), (0, -45, -30))
     configure_sun(sun)
-    ensure(eas, unreal.SkyAtmosphere, "CP_SkyAtmosphere")
+    sky_atm = ensure(eas, unreal.SkyAtmosphere, "CP_SkyAtmosphere")
+    try:  # ground the atmosphere beyond the 40 km floor in a grey-green so no dark-blue band shows at the horizon
+        sky_atm.get_editor_property("sky_atmosphere_component").set_editor_property("ground_albedo", unreal.Color(r=90, g=105, b=80, a=255))
+    except Exception as e:  # noqa
+        cp.warn("sky atmosphere ground albedo not set: %s" % e)
     configure_sky_light(ensure(eas, unreal.SkyLight, "CP_SkyLight", (0, 0, 3000)))
     configure_fog(ensure(eas, unreal.ExponentialHeightFog, "CP_HeightFog", (0, 0, 0)))
     configure_cloud(ensure(eas, unreal.VolumetricCloud, "CP_Clouds"))
     configure_post_process(ensure(eas, unreal.PostProcessVolume, "CP_PostProcess"))
+    mats = [a for a in cp.script_args() if a in mat_defs.BUILDERS or a == mat_defs.MARKING]
+    for line in mat_defs.build(mats or None, marking_colours()):
+        cp.log("MATERIAL " + line)
     strip_template_terrain(eas)
     ensure_floor(eas)
     ensure(eas, unreal.PlayerStart, "CP_PlayerStart", (-3000.0, 0.0, 200.0), (0, 0, 0))
     if mesh_cls is not None:
         road = ensure(eas, mesh_cls, "CP_RoadMesh", (0.0, 0.0, 0.0))
         road.set_actor_location(unreal.Vector(0.0, 0.0, 0.0), False, False)
-        assign_materials(road, ensure_marking_materials(marking_colours()))
+        marks = ensure_marking_materials(marking_colours())
+        for cid in list(marks):
+            p = "%s/MI_Marking_%s" % (CP_MAT_ROOT, cid)   # City Painter master (built by mat_defs "marking") wins over the simple one
+            if asset_exists(p):
+                marks[cid] = unreal.load_asset(p)
+        assign_materials(road, marks)
         # The actor builds in OnConstruction; make sure it has built before saving (RebuildAll is CallInEditor).
         try:
             road.rebuild_all()  # VERIFY: Python name of the UFUNCTION RebuildAll

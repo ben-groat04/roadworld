@@ -247,6 +247,9 @@ TEST_CASE("round3: dual-carriageway approach: lanes keep the road type's width a
     // the two b_road two-way spokes get ordinary splitters; the dual pair one median splitter (arm_b set)
     int paired = 0, single = 0;
     for (const SplitterIsland& sp : lay.splitters) {
+        std::string pts;
+        for (const Vec2& q : sp.polygon) pts += "(" + std::to_string(q.x) + "," + std::to_string(q.y) + ") ";
+        INFO("arm_b " << sp.arm_b << " length " << sp.length << " polygon " << pts);
         CHECK(simple(sp.polygon));
         CHECK(area(sp.polygon) > 0);
         (sp.arm_b >= 0 ? paired : single)++;
@@ -298,8 +301,10 @@ TEST_CASE("round3: splitters exist on two-way approaches only, sized by ring cla
         REQUIRE(t);
         const double expect_len = cls.splitter_length * prm.splitter_speed_factor(t->speed_limit);
         CHECK(sp.width == doctest::Approx(cls.splitter_width).epsilon(0.02));
-        CHECK(sp.length >= expect_len * 0.98);  // the flare is at least (corner trim + 3 m + min taper) long, so it can exceed the nominal length (R=30 b_road: 51.5 vs 45)
-        if (t->id == "a_road_rural") CHECK(sp.length == doctest::Approx(expect_len).epsilon(0.02));
+        // The kerbed island is exactly the data length (class length x speed factor), whatever the flare needs for the
+        // corner fillets: the rest of the flare is paint (sp.paint), never more kerb.
+        CHECK(sp.length == doctest::Approx(expect_len).epsilon(0.02));
+        CHECK(sp.length < 45.0);  // the old floor made a 30 m ring's b_road island 51.5 m long and its a_road_rural island 63 m
         lengths.push_back(sp.length);
         CHECK(simple(sp.polygon));
         CHECK(area(sp.polygon) > 1.0);
@@ -328,7 +333,7 @@ TEST_CASE("round3: splitter size follows the ring size class") {
         REQUIRE(lay.splitters.size() == 4);
         for (const SplitterIsland& sp : lay.splitters) {
             CHECK_MESSAGE(sp.width == doctest::Approx(cls.splitter_width).epsilon(0.02), "R=" << R);
-            CHECK_MESSAGE(sp.length >= cls.splitter_length * f * 0.98, "R=" << R);
+            CHECK_MESSAGE(sp.length == doctest::Approx(cls.splitter_length * f).epsilon(0.03), "R=" << R);
         }
         const double len = lay.splitters[0].length, wd = lay.splitters[0].width;
         CHECK_MESSAGE(len > prev_len, "R=" << R);
@@ -369,6 +374,80 @@ TEST_CASE("round3: splitter polygon is simple, positive area, and lies inside th
                     CHECK_MESSAGE(std::fabs(lat) <= arm->kerb_left + flare_spread(*arm, s, true) + 0.05,
                                   "R=" << R << " s=" << s << " lat=" << lat);
             }
+        }
+    }
+}
+
+TEST_CASE("round3: the kerbed splitter is a short teardrop, widest at the ring; the rest of the flare is paint") {
+    for (double R : {14.0, 25.0, 30.0}) {
+        Net net;
+        for (double d : {0.0, 90.0, 180.0, 270.0}) net.spoke(d, R + 150, "b_road");
+        REQUIRE(net.place(R));
+        RoundaboutResult rr;
+        const JunctionSet js = net.junctions(&rr);
+        REQUIRE(rr.layouts.size() == 1);
+        const RoundaboutLayout& lay = rr.layouts[0];
+        REQUIRE_MESSAGE(lay.ok, lay.error);
+        REQUIRE(lay.splitters.size() == 4);
+        for (const SplitterIsland& sp : lay.splitters) {
+            const RoundaboutArm& ra = lay.group.arms[static_cast<std::size_t>(sp.arm)];
+            const JunctionArm* arm = nullptr;
+            const Junction* j = ring_junction_of(js, lay.group, ra.edge, &arm);
+            REQUIRE(j);
+            const Vec2 o = j->pos.xy();
+            const Vec2 dir{std::cos(arm->heading_out), std::sin(arm->heading_out)};
+            const auto sl = [&](Vec2 p) { return std::pair<double, double>{(p - o).dot(dir), dir.x * (p - o).y - dir.y * (p - o).x}; };
+            INFO("R=" << R << " length " << sp.length << " width " << sp.width << " flare " << arm->flare.length);
+            // Length : width of a photographed island (3:1 to 5:1), and no longer than the data asks for.
+            CHECK(sp.length / sp.width > 2.5);
+            CHECK(sp.length / sp.width < 9.0);
+            CHECK(sp.length <= arm->flare.length);
+            // Widest at the ring end, then narrowing monotonically (a triangle, not a constant-width strip).
+            std::vector<std::pair<double, double>> left;
+            for (const Vec2& p : sp.polygon) {
+                const auto q = sl(p);
+                if (q.second > 0.02 && q.first > sp.ring_s + 0.5 && q.first < sp.nose_s - 1.0) left.push_back(q);
+            }
+            std::sort(left.begin(), left.end());
+            REQUIRE(left.size() >= 2);
+            for (std::size_t k = 1; k < left.size(); ++k) CHECK(left[k].second <= left[k - 1].second + 0.02);
+            CHECK(left.front().second > 0.8 * sp.width / 2);
+            CHECK(left.back().second < 0.45 * sp.width / 2);
+            // The kerbed island lies inside the paint gap, which is as long as the flare.
+            REQUIRE(sp.paint.size() >= 3);
+            CHECK(simple(sp.paint));
+            CHECK(area(sp.paint) >= area(sp.polygon) - 1e-6);
+            double paint_s = 0;
+            for (const Vec2& p : sp.paint) paint_s = std::max(paint_s, sl(p).first);
+            CHECK(paint_s >= sp.nose_s - 1e-6);
+            // A long flare (fillets need it) never lengthens the kerbed island: only the paint.
+            CHECK(sp.nose_s - sp.ring_s == doctest::Approx(sp.length));
+        }
+    }
+}
+
+TEST_CASE("round3: splitter lengths follow the approach speed bands (15-20 m at 30 mph, 25-35 m at 40-50 mph, 40-60 m at 60 mph)") {
+    Net net;
+    net.spoke(0, 200, "residential");
+    net.spoke(90, 200, "b_road");
+    net.spoke(180, 200, "a_road_rural");
+    net.spoke(270, 200, "b_road");
+    REQUIRE(net.place(30));
+    RoundaboutResult rr;
+    net.junctions(&rr);
+    REQUIRE(rr.layouts.size() == 1);
+    for (const SplitterIsland& sp : rr.layouts[0].splitters) {
+        const std::string& type = net.g.edge(rr.layouts[0].group.arms[static_cast<std::size_t>(sp.arm)].edge)->road_type;
+        INFO(type << " length " << sp.length);
+        if (type == "residential") {
+            CHECK(sp.length >= 12.0);
+            CHECK(sp.length <= 20.0);
+        } else if (type == "b_road") {
+            CHECK(sp.length >= 25.0);
+            CHECK(sp.length <= 35.0);
+        } else if (type == "a_road_rural") {
+            CHECK(sp.length >= 38.0);
+            CHECK(sp.length <= 60.0);
         }
     }
 }
@@ -475,6 +554,7 @@ TEST_CASE("round3: island, splitter and apron surface fields follow the region r
     CHECK(lay.island_surface == prm.central_island_surface);
     CHECK(lay.island_surface == "grass");
     CHECK(lay.splitter_surface == prm.splitter_surface);
+    CHECK(lay.splitter_surface == "asphalt");  // photos: small islands are tarmac inside a kerb
     CHECK(lay.apron_surface == prm.apron_surface);
     CHECK(lay.island_kerb_upstand == doctest::Approx(prm.island_kerb_upstand));
     CHECK(lay.island_kerb_upstand == doctest::Approx(0.125));

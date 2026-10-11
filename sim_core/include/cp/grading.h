@@ -61,9 +61,16 @@ struct GradingParams {
     double wall_max_height = 3.0;  // m, tallest single retaining wall (wall + slope, benching, or flagged over_height beyond it)
     double bench_min_width = 2.0;  // m, flat bench between stacked walls
     double wall_min_length = 4.0;  // m, shorter wall runs become slope
-    double toe_ditch_depth = 0.3;  // m, ditch between verge and slope at the toe of a cutting (0 disables)
-    double toe_ditch_width = 1.0;  // m
+    double toe_ditch_depth = 0.4;  // m, ditch between verge and slope at the toe of a cutting (0 disables)
+    double toe_ditch_width = 1.5;  // m (the ditch is dug into the verge-to-slope hinge; the slope itself does not move)
     double end_taper_batter = 4.0; // horizontal : vertical run-out beyond a free road end
+    // ---- terraced sections (stairs; NEED region-pack loading: grading.corridor_max, stair_max, stair_k, wall_vis_min, over_grow) ----
+    double corridor_max = 90.0;    // m beyond the footprint edge up to which terraced walls may extend
+    int stair_max = 8;             // stacked walls per side of a terraced section
+    double stair_k = 6.0;          // a bench behind a full tier may carve at most stair_k * (height still to retain) below natural ground
+    double wall_vis_min = 0.35;    // m, a terraced wall lower than this is not built
+    double reach_fade = 8.0;       // m, a plain slope that has not met the ground by the end of the road's reach fades into it over this run (NEEDS region-pack loading: grading.reach_fade)
+    double over_grow = 3.0;        // the tier height may grow to this multiple of wall_max_height when the cap cannot reach the ground (flagged over_height)
     // ---- sampling ----
     double sample_step = 2.0;      // m, adapter centreline sampling step
     // ---- structures and walls (sample counts) ----
@@ -104,6 +111,7 @@ struct TierSet {
 
 struct WallPlan {
     bool present = false;
+    bool sup = false;      // plan_side result only: the neighbour's shared structure reaches this side (nothing to build; present stays false)
     bool cut = false;
     bool full = false;     // legacy single wall retaining the natural ground at its outer face (wing walls; over_height fallback)
     bool wing = false;     // full wall blended in with weight fw from the earthworks beside it (base tiers, or the plain slope)
@@ -112,6 +120,19 @@ struct WallPlan {
     TierSet t;             // own tiers (not full)
     bool has_base = false;
     TierSet base;          // wing: the adjacent run's tiers
+    bool base_stairs = false;  // wing: the adjacent run is terraced (base_h / base_force describe it; cut = this plan's)
+    double base_h = 0;
+    bool base_force = false;
+    // Terraced section (stairs): walls of height h at a fixed pitch, evaluated on the spot from the natural ground along the normal (see stair_profile).
+    bool stairs = false;
+    bool force = false;    // the hard limit (tier count / corridor) was hit: the last tier takes whatever is left
+    double h = 0;          // tier height (>= wall_max_height; larger only where the cap cannot reach the ground: over)
+    int n_stairs = 0;      // tiers at this station
+    double reach_e = 0;    // lateral extent beyond the footprint edge
+    double along_max = 0;  // run-out length beyond a free road end over which the terraces end diagonally
+    bool has_alt = false;  // beside a terraced run: blend with this station's own plan (alt) by sw
+    TierSet alt;
+    double sw = 1;
 };
 
 // ---- sampled roads ----
@@ -126,6 +147,8 @@ struct RoadSample {
     int wL0 = 0, wR0 = 0;         // wall flags before median removal
     double wwL = 0, wwR = 0;      // wall weight 0..1 (0 at free run ends, 1 beyond wall_ramp)
     bool mL = false, mR = false;  // side faces a parallel opposite-direction road of the same dual type
+    bool sL = false, sR = false;  // side leaves its earthworks to a neighbour's shared structure (built by the lower road up to this one)
+    double supL = 0, supR = 0;    // how much: the neighbour's structure weight at the nearest station (0 at its run ends)
     WallPlan pL, pR;              // wall cross-section per side (present when wL / wR != 0)
 };
 
@@ -194,6 +217,7 @@ struct GradingSample {
     double wwL = 0, wwR = 0;
     std::int8_t wL = 0, wR = 0;
     bool br = false, tu = false;
+    double supL = 0, supR = 0;  // shared-structure suppression weight of the side's own earthworks (0 none, 1 all)
     double fwL = 0, fwR = 0;  // wing funnel weight
     WallPlan pL, pR;
 };
@@ -213,6 +237,8 @@ struct GradingRoad {
     std::vector<Box2> seg_boxes;           // coarse boxes (pairs of segments, grown by reach) for tile culling
     std::vector<PortalPlane> planes;
     std::vector<int> nbr;                  // indices of the other prepared roads whose boxes overlap: a slope never reaches across them
+    double end_ext = 0;                    // run-out beyond a free end over which terraced sides carry on (0 when none)
+    GroundFn ground;                       // natural ground (terraced sections sample it along the normal)
 };
 
 // Recomputes the walls of every road with its neighbours in place, runs mark_medians and
@@ -256,8 +282,8 @@ std::vector<float> sample_natural_tile(const GroundFn& ground, const TileSpec& t
 // Scratch arrays of grade_tile_into, reusable between calls (no allocation after the first call
 // of a given size). One workspace per worker thread; never share one between threads.
 struct GradeWorkspace {
-    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey, rq_bt, rq_fw;
-    std::vector<std::uint8_t> rq_w;
+    std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey, rq_bt, rq_fw, rq_al, rq_fs, rq_sp, rq_sv, cut_r, fill_r;
+    std::vector<std::uint8_t> rq_w, rq_fl, rq_by;
     std::vector<const WallPlan*> rq_p;
 };
 void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t,

@@ -6,6 +6,7 @@
 #include "doctest/doctest.h"
 #include "cp/junction.h"
 #include "cp/road_commands.h"
+#include "scene_fixture.h"
 
 using namespace cp;
 
@@ -227,7 +228,7 @@ TEST_CASE("mirrored side (driving right): same counts, nearside is planar right"
     }
 }
 
-TEST_CASE("merge/diverge polygons are valid and the gore is off the asphalt") {
+TEST_CASE("merge/diverge polygons are valid and the gore is paved (a painted nose, not a hole)") {
     for (bool merge : {true, false}) {
         Net n;
         n.build(merge, 25);
@@ -242,13 +243,46 @@ TEST_CASE("merge/diverge polygons are valid and the gore is off the asphalt") {
         CHECK(area(g) > 1.0);
         CHECK(simple(g));
         const Vec2 c{(g[0].x + g[1].x + g[2].x) / 3, (g[0].y + g[1].y + g[2].y) / 3};
-        for (const auto& r : j.carriageway) CHECK_FALSE(inside(r, c));
+        bool paved = false;
+        for (const auto& r : j.carriageway) paved = paved || inside(r, c);
+        CHECK(paved);  // the markings (chevrons, border lines) sit on surface, not on bare ground
+        for (const Vec2& v : g) {
+            bool near_surface = false;
+            for (const auto& r : j.carriageway) near_surface = near_surface || inside(r, c + (v - c) * 0.9);
+            CHECK(near_surface);
+        }
         for (const auto& r : j.pavements) {
             CHECK(area(r) > 0);
             CHECK(simple(r));
         }
         CHECK(j.corners.size() == 3);
     }
+}
+
+TEST_CASE("interchange slips: pavement pieces are never slivers away from a trim line") {
+    std::string err;
+    auto sc = tools::build_scene("interchange", CP_DATA_DIR, err);
+    REQUIRE_MESSAGE(sc, err);
+    const JunctionSet js = tools::scene_junctions(*sc);
+    int merges = 0;
+    for (const auto& [id, j] : js.junctions) {
+        if (j.cls != NodeClass::Merge && j.cls != NodeClass::Diverge) continue;
+        ++merges;
+        for (const auto& r : j.pavements) {
+            double per = 0;
+            for (std::size_t i = 0; i < r.size(); ++i) per += (r[(i + 1) % r.size()] - r[i]).length();
+            const double a = std::fabs(area(r));
+            bool at_trim = false;
+            for (std::size_t k = 0; k < j.arms.size(); ++k) {
+                const ArmPoint tp = arm_point(j.arms[k], j.trims[k], 0);
+                const Vec2 dir{std::cos(tp.heading_out), std::sin(tp.heading_out)};
+                for (const Vec2& v : r) at_trim = at_trim || std::fabs((v - tp.pos.xy()).dot(dir)) < 3e-3;
+            }
+            INFO("node " << id.value << " pavement piece area " << a << " mean width " << 2 * a / per);
+            if (a < 2.0 && !at_trim) CHECK(2 * a / per >= 0.3);  // before: 0.25 m2 shards (0.14 m wide) behind the node
+        }
+    }
+    CHECK(merges == 4);
 }
 
 TEST_CASE("a slip at too steep an angle is a normal junction") {

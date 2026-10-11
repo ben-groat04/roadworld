@@ -313,16 +313,17 @@ struct SplitterRule {
     double stripe_width_m = 0.3;
     double pitch_m = 1.0;
     double angle_deg = 60;
+    double ladder_pitch_m = 2.0;  // two-way approach: spacing of the ladder bars across the paint gap round the island
     std::string source;
 };
 
 // Paint wear for the renderer (Marking::wear): value noise plus a boost where a mark crosses the wheel
 // tracks. strength 0 turns it off.
 struct WearRule {
-    double strength = 0.3;          // typical 0..1 wear of an untrodden mark
+    double strength = 0.08;         // typical 0..1 wear (share of the paint eroded) of an untrodden mark: 5-15% on a normal road (reference photos); old minor roads 30-50%, see MarkingParams::wear_scale
     double patch_period_m = 60;     // wavelength of the low-frequency (old / new section) term
     double patch_weight = 0.5;      // share of `strength` that is the low-frequency term (rest is per-mark noise)
-    double wheel_boost = 0.35;      // added where transverse marks and arrows cross the wheel tracks
+    double wheel_boost = 0.14;      // added where transverse marks and arrows cross the wheel tracks
     double wheel_offset_m = 0.8;    // wheel track centre from the lane centre
     double wheel_half_width_m = 0.25;
     std::string source;
@@ -380,6 +381,9 @@ struct MarkingParams {
     // Roundabout group results (find_roundabouts / apply_roundabouts) for splitter outlines and approach
     // hatching. Null = no splitter markings. Not owned; must outlive the call.
     const RoundaboutResult* roundabouts = nullptr;
+    // Multiplies every mark's wear (WearRule): 1 = the region's default (5-15% of the paint eroded); about 4 gives
+    // the 30-50% of an old minor road. Applies to the whole generation call.
+    double wear_scale = 1.0;
     // Optional road surface height (see SurfaceHeightFn). Empty = centreline z.
     SurfaceHeightFn surface_height;
 

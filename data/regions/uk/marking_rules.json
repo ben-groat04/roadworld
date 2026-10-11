@@ -5,8 +5,8 @@
   "shoulder_lane_types": [ "hard_shoulder", "hard_strip" ],
   "_shoulder_source": "lane types counted as a hard shoulder or strip for the `shoulder` condition",
   "min_mark_m": 0.3,
-  "wear": { "strength": 0.3, "patch_period_m": 60, "patch_weight": 0.5, "wheel_boost": 0.35, "wheel_offset_m": 0.8, "wheel_half_width_m": 0.25,
-            "source": "estimate: modest default wear for the renderer to fade paint; wheel tracks 0.8 m either side of a lane centre" },
+  "wear": { "strength": 0.08, "patch_period_m": 60, "patch_weight": 0.5, "wheel_boost": 0.14, "wheel_offset_m": 0.8, "wheel_half_width_m": 0.25,
+            "source": "reference photos (39 opened, docs/research/reference-claims-audit.md): 5-15% of the paint eroded on normal roads, 30-50% only on old minor roads. strength 0.08 gives a per-mark wear of 0-16% (mean 8%); wheel_boost adds 14% where transverse marks and arrows cross the wheel tracks (about 22% there). Old minor roads: MarkingParams::wear_scale about 4. Wheel tracks 0.8 m either side of a lane centre" },
   "_min_mark_source": "estimate: nothing shorter than 0.3 m is ever painted",
 
   "colours": {
@@ -177,8 +177,8 @@
     "splitter": {
       "outline_style": [ { "if": { "speed_min": 40 }, "style": "edge_150" }, { "style": "edge_100" } ],
       "outline_gap_m": 0.15,
-      "hatch_style": "fill_white", "hatch_length_m": 12, "hatch_width_m": 1.4, "stripe_width_m": 0.3, "pitch_m": 1.0, "angle_deg": 60,
-      "source": "estimate (photos): solid outline round the kerbed splitter and diagonal bars on the approach taper ahead of its nose"
+      "hatch_style": "fill_white", "hatch_length_m": 12, "hatch_width_m": 1.4, "stripe_width_m": 0.3, "pitch_m": 1.0, "angle_deg": 60, "ladder_pitch_m": 2.0,
+      "source": "estimate (photos: GSV Brynich 'ladder bars approx 2 m apart', street 28, aerial 09): solid outline round the kerbed island, a solid line along the inner edge of each lane, and ladder bars (perpendicular to the road, 2 m apart) across the painted gap round and beyond the island's nose. hatch_length_m / hatch_width_m / pitch_m / angle_deg are for the diagonal triangle used only on dual-carriageway median splitters"
     },
     "roundabout_entry": {
       "style": [ { "if": { "speed_max": 30 }, "style": "give_way_low" }, { "style": "give_way_high" } ],

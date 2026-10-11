@@ -757,9 +757,10 @@ const WALL_MAX_H = 3.0;     // m: tallest single retaining wall (wall_max_height
 const BENCH_MIN = 2.0;      // m: minimum flat bench between stacked walls (bench_min_width), measured between the back of the lower wall and the face of the upper one
 const WALL_MIN_LEN = 4.0;   // m: a wall run shorter than this becomes a slope (wall_min_length; one panel)
 const SAMPLE_STEP = 2.0;    // m: nominal station spacing (adds one step to a run's arc length when measuring it)
-const DITCH_D = 0.3;        // m: depth of the shallow ditch at the toe of a cutting slope (toe_ditch_depth; 0 disables)
-const DITCH_W = 1.0;        // m: width of that ditch (toe_ditch_width)
+const DITCH_D = 0.4;        // m: depth of the shallow ditch at the toe of a cutting slope (toe_ditch_depth; 0 disables)
+const DITCH_W = 1.5;        // m: width of that ditch (toe_ditch_width)
 const END_BATTER = 4.0;     // horizontal : vertical of the run-out beyond a free road end (end_taper_batter); gentler than the side batter so an embankment / cutting eases into the ground along the road
+const REACH_FADE = 8;       // m: a plain slope that has not met the natural ground by the end of the road's reach fades into it over this run (grading reach_fade)
 const MAX_TIERS = 4;        // stacked walls per side (shared structure between two roads, ownerTiers)
 const STAIR_MAX = 8;        // stacked walls per side of a terraced (stairs) section
 const STAIR_K = 6;          // the bench behind a full tier may carve at most STAIR_K * (height still to be retained) below natural ground: a new tier fades in from natural ground as the need grows
@@ -904,6 +905,7 @@ function solveTiers(cut, z0, E, bt, grd, cn, minTiers, cap) {
 // its back face (eps = 0) and natural ground carries on beyond it. Cut: tiers rise (u > f); fill: they fall. Between two tiers the bench is flat at u, but never more than
 // STAIR_K * eps below natural ground (eps = ground still unretained above u): where the need first appears the bench is still natural ground and the next wall grows from nothing.
 // force: the last permitted tier takes whatever is left (the hard limit: tier count or corridor): flagged over_height.
+const svTop = e => e <= VERGE ? 0 : ROUND_HINGE > 0 ? (e < VERGE + ROUND_HINGE ? (e - VERGE) * (e - VERGE) / (2 * ROUND_HINGE) : e - VERGE - ROUND_HINGE / 2) : e - VERGE;   // the grading's verge -> slope hinge (gradeTile sv)
 function stairProfile(cut, zf, h, N, force) {
   const sg = cut ? 1 : -1, T = WALL_THICK, tiers = []; let F = zf;
   for (let k = 0; k < STAIR_MAX; k++) {
@@ -932,7 +934,7 @@ function stairsPlan(cut, z0, N, h0) { const { h, force } = stairHeight(cut, z0, 
 function stairsPlanH(cut, z0, N, h0, h, force) {   // the plan for tier height h (a run shares the tallest of its stations)
   const pr = stairProfile(cut, z0, h, N, force).tiers, sg = cut ? 1 : -1;
   const last = pr.length ? pr[pr.length - 1] : null;
-  return { cut, n: pr.length, a: [], z: [], plat: false, nat: true, over: h > h0 + 1e-9 || force, full: false, stairs: true, h, force, reachE: last ? last.a + WALL_THICK : 0, alongMax: Math.max(0, sg * (N(WALL_THICK) - z0)) * Math.max(END_BATTER, 1) };
+  return { cut, n: pr.length, a: [], z: [], plat: false, nat: false, over: h > h0 + 1e-9 || force, full: false, stairs: true, h, force, reachE: last ? last.a + WALL_THICK : 0, alongMax: Math.max(0, sg * (N(WALL_THICK) - z0)) * Math.max(END_BATTER, 1) };
 }
 // One structure between two roads at different levels, built by the lower one: tiers rise from its formation to the neighbour's at gap ec.
 function ownerTiers(Dz, ec) {
@@ -966,17 +968,18 @@ function planSide(s, hw, sg, near, cutSet, minTiers) {
   if (owner) {   // contact with a neighbour the slope cannot reach: ONE structure for the pair, built by the lower road; the upper road leaves its side as a plain slope
     const Dz = owner.bz - z0;
     // the lower road builds it when it is itself cut into the ground on this side; when it stands on fill / level ground it needs no wall of its own and the upper road retains its embankment as usual
-    if (Math.abs(Dz) >= 0.25) { if (Dz > 0) return ownerTiers(Dz, owner.ec); if (owner.nat > owner.bz + 0.25) return null; }
+    if (Math.abs(Dz) >= 0.25) { if (Dz > 0) return ownerTiers(Dz, owner.ec); if (ownerTiers(-Dz, owner.ec)) return { sup: true }; /* the lower road builds the structure up to this road: nothing to do on this side */ if (owner.nat > owner.bz + 0.25) return null; }
   }
   if (r.kind === 'fail' || (r.kind === 'tiers' && r.a.length >= 2)) return stairsPlan(cut, z0, gB, WALL_MAX_H);   // one wall and a slope cannot keep the cap: terraces (as many capped tiers as the ground needs; the tier height grows only where a hard limit is hit)
   return { cut, n: r.a.length, a: r.a, z: r.z, plat: false, nat: r.nat, over, full: false };
 }
 function computeWalls(r, ty, near) {
   const S = r.samples, n = S.length, hw = ty.total / 2;
-  const lock = S.map(s => !!(s.br || s.tu)), typ = [new Array(n).fill(0), new Array(n).fill(0)], plans = [new Array(n).fill(null), new Array(n).fill(null)];
+  const lock = S.map(s => !!(s.br || s.tu)), typ = [new Array(n).fill(0), new Array(n).fill(0)], plans = [new Array(n).fill(null), new Array(n).fill(null)], sups = [new Array(n).fill(0), new Array(n).fill(0)];
   for (const [k, sg] of [[0, 1], [1, -1]]) {
     const t = typ[k], pl = plans[k], w = new Array(n).fill(false), wing = new Array(n).fill(false);
-    for (let i = 0; i < n; i++) if (!lock[i]) { pl[i] = planSide(S[i], hw, sg, near, null, 0); t[i] = pl[i] ? (pl[i].cut ? 1 : 2) : 0; w[i] = t[i] > 0; }
+    const sup = sups[k];
+    for (let i = 0; i < n; i++) if (!lock[i]) { pl[i] = planSide(S[i], hw, sg, near, null, 0); if (pl[i] && pl[i].sup) { sup[i] = 1; pl[i] = null; } t[i] = pl[i] ? (pl[i].cut ? 1 : 2) : 0; w[i] = t[i] > 0; }
     closeGaps(w, WALL_GAP); for (let i = 0; i < n; i++) if (lock[i]) w[i] = false;
     dilate(w, WALL_PAD, lock); growShort(w, WALL_MIN_RUN, lock);
     for (let i = 0; i < n; i++) if (lock[i]) for (const dir of [-1, 1]) {   // wing walls beside every portal / abutment: the first two samples always, then up to the wing length
@@ -1036,7 +1039,7 @@ function computeWalls(r, ty, near) {
     }
   }
   r.overHeight = false;
-  for (let i = 0; i < n; i++) { const s = S[i]; s.wL = s.wL0 = typ[0][i]; s.wR = s.wR0 = typ[1][i]; s.pL = plans[0][i]; s.pR = plans[1][i]; s.oL = !!(s.pL && s.pL.over); s.oR = !!(s.pR && s.pR.over); if (s.oL || s.oR) r.overHeight = true; }
+  for (let i = 0; i < n; i++) { const s = S[i]; s.wL = s.wL0 = typ[0][i]; s.wR = s.wR0 = typ[1][i]; s.pL = plans[0][i]; s.pR = plans[1][i]; s.sL = sups[0][i] && !s.wL ? 1 : 0; s.sR = sups[1][i] && !s.wR ? 1 : 0; s.oL = !!(s.pL && s.pL.over); s.oR = !!(s.pR && s.pR.over); if (s.oL || s.oR) r.overHeight = true; }
 }
 function dropShortLen(a, S, minLen) {   // drop true runs whose arc length (plus one nominal step) is under minLen metres
   const n = a.length; let i = 0;
@@ -1136,10 +1139,10 @@ function fullEval(cutP, e, zf, b, res, wallT, verge, bt) {
 // baseSampler(x, y) -> base height. Writes nx*ny graded heights to out (row-major, texel (i,j) at x0+i*res, y0+j*res).
 function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
   const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick - res;   // wall band: texels with e <= wallThick-res take the inside (formation) value, so the one-texel ramp to natural lies inside the solid
-  const verge = params.verge, hb = params.roundHinge || 0, rk = params.roundK || 0, dD = params.ditchD || 0, dW = params.ditchW || 0, eB = params.endBatter || bt;
+  const verge = params.verge, hb = params.roundHinge || 0, rk = params.roundK || 0, dD = params.ditchD || 0, dW = params.ditchW || 0, eB = params.endBatter || bt, rfL = params.reachFade || 0;
   const sv = e => e <= verge ? 0 : hb > 0 ? (e < verge + hb ? (e - verge) * (e - verge) / (2 * hb) : e - verge - hb / 2) : e - verge;   // verge -> slope hinge: parabola over hb, then the straight slope shifted out by hb/2
   const smax = d => d >= rk ? d : d <= -rk ? 0 : (d + rk) * (d + rk) / (4 * rk);   // smooth max(d, 0) over +-rk: rolls the slope over into natural ground
-  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N);
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N), rqSp = new Float32Array(N);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
   for (let ri = 0; ri < roadsData.length; ri++) {
@@ -1186,7 +1189,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
           if (!pro && d2 > R2) continue;
           const dd = Math.sqrt(d2), o = j * nx + i; if (dd >= rqD[o]) continue;   // nearest station of this road decides (one zf, one wall flag per texel)
           rqAl[o] = alongV; rqFl[o] = pro === 2 ? 1 : 0; rqFs[o] = fs; rqBy[o] = !pro && (tRaw < 0 || tRaw > 1) ? 1 : 0;
-          rqD[o] = dd; rqEx[o] = ex; rqEy[o] = ey; rqZ[o] = A.z + t * dz - fd; { let bte = bt; if (eB > bt && dd > 0 && ((k === 0 && tRaw < 0 && !A.br && !A.tu) || (k === S.length - 2 && tRaw > 1 && !B.br && !B.tu))) { const sq = Math.sqrt(L2), along = tRaw < 0 ? -(rx * dx + ry * dy) / sq : (rx * dx + ry * dy) / sq - sq; bte = bt + (eB - bt) * Math.min(1, along / dd); } rqBt[o] = bte; } const E = (A.br || A.tu) ? B : (B.br || B.tu) ? A : t < 0.5 ? A : B; const lf = (dx * ry - dy * rx) > 0; rqW[o] = lf ? E.wL : E.wR; rqP[o] = lf ? E.pL : E.pR; { const fa = lf ? A.fwL : A.fwR, fb = lf ? B.fwL : B.fwR; rqFw[o] = (A.br || A.tu) ? fb : (B.br || B.tu) ? fa : fa + (fb - fa) * t; } { const wa = (lf ? A.wwL : A.wwR) ?? 1, wb = (lf ? B.wwL : B.wwR) ?? 1; rqWw[o] = (A.br || A.tu) ? wb : (B.br || B.tu) ? wa : wa + (wb - wa) * t; }   // cross > 0: texel on the left
+          rqD[o] = dd; rqEx[o] = ex; rqEy[o] = ey; rqZ[o] = A.z + t * dz - fd; { let bte = bt; if (eB > bt && dd > 0 && ((k === 0 && tRaw < 0 && !A.br && !A.tu) || (k === S.length - 2 && tRaw > 1 && !B.br && !B.tu))) { const sq = Math.sqrt(L2), along = tRaw < 0 ? -(rx * dx + ry * dy) / sq : (rx * dx + ry * dy) / sq - sq; bte = bt + (eB - bt) * Math.min(1, along / dd); } rqBt[o] = bte; } const E = (A.br || A.tu) ? B : (B.br || B.tu) ? A : t < 0.5 ? A : B; const lf = (dx * ry - dy * rx) > 0; rqW[o] = lf ? E.wL : E.wR; rqSp[o] = lf ? E.sL : E.sR; rqP[o] = lf ? E.pL : E.pR; { const fa = lf ? A.fwL : A.fwR, fb = lf ? B.fwL : B.fwR; rqFw[o] = (A.br || A.tu) ? fb : (B.br || B.tu) ? fa : fa + (fb - fa) * t; } { const wa = (lf ? A.wwL : A.wwR) ?? 1, wb = (lf ? B.wwL : B.wwR) ?? 1; rqWw[o] = (A.br || A.tu) ? wb : (B.br || B.tu) ? wa : wa + (wb - wa) * t; }   // cross > 0: texel on the left
         }
       }
     }
@@ -1196,8 +1199,11 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
         const lift = rqAl[o] / eB, fs = rqFs[o], zl = zf + fs * lift, b0 = base[o]; let zz = zf; if (fs > 0) zz = Math.min(b0, zl); else if (fs < 0) zz = Math.max(b0, zl);
         fpD[o] = 0; if (zz < fpZ[o]) fpZ[o] = zz; continue; }
       if (dd <= hw) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }   // union of footprints: lowest formation wins (never pokes through any road)
+      if (rqSp[o] >= 1) continue;   // the neighbour's structure reaches this road: no earthworks of its own on this side (they fade back in as the structure tapers)
       const e = dd - hw, b = base[o], cutT = b > zf; let wf = rqW[o], ww = wf ? rqWw[o] : 0, pl = wf ? rqP[o] : null; const bte = rqBt[o];
       const blk = () => blocked(o, o % nx, (o / nx) | 0, dd);   // evaluated only when a slope would be recorded
+      const rf = rfL > 0 && dd > R - rfL ? (() => { const u = (R - dd) / rfL; return u <= 0 ? 0 : u * u * (3 - 2 * u); })() : 1;   // a plain slope that has not met the ground by the end of the road's reach fades into it (no cut face / pit at the reach limit)
+      const rfs = rf * (1 - rqSp[o]);
       if (wf && pl && pl.stairs && rqBy[o]) { wf = 0; ww = 0; pl = null; }   // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
       if (wf && !(pl && pl.plat) && (wf === 1) !== cutT) { wf = 0; ww = 0; pl = null; }   // flag says cut but this texel is fill (or vice versa): plain slope
       if (wf && pl && (!pl.full || pl.wing)) {   // stacked walls (see planSide), or a wing wall blended in from the earthworks beside it
@@ -1220,7 +1226,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
           kind = kb === 1 || kf === 1 ? 1 : kf; const vfe = kb === 1 && kf !== 1 ? (pl.cut ? Math.min(vf, b) : Math.max(vf, b)) : vf; v = vb + rqFw[o] * (vfe - vb);   // a solid of the adjacent terraces beside the wing: where the full wall has only a slope, the ground there is natural, not the slope level
         }
         if (kind === 0) continue;
-        if (kind === 1) { fpD[o] = 0; const zw = pl.cut ? Math.min(v, b) : v; if (zw < fpZ[o]) fpZ[o] = zw; continue; }
+        if (kind === 1) { fpD[o] = 0; const zw = pl.cut && !pl.plat ? Math.min(v, b) : v; /* a shared structure (plat) builds the ground up to the neighbour whatever the natural ground does */ if (zw < fpZ[o]) fpZ[o] = zw; continue; }
         if (kind === 2) { if (v < b + rk && v < cutM[o] && !blk()) { cutM[o] = v; cutE[o] = e; } }
         else if (v > b - rk && v > fillM[o] && !blk()) { fillM[o] = v; fillE[o] = e; }
         continue; }
@@ -1230,16 +1236,16 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
       if (wf === 1) {
         const zfw = zf + ww * (Math.max(zf, b - 0.1) - zf);
         if (e <= params.wallThick) { fpD[o] = 0; const zw = e <= half ? Math.min(zf, b) : Math.min(zfw, b); if (zw < fpZ[o]) fpZ[o] = zw; continue; }
-        const v = zfw + (e - verge) / bt; if (v < b + rk && v < cutM[o] && !blk()) { cutM[o] = v; cutE[o] = e; }
+        const v = b + (zfw + (e - verge) / bt - b) * rfs; if (rfs > 0 && v < b + rk && v < cutM[o] && !blk()) { cutM[o] = v; cutE[o] = e; }
         continue; }
       if (wf === 2) {
         if (e <= half) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }
-        const zff = zf - ww * (zf - b), v = e <= params.wallThick ? zff : zff - (e - verge) / bt; if (v > b - rk && v > fillM[o] && !blk()) { fillM[o] = v; fillE[o] = e; }
+        const zff = zf - ww * (zf - b), v = b + ((e <= params.wallThick ? zff : zff - (e - verge) / bt) - b) * rfs; if (rfs > 0 && v > b - rk && v > fillM[o] && !blk()) { fillM[o] = v; fillE[o] = e; }
         continue; }
       if (cutT) {   // toe ditch between verge and slope (fades out in shallow cuts), then the slope
-        let v = zf + sv(e - dW) / bt; if (dD > 0 && dW > 0 && e > verge && e < verge + dW) { const u = Math.sin(Math.PI * (e - verge) / dW); v -= dD * Math.min(1, b - zf) * u * u; }
-        if (v < b + rk && v < cutM[o] && !blk()) { cutM[o] = v; cutE[o] = e; } }
-      else { const v = zf - sv(e) / bte; if (v > b - rk && v > fillM[o] && !blk()) { fillM[o] = v; fillE[o] = e; } }
+        let v = zf + sv(e) / bt; if (dD > 0 && dW > 0 && e > verge && e < verge + dW) { const u = Math.sin(Math.PI * (e - verge) / dW); v -= dD * Math.min(1, b - zf) * u * u; }
+        v = b + (v - b) * rfs; if (rfs > 0 && v < b + rk && v < cutM[o] && !blk()) { cutM[o] = v; cutE[o] = e; } }
+      else { const v = b + (zf - sv(e) / bte - b) * rfs; if (rfs > 0 && v > b - rk && v > fillM[o] && !blk()) { fillM[o] = v; fillE[o] = e; } }
     }
   }
   for (let o = 0; o < N; o++) {
@@ -1308,9 +1314,14 @@ function roadsData() {
   }
   markMedians();
   for (const r of rs) wallWeights(r.samples);
+  // the upper road of a shared structure builds nothing on that side while the lower road's structure is at full weight (its own earthworks come back as the structure tapers at the ends)
+  for (const r of rs) for (const s of r.samples) { s.supL = s.supR = 0; if (!(s.sL || s.sR)) continue;
+    let best = 1e18, w = 0; for (const o of rs) { if (o === r || o.bbox.x1 < r.bbox.x0 || o.bbox.x0 > r.bbox.x1 || o.bbox.y1 < r.bbox.y0 || o.bbox.y0 > r.bbox.y1) continue;
+      for (const q of o.samples) { const pl = q.wL && q.pL && q.pL.plat ? 1 : q.wR && q.pR && q.pR.plat ? 2 : 0; if (!pl) continue; const d = (q.x - s.x) ** 2 + (q.y - s.y) ** 2; if (d < best) { best = d; w = pl === 1 ? q.wwL : q.wwR; } } }
+    if (best < 1e17) { if (s.sL) s.supL = w; if (s.sR) s.supR = w; } }
   const rdOut = roads.filter(r => r.samples && r.samples.length > 1).map(r => { const ty = ROAD_TYPES[r.type]; const R = slopeReach(r, ty), sb = [], full = r.samples, dec = [];
-    const pk = a => ({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, pL: a.pL, pR: a.pR, fwL: a.pL && a.pL.wing ? a.pL.fw : 0, fwR: a.pR && a.pR.wing ? a.pR.fw : 0, wwL: a.wwL, wwR: a.wwR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR });
-    for (let i = 0; i < full.length; i++) { const a = full[i]; if (i % 2 === 0 || i === full.length - 1 || !!full[i - 1].tu !== !!a.tu || !!full[i + 1].tu !== !!a.tu) dec.push(pk(a)); }   // every 2nd sample, plus the last graded / first tunnel sample at each portal (the portal plane stays exact)   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
+    const pk = a => ({ x: a.x, y: a.y, z: a.z, h: a.h, wL: a.wL, wR: a.wR, sL: a.supL || 0, sR: a.supR || 0, pL: a.pL, pR: a.pR, fwL: a.pL && a.pL.wing ? a.pL.fw : 0, fwR: a.pR && a.pR.wing ? a.pR.fw : 0, wwL: a.wwL, wwR: a.wwR, br: a.br, tu: a.tu, mL: a.mL, mR: a.mR });
+    for (let i = 0; i < full.length; i++) { const a = full[i]; if (i % 2 === 0 || i === full.length - 1 || !!full[i - 1].tu !== !!a.tu || !!full[i + 1].tu !== !!a.tu || !!full[i - 1].br !== !!a.br || !!full[i + 1].br !== !!a.br) dec.push(pk(a)); }   // every 2nd sample, plus the last graded / first tunnel sample at each portal (the portal plane stays exact)   // 4 m chords (sag < 0.1 m at minR 20) halve the rasterising cost
     for (let i = 0; i + 1 < dec.length; i += 2) { const a = dec[i], b = dec[Math.min(i + 2, dec.length - 1)]; sb.push([Math.min(a.x, b.x) - R, Math.min(a.y, b.y) - R, Math.max(a.x, b.x) + R, Math.max(a.y, b.y) + R]); }   // coarse reach boxes for tile culling
     const planes = [];   // portal planes: decimated-segment range they cut, plane point, unit normal pointing into the tunnel
     const plen = (a, b) => { let d = 0; for (let q = a; q < b; q++) d += Math.hypot(dec[q + 1].x - dec[q].x, dec[q + 1].y - dec[q].y); return d; }, span = R + PLANE_MARGIN;
@@ -1327,7 +1338,7 @@ function gradeRegion(box) {
   const gi0 = clamp(Math.floor(box.x0 / GRID_RES), 0, GN - 1), gj0 = clamp(Math.floor(box.y0 / GRID_RES), 0, GN - 1);
   const gi1 = clamp(Math.ceil(box.x1 / GRID_RES), 0, GN - 1), gj1 = clamp(Math.ceil(box.y1 / GRID_RES), 0, GN - 1);
   if (gi1 < gi0 || gj1 < gj0) return;
-  const rd = roadsData(), TS = TILE_M / GRID_RES, params = { formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER };
+  const rd = roadsData(), TS = TILE_M / GRID_RES, params = { formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER, reachFade: REACH_FADE };
   for (let tj = gj0; tj <= gj1; tj += TS) for (let ti = gi0; ti <= gi1; ti += TS) {
     const nx = Math.min(TS, gi1 - ti + 1), ny = Math.min(TS, gj1 - tj + 1);
     const tx0 = ti * GRID_RES, ty0 = tj * GRID_RES, tx1 = tx0 + nx * GRID_RES, ty1 = ty0 + ny * GRID_RES;
@@ -1365,9 +1376,25 @@ function wallRuns(r) {   // one run per side and tier; the tier's lateral offset
         const wing = !!(p && p.wing), tp = wing ? (p.base && p.base.stairs ? stairAsTiers(p.base, zf, e => hBase(s.x + nx * (hw + e), s.y + ny * (hw + e))) : p.base) : p && !p.full ? p : null, fw = wing ? chord(i, ref, side === 'L' ? 'fwL' : 'fwR') : 0;   // tp: the tiers in play (own plan, or the adjacent run's beside a wing)
         if (p && p.stairs) {   // terraced section: the walls come from the same profile the grading evaluates
           const stN = (q, ox, oy) => e => hBase(ox + nx * (hw + e), oy + ny * (hw + e)), sgT = p.cut ? 1 : -1;
-          const wwq = (chord(i, ref, wk) ?? 1) * (p.sw ?? 1), tierPt = (ox, oy, zfq) => { const t = stairProfile(p.cut, zfq, p.h, stN(0, ox, oy), p.force).tiers[k]; if (!t || Math.abs(t.u - t.f) * wwq < WALL_VIS_MIN) return null;
-            return { x: ox + nx * (hw + t.a), y: oy + ny * (hw + t.a), zTop: p.cut ? t.u : t.f, zBot: p.cut ? t.f : t.u, top: p.cut ? t.u + 0.3 : k === 0 ? s.z + 1.0 : t.f + 0.4, h: s.h, nat: t.eps <= 0 }; };
-          const q0 = tierPt(0, s.x, s.y, 0), main = tierPt(s.x, s.y, zf);
+          const wwo = chord(i, ref, wk) ?? 1, sw = p.sw ?? 1, tierPt = (ox, oy, zfq) => {
+            const Nn = e => hBase(ox + nx * (hw + e), oy + ny * (hw + e));
+            let t = stairProfile(p.cut, zfq, p.h, Nn, p.force).tiers[k];
+            const hasAlt = p.alt && k === 0 && p.alt.n > 0; if (!t && hasAlt) t = { a: 0, f: zfq, u: zfq, eps: 0 };
+            if (!t) return null;
+            // the ground the grading makes at the wall's front / back face: terraces, blended beside a terraced run with the station's own plan (sw) and with the plain slope at run ends (ww)
+            const gAt = (e, gs, back) => { let g = gs;
+              if (sw < 1) { let ga = Nn(e); if (p.alt) { const [ka, va] = tierEval(p.alt, wwo, e, zfq, ga, GRID_RES, WALL_THICK, T.batter); ga = ka === 1 ? va : ka === 0 ? ga : p.cut ? Math.min(ga, va) : Math.max(ga, va); } g = ga + sw * (g - ga); }
+              if (wwo < 1) { const b = Nn(e), gp = p.cut ? Math.min(b, zfq + svTop(e) / T.batter) : Math.max(b, zfq - svTop(e) / T.batter); g = gp + wwo * (g - gp); }
+              return g; };
+            const gB = gAt(t.a + WALL_THICK, t.u, true), gF = gAt(t.a, t.f, false);
+            if (Math.abs(gB - gF) < WALL_VIS_MIN) return null;
+            { const hStruct = hasAlt ? (1 - sw) * wwo * Math.abs(p.alt.z[0]) + sw * wwo * Math.abs(t.u - t.f) : sw * wwo * Math.abs(t.u - t.f); if (hStruct < WALL_VIS_MIN) return null; }
+            // the ground just behind the back face (ground the wall must still hide: natural where it carries on, else the bench)
+            const beyond = d => { const eBe = t.a + WALL_THICK + d, nBe = Nn(eBe); return gAt(eBe, t.eps <= 0 ? nBe : p.cut ? Math.max(t.u, nBe - STAIR_K * t.eps) : Math.min(t.u, nBe + STAIR_K * t.eps), true); }, gBeyond = Math.max(beyond(0.5), beyond(0.25) + 0.3);
+            // fill: the bench of the tier above, just in front of the wall (it follows the natural ground up to the front level)
+            let gFront = gF; if (!p.cut && k > 0) { const tp0 = stairProfile(p.cut, zfq, p.h, Nn, p.force).tiers[k - 1]; gFront = Math.max(gAt(t.a - 0.1, tp0.u, false), tp0.u); }
+            return { x: ox + nx * (hw + t.a), y: oy + ny * (hw + t.a), zTop: p.cut ? gB : gF, zBot: p.cut ? gF : gB, top: p.cut ? Math.max(gB + 0.35, gBeyond + 0.02) : k === 0 ? s.z + 1.0 : Math.max(gF + 0.4, gFront + 0.32), h: s.h, nat: t.eps <= 0 }; };
+          const main = tierPt(s.x, s.y, zf);
           const ext = [];   // beyond a free road end the wall carries on straight while it still retains something (its levels rise / fall at the run-out batter)
           if ((i === 0 || i === S.length - 1) && main) for (let a = SAMPLE_STEP; a <= p.alongMax + 2; a += SAMPLE_STEP) { const dirx = Math.cos(s.h) * (i === 0 ? -1 : 1), diry = Math.sin(s.h) * (i === 0 ? -1 : 1), e1 = tierPt(s.x + dirx * a, s.y + diry * a, zf + sgT * a / END_BATTER); if (!e1) break; ext.push(e1); }
           if (!main) { cur = null; continue; }
@@ -1385,10 +1412,19 @@ function wallRuns(r) {   // one run per side and tier; the tier's lateral offset
           if (k >= p.n || Math.abs(p.z[k] - (k ? p.z[k - 1] : 0)) < 1e-9) { cur = null; continue; }
           off = w * p.a[k]; const Lp = zf + w * (k ? p.z[k - 1] : 0), Lk = zf + w * p.z[k];
           if (cut) { zTop = Lk; zBot = Lp; top = Lk + 0.4 + Math.max(0, 0.5 - (Lk - Lp)); } else { zTop = Lp; zBot = Lk; top = k === 0 ? zf + 0.3 + w * (s.z + 1.0 - zf - 0.3) : Lp + 0.4; }
+        } else if (k > 0 && wing && p.base && p.base.stairs) {   // wing beside terraces: tiers k >= 1 are (1 - fw) of the terraces and fw of the natural ground (what the grading makes outside the full wall)
+          const Nn = e => hBase(s.x + nx * (hw + e), s.y + ny * (hw + e)), tiersW = stairProfile(p.cut, zf, p.base.h, Nn, p.base.force).tiers, t = tiersW[k];
+          if (!t) { cur = null; continue; }
+          const gB = (1 - fw) * t.u + fw * Nn(t.a + WALL_THICK), gF = (1 - fw) * t.f + fw * Nn(t.a);
+          if (Math.abs(gB - gF) < WALL_VIS_MIN || (1 - fw) * Math.abs(t.u - t.f) < WALL_VIS_MIN) { cur = null; continue; }   // the structure part (not just the natural slope across the band) must be a wall
+          off = t.a; zTop = cut ? gB : gF; zBot = cut ? gF : gB;
+          const tq = tiersW[k - 1], gFr = (1 - fw) * tq.u + fw * Nn(t.a - 0.1);   // the bench of the tier above (at most its top), just in front
+          const eBe = t.a + WALL_THICK + 0.5, nBe = Nn(eBe), gBe = (1 - fw) * (t.eps <= 0 ? nBe : cut ? Math.max(t.u, nBe - STAIR_K * t.eps) : Math.min(t.u, nBe + STAIR_K * t.eps)) + fw * nBe;
+          top = cut ? Math.max(gB + 0.35, gBe + 0.02) : Math.max(gF + 0.4, gFr + 0.32);
         } else {
           if (k > 0 && !(wing && tp && k < tp.n && Math.abs(tp.z[k] - tp.z[k - 1]) > 1e-9)) { cur = null; continue; }
           const H = cut ? Math.max(out - zf, 0) : Math.max(zf - out, 0), wf = wing ? fw : w;   // legacy full wall; a wing blends (1 - fw) of the adjacent tiers with fw of the full wall
-          const H0 = wing ? (1 - fw) * (tp ? w * Math.abs(tp.z[0]) : 0) + fw * H : w * H, L0 = zf + sgn * H0;
+          const H0 = wing ? (1 - fw) * (tp && tp.n > 0 ? w * Math.abs(tp.z[0]) : 0) + fw * H : w * H, L0 = zf + sgn * H0;
           if (k === 0) { if (cut) { zTop = L0; zBot = zf; top = L0 + 0.4 + Math.max(0, 0.5 - (L0 - zf)); } else { zTop = zf; zBot = L0; top = zf + 0.3 + wf * (s.z + 1.0 - zf - 0.3); } }
           else { off = w * tp.a[k]; const Lp = L0 + (1 - fw) * w * (tp.z[k - 1] - tp.z[0]), Lk = Lp + (1 - fw) * w * (tp.z[k] - tp.z[k - 1]); if (cut) { zTop = Lk; zBot = Lp; top = Lk + 0.4 + Math.max(0, 0.5 - (Lk - Lp)); } else { zTop = Lp; zBot = Lk; top = Lp + 0.4; } }
         }

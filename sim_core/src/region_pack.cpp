@@ -336,6 +336,7 @@ void parse_roundabout_extras(const json& rb, RoundaboutRules& r, Err& err) {
             k.splitter_length = opt_number(row, "splitter_length_m", k.splitter_length, rctx, err);
             k.splitter_width = opt_number(row, "splitter_width_m", k.splitter_width, rctx, err);
             k.apron_width = opt_number(row, "apron_width_m", k.apron_width, rctx, err);
+            if (member(row, "splitter_surface")) k.splitter_surface = get_string(row, "splitter_surface", rctx, err);
             if (err.failed()) return;
             if (!(k.max_radius > 0) || k.entry_corner_radius < 0 || k.exit_corner_radius < 0 || k.splitter_length < 0 ||
                 k.splitter_width < 0 || k.apron_width < 0) {

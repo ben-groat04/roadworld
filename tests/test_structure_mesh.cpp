@@ -651,6 +651,29 @@ TEST_CASE("walls: steep ground stays within the step limit") {
     }
 }
 
+TEST_CASE("walls: on ground that rises steeply (a wall end into a slope) the tops follow it and never float above it") {
+    const StructureParams P;
+    // 0.7 m per metre for 40 m (35 deg), then level: a 4 m panel would stand 2.8 m proud of the lower end.
+    const FnGround ground([](double x, double) { return x < 40 ? 0.7 * x : 28.0; });
+    const StructureMeshes s = build_retaining_walls({straight_run(0, 120, 0)}, ground, P);
+    check_valid(s);
+    const auto lv = coping_levels(s);
+    REQUIRE(lv.size() > 40);
+    double worst_proud = 0, worst_below = 1e9;
+    std::set<double> xs;
+    for (const auto& [x, z] : lv) {
+        if (x < 6 || x > 36) continue;
+        worst_proud = std::max(worst_proud, z - ground.height(x, 0));
+        worst_below = std::min(worst_below, z - ground.height(x, 0));
+        xs.insert(std::floor(x));
+    }
+    CHECK(worst_below >= 0.3 - 1e-9);   // still covers the retained ground
+    CHECK(worst_proud <= 2.0);          // never floats more than about a metre and a half over the slope (4 m panels: 3.3 m)
+    CHECK(xs.size() >= 20);             // many short steps, not a few tall ones
+    // full-length panels keep the 0.5 m rule; only the shortened ones on the slope step by up to 0.75 m per metre
+    for (std::size_t i = 1; i < lv.size(); ++i) CHECK(std::abs(lv[i].second - lv[i - 1].second) <= 0.75 * 1.0 + 0.25 + 1e-9);
+}
+
 TEST_CASE("walls: fold-safe on a tight curve") {
     // Wall on the inside of a circle of radius 1.2 m: the 1.5 m offset face folds through the centre.
     StructureWallRun r;
