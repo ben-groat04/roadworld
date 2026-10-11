@@ -24,6 +24,7 @@ add_library(sim_core
   src/street_lights.cpp
   src/structure_mesh.cpp
   src/test_layouts.cpp
+  src/test_world.cpp
   src/vegetation.cpp
   src/world_cache.cpp
 )
