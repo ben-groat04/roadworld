@@ -1,6 +1,11 @@
 # Round 7 status (11 Oct 2026, taken over after the first agent was cut off)
+SKIPPED / NOT DONE (first, by rule)
+- Wall ends: NOT changed (photos 04, 05, 46 blunt buried ends, 47 stepped tops; code does a 4 m stepped taper). adjacent_levels: still waived (cause proven below).
+- Photos not found despite searching Commons: a close retaining-wall end, a machined benched rock cut. Fetched instead: street/38-51 (14 photos). Downloads were NOT refused; I only searched Commons.
+- Toe-ditch presence for soil cuts has no photo support (only rock cuts show one); kept as designed feature, not switched off.
+
 DONE
-- 12 reference photos fetched (street/38-49, in INDEX.md + ATTRIBUTION.md) and opened with 4 older ones; `REFERENCE_NOTES.md` has the measurements and the defaults chosen.
+- 14 reference photos fetched (in docs/reference INDEX.md + ATTRIBUTION.md) and opened with 4 older ones; `REFERENCE_NOTES.md` has the measurements and the defaults chosen.
 - Smoothing now relaxes the displacement from natural ground (not the height). Effect: natural ground beyond the grading is never altered; crease measure at free texels fell from max 0.29 (height relaxation, 16 passes) to max 0.28 on adjacent_levels and 0.09-0.17 everywhere else (raw: up to 2.3).
 - 8 passes instead of 16: crest rounding of the 1:2 cutting 4 m raw -> 4.5-5 m (a third of the slope); 16 passes gave 6 m (43 %), more than any photo.
 - Toe ditch: fix bit 8 (designed feature, left alone by the smoothing); the ditch test no longer disables smoothing. JS and C++ in lockstep, goldens regenerated.

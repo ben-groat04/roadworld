@@ -1,7 +1,7 @@
-# Reference notes (round 7). Opened with Read: street/38-49 (12 new, fetched this round) and street/04, 05, 10, 13 (16 photos; docs/reference/, private, not copied here)
+# Reference notes (round 7). Opened with Read: street/38-51 (14 new, fetched this round) and street/04, 05, 10, 13 (18 photos; docs/reference/, private, not copied here)
 
 New photos (Wikimedia Commons / Geograph, CC BY-SA 2.0, source URLs in docs/reference/street/ATTRIBUTION.md, one line each in street/INDEX.md): 38 A27 chalk cutting with a bench track, 39 A3 Butser chalk cutting, 40 M5 wooded cutting, 41 A629 rock cutting, 42 / 43 / 44 / 45 embankments meeting fields or fenced verges, 46 / 47 gabion walls, 48 brick wall with a vertical end, 49 fresh earthworks in chalk fields (weak: no road in frame, only the soft landform).
-Gaps still open: a clear two-roads-at-different-levels-side-by-side photo (none found; searches returned nothing usable), and a clean aerial of a wall end.
+Added after the coordinator reminded me the owner approved downloads: 50 (M5 above the Gordano Valley: two carriageways at different levels) and 51 (A40 on the hillside, too distant to measure anything). Gaps still open: a clean close view of a retaining-wall end, a machined benched rock cut (searched Commons for bench / stepped / terraced cuttings, found nothing usable), an aerial of a wall end.
 All numbers are by eye, scale-free (ratio to the slope's own length or to a lane width, about 3.5 m). Resolution of the Geograph files is low (640 px for 41, 44, 45), so ratios have an error of about +-5 percentage points.
 
 ## Crest of a cutting (38, 39, 40, 04)
@@ -29,5 +29,10 @@ All numbers are by eye, scale-free (ratio to the slope's own length or to a lane
 - Wall end: 46 stops with a vertical butt end against rubble masonry and the bank; 04 and 05 stop vertically against the rock / bank; 48 (brick) ends in a vertical pier-like face with a ramped coping. None shows a tapered ramp cap, none shows an end standing proud of the bank. Ends are blunt and buried.
 - Code: the 4 m taper with 0.25 m steps (<= 0.5 m) already reads like 47; the remaining visible fault is not the wall but the bank around its end (see s7 / s4b renders and STATUS.md). The wall code was NOT changed this round.
 
+## Two roads at different levels side by side (50)
+- 50 (M5, hillside): the upper carriageway sits on a continuous, vertical, dark retaining wall about 1.5-2 lane widths high; the lower carriageway runs right at its foot with only a narrow drainage channel (about a quarter lane) and a barrier on each side. No slope, no verge, no tiers between the two. The wall follows the curve with no steps or visible joints in its top; the upper road edge is the wall top plus a barrier.
+- Consequence: the adjacent_levels scenario (s7) is right to use a vertical wall between the roads; the faults are only at the ENDS, where no photo shows a pit or cliff: the bank wraps round.
+- The end of the wall run is not visible in 50.
+
 ## Not covered by any photo
-Two roads at different levels side by side (adjacent_levels): no reference. The behaviour is judged only against the invariants and the plain physical rule (a bank has to wrap round the end of a wall).
+A wall end seen clearly from the side, and a benched rock cut.
