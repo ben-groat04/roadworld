@@ -22,7 +22,7 @@ Downloads of reference photos are pre-approved: see the Agent contract below, it
 Per the Agent contract item 4: render each case at the framing of its best photo, make composites (render | photo | before, same camera) into `docs/reference/_compare/{{ROUND}}/`, write FAULTS.md Pass 1 with faults that are NOT in the list above, fix, re-render, Pass 2, Pass 3, then Residual.
 
 ## Hand in (files in docs/progress/{{ROUND}}/)
-STATUS.md (use docs/templates/STATUS.md; first heading "Skipped, refused or failed"), FAULTS.md (Pass 1..n and Residual), COMPARE.md (table: case | render | reference | composite | before-same-camera), INDEX.md (render list), suite counts. Run `node tools/check_handin.mjs docs/progress/{{ROUND}}` before reporting.
+STATUS.md (use docs/templates/STATUS.md; first heading "Skipped, refused or failed"), FAULTS.md (Pass 1..n and Residual), COMPARE.md (table: case | render | reference | composite | before-same-camera | subject/type match | scale match | viewpoint match; the last three state in words that reference and render match, the check fails without them), INDEX.md (render list), suite counts. Run `node tools/check_handin.mjs docs/progress/{{ROUND}}` before reporting.
 
 ## Parallelism note (main session fills; one line per independent item)
 Launched now: {{LAUNCHED}}

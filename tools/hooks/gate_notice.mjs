@@ -13,7 +13,7 @@
 // unacknowledged item for the next successful run, and a notice hook that is not running at all is caught by the canary
 // in make_brief.mjs / check_handin.mjs (notice_lib.mjs canaryProblems, RULE 2).
 import { log, readStdin, parseJson } from './lib.mjs';
-import { readGateLog, pendingItems, formatNotice } from './notice_lib.mjs';
+import { readGateLog, pendingItems, formatNotice, ensureSecret } from './notice_lib.mjs';
 
 async function main() {
   const raw = await readStdin();
@@ -25,7 +25,7 @@ async function main() {
   const p = pendingItems(readGateLog());
   log({ gate: 'notice', decision: p.total ? 'notice' : 'none', reason: 'ran', session_id: input.session_id, pending: p.total });
   if (!p.total) return;
-  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: formatNotice(p) } }));
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: formatNotice(p, ensureSecret()) } }));
 }
 
 main().then(() => process.exit(0), (e) => {

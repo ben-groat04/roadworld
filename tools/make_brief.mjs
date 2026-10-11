@@ -3,6 +3,9 @@
 // Usage: node tools/make_brief.mjs <task-file> --round <name> [--worktree <path>] [--branch <name>] [--no-visual]
 // Emits a line `HANDIN_DIR: <absolute path of the progress folder in the agent's worktree>` (read by the SubagentStop
 // hook tools/hooks/handin_gate.mjs and the launch gate tools/hooks/brief_gate.mjs) and, with --no-visual, `HANDIN: no-visual`.
+// With --audit <progress-folder> (round name optional) it prints the AUDITOR brief for that round instead (docs/templates/AUDIT_BRIEF.md):
+// marker line `AUDIT-OF: <abs folder>`, the task's owner words and cases/reference files, NOT the builder's fault list; the launch gate
+// and the finish gate (tools/hooks/audit_lib.mjs) then require AUDIT.md by an agent that is not the builder.
 // Task file (markdown): first "# " line is the task; sections "## Owner's words", "## Cases",
 // "## Faults", "## Launched", "## Waiting". Refuses to print if a mandatory section is empty.
 import fs from 'node:fs';
@@ -12,10 +15,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const opt = (n, d = '') => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
-const valueOpts = ['--round', '--worktree', '--branch'];
+const valueOpts = ['--round', '--worktree', '--branch', '--audit'];
 const taskFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && valueOpts.includes(args[i - 1])));
-if (!taskFile || !opt('round')) {
-  console.error('usage: node tools/make_brief.mjs <task-file> --round <name> [--worktree <path>] [--branch <name>] [--no-visual]');
+if (!taskFile || (!opt('round') && !opt('audit'))) {
+  console.error('usage: node tools/make_brief.mjs <task-file> (--round <name> | --audit <progress-folder>) [--worktree <path>] [--branch <name>] [--no-visual]');
   process.exit(2);
 }
 const text = fs.readFileSync(taskFile, 'utf8').replace(/\r\n/g, '\n');
@@ -31,16 +34,45 @@ for (const line of text.split('\n')) {
 }
 const get = (k) => (sections[k] ?? '').trim();
 const missing = [];
+const auditMode = args.includes('--audit');
 if (!task) missing.push('first line "# <task>"');
 if (!/["“]/.test(get("owner's words"))) missing.push('"## Owner\'s words" with the verbatim quote in quotation marks');
 if (get('cases').length < 5) missing.push('"## Cases" (case | absolute photo paths, at least 3 each)');
-if (!get('faults')) missing.push('"## Faults" (starting list; write "none known" if none)');
-if (!get('launched')) missing.push('"## Launched" (independent items launched now)');
-if (!get('waiting')) missing.push('"## Waiting" (items not launched and why; write "none" if none)');
-if (/time-box|whole task/i.test(text)) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
+if (!auditMode && !get('faults')) missing.push('"## Faults" (starting list; write "none known" if none)');
+if (!auditMode && !get('launched')) missing.push('"## Launched" (independent items launched now)');
+if (!auditMode && !get('waiting')) missing.push('"## Waiting" (items not launched and why; write "none" if none)');
+if (/time-box|whole task/i.test(text.replace(get("owner's words"), ''))) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
 if (missing.length) {
   console.error('REFUSED. Fix the task file:\n - ' + missing.join('\n - '));
   process.exit(1);
+}
+if (auditMode) {
+  const folder = path.resolve(opt('audit'));
+  const round = opt('round') || path.basename(folder);
+  // reference files = path-like tokens with a file extension in the Cases section (counted so the auditor can write "N of M")
+  const refRe = /[A-Za-z]:[\\/][^\s|,;()"'<>]+\.\w{2,5}|[\w./\\-]+\.(?:jpe?g|png|webp|gif|md|mjs|js|json|cpp|h|hpp|txt|pdf|uasset|py)\b/gi;
+  const refs = [...new Set(get('cases').match(refRe) || [])];
+  const tplA = fs.readFileSync(path.join(root, 'docs/templates/AUDIT_BRIEF.md'), 'utf8');
+  const fillA = {
+    TASK: task, ROUND: round, PROGRESS: folder, OWNER_WORDS: get("owner's words"), CASES: get('cases'),
+    REF_COUNT: String(refs.length),
+    REFLIST: refs.length ? 'Files named in the cases (' + refs.length + '):\n' + refs.map((r) => '- ' + r).join('\n')
+      : '(no file paths could be read from the cases text: count the files it names yourself and say M in AUDIT.md)',
+    CONTRACT: fs.readFileSync(path.join(root, 'docs/AGENT_CONTRACT.md'), 'utf8').trim(),
+  };
+  process.stdout.write(tplA.replace(/\{\{(\w+)\}\}/g, (_, k) => fillA[k] ?? ''));
+  let canaryA = 0;
+  try {
+    const nl = await import('./hooks/notice_lib.mjs');
+    const lib = await import('./hooks/lib.mjs');
+    if (nl.isMainCheckout(root)) {
+      const rep2 = nl.canaryReport(lib.STATE_DIR);
+      if (rep2.text) console.error('\n' + rep2.text + '\n');
+      if (rep2.problems.length) canaryA = 3;
+      lib.log({ gate: 'make_brief', round: 'audit:' + round, audit_of: folder });
+    }
+  } catch (e) { console.error('make_brief: canary check could not run (' + (e && e.message) + ')'); }
+  process.exit(canaryA);
 }
 const round = opt('round');
 const worktree = opt('worktree', path.join(path.dirname(root), 'roadworld-wt', round)); // matches new_agent_worktree.ps1 (new worktrees live under ..\roadworld-wt\<name>)
