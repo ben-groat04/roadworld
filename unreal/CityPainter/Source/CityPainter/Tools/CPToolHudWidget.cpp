@@ -45,6 +45,11 @@ void UCPToolHudWidget::NativeOnInitialized()
 	CueBar->SetVisibility(ESlateVisibility::Collapsed);
 	CueText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ToolCue"));
 	CueText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.4f, 1.f)));   // accent #ffd866
+	{
+		FSlateFontInfo Font = CueText->GetFont();
+		Font.Size = 13;
+		CueText->SetFont(Font);
+	}
 	CueBar->SetContent(CueText);
 	if (UCanvasPanelSlot* CueSlot = Canvas->AddChildToCanvas(CueBar))
 	{
@@ -76,6 +81,9 @@ void UCPToolHudWidget::SetLines(const TArray<FCPHudLine>& Lines)
 			Block->SetVisibility(ESlateVisibility::HitTestInvisible);
 			Block->SetText(FText::FromString(Lines[I].Text));
 			Block->SetColorAndOpacity(FSlateColor(Lines[I].Colour));
+			FSlateFontInfo Font = Block->GetFont();
+			Font.Size = 14;   // the prototype HUD is 13 px on a 900 px tall window
+			Block->SetFont(Font);
 		}
 		else
 		{

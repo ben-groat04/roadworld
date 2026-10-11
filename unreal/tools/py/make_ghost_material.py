@@ -16,7 +16,9 @@ def main():
     mb.m.set_editor_property("two_sided", True)
     mb.m.set_editor_property("disable_depth_test", True)
     color = mb.vp("Color", (0.87, 0.9, 0.94), "Ghost")
-    mb.out("MP_EMISSIVE_COLOR", color)
+    # The level uses a fixed EV100 14 exposure (bright sun): an emissive of 1 is black on screen, so scale to a sunlit-white level.
+    bright = mb.sp("Brightness", 20000.0, "Ghost")
+    mb.out("MP_EMISSIVE_COLOR", mb.mul(color, bright))
     mb.out("MP_OPACITY", (color, "A"))
     mb.finish()
     cp.log("M_Ghost created")
