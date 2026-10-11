@@ -10,7 +10,7 @@ Two tracks: ENGINE (sim_core, many parallel worktrees) feeds GAME (Unreal, one b
 | M | Player can | State, 11 Oct evening |
 |---|---|---|
 | M1 | fly over the hills | DONE (on main) |
-| M2 | click a road, undo/redo | built, played 51/51, AUDITED: accept (mechanics only; finished-road look NOT accepted). Merged into `integ/2026-10-11` (35e74bd), not yet in main. A new worker owes the auditor's 9 items |
+| M2 | click a road, undo/redo | built, played 51/51, AUDITED: accept (mechanics only; finished-road look NOT accepted). MERGED to main 2d282c7 (11 Oct, via integ). A new worker owes the auditor's 9 items |
 | M3 | draw like the prototype: curves, snaps, junctions, warnings, profile panel | engine: road tool r2 in integ, `roadtool3` WORKING; game: `m3ui` brief ready (`docs/tasks/m3ui.md`), no agent started |
 | M5 | cuttings, embankments, walls, bridges under a drawn road | earthworks r9 HANDED IN (audit owed, scene check 17/21); `gradelayer` (world-cache layers) WORKING; game side after M3 |
 | M6 | lights, hedges, trees, verge, believable ground and sky | world cover r4 in integ; free-asset searches running; `uelook` brief ready (`docs/tasks/uelook.md`), no agent started |
