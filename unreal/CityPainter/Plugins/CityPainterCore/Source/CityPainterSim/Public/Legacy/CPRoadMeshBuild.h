@@ -1,6 +1,6 @@
 #pragma once
 
-// UE-free build step for ACPRoadMeshActor: owns the sim world (graph, command stack, region pack, marking
+// LEGACY (look-test only; goes away with ACPRoadMeshActor once road render layers exist). UE-free build step for ACPRoadMeshActor: owns the sim world (graph, command stack, region pack, marking
 // rules), builds junctions / mesh chunks / markings with sim_core, and converts the result into plain arrays in
 // Unreal's frame and winding. This header and CPRoadMeshBuild.cpp use ONLY the standard library and sim_core
 // (the sim_core headers are included in the .cpp, never here), so they compile outside Unreal; see
@@ -25,6 +25,8 @@
 //
 // PRECISION: every chunk has a double-precision origin (UE cm, in actor space); vertex floats are relative to
 // that origin (tile size 256 m = 25600 cm, float resolution about 0.002 cm).
+
+#include "CPSimApi.h"
 
 #include <array>
 #include <cstdint>
@@ -111,27 +113,27 @@ struct FOutput
 
 // Opaque: the sim state (cp::RoadGraph, cp::CommandStack, cp::RegionPack, cp::MarkingRules, junctions).
 struct FWorld;
-struct FWorldDeleter { void operator()(FWorld* W) const; };
+struct CITYPAINTERSIM_API FWorldDeleter { void operator()(FWorld* W) const; };
 using FWorldPtr = std::unique_ptr<FWorld, FWorldDeleter>;
 
-FWorldPtr CreateWorld();
+CITYPAINTERSIM_API FWorldPtr CreateWorld();
 
 // Loads <DataDir>/lane_types.json + regions/<RegionId>/ and marking_rules.json into the world. On failure `Error`
 // is filled (it names the file and the reason) and the world stays unusable. Marking rule failure is not fatal:
 // the world builds without markings and `Warning` says why.
-bool LoadData(FWorld& World, const FSettings& Settings, std::string& Error, std::string& Warning);
+CITYPAINTERSIM_API bool LoadData(FWorld& World, const FSettings& Settings, std::string& Error, std::string& Warning);
 
 // Draws the layout through the command stack. Call once after LoadData.
-bool BuildLayout(FWorld& World, ELayout Layout, std::string& Error);
+CITYPAINTERSIM_API bool BuildLayout(FWorld& World, ELayout Layout, std::string& Error);
 
-bool Undo(FWorld& World);
-bool Redo(FWorld& World);
+CITYPAINTERSIM_API bool Undo(FWorld& World);
+CITYPAINTERSIM_API bool Redo(FWorld& World);
 
 // Junctions + roundabouts + mesh chunks + markings for the whole graph, converted to Unreal's frame.
 // TODO(dirty tiles): the graph reports dirty nodes; a per-tile rebuild would pass `only` to build_mesh_chunks.
-FOutput BuildRender(FWorld& World, const FSettings& Settings);
+CITYPAINTERSIM_API FOutput BuildRender(FWorld& World, const FSettings& Settings);
 
 // Sim-frame world position of the first graph nodes, for scripts (sim metres).
-std::vector<std::array<double, 3>> NodePositions(const FWorld& World);
+CITYPAINTERSIM_API std::vector<std::array<double, 3>> NodePositions(const FWorld& World);
 
 }  // namespace CPBuild

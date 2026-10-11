@@ -1,8 +1,8 @@
-// The build header is std-only and goes first so the standard library is included before Unreal's macros
-// (check, verify, ...) exist. sim_core headers are NOT included here; everything sim-facing is in CPRoadMeshBuild.cpp.
-#include "CPRoadMeshBuild.h"
-
+// UHT requires the actor header first. The build header (Sim module, std-only) follows it; sim_core headers are NOT
+// included here, everything sim-facing is in Sim/Private/Legacy/CPRoadMeshBuild.cpp.
 #include "CPRoadMeshActor.h"
+
+#include "Legacy/CPRoadMeshBuild.h"
 
 #include "Components/SceneComponent.h"
 #include "DrawDebugHelpers.h"
@@ -230,8 +230,8 @@ bool ACPRoadMeshActor::ResolveDataDir(FString& OutDir)
 	{
 		return true;
 	}
-	// <repo>/unreal/CityPainter/Plugins/CityPainterSim -> up four levels = <repo> (Build.cs goes up six from the module dir).
-	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("CityPainterSim"));
+	// <repo>/unreal/CityPainter/Plugins/CityPainterCore -> up four levels = <repo> (Build.cs goes up six from the module dir).
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("CityPainterCore"));
 	if (Plugin.IsValid() && Try(FPaths::Combine(Plugin->GetBaseDir(), TEXT("../../../../data"))))
 	{
 		return true;

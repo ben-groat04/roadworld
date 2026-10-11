@@ -11,7 +11,7 @@
 		}
 	],
 	"Plugins": [
-		{ "Name": "CityPainterSim", "Enabled": true },
+		{ "Name": "CityPainterCore", "Enabled": true },
 		{ "Name": "ProceduralMeshComponent", "Enabled": true },
 		{ "Name": "PythonScriptPlugin", "Enabled": true },
 		{ "Name": "EditorScriptingUtilities", "Enabled": true },

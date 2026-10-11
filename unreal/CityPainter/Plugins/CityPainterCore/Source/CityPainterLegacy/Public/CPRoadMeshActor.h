@@ -21,6 +21,7 @@ enum class ECPTestLayout : uint8
 };
 
 /**
+ * LEGACY: kept only for the look-test screenshots (RoadTest level) until road render layers exist; do not extend. New code goes through the World and Render modules.
  * Owns a sim world (road graph, command stack, region pack, marking rules), builds render-ready road meshes and
  * road markings with sim_core and shows them as ProceduralMeshComponents: one per 256 m tile for surfaces (one
  * mesh section per surface class) and one per tile for markings (one section per colour id).
@@ -31,7 +32,7 @@ enum class ECPTestLayout : uint8
  * BeginPlay for game worlds, and from RebuildAll().
  */
 UCLASS()
-class CITYPAINTERSIM_API ACPRoadMeshActor : public AActor
+class CITYPAINTERLEGACY_API ACPRoadMeshActor : public AActor
 {
 	GENERATED_BODY()
 

@@ -65,7 +65,7 @@ def project_dir():
 
 
 def load_class(path):
-    """Load a UClass by script path, e.g. '/Script/CityPainterSim.CPRoadMeshActor'. None if missing."""
+    """Load a UClass by script path, e.g. '/Script/CityPainterLegacy.CPRoadMeshActor'. None if missing."""
     try:
         return unreal.load_class(None, path)  # VERIFY: unreal.load_class exists in 5.8 (it does in 5.0-5.5).
     except Exception:
@@ -80,7 +80,7 @@ def require_class(path):
     cls = load_class(path)
     if cls is None:
         raise ScriptError(
-            "Class %s did not load. Is the CityPainterSim plugin built and enabled? "
+            "Class %s did not load. Is the CityPainterCore plugin built and enabled? "
             "Run unreal\\tools\\Build-Editor.ps1 and check the module-load lines in the editor log." % path
         )
     return cls

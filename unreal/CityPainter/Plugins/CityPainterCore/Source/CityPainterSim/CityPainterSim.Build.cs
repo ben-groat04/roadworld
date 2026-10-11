@@ -23,7 +23,7 @@ public class CityPainterSim : ModuleRules
 		CppCompileWarningSettings.UnsafeTypeCastWarningLevel = WarningLevel.Off;
 		CppCompileWarningSettings.UndefinedIdentifierWarningLevel = WarningLevel.Off;
 
-		// module dir = <repo>/unreal/CityPainter/Plugins/CityPainterSim/Source/CityPainterSim
+		// module dir = <repo>/unreal/CityPainter/Plugins/CityPainterCore/Source/CityPainterSim
 		string RepoRoot = Path.GetFullPath(Path.Combine(ModuleDirectory, "..", "..", "..", "..", "..", ".."));
 		string SimCore = Path.Combine(RepoRoot, "sim_core");
 		string ThirdParty = Path.Combine(RepoRoot, "third_party");
@@ -46,13 +46,15 @@ public class CityPainterSim : ModuleRules
 			}
 		}
 
-		PublicIncludePaths.Add(Path.Combine(SimCore, "include"));
+		// PRIVATE on purpose: no other module may include cp/ headers; they go through the facade (Public/CPSimWorld.h).
+		PrivateIncludePaths.Add(Path.Combine(SimCore, "include"));
 		// third_party/ holds nlohmann/json.hpp (included as "nlohmann/json.hpp"); Clipper2 headers are included as
 		// "clipper2/clipper.h" and live under third_party/clipper2/include. Clipper2's .cpp files are compiled via
 		// Private/SimCore/Wrap_clipper2_*.cpp.
 		PrivateIncludePaths.Add(ThirdParty);
 		PrivateIncludePaths.Add(Path.Combine(ThirdParty, "clipper2", "include"));
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "ProceduralMeshComponent", "Projects" });
+		// Core only: this module has no UObjects and must not depend on Engine, CoreUObject or any rendering module.
+		PublicDependencyModuleNames.AddRange(new string[] { "Core" });
 	}
 }
