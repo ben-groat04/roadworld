@@ -34,6 +34,9 @@ public:
 	/** The text the HUD shows right now (for the playtest and logs). */
 	FString GetHudText() const { return Hud ? Hud->GetShownText() : FString(); }
 
+	/** The road tool HUD text shown right now (for the playtest and logs). */
+	FString GetToolHudText() const;
+
 	/** Console: logs the ground pick at a screen point given as fractions of the viewport (0.5 0.5 = centre). */
 	UFUNCTION(Exec)
 	void CPPick(float FractionX, float FractionY);

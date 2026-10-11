@@ -186,6 +186,11 @@ void ACPPlayerController::PlayerTick(float DeltaTime)
 	}
 }
 
+FString ACPPlayerController::GetToolHudText() const
+{
+	return Tools ? Tools->GetHudText() : FString();
+}
+
 bool ACPPlayerController::GetCursorPick(FCPUEGroundPick& Out) const
 {
 	if (bPickValid)
