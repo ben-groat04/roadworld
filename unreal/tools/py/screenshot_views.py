@@ -95,7 +95,7 @@ VIEWS = INTERCHANGE_VIEWS
 DIAG_RESET = ["ShowFlag.VisualizeLumen 0", "ShowFlag.LightingOnlyOverride 0", "ShowFlag.DynamicShadows 1", "ShowFlag.Fog 1", "ShowFlag.Cloud 1", "ShowFlag.Atmosphere 1", "ShowFlag.Tonemapper 1", "r.Lumen.Visualize.ViewMode 0",
               "r.Lumen.DiffuseIndirect.Allow 1", "r.SkylightIntensityMultiplier 1", "r.DistanceFieldAO 1",
               "r.Shadow.Virtual.Enable 1", "r.Lumen.HardwareRayTracing 0", "r.Lumen.HardwareRayTracing.LightingMode 0",
-              "r.RayTracing.Geometry.ProceduralMeshes 1", "py:floor_df"]
+              "r.RayTracing.Geometry.ProceduralMeshes 1", "py:floor_df", "py:film_default", "py:fog_default", "py:fog:ir=0.5;ig=0.58;ib=0.68;fog_density=0.006;fog_cutoff_distance=0;fog_max_opacity=0.92;ar=1;ag=1;ab=1", "py:atm:height_fog_contribution=1;aerial_pespective_view_distance_scale=1"]
 DIAG_CONFIGS = {
     "baseline": [],
     "lightingonly": ["ShowFlag.LightingOnlyOverride 1"],
@@ -110,6 +110,29 @@ DIAG_CONFIGS = {
     "no_cloud": ["ShowFlag.Cloud 0"],
     "no_atmosphere": ["ShowFlag.Atmosphere 0"],
     "floor_nodf": ["py:floor_nodf"],
+    "fog_cutoff": ["py:fog_cutoff"],
+    "amb0": ["py:fog:fog_cutoff_distance=3000000;ar=0;ag=0;ab=0"],
+    "amb0_B": ["py:fog:fog_cutoff_distance=3000000;ar=0;ag=0;ab=0;ir=9000;ig=10500;ib=12500"],
+    "amb0_B_op50": ["py:fog:fog_cutoff_distance=3000000;ar=0;ag=0;ab=0;ir=9000;ig=10500;ib=12500;fog_max_opacity=0.5"],
+    "op50": ["py:fog:fog_cutoff_distance=3000000;fog_max_opacity=0.5"],
+    "hfc0": ["py:atm:height_fog_contribution=0"],
+    "apv03": ["py:atm:aerial_pespective_view_distance_scale=0.3"],
+    "apv0": ["py:atm:aerial_pespective_view_distance_scale=0"],
+    "dens0015": ["py:fog:fog_density=0.0015"],
+    "dens0015_apv03": ["py:fog:fog_density=0.0015", "py:atm:aerial_pespective_view_distance_scale=0.3"],
+    "fogA": ["py:fog:fog_cutoff_distance=3000000;ir=4000;ig=5000;ib=6500"],
+    "fogB": ["py:fog:fog_cutoff_distance=3000000;ir=9000;ig=10500;ib=12500"],
+    "fogC": ["py:fog:fog_cutoff_distance=3000000;ir=4000;ig=5000;ib=6500;fog_density=0.012"],
+    "fogD": ["py:fog:fog_cutoff_distance=3000000;ir=9000;ig=10500;ib=12500;fog_density=0.003"],
+    "fog_cutoff_dense": ["py:fog_cutoff_dense"],
+    "toe30": ["py:toe30"],
+    "sky2": ["r.SkylightIntensityMultiplier 2"],
+    "sky2_bm03": ["r.SkylightIntensityMultiplier 2", "py:ppv:auto_exposure_bias=-0.3"],
+    "sky3_bm05": ["r.SkylightIntensityMultiplier 3", "py:ppv:auto_exposure_bias=-0.5"],
+    "toe40_sky15": ["r.SkylightIntensityMultiplier 1.5", "py:ppv:film_toe=0.4"],
+    "toe30_sky15": ["py:toe30", "r.SkylightIntensityMultiplier 1.5"],
+    "toe20_sky15": ["py:toe20_bias_m02", "r.SkylightIntensityMultiplier 1.5"],
+    "toe10_sky15": ["py:toe10_bias_m02", "r.SkylightIntensityMultiplier 1.5"],
     "no_dfao_sky1": ["r.DistanceFieldAO 0", "r.SkylightIntensityMultiplier 0.333"],
     "no_dfao_hwrt": ["r.DistanceFieldAO 0", "r.Lumen.HardwareRayTracing 1"],
     "no_dfao_hwrt_sky1": ["r.DistanceFieldAO 0", "r.Lumen.HardwareRayTracing 1", "r.SkylightIntensityMultiplier 0.333"],
@@ -127,11 +150,62 @@ def _floor_df(on):
     eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     for a in eas.get_all_level_actors():
         if a.get_actor_label() == "CP_Floor":
-            a.get_editor_property("static_mesh_component").set_editor_property("affect_distance_field_lighting", on)
+            a.get_editor_property("static_mesh_component").set_affect_distance_field_lighting(on)
 
 
-PY_HOOKS = {"py:floor_df": lambda: _floor_df(True), "py:floor_nodf": lambda: _floor_df(False)}
-DIAG_WARMUP = 300     # frames after switching configuration (Lumen settles over a few seconds)
+def _ppv(**props):
+    """Hook helper: set post-process volume settings (property name -> value), turning on their override flags."""
+    eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for a in eas.get_all_level_actors():
+        if a.get_actor_label() == "CP_PostProcess":
+            st = a.get_editor_property("settings")
+            for k, v in props.items():
+                st.set_editor_property("override_" + k, True)
+                st.set_editor_property(k, v)
+            a.set_editor_property("settings", st)
+
+
+FOG_DEFAULTS = dict(fog_cutoff_distance=0.0, fog_density=0.006, fog_max_opacity=0.92)
+
+
+def _fog(**props):
+    """Hook helper: set properties on the CP_HeightFog component (fog_inscattering_luminance takes an (r, g, b) tuple)."""
+    eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for a in eas.get_all_level_actors():
+        if isinstance(a, unreal.ExponentialHeightFog):   # the template actor keeps its own label, not CP_*
+            comp = a.get_editor_property("component")
+            if "ir" in props:   # inscattering colour as ir/ig/ib (linear luminance, cd/m2 scale: see setup_look_test_level.FOG_INSCATTER)
+                props["fog_inscattering_luminance"] = (props.pop("ir"), props.pop("ig"), props.pop("ib"))
+            if "ar" in props:   # atmosphere ambient contribution scale as ar/ag/ab
+                props["sky_atmosphere_ambient_contribution_color_scale"] = (props.pop("ar"), props.pop("ag"), props.pop("ab"))
+            for k, v in props.items():
+                if isinstance(v, tuple):
+                    v = unreal.LinearColor(v[0], v[1], v[2], 1.0)
+                # Use the BlueprintCallable setter (it updates the render state); plain set_editor_property changes never reached the
+                # renderer (the first fog/floor diag runs had no effect for that reason).
+                setter = {"fog_inscattering_luminance": "set_fog_inscattering_color"}.get(k, "set_" + k)
+                getattr(comp, setter)(v)
+
+
+def _atm(**props):
+    """Hook helper: SkyAtmosphere component values through the BlueprintCallable setters (numbers only)."""
+    eas = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for a in eas.get_all_level_actors():
+        if isinstance(a, unreal.SkyAtmosphere):
+            comp = a.get_editor_property("sky_atmosphere_component")
+            for k, v in props.items():
+                getattr(comp, "set_" + k)(v)
+
+
+PY_HOOKS = {"py:fog_default": lambda: _fog(**FOG_DEFAULTS),
+            "py:fog_cutoff": lambda: _fog(fog_cutoff_distance=3000000.0),
+            "py:fog_cutoff_dense": lambda: _fog(fog_cutoff_distance=3000000.0, fog_density=0.012),
+            "py:floor_df": lambda: _floor_df(True), "py:floor_nodf": lambda: _floor_df(False),
+            "py:film_default": lambda: _ppv(film_toe=0.55, film_slope=0.88, film_shoulder=0.26, film_black_clip=0.0, auto_exposure_bias=0.0),
+            "py:toe30": lambda: _ppv(film_toe=0.30),
+            "py:toe20_bias_m02": lambda: _ppv(film_toe=0.20, auto_exposure_bias=-0.2),
+            "py:toe10_bias_m02": lambda: _ppv(film_toe=0.10, auto_exposure_bias=-0.2)}
+DIAG_WARMUP = 600     # frames after switching configuration (Lumen settles over a few seconds)
 
 WARMUP_FIRST = 600   # frames before the first shot (shader compile / Lumen settling)
 WARMUP_NEXT = 120
@@ -296,6 +370,12 @@ def step(s):
             for c in DIAG_RESET + DIAG_CONFIGS[cfg]:
                 if c in PY_HOOKS:
                     PY_HOOKS[c]()
+                elif c.startswith("py:atm:"):
+                    _atm(**dict((q.split("=")[0], float(q.split("=")[1])) for q in c[7:].split(";")))
+                elif c.startswith("py:ppv:") or c.startswith("py:fog:"):
+                    # "py:ppv:film_toe=0.4;auto_exposure_bias=-0.3" / "py:fog:fog_density=0.012" (numbers only)
+                    kv = dict((q.split("=")[0], float(q.split("=")[1])) for q in c[7:].split(";"))
+                    (_ppv if c.startswith("py:ppv:") else _fog)(**kv)
                 else:
                     unreal.SystemLibrary.execute_console_command(None, c)
             s["cfg"] = cfg
@@ -356,6 +436,14 @@ def step(s):
             b = s["bench"][-60:]
             cp.log("FRAMETIME %s: mean %.1f ms, max %.1f ms over %d frames" % (name, 1000.0 * sum(b) / len(b), 1000.0 * max(b), len(b)))
             s["bench"] = []
+        if s.get("gpuprof") and not s.get("profd_" + name):
+            # argument `gpuprof`: dump the GPU timing tree of one frame into the log (ShowUI 0 = text only), then shoot next frame
+            s["profd_" + name] = True
+            unreal.SystemLibrary.execute_console_command(None, "r.ProfileGPU.ShowUI 0")
+            unreal.SystemLibrary.execute_console_command(None, "ProfileGPU")
+            cp.log("PROFILEGPU for %s" % name)
+            s["wait"] = 30
+            return
         path = os.path.join(OUT_DIR, name + ".png")
         if os.path.exists(path):
             os.remove(path)  # deterministic: overwrite
@@ -392,8 +480,10 @@ def main():
     VIEWS = list(INTERCHANGE_VIEWS) + [v for k, v in EXTRA_VIEWS.items() if k in args]
     for a in args:
         if a == "diag" or a.startswith("diag:"):
-            names = a[5:].split(",") if a.startswith("diag:") else list(DIAG_CONFIGS)
-            filt = [x[5:] for x in args if x.startswith("view:")] or ["look_08", "look_02"]
+            items = a[5:].split(",") if a.startswith("diag:") else list(DIAG_CONFIGS)
+            # items may also be "view:<substr>" filters (First-Run joins several -ScriptArgs with commas)
+            names = [x for x in items if not x.startswith("view:")]
+            filt = [x[5:] for x in list(args) + items if x.startswith("view:")] or ["look_08", "look_02"]
             base = [v for v in INTERCHANGE_VIEWS if any(f in v[0] for f in filt)]
             VIEWS = [v + (n,) for n in names for v in base]
     for a in args:
@@ -422,7 +512,7 @@ def main():
             k, v = a[5:].split("=", 1)
             unreal.SystemLibrary.execute_console_command(None, "%s %s" % (k, v))
             cp.log("console: %s %s" % (k, v))
-    STATE.update(frame=0, i=0, wait=WARMUP_FIRST, phase="place", pie=pie, mult=mult)
+    STATE.update(gpuprof=("gpuprof" in args), frame=0, i=0, wait=WARMUP_FIRST, phase="place", pie=pie, mult=mult)
     if pie:
         les.editor_request_begin_play()  # VERIFY: LevelEditorSubsystem.editor_request_begin_play
         STATE["phase"] = "wait_pie"

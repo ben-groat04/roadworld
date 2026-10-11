@@ -494,6 +494,20 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
         g.wing_min_height = opt_number(*gr, "wing_min_height_m", g.wing_min_height, c, err);
         g.round_daylight = opt_number(*gr, "round_daylight_m", g.round_daylight, c, err);
         g.round_hinge = opt_number(*gr, "round_hinge_m", g.round_hinge, c, err);
+        g.max_tiers = static_cast<int>(opt_number(*gr, "max_tiers", g.max_tiers, c, err));
+        g.wall_slope_extra = opt_number(*gr, "wall_slope_extra_m", g.wall_slope_extra, c, err);
+        g.berm_slope = opt_number(*gr, "berm_slope", g.berm_slope, c, err);
+        g.wall_hard_max = opt_number(*gr, "wall_hard_max_m", g.wall_hard_max, c, err);
+        g.rock_cut_batter = opt_number(*gr, "rock_cut_batter", g.rock_cut_batter, c, err);
+        g.rock_berm_width = opt_number(*gr, "rock_berm_width_m", g.rock_berm_width, c, err);
+        g.rock_bench_height = opt_number(*gr, "rock_bench_height_m", g.rock_bench_height, c, err);
+        g.fill_steep_batter = opt_number(*gr, "fill_steep_batter", g.fill_steep_batter, c, err);
+        g.corridor_max = opt_number(*gr, "corridor_max_m", g.corridor_max, c, err);
+        g.wall_vis_min = opt_number(*gr, "wall_vis_min_m", g.wall_vis_min, c, err);
+        g.reach_fade = opt_number(*gr, "reach_fade_m", g.reach_fade, c, err);
+        if (!err.failed() && (g.max_tiers < 1 || g.max_tiers > 2 || g.berm_slope < 0 || !(g.wall_hard_max >= g.wall_max_height) || !(g.rock_cut_batter > 0.05) ||
+                              g.rock_berm_width < 0 || !(g.rock_bench_height > 0.5) || !(g.fill_steep_batter > 0.5) || !(g.corridor_max > 5) || g.wall_vis_min < 0 || g.reach_fade < 0))
+            err.set(c + ": a steep-ground value is out of range");
         if (!err.failed() && (g.wall_max_height < 0.3 || g.bench_min_width < 0 || g.wall_min_length < 0 || g.toe_ditch_depth < 0 ||
                               g.toe_ditch_width < 0 || g.end_taper_batter < 0.1 || g.wing_max < 0 || g.wing_ratio < 0 ||
                               g.wing_min_height < 0 || g.round_daylight < 0 || g.round_hinge < 0))

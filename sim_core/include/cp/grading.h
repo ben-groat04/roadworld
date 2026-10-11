@@ -59,18 +59,22 @@ struct GradingParams {
     double round_hinge = 1.0;      // m (horizontal), parabolic verge -> slope hinge
     double wing_min_h = 0.3;       // m, no wing wall where the ground beside the structure is this close to formation
     double wall_max_height = 3.0;  // m, tallest single retaining wall (wall + slope, benching, or flagged over_height beyond it)
-    double bench_min_width = 2.0;  // m, flat bench between stacked walls
+    double bench_min_width = 4.5;  // m, berm between two stacked walls (back of the lower wall to the face of the upper one)
+    int max_tiers = 2;             // stacked walls per side at most; beyond that: rock cut (cut side) / one tall wall (fill side)
+    double wall_slope_extra = 15.0;  // m, the slope above / below a wall may run this much farther than a plain slope may before it must daylight
+    double berm_slope = 0.25;      // v / h, the strip between two tiers climbs (cut) / falls (fill) away from the lower wall at this slope
+    double wall_hard_max = 6.0;    // m, tallest single fill wall; beyond it the station needs a structure (viaduct / half-bridge): needs_structure
+    double rock_cut_batter = 0.5;  // h per 1 v of an engineered rock-cut face
+    double rock_berm_width = 3.0;  // m, catch berm between rock-cut faces
+    double rock_bench_height = 9.0;  // m, height of one rock-cut face between berms
+    double fill_steep_batter = 1.5;  // h per 1 v, the steepest stable fill slope graded where a wall cannot hold the fill (needs_structure)
     double wall_min_length = 4.0;  // m, shorter wall runs become slope
     double toe_ditch_depth = 0.4;  // m, ditch between verge and slope at the toe of a cutting (0 disables)
     double toe_ditch_width = 1.5;  // m (the ditch is dug into the verge-to-slope hinge; the slope itself does not move)
     double end_taper_batter = 4.0; // horizontal : vertical run-out beyond a free road end
-    // ---- terraced sections (stairs; NEED region-pack loading: grading.corridor_max, stair_max, stair_k, wall_vis_min, over_grow) ----
-    double corridor_max = 90.0;    // m beyond the footprint edge up to which terraced walls may extend
-    int stair_max = 8;             // stacked walls per side of a terraced section
-    double stair_k = 6.0;          // a bench behind a full tier may carve at most stair_k * (height still to retain) below natural ground
+    double corridor_max = 90.0;    // m beyond the footprint edge up to which two-tier walls / rock cuts may extend
     double wall_vis_min = 0.35;    // m, a terraced wall lower than this is not built
-    double reach_fade = 8.0;       // m, a plain slope that has not met the ground by the end of the road's reach fades into it over this run (NEEDS region-pack loading: grading.reach_fade)
-    double over_grow = 3.0;        // the tier height may grow to this multiple of wall_max_height when the cap cannot reach the ground (flagged over_height)
+    double reach_fade = 8.0;       // m, a plain slope that has not met the ground by the end of the road's reach fades into it over this run
     // ---- sampling ----
     double sample_step = 2.0;      // m, adapter centreline sampling step
     // ---- structures and walls (sample counts) ----
@@ -120,13 +124,18 @@ struct WallPlan {
     TierSet t;             // own tiers (not full)
     bool has_base = false;
     TierSet base;          // wing: the adjacent run's tiers
-    bool base_stairs = false;  // wing: the adjacent run is terraced (base_h / base_force describe it; cut = this plan's)
+    bool base_stairs = false;  // wing: the adjacent run is evaluated on the spot (base_kind / base_h / base_mt describe it; cut = this plan's)
     double base_h = 0;
-    bool base_force = false;
+    int base_mt = 0;
+    int base_kind = 0;
     // Terraced section (stairs): walls of height h at a fixed pitch, evaluated on the spot from the natural ground along the normal (see stair_profile).
     bool stairs = false;
-    bool force = false;    // the hard limit (tier count / corridor) was hit: the last tier takes whatever is left
-    double h = 0;          // tier height (>= wall_max_height; larger only where the cap cannot reach the ground: over)
+    int mt = 0;            // tiers allowed (1: one tall fill wall up to wall_hard_max, 2: two capped tiers)
+    int kind = 0;          // 0 terrace (walls), 1 rock cut face (cut side, no walls), 2 steep fill slope (needs_structure, no walls)
+    int own = 0;           // what this station alone needs: 0 two capped tiers, 1 one tall wall, 2 steep fill, 3 rock cut
+    bool rock = false;     // rock_cut: the cut side is an engineered rock face (a renderer gives it a rock material)
+    bool needs = false;    // needs_structure: a fill wall cannot hold this station; a viaduct / half-bridge is suggested
+    double h = 0;          // tier height (wall_max_height, or wall_hard_max for one tall wall)
     int n_stairs = 0;      // tiers at this station
     double reach_e = 0;    // lateral extent beyond the footprint edge
     double along_max = 0;  // run-out length beyond a free road end over which the terraces end diagonally
@@ -147,6 +156,8 @@ struct RoadSample {
     int wL0 = 0, wR0 = 0;         // wall flags before median removal
     double wwL = 0, wwR = 0;      // wall weight 0..1 (0 at free run ends, 1 beyond wall_ramp)
     bool mL = false, mR = false;  // side faces a parallel opposite-direction road of the same dual type
+    bool rockL = false, rockR = false;    // rock_cut per side (engineered rock face, no wall)
+    bool needsL = false, needsR = false;  // needs_structure per side (fill too steep / high for a wall)
     bool sL = false, sR = false;  // side leaves its earthworks to a neighbour's shared structure (built by the lower road up to this one)
     double supL = 0, supR = 0;    // how much: the neighbour's structure weight at the nearest station (0 at its run ends)
     WallPlan pL, pR;              // wall cross-section per side (present when wL / wR != 0)
@@ -283,7 +294,7 @@ std::vector<float> sample_natural_tile(const GroundFn& ground, const TileSpec& t
 // of a given size). One workspace per worker thread; never share one between threads.
 struct GradeWorkspace {
     std::vector<float> fp_d, fp_z, cut_m, fill_m, rq_ww, rq_d, rq_z, cut_e, fill_e, rq_ex, rq_ey, rq_bt, rq_fw, rq_al, rq_fs, rq_sp, rq_sv, cut_r, fill_r;
-    std::vector<std::uint8_t> rq_w, rq_fl, rq_by;
+    std::vector<std::uint8_t> rq_w, rq_fl, rq_by, cut_k;
     std::vector<const WallPlan*> rq_p;
 };
 void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t,
@@ -316,6 +327,16 @@ struct WallRun {
 };
 
 std::vector<WallRun> wall_runs(const SampledRoad& road, const GroundFn& ground, const GradingParams& p);
+
+// Contiguous stations of one side graded as an engineered rock cut face (no wall) or as the steepest stable fill slope (needs_structure).
+struct SurfaceRun {
+    char side = 'L';
+    bool cut = false;
+    bool rock_cut = false;         // engineered rock face (give it a rock material)
+    bool needs_structure = false;  // some station cannot be held by a wall: suggest a viaduct / half-bridge (or refuse)
+    int first = 0, last = 0;       // inclusive sample indices
+};
+std::vector<SurfaceRun> surface_runs(const SampledRoad& road);
 
 // ---- tunnels ----
 

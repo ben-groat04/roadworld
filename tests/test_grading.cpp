@@ -40,7 +40,9 @@ const char* const kCases[] = {"straight_crossfall", "cutting",     "embankment",
                               "crossing_and_ends",  "steep_pair",
                               // grading round 4
                               "bench_side_hill", "over_height_cliff", "adjacent_levels", "embankment_end", "cutting_toe",
-                              "short_run_between_bridges"};
+                              "short_run_between_bridges",
+                              // grading round 5
+                              "side_hill_realistic", "stress_gradient_085"};
 
 bool verbose() {
 #if defined(_MSC_VER)
@@ -116,6 +118,16 @@ GradingParams parse_params(const json& j) {
     p.wall_min_length = j["wallMinLength"];
     p.sample_step = j["sampleStep"];
     p.toe_ditch_depth = j["toeDitchDepth"];
+    p.max_tiers = j["maxTiers"];
+    p.wall_slope_extra = j["wallSlopeExtra"];
+    p.berm_slope = j["bermSlope"];
+    p.wall_hard_max = j["wallHardMax"];
+    p.rock_cut_batter = j["rockBatter"];
+    p.rock_berm_width = j["rockBerm"];
+    p.rock_bench_height = j["rockBenchH"];
+    p.fill_steep_batter = j["fillSteep"];
+    p.corridor_max = j["corridorMax"];
+    p.wall_vis_min = j["wallVisMin"];
     p.toe_ditch_width = j["toeDitchWidth"];
     p.end_taper_batter = j["endTaperBatter"];
     p.reach_fade = j["reachFade"];
@@ -209,11 +221,13 @@ json ser_tiers(const TierSet& t, const WallPlan& p, bool is_base) {
     return a;
 }
 
-// stairs, force, h of a plan (the golden appends them after the base); the top level adds nStairs, reachE, alongMax, sw, hasAlt, alt tiers
-void ser_extra(json& a, bool stairs, bool force, double h) {
+// stairs, mt, h, kind of a plan (the golden appends them after the base); the top level adds needs, nStairs, reachE, alongMax, sw, hasAlt, alt tiers
+void ser_extra(json& a, bool stairs, int force, double h, int kind) {
+    (void)kind;
     a.push_back(stairs ? 1 : 0);
-    a.push_back(force ? 1 : 0);
+    a.push_back(force);
     a.push_back(h);
+    a.push_back(kind);
 }
 
 json ser_plan(const WallPlan& p) {
@@ -224,12 +238,13 @@ json ser_plan(const WallPlan& p) {
         b.cut = p.base.cut;
         json bj = ser_tiers(p.base, b, true);
         bj.push_back(0);
-        ser_extra(bj, p.base_stairs, p.base_force, p.base_h);
+        ser_extra(bj, p.base_stairs, p.base_mt, p.base_h, p.base_kind);
         a.push_back(bj);
     } else {
         a.push_back(0);
     }
-    ser_extra(a, p.stairs, p.force, p.h);
+    ser_extra(a, p.stairs, p.mt, p.h, p.kind);
+    a.push_back(p.needs ? 1 : 0);
     a.push_back(p.stairs ? p.n_stairs : 0);
     a.push_back(p.reach_e);
     a.push_back(p.along_max);
@@ -275,7 +290,7 @@ Graded grade_region(const Case& c, double margin = 45) {
 TEST_CASE("grading: classification, walls, medians, reach and portal planes match the prototype") {
     for (const char* name : kCases) {
         auto c = make_case(name);
-        INFO("case " << name);
+        INFO("case " << std::string(name));
         REQUIRE(c->roads.size() == c->g["roads"].size());
         for (std::size_t ri = 0; ri < c->roads.size(); ++ri) {
             const SampledRoad& r = c->roads[ri];
@@ -289,13 +304,15 @@ TEST_CASE("grading: classification, walls, medians, reach and portal planes matc
                               (s.portal != (ex["portal"][i].get<int>() != 0)) + (s.wL != ex["wL"][i].get<int>()) +
                               (s.wR != ex["wR"][i].get<int>()) + (s.wL0 != ex["wL0"][i].get<int>()) +
                               (s.wR0 != ex["wR0"][i].get<int>()) + (s.mL != (ex["mL"][i].get<int>() != 0)) +
-                              (s.mR != (ex["mR"][i].get<int>() != 0)) + (s.sL != (ex["sL"][i].get<int>() != 0)) +
+                              (s.mR != (ex["mR"][i].get<int>() != 0)) + (s.rockL != (ex["rockL"][i].get<int>() != 0)) + (s.rockR != (ex["rockR"][i].get<int>() != 0)) +
+                              (s.needsL != (ex["needsL"][i].get<int>() != 0)) + (s.needsR != (ex["needsR"][i].get<int>() != 0)) + (s.sL != (ex["sL"][i].get<int>() != 0)) +
                               (s.sR != (ex["sR"][i].get<int>() != 0)) + (std::abs(s.supL - ex["supL"][i].get<double>()) > 2e-4) +
                               (std::abs(s.supR - ex["supR"][i].get<double>()) > 2e-4);
                 ww_diff = std::max({ww_diff, std::abs(s.wwL - ex["wwL"][i].get<double>()), std::abs(s.wwR - ex["wwR"][i].get<double>())});
             }
             CHECK_MESSAGE(flag_diffs == 0, "road " << ri << ": " << flag_diffs << " flag differences");
-            int plan_diffs = 0;
+            int plan_diffs = 0, first_diff = -1, first_side = 0;
+            std::string first_got, first_want;
             for (std::size_t i = 0; i < n; ++i)
                 for (int side = 0; side < 2; ++side) {
                     std::vector<double> got, want;
@@ -303,9 +320,15 @@ TEST_CASE("grading: classification, walls, medians, reach and portal planes matc
                     flatten(ex[side == 0 ? "plL" : "plR"][i], want);
                     bool same = got.size() == want.size();
                     for (std::size_t q = 0; same && q < got.size(); ++q) same = std::abs(got[q] - want[q]) < 2e-4;
+                    if (!same && first_diff < 0) {
+                        first_diff = static_cast<int>(i);
+                        first_side = side;
+                        for (const double v : got) first_got += std::to_string(v) + " ";
+                        for (const double v : want) first_want += std::to_string(v) + " ";
+                    }
                     plan_diffs += !same;
                 }
-            CHECK_MESSAGE(plan_diffs == 0, "road " << ri << ": " << plan_diffs << " wall plan differences");
+            CHECK_MESSAGE(plan_diffs == 0, "road " << ri << ": " << plan_diffs << " wall plan differences, first at sample " << first_diff << " side " << first_side << " got " << first_got << " want " << first_want);
             CHECK(r.over_height == ex["overHeight"].get<bool>());
             CHECK_MESSAGE(ww_diff < kTolGeom, "road " << ri << ": wall weight diff " << ww_diff);
             std::vector<int> portals = ex["portals"].get<std::vector<int>>();
@@ -334,7 +357,7 @@ TEST_CASE("grading: classification, walls, medians, reach and portal planes matc
 TEST_CASE("grading: graded tiles match the prototype within 0.15 mm") {
     for (const char* name : kCases) {
         auto c = make_case(name);
-        INFO("case " << name);
+        INFO("case " << std::string(name));
         double worst = 0;
         std::size_t texels = 0, over = 0;
         for (const json& tj : c->g["tiles"]) {
@@ -358,7 +381,7 @@ TEST_CASE("grading: wall runs match the prototype") {
     int total = 0;
     for (const char* name : kCases) {
         auto c = make_case(name);
-        INFO("case " << name);
+        INFO("case " << std::string(name));
         for (std::size_t ri = 0; ri < c->roads.size(); ++ri) {
             const std::vector<WallRun> runs = wall_runs(c->roads[ri], c->ground, c->params);
             const json& ex = c->g["walls"][ri];
@@ -390,7 +413,7 @@ TEST_CASE("grading: tunnel table and bore probes match the prototype") {
     int tunnels = 0, probes_in = 0, probes_out = 0;
     for (const char* name : kCases) {
         auto c = make_case(name);
-        INFO("case " << name);
+        INFO("case " << std::string(name));
         const json& tj = c->g["tunnel"];
         const std::vector<TunnelVolume> vols = tunnel_volumes(c->roads, c->params);
         REQUIRE(vols.size() == tj["vols"].size());
@@ -632,7 +655,7 @@ TEST_CASE("grading invariants: ground under road, slopes daylight, median flat")
     int under_total = 0, slopes_total = 0, median_total = 0;
     for (const char* name : kCases) {
         auto c = make_case(name);
-        INFO("case " << name);
+        INFO("case " << std::string(name));
         const Graded g = grade_region(*c);
         Hit under, slopes, median;
         for (std::size_t ri = 0; ri < c->roads.size(); ++ri) {
@@ -715,7 +738,7 @@ TEST_CASE("grading invariants: wall height cap, ground hidden by walls, no bare 
     int wall_pts = 0, hidden_samples = 0, steps_checked = 0;
     for (const char* name : kCases) {
         auto c = make_case(name);
-        INFO("case " << name);
+        INFO("case " << std::string(name));
         const Graded g = grade_region(*c);
         Hit cap, hidden, bare;
         struct WallQ { WallPoint p; double sg, lo, hi; };
@@ -740,7 +763,7 @@ TEST_CASE("grading invariants: wall height cap, ground hidden by walls, no bare 
                             for (const RoadSample& q : rr.samples)
                                 if ((q.br || q.tu) && std::hypot(q.x - p.x, q.y - p.y) < c->params.wing_max + rr.half_width + 6) { near_struct = true; break; }
                         const double lim = near_struct ? c->params.wall_cap + 0.5
-                                                       : (run.over ? c->params.wall_max_height * c->params.over_grow : c->params.wall_max_height) + 1e-6;
+                                                       : (run.over ? c->params.wall_hard_max : c->params.wall_max_height) + 1e-6;
                         if (p.zTop - p.zBot > lim) cap.bad(p.zTop - p.zBot, "wall at " + std::to_string(p.x));
                     }
                     wall_grid[key(static_cast<long long>(std::floor(p.x / WC)), static_cast<long long>(std::floor(p.y / WC)))].push_back({p, sg, run.lo, run.hi});
@@ -796,7 +819,7 @@ TEST_CASE("grading invariants: wall height cap, ground hidden by walls, no bare 
                     const int dj = 1 - di;
                     if (i + di >= nx || j + dj >= ny) continue;
                     const double st = std::abs(g.h[static_cast<std::size_t>((j + dj) * nx + i + di)] - h0);
-                    if (st <= 1.0) continue;
+                    if (st <= 1.001) continue;  // a rock-cut face at 0.5:1 steps exactly 1.0 per 0.5 m texel
                     ++bare.total;
                     const double x = g.t.x0 + (i + di / 2.0) * 0.5, y = g.t.y0 + (j + dj / 2.0) * 0.5;
                     if (in_wall(x, y) || in_struct_zone(x, y)) continue;
@@ -998,67 +1021,80 @@ TEST_CASE("grading: region pack carries and validates the grading rules") {
 // Grading round 4: wall height cap, benching, shared structures, run-out, toe ditch, short runs
 // =============================================================================================
 
-TEST_CASE("grading: a steep side hill is benched, no wall above the cap, benches at least the minimum wide") {
-    auto c = make_case("bench_side_hill");
-    const GradingParams& p = c->params;
-    int benched = 0, tiers_seen = 0;
-    for (const SampledRoad& r : c->roads) {
-        CHECK_FALSE(r.over_height);
-        for (const RoadSample& s : r.samples)
+// Round 5 rule: slope, else one wall <= cap, else at most two tiers (berm >= 4.5 m), else: cut side = rock cut face, fill side = one wall <= wall_hard_max,
+// beyond that needs_structure and the steepest stable fill slope. No station ever gets more than max_tiers walls.
+namespace {
+struct Tally {
+    int rock = 0, needs = 0, max_tiers = 0, over = 0, stations = 0;
+    double max_wall = 0;
+};
+Tally tally(const Case& c) {
+    Tally t;
+    const GradingParams& p = c.params;
+    for (const SampledRoad& r : c.roads) {
+        for (const RoadSample& s : r.samples) {
+            ++t.stations;
+            t.rock += s.rockL + s.rockR;
+            t.needs += s.needsL + s.needsR;
             for (const WallPlan* wp : {&s.pL, &s.pR}) {
                 if (!wp->present || wp->full || wp->t.plat) continue;
-                const int nt = wp->stairs ? wp->n_stairs : wp->t.n;
-                benched += nt >= 2;
-                tiers_seen = std::max(tiers_seen, nt);
-                if (wp->stairs) {  // terraces: tier height h (the cap unless it could not reach the ground), benches by construction one pitch apart
-                    CHECK(wp->h <= p.wall_max_height + 1e-9);
-                    continue;
-                }
-                for (int k = 0; k < wp->t.n; ++k) {
-                    const double h = std::abs(wp->t.z[k] - (k ? wp->t.z[k - 1] : 0.0));
-                    CHECK(h <= p.wall_max_height + 1e-9);
-                    if (k) CHECK(wp->t.a[k] - wp->t.a[k - 1] - p.wall_thickness >= p.bench_min_width - 1e-9);
-                }
+                t.max_tiers = std::max(t.max_tiers, wp->stairs ? wp->n_stairs : wp->t.n);
+                t.over += wp->over;
             }
-    }
-    CHECK(benched > 20);
-    CHECK(tiers_seen >= 2);
-    // the wall meshes: every wall is at most the cap tall (plus the one-texel allowance), tier 1 runs exist
-    int tier1 = 0;
-    for (const SampledRoad& r : c->roads)
-        for (const WallRun& run : wall_runs(r, c->ground, p)) {
-            tier1 += run.tier == 1;
-            for (const WallPoint& w : run.pts) CHECK(w.zTop - w.zBot <= p.wall_max_height + 1e-6);
         }
-    CHECK(tier1 > 0);
-    // changing the cap changes the structure: a 6 m cap needs fewer tiers
-    GradingParams tall = p;
-    tall.wall_max_height = 6.0;
-    SampledRoad r2 = c->roads[0];
-    classify_road(r2, c->ground, tall, StructureMode::Auto);
-    int max_tiers_tall = 0, max_tiers_cap = 0;
-    auto tn = [](const WallPlan& w) { return w.stairs ? w.n_stairs : w.t.n; };
-    for (const RoadSample& s : r2.samples) max_tiers_tall = std::max(max_tiers_tall, std::max(tn(s.pL), tn(s.pR)));
-    for (const RoadSample& s : c->roads[0].samples) max_tiers_cap = std::max(max_tiers_cap, std::max(tn(s.pL), tn(s.pR)));
-    CHECK(max_tiers_tall < max_tiers_cap);
+        for (const WallRun& run : wall_runs(r, c.ground, p)) {
+            for (const WallPoint& w : run.pts) t.max_wall = std::max(t.max_wall, w.zTop - w.zBot);
+            CHECK(run.tier < p.max_tiers);
+        }
+    }
+    return t;
+}
+}  // namespace
+
+TEST_CASE("grading: a realistic side hill (gradient 0.4) gets slopes plus at most one wall or two tiers, no rock cut, no needs_structure") {
+    auto c = make_case("side_hill_realistic");
+    const Tally t = tally(*c);
+    CHECK(t.rock == 0);
+    CHECK(t.needs == 0);
+    CHECK(t.max_tiers <= c->params.max_tiers);
+    CHECK(t.max_wall <= c->params.wall_max_height + 1e-6);
+    CHECK(t.over == 0);
 }
 
-TEST_CASE("grading: a cliff the cap cannot reach is terraced with taller tiers (never one tall wall) and reports over_height") {
-    auto c = make_case("over_height_cliff");
+TEST_CASE("grading: the 0.85 stress hill gets a rock cut uphill and one tall wall (<= wall_hard_max, flagged over) downhill; never a stack of tiers") {
+    auto c = make_case("stress_gradient_085");
+    const Tally t = tally(*c);
+    CHECK(t.rock > 50);
+    CHECK(t.max_tiers <= c->params.max_tiers);
+    CHECK(t.max_wall <= c->params.wall_hard_max + 1e-6);
+    CHECK(t.max_wall > c->params.wall_max_height);  // the fill wall is taller than the cap: reported
     CHECK(c->roads[0].over_height);
-    bool over_run = false;
-    int max_tiers = 0;
-    double max_h = 0;
-    for (const WallRun& run : wall_runs(c->roads[0], c->ground, c->params)) {
-        over_run = over_run || run.over;
-        max_tiers = std::max(max_tiers, run.tier + 1);
-        for (const WallPoint& w : run.pts) max_h = std::max(max_h, w.zTop - w.zBot);
-    }
-    CHECK(over_run);
-    CHECK(max_tiers >= 3);                                                   // several tiers, not one wall
-    CHECK(max_h <= c->params.wall_max_height * c->params.over_grow + 1e-6);  // taller than the cap only up to the hard limit
+    bool rock_run = false;
+    for (const SurfaceRun& r : surface_runs(c->roads[0])) rock_run = rock_run || (r.rock_cut && r.cut);
+    CHECK(rock_run);
+    // the rock face is graded at the rock batter: a steep, berm-benched surface well above the formation
+    const RoadSample& s = c->roads[0].samples[c->roads[0].samples.size() / 2];
+    const Graded g = grade_region(*c);
+    const double hw = c->roads[0].half_width, zf = s.z - c->params.formation_drop;
+    const double e0 = c->params.verge + c->params.toe_ditch_width;
+    const double d = 2.0;  // 2 m up the face: 2 / rock_cut_batter metres of height
+    CHECK(g.at(s.x, s.y + hw + e0 + d) - zf == doctest::Approx(d / c->params.rock_cut_batter).epsilon(0.1));
+}
+
+TEST_CASE("grading: a cliff is a rock cut uphill and needs_structure downhill (steepest stable fill slope), never stacked walls") {
+    auto c = make_case("over_height_cliff");
+    const Tally t = tally(*c);
+    CHECK(t.rock > 20);
+    CHECK(t.needs > 10);
+    CHECK(t.max_tiers <= c->params.max_tiers);
+    bool needs_run = false;
+    for (const SurfaceRun& r : surface_runs(c->roads[0])) needs_run = needs_run || (!r.cut && r.needs_structure);
+    CHECK(needs_run);
     // without the steep hill nothing is flagged
     auto flat = make_case("cutting");
+    const Tally f = tally(*flat);
+    CHECK(f.rock == 0);
+    CHECK(f.needs == 0);
     CHECK_FALSE(flat->roads[0].over_height);
 }
 
@@ -1151,10 +1187,10 @@ TEST_CASE("grading: region pack carries the round 4 earthwork fields and the win
     REQUIRE_MESSAGE(pack, pack.error);
     const GradingRules& g = pack->grading;
     CHECK(g.wall_max_height == doctest::Approx(3.0));
-    CHECK(g.bench_min_width == doctest::Approx(2.0));
+    CHECK(g.bench_min_width == doctest::Approx(4.5));
     CHECK(g.wall_min_length == doctest::Approx(4.0));
-    CHECK(g.toe_ditch_depth == doctest::Approx(0.3));
-    CHECK(g.toe_ditch_width == doctest::Approx(1.0));
+    CHECK(g.toe_ditch_depth == doctest::Approx(0.4));
+    CHECK(g.toe_ditch_width == doctest::Approx(1.5));
     CHECK(g.end_taper_batter == doctest::Approx(4.0));
     CHECK(g.wing_max == doctest::Approx(10.0));
     CHECK(g.wing_ratio == doctest::Approx(1.0));
@@ -1165,7 +1201,7 @@ TEST_CASE("grading: region pack carries the round 4 earthwork fields and the win
     CHECK(p.wall_max_height == doctest::Approx(3.0));
     CHECK(p.wing_max == doctest::Approx(10.0));
     CHECK(p.round_daylight == doctest::Approx(2.0));
-    CHECK(p.toe_ditch_depth == doctest::Approx(0.3));
+    CHECK(p.toe_ditch_depth == doctest::Approx(0.4));
     const StructureRules& s = pack->structures;
     CHECK(s.wall_face_thickness == doctest::Approx(0.4));
     CHECK(s.wall_joint_width == doctest::Approx(0.12));

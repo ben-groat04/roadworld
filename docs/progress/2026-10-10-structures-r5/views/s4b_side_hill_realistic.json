@@ -1,0 +1,7 @@
+[
+ {"name":"s4b_side_hill_realistic_street","width":1600,"height":900,"pos":[-100,-2,3.4],"target":[-20,5,4],"sun":[165,42],"fov":62,"near":0.2,"shadow":110,"shadowCentre":[-50,5,3],"exposure":1.05},
+ {"name":"s4b_side_hill_realistic_aerial","width":1600,"height":900,"pos":[-80,-70,40],"target":[0,10,5],"sun":[165,42],"fov":50,"near":1,"shadow":120,"shadowCentre":[0,10,3],"exposure":1.05},
+ {"name":"s4b_side_hill_realistic_alongA","width":1600,"height":900,"pos":[-128,-1.5,3.3],"target":[-50,6,4],"sun":[165,42],"fov":62,"near":0.2,"shadow":110,"shadowCentre":[-70,5,3],"exposure":1.05},
+ {"name":"s4b_side_hill_realistic_alongB","width":1600,"height":900,"pos":[128,1.5,5.2],"target":[50,8,5],"sun":[165,42],"fov":62,"near":0.2,"shadow":110,"shadowCentre":[70,5,4],"exposure":1.05},
+ {"name":"s4b_side_hill_realistic_end","width":1600,"height":900,"pos":[85,-48,22],"target":[135,4,4],"sun":[165,42],"fov":55,"near":1,"shadow":140,"shadowCentre":[120,4,4],"exposure":1.05}
+]

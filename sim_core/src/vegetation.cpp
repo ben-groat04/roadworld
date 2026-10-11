@@ -44,7 +44,7 @@ double smooth01(double x) {
     return x * x * (3 - 2 * x);
 }
 
-u64 key3(u64 seed, u64 a, u64 b = 0, u64 c = 0) { return mix64(mix64(mix64(seed ^ mix64(a)) ^ b) ^ c); }
+u64 key3(u64 seed, u64 a, u64 b = 0, u64 c = 0, u64 d = 0) { return mix64(mix64(mix64(mix64(seed ^ mix64(a)) ^ b) ^ c) ^ d); }
 double h01(u64 seed, u64 a, u64 b = 0, u64 c = 0) { return hash01(key3(seed, a, b, c)); }
 u64 ui(i64 v) { return static_cast<u64>(v); }
 
@@ -809,8 +809,8 @@ EdgeRec make_edge_rec(const Edge& e, const RoadType& rt, const VegetationRules& 
     r.road_type = e.road_type;
     const Section sec = compute_section(e, rt, region);
     if (!sec.ok) return r;
-    r.pl = sec.L.ext;
-    r.pr = sec.R.ext;
+    r.pl = sec.L.back;  // paved: verge-role lanes are grass, not paved
+    r.pr = sec.R.back;
     corridor_extents(rt, rules.for_road(e.road_type), sec, region, r.cl, r.cr);
     for (const EdgeSample& s : sample_centreline(e, SamplingParams{0.02, 0.1, 10.0})) r.line.push_back(s.pos.xy());
     for (const Vec2& p : r.line) box_add(r.box, p);
@@ -1715,7 +1715,8 @@ void gen_edge(const GenEnv& v, EdgeId id, PieceMap& out) {
         const VergeRule& vr = rule.verge;
         const double gap = 0.02;
         const double vw = median ? (vr.median_grass ? rt->median_gap * 0.5 : 0.0) : vr.width;
-        const u64 sseed = key3(oseed, ui(si));
+        // Keyed by nearside / offside (not left / right) so a mirrored layout mirrors the random choices too.
+        const u64 sseed = key3(oseed, ui(((si == 0) == (v.region.driving_side == DrivingSide::Left)) ? 0 : 1));
 
         // ---- ribbons
         const auto ribbon = [&](const std::function<double(double)>& din, const std::function<double(double)>& dout, bool test_inner, const std::string& type,

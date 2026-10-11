@@ -55,7 +55,7 @@ def build_asphalt(report):
     gravel = mb.tex("GravelDiffuse", T("gravel", "gravel_floor_02", "diff"), mb.div(uv, 2.0), "color")
 
     # colour correction: desaturate the brownish Poly Haven tint, push slightly cool
-    desat_f = sp("Desaturate", 0.7, "Colour")
+    desat_f = sp("Desaturate", 0.8, "Colour")
     cool = mb.vp("CoolTint", (0.98, 1.0, 1.025), "Colour")
     base_c = mb.mul(mb.desat(base, desat_f), cool)
     worn_c = mb.mul(mb.desat((worn, "RGB"), desat_f), cool)
@@ -64,7 +64,7 @@ def build_asphalt(report):
     ax = mb.absx(u1x)
     valid = mb.smooth(0.01, 0.2, u1y)
     tc = sp("TrackCentreM", 0.9, "Tracks")
-    tw = sp("TrackWidthM", 0.35, "Tracks")
+    tw = sp("TrackWidthM", 0.45, "Tracks")
     track = mb.mul(mb.one_minus(mb.smooth(0.0, tw, mb.absx(mb.sub(ax, tc)))), valid)
     centre = mb.mul(mb.one_minus(mb.smooth(0.05, 0.5, ax)), valid)
 
@@ -80,8 +80,8 @@ def build_asphalt(report):
     macro_s = sp("MacroStrength", 0.15, "Colour")
     macro_tone = mb.lerp(mb.sub(1.0, macro_s), mb.add(1.0, macro_s), macro_n)
     var_tone = mb.add(1.0, mb.mul(mb.mul(mb.sub(vb, 0.5), 2.0), sp("VariationStrength", 0.30, "Colour")))
-    alb = mb.mul(mb.mul(mb.mul(alb, sp("AlbedoScale", 1.05, "Colour")), macro_tone), var_tone)
-    alb = mb.mul(alb, mb.sub(1.0, mb.mul(track, sp("TrackDarken", 0.12, "Tracks"))))
+    alb = mb.mul(mb.mul(mb.mul(alb, sp("AlbedoScale", 0.75, "Colour")), macro_tone), var_tone)
+    alb = mb.mul(alb, mb.sub(1.0, mb.mul(track, sp("TrackDarken", 0.22, "Tracks"))))
     alb = mb.mul(alb, mb.add(1.0, mb.mul(centre, sp("CentreBrighten", 0.04, "Tracks"))))
 
     # patches: sparse round repair patches (sharp edge), per-cell hash
@@ -109,15 +109,15 @@ def build_asphalt(report):
 
     # edge dirt (G): ragged darkening, then a gravel / soil fringe
     n_hi = nz(mb, uv, 0.35, (7.0, 3.0), levels=3)
-    rag = sp("EdgeRagged", 0.6, "Edge")
+    rag = sp("EdgeRagged", 0.4, "Edge")
     dirt = mb.smooth(0.08, 0.55, mb.add(vg, mb.mul(mb.sub(n_hi, 0.5), rag)))
     alb = mb.mul(alb, mb.sub(1.0, mb.mul(dirt, sp("EdgeDirtDarken", 0.28, "Edge"))))
     n_mid = nz(mb, uv, 1.6, (40.0, 12.0), levels=2)
-    fth = sp("FringeThreshold", 0.76, "Edge")
-    fringe = mb.mul(mb.smooth(mb.sub(fth, 0.08), mb.add(fth, 0.12), mb.add(vg, mb.mul(mb.sub(n_mid, 0.5), 0.6))),
-                    sp("FringeAmount", 0.6, "Edge"))
-    fringe_c = mb.mul(mb.mul(mb.desat((gravel, "RGB"), 0.3), sp("FringeGravelScale", 0.35, "Edge")),
-                      mb.vp("FringeTint", (1.0, 0.92, 0.78), "Edge"))
+    fth = sp("FringeThreshold", 0.88, "Edge")
+    fringe = mb.mul(mb.smooth(mb.sub(fth, 0.04), mb.add(fth, 0.06), mb.add(vg, mb.mul(mb.sub(n_mid, 0.5), 0.3))),
+                    sp("FringeAmount", 0.25, "Edge"))
+    fringe_c = mb.mul(mb.mul(mb.desat((gravel, "RGB"), 0.6), sp("FringeGravelScale", 0.25, "Edge")),
+                      mb.vp("FringeTint", (0.9, 0.88, 0.82), "Edge"))
     alb = mb.lerp(alb, fringe_c, fringe)
 
     # oil (default 0)
@@ -129,7 +129,7 @@ def build_asphalt(report):
     r_tex = mb.sat(mb.mask(arm1, "g"))
     rough = mb.lerp(sp("RoughMin", 0.66, "Surface"), sp("RoughMax", 0.9, "Surface"), r_tex)
     rough = mb.add(rough, mb.mul(centre, sp("CentreRoughAdd", 0.05, "Tracks")))
-    rough = mb.add(rough, mb.mul(track, sp("TrackRoughDelta", -0.10, "Tracks")))
+    rough = mb.add(rough, mb.mul(track, sp("TrackRoughDelta", -0.15, "Tracks")))
     rough = mb.add(rough, mb.mul(dirt, sp("EdgeDirtRoughAdd", 0.12, "Edge")))
     rough = mb.add(rough, mb.mul(patch, sp("PatchRoughDelta", 0.08, "Wear")))
     rough = mb.add(rough, mb.mul(worn_blend, 0.05))
@@ -152,9 +152,9 @@ def build_asphalt(report):
     return {
         "default": ml.make_instance("MI_RoadAsphalt", FOLDER, m),
         "new": ml.make_instance("MI_RoadAsphalt_New", FOLDER, m, {
-            "AlbedoScale": 0.8, "PatchAmount": 0.02, "CrackSealAmount": 0.15, "WornBlendStrength": 0.3, "VariationStrength": 0.2}),
+            "AlbedoScale": 0.65, "PatchAmount": 0.02, "CrackSealAmount": 0.15, "WornBlendStrength": 0.3, "VariationStrength": 0.2}),
         "worn": ml.make_instance("MI_RoadAsphalt_Worn", FOLDER, m, {
-            "AlbedoScale": 1.3, "WearBias": 0.25, "PatchAmount": 0.10, "CrackSealAmount": 0.7, "WornBlendStrength": 0.9}),
+            "AlbedoScale": 0.95, "WearBias": 0.25, "PatchAmount": 0.10, "CrackSealAmount": 0.7, "WornBlendStrength": 0.9}),
         "patched": ml.make_instance("MI_RoadAsphalt_Patched", FOLDER, m, {
-            "AlbedoScale": 1.15, "WearBias": 0.25, "PatchAmount": 0.35, "CrackSealAmount": 0.9}),
+            "AlbedoScale": 0.85, "WearBias": 0.25, "PatchAmount": 0.35, "CrackSealAmount": 0.9}),
     }

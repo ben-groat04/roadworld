@@ -153,10 +153,15 @@ SUN_ELEVATION_DEG = 45.0   # tunable. Light travels toward yaw SUN_TRAVEL_YAW (U
 SUN_TRAVEL_YAW = 40.0      # north-east, i.e. the sun stands south-west (review: GSV/aerial shadows), so shadows fall across both axes of the layout
 SUN_LUX = 100000.0
 SUN_SOURCE_ANGLE = 1.2     # degrees: soft shadow edges (real sun 0.53; a little more reads like thin high cloud)
-SKY_INTENSITY = 3.0  # skylight with real-time capture; 1.0 left shadows black, 6.0 washed the scene out
+SKY_INTENSITY = 7.0  # skylight with real-time capture. Fourth run (docs/progress/2026-10-11-unreal-fourth/LUMEN_FINDINGS.md): the black
+# shadows are correct DIRECT sun shadows (ShowFlag.DynamicShadows 0 removes them) lit only by sky light and then crushed by the tone
+# curve toe (pre-tonemap shade is ~36% of sunlit). The sky light multiplier does not change the visible sky, only the fill:
+# 3.0 -> 7.0 lifts shade about 3x; the exposure bias below pulls the sunlit road back.
+EXPOSURE_BIAS_EV = -0.35   # post-process auto_exposure_bias (negative = darker); compensates the stronger fill
 FOG_DENSITY = 0.006
 FOG_HEIGHT_FALLOFF = 0.2
 FOG_START_DISTANCE_CM = 3000.0
+FOG_CUTOFF_CM = 3000000.0  # 30 km. The dark navy horizon band was the height fog applied to near-horizon SKY pixels; the cutoff exempts them (the floor ends at 20 km)
 FOG_MAX_OPACITY = 0.92
 FOG_INSCATTER = (0.50, 0.58, 0.68)  # linear; pale grey-blue haze (the atmosphere contribution is added on top)
 
@@ -194,6 +199,7 @@ def configure_fog(fog):
     setp(comp, "fog_density", FOG_DENSITY, "fog")
     setp(comp, "fog_height_falloff", FOG_HEIGHT_FALLOFF, "fog")
     setp(comp, "start_distance", FOG_START_DISTANCE_CM, "fog")
+    setp(comp, "fog_cutoff_distance", FOG_CUTOFF_CM, "fog")
     setp(comp, "fog_max_opacity", FOG_MAX_OPACITY, "fog")
     setp(comp, "fog_inscattering_luminance", unreal.LinearColor(FOG_INSCATTER[0], FOG_INSCATTER[1], FOG_INSCATTER[2], 1.0), "fog")
     setp(comp, "sky_atmosphere_ambient_contribution_color_scale", unreal.LinearColor(1.0, 1.0, 1.0, 1.0), "fog")
@@ -223,7 +229,7 @@ def configure_post_process(ppv):
     setp(settings, "override_auto_exposure_method", True, "ppv.settings")
     setp(settings, "auto_exposure_method", unreal.AutoExposureMethod.AEM_BASIC, "ppv.settings")
     setp(settings, "override_auto_exposure_bias", True, "ppv.settings")
-    setp(settings, "auto_exposure_bias", 0.0, "ppv.settings")
+    setp(settings, "auto_exposure_bias", EXPOSURE_BIAS_EV, "ppv.settings")
     # Mild post: no heavy bloom / vignette / fringing, a trace of film grain, no motion blur in stills.
     for flag, prop, value in (("override_bloom_intensity", "bloom_intensity", 0.2),
                               ("override_vignette_intensity", "vignette_intensity", 0.15),

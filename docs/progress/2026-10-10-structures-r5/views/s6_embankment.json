@@ -1,0 +1,8 @@
+[
+ {"name":"s6_embankment_street","width":1600,"height":900,"pos":[-110,-48,2.2],"target":[-110,0,3.5],"fov":70,"near":0.2,"shadow":120,"shadowCentre":[-110,0,3],"exposure":1.15,"sun":[150,40]},
+ {"name":"s6_embankment_aerial","width":1600,"height":900,"pos":[-40,-80,30],"target":[-110,0,2.5],"fov":55,"near":1,"shadow":170,"shadowCentre":[-90,0,3],"exposure":1.25,"sun":[150,40]},
+ {"name":"s6_embankment_along","width":1600,"height":900,"pos":[-210,-32,3.2],"target":[-60,0,3.0],"fov":60,"near":0.5,"shadow":200,"shadowCentre":[-100,0,3],"exposure":1.15,"sun":[110,35]},
+ {"name":"s6_embankment_end","width":1600,"height":900,"pos":[-235,-30,6],"target":[-110,0,2.5],"fov":50,"near":0.5,"shadow":170,"shadowCentre":[-150,0,3],"exposure":1.2,"sun":[120,40]},
+ {"name":"s6_embankment_side_close","width":1600,"height":900,"pos":[-60,-34,1.4],"target":[-60,-6,4.2],"fov":65,"near":0.2,"shadow":80,"shadowCentre":[-60,-14,2],"exposure":1.15,"sun":[110,30]},
+ {"name":"s6_embankment_runout_close","width":1600,"height":900,"pos":[-135,-20,2.0],"target":[-112,-4,2.0],"fov":65,"near":0.2,"shadow":80,"shadowCentre":[-120,-8,2],"exposure":1.15,"sun":[110,30]}
+]

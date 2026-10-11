@@ -214,16 +214,28 @@ struct GradingRules {
     double tunnel_clear_height = 5.5;  // m, tunnel springline height above the road (side-wall headroom)
     // retaining walls and earthworks (docs/planning-log.md, grading round 4)
     double wall_max_height = 3.0;      // m, tallest single retaining wall; taller needs wall + slope, benching, or (flagged) exceeds it
-    double bench_min_width = 2.0;      // m, flat bench between stacked walls, from the back of the lower wall to the face of the upper one
+    double bench_min_width = 4.5;      // m, berm between two stacked walls, from the back of the lower wall to the face of the upper one
     double wall_min_length = 4.0;      // m, a wall run shorter than this (one panel) becomes a slope
-    double toe_ditch_depth = 0.3;      // m, shallow ditch between verge and slope at the toe of a cutting (0 disables)
-    double toe_ditch_width = 1.0;      // m
+    double toe_ditch_depth = 0.4;      // m, shallow ditch between verge and slope at the toe of a cutting (0 disables)
+    double toe_ditch_width = 1.5;      // m
     double end_taper_batter = 4.0;     // horizontal : vertical of the run-out beyond a free road end (embankment eases into the ground along the road)
     double wing_max = 10.0;            // m, longest wing wall beside a portal / abutment
     double wing_ratio = 1.0;           // m of wing wall per m of retained height at the structure
     double wing_min_height = 0.3;      // m, no wing wall where the ground beside the structure is within this of formation
     double round_daylight = 2.0;       // m (horizontal), roll-over of slope tops / toes into natural ground
     double round_hinge = 1.0;          // m (horizontal), parabolic verge -> slope hinge
+    // steep ground (grading round 5): at most max_tiers walls; beyond that a rock cut (cut side) or one tall wall / steep fill (fill side)
+    int max_tiers = 2;                 // stacked walls per side at most
+    double wall_slope_extra = 15.0;    // m, the slope above / below a wall may run this much farther than a plain slope may before it must daylight
+    double berm_slope = 0.25;          // v / h, the strip between two tiers climbs (cut) / falls (fill) away from the lower wall
+    double wall_hard_max = 6.0;        // m, tallest single fill wall; beyond it needs_structure (viaduct / half-bridge)
+    double rock_cut_batter = 0.5;      // h per 1 v of an engineered rock-cut face
+    double rock_berm_width = 3.0;      // m, catch berm between rock-cut faces
+    double rock_bench_height = 9.0;    // m, height of one rock-cut face between berms
+    double fill_steep_batter = 1.5;    // h per 1 v, steepest stable fill slope graded where a wall cannot hold the fill
+    double corridor_max = 90.0;        // m beyond the footprint edge up to which two-tier walls / rock cuts may extend
+    double wall_vis_min = 0.35;        // m, a terraced wall lower than this is not built
+    double reach_fade = 8.0;           // m, a slope that has not met the ground by the end of the road's reach fades into it over this run
 };
 
 // Structure dimensions (region.json "structures" object, used by structure_mesh.h). The values here are the

@@ -60,17 +60,21 @@ def build_ground():
                noise_function=unreal.NoiseFunction.NOISEFUNCTION_GRADIENT_ALU, levels=2, level_scale=2.0,
                output_min=0.0, output_max=1.0, quality=1)
     mb.stats["noise"] += 1
-    level1 = mb.div(mb.floor(mb.mul(f1, 3.0)), 2.0)   # 0, .5, 1 (a little above 1 rarely: clamp)
-    level1 = mb.sat(level1)
-    level2 = mb.sat(mb.div(mb.floor(mb.mul(f2, 3.0)), 2.0))
+    # SOFT tone levels (the former floor() quantisation made hard-edged discs, seen from the air)
+    level1 = mb.smooth(0.25, 0.75, f1)
+    level2 = mb.smooth(0.25, 0.75, f2)
     macro = mb.smooth(0.35, 0.65, mb.noise_m(uv, 43.0, levels=2))
 
     dry_amount = mb.sp("DryAmount", 0.55, G)
     dry_mix = mb.sat(mb.mul(dry_amount, mb.add(mb.mul(level1, 0.6), mb.mul(macro, 0.4))))
-    tint = mb.lerp(mb.vp("GrassTint", (0.85, 1.25, 0.72), G), mb.vp("DryTint", (1.7, 1.65, 1.2), G), dry_mix)
-    contrast = mb.sp("FieldContrast", 0.22, G)
+    tint = mb.lerp(mb.vp("GrassTint", (0.82, 1.35, 0.68), G), mb.vp("DryTint", (1.7, 1.65, 1.2), G), dry_mix)
+    contrast = mb.sp("FieldContrast", 0.12, G)
     bright = mb.lerp(mb.sub(1.0, contrast), mb.add(1.0, contrast), level2)
-    grass_col = mb.mul(mb.mul(mb.desat((diff, ""), mb.sp("GrassDesaturate", 0.85, G)), tint), bright)  # texture mean (0.082,0.050,0.009) is brown: neutralise first, then tint green-grey
+    # distance fade of the texture detail to its mean colour: the 2 m tile repeats read as a cross-hatch weave from the air
+    mean_lin = mb.desat((0.078, 0.047, 0.0075), mb.sp("GrassDesaturate", 0.85, G))
+    far = mb.smooth(mb.sp("DetailFadeStartM", 120.0, G), mb.sp("DetailFadeEndM", 500.0, G), mb.div(mb.op("PixelDepth", []), 100.0))
+    detail = mb.lerp(mb.desat((diff, ""), mb.sp("GrassDesaturate", 0.85, G)), mean_lin, far)
+    grass_col = mb.mul(mb.mul(detail, tint), bright)  # texture mean (0.082,0.050,0.009) is brown: neutralise first, then tint green-grey
 
     soil_amount = mb.sp("SoilAmount", 0.45, G)
     soil_noise = mb.smooth(0.6, 0.78, mb.noise_m(uv, 7.0, levels=2, offset=5.0))
@@ -80,7 +84,7 @@ def build_ground():
     albedo = mb.lerp(grass_col, mb.mul(mb.desat((soil, "RGB"), mb.sp("SoilDesaturate", 0.75, G)), 0.85), soil_mask)  # grey-brown dirt, not orange
 
     nstr = mb.sp("NormalStrength", 1.0, G)
-    normal = mb.flatten((nor, ""), mb.sub(1.0, nstr))
+    normal = mb.flatten((nor, ""), mb.maxx(mb.sub(1.0, nstr), far))
     rough = mb.clamp(mb.mask(arm, "g"), 0.75, 1.0)
     mb.out("MP_BASE_COLOR", albedo)
     mb.out("MP_NORMAL", normal)

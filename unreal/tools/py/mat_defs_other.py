@@ -29,9 +29,9 @@ def build_kerb(report):
     wx = mb.floor(mb.div(mb.mask(uv, "r"), 37.0))
     wy = mb.floor(mb.div(mb.mask(uv, "g"), 41.0))
     h = mb.noise(mb.vec3(mb.floor(unit), mb.add(wx, mb.mul(wy, 7.0)), 0.0), 1.0, fn="VALUE_ALU")
-    col = mb.mul(col, mb.add(1.0, mb.mul(mb.sub(h, 0.5), mb.mul(sp("UnitVariation", 0.18, "Kerb"), 2.0))))
-    macro = nz(mb, uv, 7.0, (3.0, 11.0), levels=2)
-    col = mb.mul(col, mb.add(1.0, mb.mul(mb.sub(macro, 0.5), mb.mul(sp("MacroVariation", 0.30, "Kerb"), 2.0))))
+    col = mb.mul(col, mb.add(1.0, mb.mul(mb.sub(h, 0.5), mb.mul(sp("UnitVariation", 0.10, "Kerb"), 2.0))))
+    macro = nz(mb, uv, 19.0, (3.0, 11.0), levels=2)   # long wavelength: 7 m blobs read as leopard print on the kerb tops
+    col = mb.mul(col, mb.add(1.0, mb.mul(mb.sub(macro, 0.5), mb.mul(sp("MacroVariation", 0.08, "Kerb"), 2.0))))
     # joints
     f = mb.frac(unit)
     jd = mb.minx(f, mb.sub(1.0, f))
@@ -71,11 +71,11 @@ def build_footway(report):
     col = mb.mul(mb.desat((diff, "RGB"), sp("Desaturate", 0.65, "Footway")), mb.mul(sp("AlbedoScale", 0.85, "Footway"), mb.vp("CoolTint", (0.97, 1.0, 1.03), "Footway")))
     m1 = nz(mb, uv, 4.0, (21.0, 8.0), levels=2)
     m2 = nz(mb, uv, 15.0, (5.0, 33.0))
-    mv = sp("MacroVariation", 0.14, "Footway")
+    mv = sp("MacroVariation", 0.07, "Footway")
     col = mb.mul(col, mb.add(1.0, mb.mul(mb.add(mb.sub(m1, 0.5), mb.mul(mb.sub(m2, 0.5), 0.8)), mb.mul(mv, 2.0))))
     col = mb.mul(col, mb.add(1.0, mb.mul(mb.sub(mb.vcol("b"), 0.5), 0.2)))
-    dirt = mb.smooth(0.55, 0.8, nz(mb, uv, 0.9, (13.0, 2.0), levels=3))
-    col = mb.mul(col, mb.sub(1.0, mb.mul(dirt, sp("DirtAmount", 0.25, "Footway"))))
+    dirt = mb.smooth(0.5, 0.95, nz(mb, uv, 2.5, (13.0, 2.0), levels=3))   # softer, larger, weaker than before: no blotches
+    col = mb.mul(col, mb.sub(1.0, mb.mul(dirt, sp("DirtAmount", 0.08, "Footway"))))
     rough = mb.clamp(mb.add(mb.lerp(0.75, 0.95, mb.mask(arm, "g")), mb.mul(dirt, 0.04)), 0.6, 1.0)
     normal = mb.flatten((nor, ""), mb.sub(1.0, sp("NormalStrength", 1.0, "Footway")))
     mb.out("MP_BASE_COLOR", col)
@@ -100,7 +100,7 @@ def build_marking(report, colours):
     sp = mb.sp
     uv = mb.world_m_xy()
     color = mb.vp("Color", (0.79, 0.79, 0.77), "Paint")
-    bright = sp("PaintBrightness", 0.92, "Paint")
+    bright = sp("PaintBrightness", 0.85, "Paint")
     # chips: 3-octave noise at ~0.25 m plus a coarser 2 m modulation so wear comes in clusters
     chip_scale = sp("ChipScaleM", 0.22, "Paint")
     n_chip = nz(mb, uv, chip_scale, (17.0, 4.0), levels=3)

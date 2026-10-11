@@ -42,6 +42,8 @@ GroundFn make_terrain(const std::string& n) {
     if (n == "sidehill") return [](double, double y) { return 0.85 * y + 2.0; };
     // steep side-hill whose contour wanders along the road (+-1.2 m over 25 m): the wall top follows it in visible 4 m panel steps
     if (n == "sidehill_wavy") return [](double x, double y) { return 0.85 * y + 2.0 + 1.2 * std::sin(x / 25.0); };
+    // realistic side-hill (gradient 0.4, 22 deg) with the same wander: the main retaining-wall scenario
+    if (n == "sidehill_gentle") return [](double x, double y) { return 0.4 * y + 2.0 + 1.2 * std::sin(x / 25.0); };
     // moderate side-hill rising to the north: two stacked roads
     if (n == "terrace") return [](double, double y) { return 0.45 * y + 2.0; };
     // shallow ditch (~12 m wide, 5 m deep) along y = 0 crossing a north-south road
@@ -156,6 +158,9 @@ int main(int argc, char** argv) {
 
     // ---- walls + structures on the graded ground
     std::vector<StructureWallRun> walls;
+    for (const auto& r : roads)
+        for (const SurfaceRun& sr : surface_runs(r))
+            std::printf("  surface run side=%c cut=%d rock_cut=%d needs_structure=%d samples %d..%d\n", sr.side, (int)sr.cut, (int)sr.rock_cut, (int)sr.needs_structure, sr.first, sr.last);
     for (const auto& r : roads)
         for (const WallRun& w : wall_runs(r, natural, p)) {
             {

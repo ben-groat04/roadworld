@@ -56,6 +56,10 @@ const CASES = [
   { name: 'bench_side_hill', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0 }, { k: 'slopeEnv', slope: 0.62, yc: 0, cx: 130, sig: 60 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [260, 0, 30]] }] },
   // a very steep side hill: the cap cannot be kept inside the corridor, the legacy single wall is used and flagged over_height
   { name: 'over_height_cliff', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0 }, { k: 'slopeEnv', slope: 1.6, yc: 0, cx: 100, sig: 40 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [200, 0, 30]] }] },
+  // grading round 5: a realistic side hill (gradient ~0.4, 22 deg) is the main retaining-wall scenario: slopes plus at most one wall or two tiers
+  { name: 'side_hill_realistic', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0.4 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [260, 0, 30]] }] },
+  // the stress case: a uniform 0.85 gradient (about 40 deg): rock cut uphill, a tall wall or needs_structure downhill
+  { name: 'stress_gradient_085', off: NOISE_OFF, terms: [{ k: 'plane', c0: 30, cx: 0, cy: 0.85 }, ripple], roads: [{ type: 2, pts: [[0, 0, 30], [260, 0, 30]] }] },
   // two roads 20 m apart at different levels on a terrace: ONE structure, built by the lower road
   { name: 'adjacent_levels', off: NOISE_OFF, terms: [{ k: 'plane', c0: 20, cx: 0, cy: 0.3 }, ripple], roads: [{ type: 2, pts: [[0, 0, 20], [200, 0, 20]] }, { type: 2, pts: [[0, 20, 28], [200, 20, 28]] }] },
   // road ramps up 0 -> 6 m on flat ground and ends: the embankment eases out along the road beyond its end (run-out batter)
@@ -67,8 +71,8 @@ const CASES = [
 ];
 
 // compact plan serialisation: 0 | [full, wing, over, plat, nat, cut, n (0 for terraces), fw, ...a, ...z, base, stairs, force, h, (top level only: nStairs, reachE, alongMax, sw, hasAlt, altN, ...altA, ...altZ)]
-const ser = (p, isBase = false) => !p ? 0 : [+!!p.full, +!!p.wing, +!!p.over, +!!p.plat, +!!p.nat, +!!p.cut, p.stairs ? 0 : p.n, p.fw ?? 0, ...p.a.map(r4), ...p.z.map(r4), ser(p.base, true),
-  +!!p.stairs, +!!p.force, r4(p.h ?? 0), ...(isBase ? [] : [p.stairs ? p.n : 0, r4(p.reachE ?? 0), r4(p.alongMax ?? 0), r4(p.sw ?? 1), +!!p.alt, p.alt ? p.alt.n : 0, ...(p.alt ? p.alt.a.map(r4) : []), ...(p.alt ? p.alt.z.map(r4) : [])])];
+const ser = (p, isBase = false) => !p ? 0 : [+!!p.full, +!!p.wing, isBase ? 0 : +!!p.over, +!!p.plat, +!!p.nat, +!!p.cut, p.stairs ? 0 : p.n, p.fw ?? 0, ...p.a.map(r4), ...p.z.map(r4), ser(p.base, true),
+  +!!p.stairs, p.mt ?? 0, r4(p.h ?? 0), p.kind === 'rock' ? 1 : p.kind === 'sfill' ? 2 : 0, ...(isBase ? [] : [+!!p.needs, p.stairs ? p.n : 0, r4(p.reachE ?? 0), r4(p.alongMax ?? 0), r4(p.sw ?? 1), +!!p.alt, p.alt ? p.alt.n : 0, ...(p.alt ? p.alt.a.map(r4) : []), ...(p.alt ? p.alt.z.map(r4) : [])])];
 const q4 = v => Math.round(v * 1e4);
 const r4 = v => Math.round(v * 1e4) / 1e4;
 
@@ -89,7 +93,7 @@ function buildCase(c) {
   const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER'), roundK: run('ROUND_DAYLIGHT / (2 * T.batter)'), roundHinge: run('ROUND_HINGE'), ditchD: run('DITCH_D'), ditchW: run('DITCH_W'), endBatter: run('END_BATTER'), reachFade: run('REACH_FADE') };
   const out = {
     name: c.name, version: 2, authored: c.authored || null, quant: 1e-4, terrain,
-    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingRatio: run('WING_RATIO'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundHinge: run('ROUND_HINGE'), roundReach: run('ROUND_REACH'), wallRamp: run('WALL_RAMP'), planeMargin: run('PLANE_MARGIN'), wallMaxHeight: run('WALL_MAX_H'), benchMinWidth: run('BENCH_MIN'), wallMinLength: run('WALL_MIN_LEN'), sampleStep: run('SAMPLE_STEP'), toeDitchDepth: run('DITCH_D'), toeDitchWidth: run('DITCH_W'), endTaperBatter: run('END_BATTER'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
+    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingRatio: run('WING_RATIO'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundHinge: run('ROUND_HINGE'), roundReach: run('ROUND_REACH'), wallRamp: run('WALL_RAMP'), planeMargin: run('PLANE_MARGIN'), wallMaxHeight: run('WALL_MAX_H'), maxTiers: run('MAX_TIERS'), wallSlopeExtra: run('WALL_SLOPE_EXTRA'), bermSlope: run('BERM_SLOPE'), wallHardMax: run('WALL_HARD_MAX'), rockBatter: run('ROCK_BATTER'), rockBerm: run('ROCK_BERM'), rockBenchH: run('ROCK_BENCH_H'), fillSteep: run('FILL_STEEP'), corridorMax: run('CORRIDOR_MAX'), wallVisMin: run('WALL_VIS_MIN'), benchMinWidth: run('BENCH_MIN'), wallMinLength: run('WALL_MIN_LEN'), sampleStep: run('SAMPLE_STEP'), toeDitchDepth: run('DITCH_D'), toeDitchWidth: run('DITCH_W'), endTaperBatter: run('END_BATTER'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
     roads: [], tiles: [],
   };
   rsJs.forEach((r, ri) => {
@@ -100,7 +104,7 @@ function buildCase(c) {
       samples: S.map(s => [s.s, s.x, s.y, s.z, s.h]),
       expect: {
         br: col(s => +!!s.br), tu: col(s => +!!s.tu), portal: col(s => +!!s.portal), wL: col(s => s.wL), wR: col(s => s.wR), wL0: col(s => s.wL0), wR0: col(s => s.wR0),
-        plL: col(s => ser(s.pL)), plR: col(s => ser(s.pR)), overHeight: !!r.overHeight, wwL: col(s => s.wwL), wwR: col(s => s.wwR), mL: col(s => +!!s.mL), mR: col(s => +!!s.mR), sL: col(s => +!!s.sL), sR: col(s => +!!s.sR), supL: col(s => r4(s.supL || 0)), supR: col(s => r4(s.supR || 0)),
+        plL: col(s => ser(s.pL)), plR: col(s => ser(s.pR)), overHeight: !!r.overHeight, wwL: col(s => s.wwL), wwR: col(s => s.wwR), mL: col(s => +!!s.mL), mR: col(s => +!!s.mR), rockL: col(s => +!!s.rockL), rockR: col(s => +!!s.rockR), needsL: col(s => +!!s.needsL), needsR: col(s => +!!s.needsR), sL: col(s => +!!s.sL), sR: col(s => +!!s.sR), supL: col(s => r4(s.supL || 0)), supR: col(s => r4(s.supR || 0)),
         portals: r.portals, reach: rd[ri].reach, bbox: [rd[ri].bbox.x0, rd[ri].bbox.y0, rd[ri].bbox.x1, rd[ri].bbox.y1],
         ndec: rd[ri].samples.length, planes: rd[ri].planes.map(p => [p.k0, p.k1, p.x, p.y, p.nx, p.ny]),
       },
