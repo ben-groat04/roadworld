@@ -8,8 +8,6 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Earthworks round 9: disturbance view and cross-sections first, then a hard bound on changed ground on every scene, plus round 8 leftovers | `agent/grade-r9`, `..\roadworld-wt-grade-r9` | `agent/grading-r6` 2aff581 + main | `tools/check_handin.mjs` passes on `docs/progress/2026-10-11-structures-r9`; main session opens the disturbance views and sections |
 | Integration: merge, in order, world cover r4 (`agent/world-cover-r2` 0da3c74), junction markings (`agent/junction-markings` d611346), earthworks r7+r8 (`agent/grading-r6` 2aff581), road tool gaps (`agent/road-tool-2` d7dfc99), then main | `integ/2026-10-11`, `..\roadworld-wt-integ` | main | clean builds, full suite on gcc and MSVC after each merge; then fast-forward main |
 | Unreal milestone 2 code (click-click road drawing, undo), compile only | `agent/unreal-m2`, `..\roadworld-wt-m2` | main 269fa1e | compiles; then merge and playtest (below) |
-| Rule fix: "open EVERY reference the brief names" (photos, screenshots, specs), `References opened: N of M` line in STATUS, enforced by `tools/check_handin.mjs` (+ `--no-visual`) | `agent/rules-fix`, `../roadworld-wt-rules` | main | main session merges after reading the diff |
-| Research: can Claude Code hooks block a subagent hand-in or a brief without the contract (mechanical enforcement) | read-only | - | answer with doc links; then the owner decides whether hooks go into `.claude/settings.json` |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
 ## Next, in order (start when its blocker clears)
@@ -61,7 +59,8 @@ Updated by the main session every time an agent is started, an agent reports, or
 - Markings drawn in the road material from lane UVs: spike (idea from the Road Creator Pro research).
 
 ## Waiting on the owner (not blocking)
-- Hooks: if the research says a hook can refuse an incomplete hand-in or brief, OK to add them to the repo (`.claude/settings.json`)?
+- Hooks (researched 11 Oct from the Claude Code docs, untested here): a `PreToolUse` hook on the Agent tool can refuse a brief without the contract; a `SubagentStop` hook can refuse an agent finishing while `tools/check_handin.mjs` fails (stderr + exit 2 becomes its next instruction); `SubagentStart` can inject the contract; a custom agent type in `.claude/agents/builder.md` can preload it. Needs `.claude/settings.json` in the repo = persistent configuration, so the owner must say yes. Unconfirmed in the docs: whether SubagentStop fires for background agents, what `cwd` is in the hook input, loop cap for SubagentStop (keep an own counter per agent, stop blocking after 3, exit 2 never 1 on internal error). If approved: one agent builds `tools/hooks/brief_gate.mjs` and `handin_gate.mjs`, then tests the five cases (brief refused, hand-in refused and continued, counter stops at 3, fires for background agents, agent_type value).
+- Agents still running on briefs written before the contract: Unreal M2 and vegetation kit (both were sent the new requirements by message). Their hand-ins get the check like any other; if it fails they go back.
 - Confirm the five settled contradictions in planning log Round 49 (fresh agent per round; decision split; 3 photos per case; parallel within 3-4 agents and one editor; stop rule replaces time-boxes).
 - Deep cuts on steep hills: rock face (current) vs taller walls or steeper soil banks. Main session will pick a default in round 9 unless told otherwise.
 
