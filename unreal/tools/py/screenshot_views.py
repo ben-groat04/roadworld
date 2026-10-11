@@ -36,6 +36,36 @@ except ImportError:
     unreal = None
 
 LEVEL = "/Game/Maps/RoadTest"
+SANDBOX_LEVEL = "/Game/CityPainter/Maps/L_Sandbox"
+
+# Sandbox mode (argument `sandbox`): five terrain views of the seeded test world in L_Sandbox. Positions are SIM metres
+# (x east, y north) plus a height ABOVE THE GROUND at that point (looked up through UCPWorldSubsystem.GetTerrainHeightM),
+# so the views follow the seed. Seed 1: valley runs along +y near x = 0..60, the steep scarp is on the WEST side around
+# y = -180 (docs/progress/2026-10-11-test-world/seed1_hillshade_contours.png).
+# name -> (eye x, eye y, eye metres above ground, target x, target y, target metres above ground, focal mm)
+SANDBOX_VIEWS = [
+    ("sandbox_01_overview", (900, -1000, 450), (-100, 0, 0), 28.0),
+    ("sandbox_02_valley", (30, -900, 60), (30, 200, 0), 28.0),
+    ("sandbox_03_steep_side", (350, -180, 40), (-110, -180, 20), 28.0),
+    ("sandbox_04_low_oblique", (300, 300, 8), (-100, -100, 10), 35.0),
+    ("sandbox_05_straight_down", (0, 0, 2500), (0, 0.01, 0), 24.0),
+]
+
+
+def sandbox_views():
+    world = subsystem("UnrealEditorSubsystem").get_editor_world()
+    sub = unreal.CPWorldSubsystem
+    if abs(sub.get_terrain_height_m(world, 0.0, 0.0)) > 1.0e6:
+        raise cp.ScriptError("terrain height query failed")
+    views = []
+    for name, e, t, focal in SANDBOX_VIEWS:
+        ez = sub.get_terrain_height_m(world, e[0], e[1]) + e[2]
+        tz = sub.get_terrain_height_m(world, t[0], t[1]) + t[2]
+        if name.endswith("straight_down"):
+            ez = e[2]; tz = 0.0   # absolute: straight down from 2500 m
+        cp.log("SANDBOX VIEW %s eye=(%g,%g,%.1f) target=(%g,%g,%.1f) focal=%g" % (name, e[0], e[1], ez, t[0], t[1], tz, focal))
+        views.append((name, sim(e[0], e[1], ez), sim(t[0], t[1], tz), focal))
+    return views
 
 
 def look_at(eye, target):
@@ -474,7 +504,10 @@ def main():
         raise cp.ScriptError("screenshots need a rendering editor: run Run-EditorPython.ps1 with -Render (nullrhi has no pixels)")
     args = cp.script_args()
     pie = "pie" in args
-    global VIEWS
+    global VIEWS, LEVEL
+    sandbox = "sandbox" in args
+    if sandbox:
+        LEVEL = SANDBOX_LEVEL
     if "old" in args:
         raise cp.ScriptError("the 'old' argument was removed together with CPRoadNetworkActor; run without it for the interchange views")
     VIEWS = list(INTERCHANGE_VIEWS) + [v for k, v in EXTRA_VIEWS.items() if k in args]
@@ -493,12 +526,14 @@ def main():
     for a in args:
         if a.isdigit():
             mult = max(1, min(4, int(a)))
-    OUT_DIR = os.path.join(cp.project_dir(), "Saved", "Screenshots", "look")
+    OUT_DIR = os.environ.get("CP_OUT_DIR") or os.path.join(cp.project_dir(), "Saved", "Screenshots", "sandbox" if sandbox else "look")
     os.makedirs(OUT_DIR, exist_ok=True)
 
     les = subsystem("LevelEditorSubsystem")
     if not les.load_level(LEVEL):
-        raise cp.ScriptError("could not load %s; run setup_look_test_level.py first" % LEVEL)
+        raise cp.ScriptError("could not load %s; run setup_look_test_level.py (or setup_sandbox_level.py) first" % LEVEL)
+    if sandbox:
+        VIEWS = sandbox_views()
 
     # Verified (PythonScriptPlugin EditorPythonScriptingLibrary.h, ScriptName "EditorPythonScripting"): without this the
     # plugin requests QUIT_EDITOR on the tick after the script returns, killing the state machine below.

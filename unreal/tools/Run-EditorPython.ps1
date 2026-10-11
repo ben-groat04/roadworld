@@ -62,7 +62,7 @@ if (-not $scriptPath) { Write-Host "Python script not found: $Script"; exit 2 }
 
 # The game module must already be built, otherwise an unattended editor cannot rebuild it and aborts.
 $dll = Join-Path $projectDir 'Binaries\Win64\UnrealEditor-CityPainter.dll'
-$dll2 = Join-Path $projectDir 'Plugins\CityPainterSim\Binaries\Win64\UnrealEditor-CityPainterSim.dll'
+$dll2 = Join-Path $projectDir 'Plugins\CityPainterCore\Binaries\Win64\UnrealEditor-CityPainterSim.dll'
 if (-not ((Test-Path -LiteralPath $dll) -or (Test-Path -LiteralPath $dll2))) {
     Write-Host 'WARNING: no built project binaries found. Run unreal\tools\Build-Editor.ps1 first (the unattended editor cannot rebuild modules).'
 }

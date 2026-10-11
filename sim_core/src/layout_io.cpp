@@ -11,6 +11,7 @@
 
 #include "cp/junction_roundabout.h"
 #include "cp/road_commands.h"
+#include "cp/stroke.h"
 #include "json_util.h"
 #include "nlohmann/json.hpp"
 
@@ -21,8 +22,6 @@ namespace {
 using json = nlohmann::json;
 
 constexpr double kDeg = kPi / 180;
-constexpr double kSnapTol = 1.0;   // m: a road end this close to a node / centreline attaches to it
-constexpr double kNodeTol = 0.75;  // m: an existing node this close to an interior stretch splits the road
 constexpr double kSampleStep = 0.5;
 
 std::string idx(const char* what, std::size_t i) { return std::string(what) + "[" + std::to_string(i) + "]"; }
@@ -276,8 +275,6 @@ struct Builder {
     LoadedLayout& L;
     Err err;
 
-    double z_tol() const { return L.region->plan_crossing_junction_dz_m; }
-
     // Edge whose centreline passes closest to p (xy) within max_dist, with the arc length of that point.
     EdgeId edge_near(Vec2 p, double* s_out, double max_dist, const std::string* type = nullptr) const {
         EdgeId best;
@@ -313,151 +310,25 @@ struct Builder {
         return best;
     }
 
-    RoadEnd end_at(Vec3 p, std::optional<double> heading) const {
-        RoadEnd r;
-        r.pos = p;
-        r.heading = heading;
-        if (NodeId n = node_near(p.xy(), kSnapTol); n.valid()) {
-            r.existing_node = n;
-        } else {
-            double s = 0;
-            if (EdgeId e = edge_near(p.xy(), &s, kSnapTol); e.valid()) {
-                r.split_edge = e;
-                r.split_s = s;
-            }
-        }
-        return r;
-    }
-
-    struct Crossing {
-        double key = std::numeric_limits<double>::infinity();  // segment index + parameter along the new road
-        std::size_t seg = 0;
-        Vec3 pos;
-        NodeId node;
-        EdgeId edge;
-        double s = 0;
-    };
-
-    // First place along `pts` where the new road must be split: an existing road crossed in plan at the same
-    // level, or an existing node on the way. Stretches near the two ends are left to end_at().
-    bool first_crossing(const std::vector<Vec3>& pts, Crossing& out) const {
-        const double dz = z_tol() > 0 ? z_tol() : 1e9;
-        out = {};
-        auto near_end = [&](Vec3 p) {
-            return (p.xy() - pts.front().xy()).length() < kSnapTol || (p.xy() - pts.back().xy()).length() < kSnapTol;
-        };
-        for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
-            const Vec3 a = pts[i], b = pts[i + 1];
-            const Vec2 ab = b.xy() - a.xy();
-            const double ab2 = ab.dot(ab);
-            if (ab2 < 1e-12) continue;
-            // existing nodes on the segment
-            for (const auto& [nid, n] : L.graph.nodes()) {
-                const double t = std::clamp((n.pos.xy() - a.xy()).dot(ab) / ab2, 0.0, 1.0);
-                const Vec3 q{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
-                if ((q.xy() - n.pos.xy()).length() > kNodeTol || std::abs(q.z - n.pos.z) >= dz || near_end(n.pos)) continue;
-                const double key = static_cast<double>(i) + t;
-                if (key < out.key) {
-                    out = {};
-                    out.key = key;
-                    out.seg = i;
-                    out.pos = n.pos;
-                    out.node = nid;
-                }
-            }
-            // existing edge centrelines
-            for (const auto& [eid, e] : L.graph.edges()) {
-                const double len = e.horizontal.length();
-                Vec3 p0 = edge_point(e, 0);
-                double s0 = 0;
-                for (double s = kSampleStep;; s += kSampleStep) {
-                    if (s > len) s = len;
-                    const Vec3 p1 = edge_point(e, s);
-                    const Vec2 cd = p1.xy() - p0.xy();
-                    const double den = ab.cross(cd);
-                    if (std::abs(den) > 1e-12) {
-                        const Vec2 ac = p0.xy() - a.xy();
-                        const double t = ac.cross(cd) / den, u = ac.cross(ab) / den;
-                        if (t > 0 && t < 1 && u >= 0 && u <= 1) {
-                            const Vec3 q{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t};
-                            const double ez = p0.z + (p1.z - p0.z) * u;
-                            const double key = static_cast<double>(i) + t;
-                            if (std::abs(q.z - ez) < dz && !near_end(q) && key < out.key) {
-                                out = {};
-                                out.key = key;
-                                out.seg = i;
-                                out.pos = {q.x, q.y, ez};
-                                out.edge = eid;
-                                out.s = s0 + (s - s0) * u;
-                            }
-                        }
-                    }
-                    if (s >= len) break;
-                    p0 = p1;
-                    s0 = s;
-                }
-            }
-        }
-        if (out.key == std::numeric_limits<double>::infinity()) return false;
-        // A crossing within 1 m of an existing node attaches to that node.
-        if (!out.node.valid())
-            if (NodeId n = node_near(out.pos.xy(), kSnapTol); n.valid()) {
-                out.node = n;
-                out.edge = {};
-            }
-        return true;
-    }
-
-    bool draw_piece(const LayoutRoad& road, RoadEnd a, std::vector<Vec3> interior, RoadEnd b, const std::string& ctx) {
-        DrawRoadSpec spec;
-        spec.road_type = road.type;
-        spec.one_way = road.one_way;
-        spec.start = a;
-        spec.end = b;
-        spec.interior = std::move(interior);
-        if (!L.stack.execute(make_draw_road(std::move(spec)))) {
-            err.set(ctx + ": the draw-road command failed (a stretch between two clicked points could not be fitted, or "
-                          "the road type cannot be drawn like this)");
-            return false;
-        }
-        return true;
-    }
-
+    // One road = one stroke: ends attach, same-level crossings split into junctions (cp/stroke.h). A layout
+    // stays polygon-mode (crossings on the straight segments between the listed points) and never refuses.
     void draw(const LayoutRoad& road, std::size_t ri) {
         const std::string ctx = idx("roads", ri);
-        std::vector<Vec3> pts;
-        for (const auto& p : road.points) pts.push_back(p.pos);
-        const std::optional<double> head_a = road.points.front().heading, head_b = road.points.back().heading;
-        RoadEnd start = end_at(pts.front(), head_a);
-        for (int guard = 0; guard < 64; ++guard) {
-            Crossing x;
-            if (!first_crossing(pts, x)) {
-                draw_piece(road, start, std::vector<Vec3>(pts.begin() + 1, pts.end() - 1), end_at(pts.back(), head_b), ctx);
-                return;
-            }
-            std::vector<Vec3> interior;
-            for (std::size_t k = 1; k <= x.seg; ++k)
-                if ((pts[k].xy() - x.pos.xy()).length() >= kSnapTol) interior.push_back(pts[k]);
-            RoadEnd end;
-            end.pos = x.pos;
-            if (x.node.valid()) {
-                end.existing_node = x.node;
-            } else {
-                end.split_edge = x.edge;
-                end.split_s = x.s;
-            }
-            if (!draw_piece(road, start, std::move(interior), end, ctx)) return;
-            std::vector<Vec3> rest{x.pos};
-            for (std::size_t k = x.seg + 1; k < pts.size(); ++k)
-                if (k + 1 == pts.size() || (pts[k].xy() - x.pos.xy()).length() >= kSnapTol) rest.push_back(pts[k]);
-            if (rest.size() < 2) {
-                err.set(ctx + ": the road ends inside a junction it crosses");
-                return;
-            }
-            pts = std::move(rest);
-            start = end_at(pts.front(), std::nullopt);
+        StrokeSpec spec;
+        for (const auto& p : road.points) spec.points.push_back(p.pos);
+        spec.heading_a = road.points.front().heading;
+        spec.heading_b = road.points.back().heading;
+        spec.road_type = road.type;
+        spec.one_way = road.one_way;
+        StrokeError why;
+        if (L.stack.execute(make_draw_stroke(std::move(spec), StrokeParams{}, &why))) return;
+        switch (why.kind) {
+            case StrokeError::Kind::EndsInsideJunction:
+            case StrokeError::Kind::TooManyCrossings: err.set(ctx + ": " + why.message); break;
+            default:
+                err.set(ctx + ": the draw-road command failed (a stretch between two clicked points could not be fitted, or "
+                              "the road type cannot be drawn like this)");
         }
-        err.set(ctx + ": more than 64 crossings");
     }
 
     void structure(const LayoutRoad& road, std::size_t ri, std::size_t si) {

@@ -28,7 +28,8 @@ namespace {
 constexpr double kTolHeight = 1.5e-4;  // m: 0.15 mm (golden quantum 0.1 mm + float32 storage)
 constexpr double kTolGeom = 1e-9;      // m: classification outputs (doubles on both sides)
 
-// Every invariant sweep is a hard CHECK. ONE waiver remains (round 5, down from five cases): adjacent_levels, at the two free ends of the shared
+// Round 6: adjacent_levels is still waived (two roads ending side by side: cut/fill blend added, pit reduced from 3 m to ~1.5 m at x ~193, y 12-14, not gone).
+// Every invariant sweep is a hard CHECK except the waivers below. Older note on adjacent_levels (round 5):
 // structure (x = 0 and 200), where the lower road's cut run-out cone meets the upper road's fill run-out cone after the structure has tapered:
 // ground_under_road 9/4444 (worst 1.86 m), ground_hidden_by_walls 26/6666 (worst 1.21 m), no_bare_steps ~200/2100 (worst 5.45 m).
 // Second waiver: short_run_between_bridges, ground_hidden_by_walls 1/5236 (worst 0.08 m), no_bare_steps 6/1103 (worst 1.35 m at the west abutment, x = 16, 11.6 m off the road).

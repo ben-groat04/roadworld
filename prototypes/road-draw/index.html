@@ -1170,9 +1170,14 @@ function fullEval(cutP, e, zf, b, res, wallT, verge, bt) {
 function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
   const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick - res;   // wall band: texels with e <= wallThick-res take the inside (formation) value, so the one-texel ramp to natural lies inside the solid
   const verge = params.verge, hb = params.roundHinge || 0, rk = params.roundK || 0, dD = params.ditchD || 0, dW = params.ditchW || 0, eB = params.endBatter || bt, rfL = params.reachFade || 0;
-  const sv = e => e <= verge ? 0 : hb > 0 ? (e < verge + hb ? (e - verge) * (e - verge) / (2 * hb) : e - verge - hb / 2) : e - verge;   // verge -> slope hinge: parabola over hb, then the straight slope shifted out by hb/2
-  const smax = d => d >= rk ? d : d <= -rk ? 0 : (d + rk) * (d + rk) / (4 * rk);   // smooth max(d, 0) over +-rk: rolls the slope over into natural ground
-  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N), rqSp = new Float32Array(N), rqSv = new Float32Array(N), cutR = new Float32Array(N).fill(1), fillR = new Float32Array(N).fill(1);
+  let hbc = hb, rkc = rk;   // per-texel rounding: the hinge and the daylight roll-over never take more than a third of the slope's length each (short banks are not all rounding)
+  const sv = e => e <= verge ? 0 : hbc > 0 ? (e < verge + hbc ? (e - verge) * (e - verge) / (2 * hbc) : e - verge - hbc / 2) : e - verge;   // verge -> slope hinge: parabola over hb, then the straight slope shifted out by hb/2
+  const smax = (d, k) => d >= k ? d : d <= -k ? 0 : (d + k) * (d + k) / (4 * k);   // smooth max(d, 0) over +-rk: rolls the slope over into natural ground
+  const dC = (v, b, r, k) => v >= 1e8 ? 0 : r * (k > 0 ? smax(b - v, k) : Math.max(0, b - v)), dF = (v, b, r, k) => v <= -1e8 ? 0 : r * (k > 0 ? smax(v - b, k) : Math.max(0, v - b));   // the displacement a recorded cut / fill surface causes at base b (weight r): the winner across roads is the one that moves the ground most, not the one that is highest (a faded-in neighbour's high slope must not hide a structure's full-weight level)
+  // best candidate (cutM/E/R) + the second-best weighted displacement (D2) + the largest unweighted one (U): where a structure tapers out and a neighbour's own slope fades in, the two weighted displacements ADD (a crossfade), capped by the largest full one
+  const recC = (o, v, e, b, r) => { const d = dC(v, b, r, rkc), u = dC(v, b, 1, rkc), c = dC(cutM[o], b, cutR[o], cutK[o]); if (u > cutU[o]) cutU[o] = u; if (d > c) { if (c > cutD2[o]) cutD2[o] = c; cutM[o] = v; cutE[o] = e; cutR[o] = r; cutK[o] = rkc; } else if (d > cutD2[o]) cutD2[o] = d; };
+  const recF = (o, v, e, b, r) => { const d = dF(v, b, r, rkc), u = dF(v, b, 1, rkc), c = dF(fillM[o], b, fillR[o], fillK[o]); if (u > fillU[o]) fillU[o] = u; if (d > c) { if (c > fillD2[o]) fillD2[o] = c; fillM[o] = v; fillE[o] = e; fillR[o] = r; fillK[o] = rkc; } else if (d > fillD2[o]) fillD2[o] = d; };
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N), rqSp = new Float32Array(N), rqSv = new Float32Array(N), cutR = new Float32Array(N).fill(1), fillR = new Float32Array(N).fill(1), cutD2 = new Float32Array(N), fillD2 = new Float32Array(N), cutU = new Float32Array(N), fillU = new Float32Array(N), cutK = new Float32Array(N), fillK = new Float32Array(N);
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
   for (let ri = 0; ri < roadsData.length; ri++) {
@@ -1230,7 +1235,8 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
         fpD[o] = 0; if (zz < fpZ[o]) fpZ[o] = zz; continue; }
       if (dd <= hw) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }   // union of footprints: lowest formation wins (never pokes through any road)
       if (rqSp[o] >= 1) continue;   // the neighbour's structure reaches this road: no earthworks of its own on this side (they fade back in as the structure tapers)
-      const e = dd - hw, b = base[o], cutT = b > zf; let wf = rqW[o], ww = wf ? rqWw[o] : 0, pl = wf ? rqP[o] : null; const bte = rqBt[o];
+      const e = dd - hw, b = base[o], cutT = b > zf; { const H3 = Math.abs(b - zf) / 3; hbc = hb > 0 ? Math.max(0.05, Math.min(hb, H3 * bt)) : 0; rkc = rk > 0 ? Math.max(0.01, Math.min(rk, H3)) : 0; }   // rounding bound: each end at most a third of the slope (height H: length H * batter)
+       let wf = rqW[o], ww = wf ? rqWw[o] : 0, pl = wf ? rqP[o] : null; const bte = rqBt[o];
       const blk = () => blocked(o, o % nx, (o / nx) | 0, dd);   // evaluated only when a slope would be recorded
       const rf = rfL > 0 && dd > R - rfL ? (() => { const u = (R - dd) / rfL; return u <= 0 ? 0 : u * u * (3 - 2 * u); })() : 1;   // a plain slope that has not met the ground by the end of the road's reach fades into it (no cut face / pit at the reach limit)
       const rfs = rf * (1 - rqSp[o]);
@@ -1259,8 +1265,8 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
         if (kind === 0) continue;
         if (kind === 1) { fpD[o] = 0; const zw = pl.cut && !pl.plat ? Math.min(v, b) : pl.stairs && !pl.cut ? Math.max(v, b) : v; /* a shared structure (plat) builds the ground up to the neighbour whatever the natural ground does */ if (zw < fpZ[o]) fpZ[o] = zw; continue; }
         const rr = pl.stairs && pl.kind !== 'terrace' ? rfs * (() => { const u = rqAl[o] / (pl.alongMax + 1e-9); return u <= 0 ? 1 : u >= 1 ? 0 : 1 - u * u * (3 - 2 * u); })() : 1;   // also fades out along the run-out beyond a free end   // rock cut / steep fill fade into the ground at the end of the reach like plain slopes
-        if (kind === 2) { if (rr > 0 && v < b + rk && v < cutM[o] && !blk()) { cutM[o] = v; cutE[o] = e; cutR[o] = rr; } }
-        else if (rr > 0 && v > b - rk && v > fillM[o] && !blk()) { fillM[o] = v; fillE[o] = e; fillR[o] = rr; }
+        if (kind === 2) { if (rr > 0 && v < b + rk && dC(v, b, rr, rkc) > cutD2[o] && !blk()) recC(o, v, e, b, rr); }
+        else if (rr > 0 && v > b - rk && dF(v, b, rr, rkc) > fillD2[o] && !blk()) recF(o, v, e, b, rr);
         continue; }
       // Wall (ww = weight 0..1 along the run; verge == wall thickness so ww = 0 is exactly the plain verge + slope).
       // cut wall: the wall raises the formation level toward natural by ww (hidden behind the road-facing wall face), the slope starts above it.
@@ -1268,22 +1274,22 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
       if (wf === 1) {
         const zfw = zf + ww * (Math.max(zf, b - 0.1) - zf);
         if (e <= params.wallThick) { fpD[o] = 0; const zw = e <= half ? Math.min(zf, b) : Math.min(zfw, b); if (zw < fpZ[o]) fpZ[o] = zw; continue; }
-        const v = zfw + (e - verge) / bt; if (rfs > 0 && v < b + rk && v < cutM[o] && !blk()) { cutM[o] = v; cutE[o] = e; cutR[o] = rfs; }
+        const v = zfw + (e - verge) / bt; if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cutD2[o] && !blk()) recC(o, v, e, b, rfs);
         continue; }
       if (wf === 2) {
         if (e <= half) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }
-        const zff = zf - ww * (zf - b), v = e <= params.wallThick ? zff : zff - (e - verge) / bt; if (rfs > 0 && v > b - rk && v > fillM[o] && !blk()) { fillM[o] = v; fillE[o] = e; fillR[o] = rfs; }
+        const zff = zf - ww * (zf - b), v = e <= params.wallThick ? zff : zff - (e - verge) / bt; if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fillD2[o] && !blk()) recF(o, v, e, b, rfs);
         continue; }
       if (cutT) {   // toe ditch between verge and slope (fades out in shallow cuts), then the slope
         let v = zf + sv(e) / bt; if (dD > 0 && dW > 0 && e > verge && e < verge + dW) { const u = Math.sin(Math.PI * (e - verge) / dW); v -= dD * Math.min(1, b - zf) * u * u; }
-        if (rfs > 0 && v < b + rk && v < cutM[o] && !blk()) { cutM[o] = v; cutE[o] = e; cutR[o] = rfs; } }
-      else { const v = zf - sv(e) / bte; if (rfs > 0 && v > b - rk && v > fillM[o] && !blk()) { fillM[o] = v; fillE[o] = e; fillR[o] = rfs; } }
+        if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cutD2[o] && !blk()) recC(o, v, e, b, rfs); }
+      else { const v = zf - sv(e) / bte; if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fillD2[o] && !blk()) recF(o, v, e, b, rfs); }
     }
   }
   for (let o = 0; o < N; o++) {
     let g;
-    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const dc = cutM[o] < 1e8 ? (rk > 0 ? smax(g - cutM[o]) : Math.max(0, g - cutM[o])) * cutR[o] : 0, df = fillM[o] > -1e8 ? (rk > 0 ? smax(fillM[o] - g) : Math.max(0, fillM[o] - g)) * fillR[o] : 0;   // dip below natural (cut) / rise above it (fill), rounded near daylight
-    if (dc > 0 && df > 0) g = cutE[o] <= fillE[o] ? g - dc : g + df; else if (dc > 0) g = g - dc; else if (df > 0) g = g + df; }   // never cross the base to the wrong side: take the nearer of a cut and a fill slope
+    if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const dc = cutM[o] < 1e8 ? Math.min(dC(cutM[o], g, cutR[o], cutK[o]) + cutD2[o], Math.max(cutU[o], dC(cutM[o], g, cutR[o], cutK[o]))) : 0, df = fillM[o] > -1e8 ? Math.min(dF(fillM[o], g, fillR[o], fillK[o]) + fillD2[o], Math.max(fillU[o], dF(fillM[o], g, fillR[o], fillK[o]))) : 0;   // dip below natural (cut) / rise above it (fill), rounded near daylight
+    if (dc > 0 && df > 0) { const wc = dc / (cutE[o] + 1), wf = df / (fillE[o] + 1); g = g + (df * wf - dc * wc) / (wc + wf); } else if (dc > 0) g = g - dc; else if (df > 0) g = g + df; }   // a cut and a fill slope of two roads meet: blend their displacements, each weighted by its size over its distance to its own road (one continuous surface; a nearer-wins switch left a pit)
     out[o] = g;
   }
 }
