@@ -26,6 +26,10 @@ add_library(sim_core
   src/test_layouts.cpp
   src/vegetation.cpp
   src/world_cache.cpp
+  src/ground_pick.cpp
+  src/road_index.cpp
+  src/stroke.cpp
+  src/road_tool.cpp
 )
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/clipper2 ${CMAKE_BINARY_DIR}/clipper2)
 target_link_libraries(sim_core PUBLIC clipper2)
