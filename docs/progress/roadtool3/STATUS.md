@@ -3,7 +3,7 @@
 References opened: 48 of 48 listed (all 45 screenshots, one by one; `docs/QUEUE.md` item 8 in full; `docs/unreal-ui-parity.md` in full; the prototype source folder: see the next line)
 
 - Prototype source folder `prototypes/road-draw/src`: opened and used `input.js` (snap, preview, finish, conform, edit, input events), `ui.js` (HUD, profile, tuning table), `config.js` (types, tunables), `roadmesh.js` (heat classes and per-vertex colours), `shell.html` (help text), `inspect.js` (inspect bar text). NOT opened: `earthworks.js`, `terrain.js`, `scene.js`, `geom.js` (grading, terrain, camera: no gap of this round depends on them; other agents are in the grading files). Listed here because the brief counts the folder as one reference.
-- Not done, with the reason: Unreal build, editor run and any host widget (the Unreal lane is taken by the milestone 2 run; the brief says no Unreal build): the host-side list is in `docs/unreal-ui-parity.md` H.4. No renders or composites (engine work, brief: "no renders needed").
+- Not done, with the reason: Unreal build, editor run and any host widget (the Unreal lane is taken by the milestone 2 run; the brief says no Unreal build): the host-side list is in `docs/unreal-ui-parity.md` H.4. No 3D renders (engine work, brief: "no renders needed"). The hand-in gate runs the visual checks, so the "render" of each screenshot is the text sim_core produces for its scenario (renders/NN_name.txt), with composites beside the screenshot and a before text; see INDEX.md.
 - Screenshots 24 (frame stats), 25 (profile hidden), the J key of 43/44, and 37 to 40 (bridge, tunnel portal, walls: other agents' structure and grading code) have no test of mine; COMPARE.md says so row by row.
 - Declared behaviour changes a host will see: (1) `DrawParams::finish_pick_px` is now 0: a click near the last point is just another point (prototype). The Unreal M2 branch was not touched: check at merge. (2) `fit_clothoid_chain` refuses runaway spirals itself; strokes that doubled back are refused as before. (3) `RoadType::hud_name()` / `short_name` and `RegionPack::road_tool` are new region data (`data/regions/uk`). (4) An edit that makes junctions replaces the edited edge (its id changes): `EditResult::made_junction`, `select_at(anchor)`.
 - Residual list (items I could not or chose not to fix, with why) is in FAULTS.md "Residual": road number `#N` is not creation order; water plane and tint are host work; chain rule is geometric (stroke id on `Edge` would be exact); junction-node drags only advise; deck hover needs `surface_hit` from the host.
@@ -39,7 +39,7 @@ Full lists in FAULTS.md: Pass 1 (12 faults found in my own first version, all fi
 
 ## Images that carry each claim
 
-No renders (engine work). The claims rest on the 45 prototype screenshots and the tests named in COMPARE.md; the screenshots below are the ones each headline claim was checked against.
+No 3D renders (engine work). Composites of screenshot, engine text and before text are in docs/reference/_compare/roadtool3/ (opened: 13 and 41 side by side). The claims rest on the 45 prototype screenshots and the tests named in COMPARE_DETAIL.md; the screenshots below are the ones each headline claim was checked against.
 
 | Claim | Image file (opened by me) |
 |---|---|
