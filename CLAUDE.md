@@ -20,6 +20,10 @@ v0 scope: `docs/v0-brief.md`. Markings reference: `docs/road-marking-rules.md`.
 - World coordinates are doubles (20 km+ maps).
 - Lane graph and junction rules are driving-side agnostic: one setting per save, everything mirrors from it.
 
+## Two gates (the main session runs these every time; the rules below are the detail)
+**Before sending a brief for visible work:** (1) reference photos named in the brief, at least 3 per case; (2) the person's own words quoted verbatim; (3) finish line stated as "matches the photo", with the self-audit passes required; (4) what to hand in: side-by-side image files, same-camera before/after, own fault list, skipped items first; (5) background, own worktree, download approval line pointed at.
+**Before accepting a report or telling the person anything:** (1) read STATUS/notes for anything skipped, refused or failed, and raise it; (2) side-by-side files exist, else send it back unread; (3) open the headline images and ask "what here would never be built?"; (4) same-camera before/after shows real movement, else change method, not another tuning round; (5) commit with `[skip ci]`, push in background, send pictures as files with the main session's own fault list.
+
 ## Working style (from the person)
 - The main session (Opus) plans, asks questions, reviews and coordinates. **All coding is delegated to subagents**, never written by the main session: Sonnet (`model: sonnet`) by default, Haiku (`model: haiku`) only for trivial mechanical edits (renames, doc tweaks, config one-liners) where a wrong result is obvious and cheap to redo.
 - Ask the person for input often on design and UX decisions; keep reversible choices moving.
