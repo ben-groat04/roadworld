@@ -2,6 +2,23 @@
 
 Updated by the main session every time an agent is started, an agent reports, or the owner changes direction. Newest state wins; finished items are deleted (git history keeps them). Last updated: 11 Oct 2026, evening.
 
+## The plan (milestones from docs/unreal-game-plan.md section C; every agent belongs to one row, or it does not start)
+Two tracks. ENGINE (sim_core, any number of parallel worktrees) feeds GAME (Unreal, one build or run at a time, shared by the lock dir .claude/state/unreal_lane.lock). Each milestone: builder -> auditor -> main session -> merge. Order of the GAME track is fixed: M2 -> M3 -> M5 -> M6 -> M7 -> M4 -> M8.
+
+| Milestone | Player can | Engine side | Game side | State |
+|---|---|---|---|---|
+| M1 | fly over the hills | done | done, played | DONE |
+| M2 | click a road, undo/redo | done | built and played 51/51 | under audit, then merge |
+| M3 | draw like the prototype: curves, snaps, junctions, warnings, profile panel, types | road tool round 2 merged; follow-up running (roadtool3) | m3ui builder: next on the lane | STARTING |
+| M5 | get cuttings, embankments, walls, bridges under a drawn road | earthworks r9 running; world layers running (gradelayer) | graded ground + structures layers: after M3 on the lane | ENGINE RUNNING |
+| M6 | see lights, hedges, trees, verge, believable ground and sky | street lights exist; world cover r4 merged (stops there) | instancing + ground/sky look: after M5; needs the free asset results (two searches running) | ASSETS RUNNING |
+| M7 | edit, bulldoze, roundabout and bridge tools | EditSession merged; junction quality rounds running (roundabout, tjunction, sliproad) | three tools: after M6 | ENGINE RUNNING |
+| M4 | no hitches on a big map | mesh reuse | worker thread, budgeted swap | not started (moved late on purpose: measure after M5-M6 load exists) |
+| M8 | run a packaged exe, save/load | save format | packaging | not started |
+
+Support, serves all rows: matched reference set, audit gate tooling, integration merges.
+Rule for starting anything: name its row. A request that fits no row is raised with the owner as a plan change, not just started.
+
 ## Running now
 | Item | Branch / worktree | Started from | What "done" is |
 |---|---|---|---|
