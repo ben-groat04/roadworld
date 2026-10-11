@@ -32,6 +32,7 @@ add_executable(sim_core_tests
   test_world_cache.cpp
   test_vegetation.cpp
   test_world.cpp
+  test_road_tool.cpp
 )
 target_link_libraries(sim_core_tests PRIVATE sim_core scene_tools)
 target_include_directories(sim_core_tests SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party)
