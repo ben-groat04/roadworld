@@ -47,7 +47,7 @@
     "corridor_max_m": 90,
     "wall_vis_min_m": 0.35,
     "reach_fade_m": 8.0,
-    "relax_iterations": 16,
+    "relax_iterations": 8,
     "relax_strength": 0.8,
     "relax_margin_m": 8.0,
     "relax_max_delta_m": 1.0

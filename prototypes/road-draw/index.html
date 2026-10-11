@@ -747,7 +747,7 @@ const WING_MAX = 10;       // m: longest wing wall beside a portal / abutment (1
 const WING_RATIO = 1.0;     // m of wing wall per m of retained height H (the funnel face between slope and wall then falls at most ~1.5:1 along the road)
 const WING_MIN_H = 0.3;     // m: no wing wall where the ground beside the structure is within this of formation
 const ROUND_DAYLIGHT = 2.0; // m (horizontal): the slope rolls over into natural ground (top of a cutting, toe of an embankment) over about this run; vertical blend half-width k = ROUND_DAYLIGHT / (2 * batter)
-const RELAX_ITERS = 16, RELAX_STRENGTH = 0.8, RELAX_MARGIN = 8, RELAX_MAX_DELTA = 1.0;   // smoothing pass: passes, blend per pass (sigma about sqrt(iters * s / 2) texels), metres of natural ground it may reach into, max metres a texel may move
+const RELAX_ITERS = 8, RELAX_STRENGTH = 0.8, RELAX_MARGIN = 8, RELAX_MAX_DELTA = 1.0;   // smoothing pass: passes, blend per pass (sigma about sqrt(iters * s / 2) texels), metres of natural ground it may reach into, max metres a texel may move
 const ROUND_HINGE = 1.0;    // m (horizontal): the verge -> slope hinge is a parabola over this run (shifts the slope outward by half of it)
 const ROUND_REACH = ROUND_DAYLIGHT + ROUND_HINGE / 2;   // m: extra grading reach for the rolled-over daylight and the hinge shift
 const PLANE_OVER = TUN.planeC;   // m: grading stops at a texel this far past the portal plane (half-plane test per portal, see roadsData / gradeTile): the one-texel ramp up to natural ground then lies fully inside the 2 m thick headwall (and, within the opening, inside the discarded bore); no end cap of an earlier segment can reach further into the bore

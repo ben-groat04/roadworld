@@ -235,7 +235,7 @@ struct GradingRules {
     double fill_steep_batter = 1.5;    // h per 1 v, steepest stable fill slope graded where a wall cannot hold the fill
     double corridor_max = 90.0;        // m beyond the footprint edge up to which two-tier walls / rock cuts may extend
     double wall_vis_min = 0.35;        // m, a terraced wall lower than this is not built
-    int relax_iterations = 16;         // smoothing passes over the graded ground (0 disables)
+    int relax_iterations = 8;          // smoothing passes over the graded ground (0 disables)
     double relax_strength = 0.8;       // blend per pass
     double relax_margin = 8.0;         // m into natural ground the smoothing reaches
     double relax_max_delta = 1.0;      // m, most a texel may move from its graded height

@@ -75,7 +75,7 @@ struct GradingParams {
     double corridor_max = 90.0;    // m beyond the footprint edge up to which two-tier walls / rock cuts may extend
     double wall_vis_min = 0.35;    // m, a terraced wall lower than this is not built
     double relax_strength = 0.8;   // blend per smoothing pass (g' = (1 - s) g + s * mean of the 4 neighbours)
-    int relax_iters = 16;          // smoothing passes (0 disables); sigma about sqrt(iters * s / 2) texels
+    int relax_iters = 8;           // smoothing passes (0 disables); sigma about sqrt(iters * s / 2) texels
     double relax_margin = 8.0;     // m, how far into natural ground the smoothing reaches beyond the changed ground
     double relax_max_delta = 1.0;  // m, no texel moves more than this from its graded height
     double reach_fade = 8.0;       // m, a plain slope that has not met the ground by the end of the road's reach fades into it over this run
