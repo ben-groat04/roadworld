@@ -22,9 +22,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { ROOT, STATE_DIR, log, readStdin, parseJson, firstUserText, checkBrief, briefFileOf } from './lib.mjs';
-import { auditOfIn, readBuilder, recordBuilder, checkAuditFile, AUDIT_FILE } from './audit_lib.mjs';
+import { auditOfIn, readBuilder, recordBuilder, checkAuditFile, AUDIT_FILE, findBuilderInLog, recordAudit, parseAudit } from './audit_lib.mjs';
 
 const MAX_BLOCKS = 3;
+// Measured gates build and run the scene check: allow minutes (settings.json hook timeout must be larger; a timeout fails open and is logged).
+const GATE_TIMEOUT_MS = 270000;
+export function gatesIn(text) {
+  const t = String(text || '').split('\r\n').join('\n');
+  const v = t.match(/^GATES-VERSION:[ \t]*(\d+)[ \t]*$/m);
+  if (!v) return null;
+  return { version: Number(v[1]), gates: [...t.matchAll(/^GATE:[ \t]*(.+?)[ \t]*$/gm)].map((m) => m[1]) };
+}
 
 // When this agent's run began: timestamp of the first transcript line, else the transcript file's creation time.
 // Files the gates judge must have been written after it (minus slack), so a stale passing folder from an earlier round
@@ -72,20 +80,29 @@ async function main() {
     if (bf0) { try { aof = auditOfIn(fs.readFileSync(bf0, 'utf8')); } catch { /* the builder branch below reports an unreadable BRIEF-FILE */ } }
   }
   if (aof) {
-    const rec = readBuilder(aof, STATE_DIR);
-    const probs = checkAuditFile(path.join(aof, AUDIT_FILE), { builderId: rec && rec.agent_id, actualId: id, notBefore: runStart - SLACK_MS });
-    if (!probs.length) resetCounter(id);
-    if (!probs.length) return allow({ ...base, decision: 'allow', reason: 'audit written', audit_of: aof, builder_id: rec ? rec.agent_id : null });
+    // Audit fault 4: no builder record is no longer "nothing to compare": recover it from the gate log, else refuse (fail closed).
+    const rec = readBuilder(aof, STATE_DIR) || findBuilderInLog(aof, STATE_DIR);
+    const auditPath = path.join(aof, AUDIT_FILE);
+    const probs = checkAuditFile(auditPath, { builderId: rec && rec.agent_id, actualId: id, notBefore: runStart - SLACK_MS });
+    if (!rec) probs.push('no record of who built this folder (no .claude/state/builders entry and no "hand-in check passed" line in gate.log for it): the independence of the auditor cannot be shown. Check the AUDIT-OF path is exactly the HANDIN_DIR of the builder; if the folder was never handed in through the gate, tell the main session in your report and stop');
+    if (!probs.length) {
+      // Audit faults 1 and 2: the finish gate is the only thing that records an auditor (its id comes from the harness, not from the file).
+      try { const text = fs.readFileSync(auditPath, 'utf8'); recordAudit(aof, { auditorId: id, builderId: rec.agent_id, verdict: parseAudit(text).verdict, text }, STATE_DIR); }
+      catch (e) { log({ gate: 'audit', decision: 'skip', reason: 'FAIL-OPEN: could not record the audit', error: String((e && e.message) || e).slice(0, 300) }); }
+      resetCounter(id);
+      return allow({ ...base, decision: 'allow', reason: 'audit written', audit_of: aof, builder_id: rec.agent_id });
+    }
     return blockOrRelease({ isPre, base, id, dir: aof, failures: probs.map((p) => ' - ' + p).join('\n'), kind: 'audit',
       intro: `AUDIT GATE: you are the auditor of ${aof} and may not finish yet`,
       fix: `write ${path.join(aof, AUDIT_FILE)} (template docs/templates/AUDIT.md; your agent id is ${id})`, failedFile: 'AUDIT_FAILED.txt' });
   }
+  let briefFileText = null;
   let handinDir = info.handinDir;
   let noVisual = info.noVisual;
   if (!handinDir) {
     const bf = briefFileOf(text);
     if (bf) {
-      try { const ft = fs.readFileSync(bf, 'utf8'); const fi = checkBrief(ft); handinDir = fi.handinDir; noVisual = noVisual || fi.noVisual; }
+      try { const ft = fs.readFileSync(bf, 'utf8'); briefFileText = ft; const fi = checkBrief(ft); handinDir = fi.handinDir; noVisual = noVisual || fi.noVisual; }
       catch (e) { return allow({ ...base, decision: 'allow', reason: 'FAIL-OPEN: BRIEF-FILE unreadable', brief_file: bf, error: e.code || e.message }); }
     }
   }
@@ -93,8 +110,11 @@ async function main() {
 
   const args = [path.join(ROOT, 'tools', 'check_handin.mjs'), handinDir, '--main', ROOT];
   if (noVisual) args.push('--no-visual');
+  // Gates v2: only a brief that carries `GATES-VERSION: 2` (make_brief.mjs) gets the measured checks; its `GATE:` lines are passed on.
+  const gv = gatesIn(text) || (briefFileText ? gatesIn(briefFileText) : null);
+  if (gv) { args.push('--gates-version', String(gv.version)); for (const g of gv.gates) args.push('--gate', g); }
   if (runStart) args.push('--since', String(Math.round(runStart - SLACK_MS)));
-  const r = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', timeout: 30000, env: { ...process.env, CP_FROM_HOOK: '1' } });
+  const r = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', timeout: gv ? GATE_TIMEOUT_MS : 30000, env: { ...process.env, CP_FROM_HOOK: '1' } });
   const passed = r.status === 0 && /HAND-IN CHECK PASSED/.test(r.stdout || "");
   const failed = r.status === 1 && /HAND-IN CHECK FAILED/.test(r.stderr || "");
   if (r.error || (!passed && !failed)) {

@@ -11,11 +11,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseGateLine, parseRounds, methodChangeProblem } from './gates_lib.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const opt = (n, d = '') => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
-const valueOpts = ['--round', '--worktree', '--branch', '--audit'];
+const valueOpts = ['--round', '--worktree', '--branch', '--audit', '--override'];
 const taskFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && valueOpts.includes(args[i - 1])));
 if (!taskFile || (!opt('round') && !opt('audit'))) {
   console.error('usage: node tools/make_brief.mjs <task-file> (--round <name> | --audit <progress-folder>) [--worktree <path>] [--branch <name>] [--no-visual]');
@@ -42,6 +43,38 @@ if (!auditMode && !get('faults')) missing.push('"## Faults" (starting list; writ
 if (!auditMode && !get('launched')) missing.push('"## Launched" (independent items launched now)');
 if (!auditMode && !get('waiting')) missing.push('"## Waiting" (items not launched and why; write "none" if none)');
 if (/time-box|whole task/i.test(text.replace(get("owner's words"), ''))) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
+// ---- gates v2 (tools/gates_lib.mjs). Builder briefs only; `GATES-VERSION: 2` switches the measured checks on in check_handin.
+const gateLines = [];
+if (!auditMode) {
+  const noVisualFlag = args.includes('--no-visual');
+  // Engine-only briefs without HANDIN: no-visual made two builders write placeholder COMPARE tables to get through.
+  if (!noVisualFlag && /\bno renders?\b|\bno-visual\b|engine[- ]only|no pictures?\b/i.test(get('cases'))) {
+    missing.push('"## Cases" says there are no renders / no pictures but the brief is not built with --no-visual (without it the hand-in demands COMPARE.md with composites, and builders fabricate placeholders)');
+  }
+  // Scope (G): at most 3 cases per round unless the task file says why more.
+  const nCases = (get('cases').match(/^\s*(?:[-*]\s*)?(?:Case|Scenario|View)\s*[\w.-]*\s*[:,|(-]/gim) || []).length;
+  if (nCases > 3 && get('scope').length < 20) missing.push('"## Cases" names ' + nCases + ' cases; a round takes at most 3 unless the task file has a "## Scope" section (20+ characters) saying why more. One round with eight scenarios is how earthworks round 9 left several untouched');
+  // Gates
+  for (const raw of get('gates').split('\n')) {
+    const g = parseGateLine(raw);
+    if (!g) continue;
+    if (g.kind === 'bad') {
+      // prose lines in a Gates section are allowed (e.g. "No new test waiver"); only lines that look like gate lines are checked
+      if (/(>=|<=|==|^allow_waiver|^picture_)/i.test(g.raw)) missing.push('"## Gates": ' + g.raw + ' -> ' + g.why);
+      continue;
+    }
+    gateLines.push(g.raw);
+  }
+  // Method-change rule (E)
+  const prev = text.match(/^Previous round:[ \t]*(\S.*)$/mi);
+  const rounds = parseRounds(get('rounds'));
+  if (prev && !rounds.length) missing.push('the task file names a previous round ("' + prev[1].slice(0, 60) + '") but has no "## Rounds" section with its baseline numbers, one line per round, oldest first: "round8: scene_check=20, ctest_failed_assertions=2"');
+  if (rounds.length && rounds.some((r) => !Object.keys(r.values).length)) missing.push('"## Rounds": a line has no numbers (' + rounds.find((r) => !Object.keys(r.values).length).raw.slice(0, 60) + ')');
+  const mc = methodChangeProblem(rounds);
+  const ov = opt('override');
+  if (mc && !(ov && ov.length >= 20)) missing.push('METHOD REVIEW FIRST: ' + mc);
+  else if (mc) console.error('make_brief: method-change rule overridden: ' + ov);
+}
 if (missing.length) {
   console.error('REFUSED. Fix the task file:\n - ' + missing.join('\n - '));
   process.exit(1);
@@ -77,7 +110,7 @@ if (auditMode) {
 const round = opt('round');
 const worktree = opt('worktree', path.join(path.dirname(root), 'roadworld-wt', round)); // matches new_agent_worktree.ps1 (new worktrees live under ..\roadworld-wt\<name>)
 const handinDir = path.join(path.resolve(worktree), 'docs', 'progress', round);
-const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '');
+const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + '\nGATES-VERSION: 2' + gateLines.map((g) => '\nGATE: ' + g).join('');
 const fill = {
   TASK: task,
   ROUND: opt('round'),

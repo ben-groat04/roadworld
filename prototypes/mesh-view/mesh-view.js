@@ -121,6 +121,7 @@ for (const f of exportInfo.files) {
     else mat = new THREE.MeshStandardMaterial({ color: f.id === 'rock' ? 0x8a7d70 : f.id === 'needs' ? 0xc9743a : 0x808080, roughness: 0.9 });   // rock-cut faces grey-brown; needs_structure stretches orange
   }
   const m = new THREE.Mesh(geo, mat);
+  m.userData.cls = f.kind === 'marking' ? 'marking' : f.id === 'needs' ? 'needs' : f.id === 'rock' ? 'rock' : f.id === 'asphalt' ? 'road' : 'other';
   m.userData.marking = f.kind === 'marking'; m.castShadow = f.kind !== 'marking'; m.receiveShadow = true;
   group.add(m);
   report.push(f.file + ' -> ' + (f.kind === 'marking' ? 'marking ' + f.id : (SLOT[f.id] || 'grey')));
@@ -134,7 +135,7 @@ for (const f of exportInfo.files) {
   ground.rotation.x = -Math.PI / 2; ground.position.y = zmin - 0.03;
   const g = ground.geometry; const uv = g.attributes.uv; // PlaneGeometry uv is 0..1: make it metres
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 8000, uv.getY(i) * 8000);
-  ground.receiveShadow = true; scene.add(ground);
+  ground.receiveShadow = true; ground.userData.cls = 'ground'; scene.add(ground);
 }
 
 // view: { name, pos:[x,y,z], target:[x,y,z] in sim metres (original sim frame), fov (vertical, deg) or hfov (horizontal, deg),
@@ -182,6 +183,28 @@ window.compose = async (photoUrl) => {
     const w = g.measureText(t).width; g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(x - 4, h - 30, w + 8, 24); g.fillStyle = '#fff'; g.fillText(t, x, h - 27);
   }
   return c.toDataURL('image/png');
+};
+// Flat-colour second pass for the per-view stats record (render.mjs writes <view>.stats.json): every mesh drawn in one exact colour
+// per surface class, no sky, fog, shadows or tone mapping, so road pixels and debug-colour pixels ("needs structure" orange, rock-cut
+// grey-brown) are counted exactly and cannot be argued with. Pixels blended at edges match no class and are not counted.
+window.statsPass = () => {
+  const CLS = { road: [255, 0, 0], marking: [0, 255, 0], needs: [0, 0, 255], rock: [255, 255, 0], ground: [255, 0, 255], other: [128, 128, 128] };
+  const flat = {}, saved = new Map();
+  scene.traverse(o => { if (o.isMesh && o !== sky) { saved.set(o, o.material); const c = CLS[o.userData.cls] ? o.userData.cls : 'other'; o.material = flat[c] ??= new THREE.MeshBasicMaterial({ color: new THREE.Color(CLS[c][0] / 255, CLS[c][1] / 255, CLS[c][2] / 255), toneMapped: false, fog: false }); } });
+  const skyVis = sky.visible, fog = scene.fog, tm = renderer.toneMapping, bg = scene.background, env = scene.environment;
+  sky.visible = false; scene.fog = null; renderer.toneMapping = THREE.NoToneMapping; scene.background = new THREE.Color(0, 0, 0); scene.environment = null;
+  renderer.render(scene, camera);
+  const c = document.createElement('canvas'); c.width = renderer.domElement.width; c.height = renderer.domElement.height;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(renderer.domElement, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height).data, counts = {};
+  const names = Object.keys(CLS);
+  for (let i = 0; i < d.length; i += 4) {
+    for (const n of names) { const k = CLS[n]; if (Math.abs(d[i] - k[0]) < 24 && Math.abs(d[i + 1] - k[1]) < 24 && Math.abs(d[i + 2] - k[2]) < 24) { counts[n] = (counts[n] || 0) + 1; break; } }
+  }
+  for (const [o, m] of saved) o.material = m;
+  sky.visible = skyVis; scene.fog = fog; renderer.toneMapping = tm; scene.background = bg; scene.environment = env;
+  renderer.render(scene, camera);
+  return { width: c.width, height: c.height, counts };
 };
 window.snap = () => renderer.domElement.toDataURL('image/png');
 window.__info = { cameras: exportInfo.cameras ?? [], report, bounds: [exportInfo.bounds_min, exportInfo.bounds_max], off };

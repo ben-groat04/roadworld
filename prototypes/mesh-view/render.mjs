@@ -96,6 +96,14 @@ try {
     if (v.width) writeFileSync(file, Buffer.from((await page.evaluate('window.snap()')).split(',')[1], 'base64'));
     else await page.screenshot({ path: file });
     console.log(`${file} (${Date.now() - t} ms)`);
+    // Per-view record next to the render (hand-in gate, tools/gates_lib.mjs pictureProblems): how much of the frame is road and how
+    // much is in debug colours. A view may be declared "diagnostic": true in the views json; such a view cannot be a COMPARE.md render.
+    try {
+      const st = await page.evaluate('window.statsPass()');
+      const c = st.counts, debugBy = { needs: c.needs || 0, rock: c.rock || 0 };
+      writeFileSync(join(resolve(outDir), v.name + '.stats.json'), JSON.stringify({ view: v.name, width: st.width, height: st.height, diagnostic: !!v.diagnostic,
+        road_px: c.road || 0, marking_px: c.marking || 0, ground_px: c.ground || 0, debug_px: debugBy.needs + debugBy.rock, debug_by_class: debugBy, written_by: 'prototypes/mesh-view/render.mjs' }, null, 1));
+    } catch (e) { console.error('stats pass failed for ' + v.name + ': ' + e.message); }
     if (compare && v.photo && existsSync(join(photoDir, v.photo))) {
       const url = await page.evaluate(p => window.compose(p), '/photo/' + encodeURIComponent(v.photo));
       const cf = join(compareDir, v.name + '.png');
