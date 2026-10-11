@@ -14,6 +14,7 @@ const WING_MAX = 10;       // m: longest wing wall beside a portal / abutment (1
 const WING_RATIO = 1.0;     // m of wing wall per m of retained height H (the funnel face between slope and wall then falls at most ~1.5:1 along the road)
 const WING_MIN_H = 0.3;     // m: no wing wall where the ground beside the structure is within this of formation
 const ROUND_DAYLIGHT = 2.0; // m (horizontal): the slope rolls over into natural ground (top of a cutting, toe of an embankment) over about this run; vertical blend half-width k = ROUND_DAYLIGHT / (2 * batter)
+const RELAX_ITERS = 8, RELAX_STRENGTH = 0.8, RELAX_MARGIN = 8, RELAX_MAX_DELTA = 1.0;   // smoothing pass: passes, blend per pass (sigma about sqrt(iters * s / 2) texels), metres of natural ground it may reach into, max metres a texel may move
 const ROUND_HINGE = 1.0;    // m (horizontal): the verge -> slope hinge is a parabola over this run (shifts the slope outward by half of it)
 const ROUND_REACH = ROUND_DAYLIGHT + ROUND_HINGE / 2;   // m: extra grading reach for the rolled-over daylight and the hinge shift
 const PLANE_OVER = TUN.planeC;   // m: grading stops at a texel this far past the portal plane (half-plane test per portal, see roadsData / gradeTile): the one-texel ramp up to natural ground then lies fully inside the 2 m thick headwall (and, within the opening, inside the discarded bore); no end cap of an earlier segment can reach further into the bore
@@ -29,7 +30,10 @@ const DITCH_W = 1.5;        // m: width of that ditch (toe_ditch_width)
 const END_BATTER = 4.0;     // horizontal : vertical of the run-out beyond a free road end (end_taper_batter); gentler than the side batter so an embankment / cutting eases into the ground along the road
 const REACH_FADE = 8;       // m: a plain slope that has not met the natural ground by the end of the road's reach fades into it over this run (grading reach_fade)
 const MAX_TIERS = 2;        // stacked walls per side at most (max_tiers): two tiers separated by a real berm, or the shared structure between two roads (ownerTiers)
-const WALL_SLOPE_EXTRA = 15; // m: the slope above / below a wall may run this much farther than a plain slope may before it must daylight (wall_slope_extra)
+const WALL_SLOPE_EXTRA = 15; // m: reach / box margin only (wall_slope_extra); the slope beyond a wall is bounded by SLOPE_MAX_RUN and SLOPE_MAX_RATIO, not by this
+const SLOPE_MAX_RATIO = 3.0; // a slope daylights only if its run is at most this many times the run it would need on flat ground for the height it starts below / above the ground (slope_max_ratio): else it chases the hillside and the wall takes the height
+const SLOPE_RUN_SLACK = 2.0; // m: added to that run (rounding, back-drain strip; slope_run_slack)
+const SLOPE_MAX_RUN = 15;   // m: a slope above / below a wall never runs more than this beyond the wall's back face (slope_max_run)
 const BERM_SLOPE = 0.25;    // v/h: the strip between two tiers climbs (cut) / falls (fill) away from the lower wall at this slope (berm_slope), it is not a flat ledge
 const FADE_K = 6;           // the strip behind a full tier carves at most FADE_K * (height still to retain) below natural ground: a second tier grows out of natural ground (internal constant)
 const WALL_HARD_MAX = 6.0;  // m: a single fill wall may go this high (wall_hard_max); beyond it the station needs a structure (viaduct / half-bridge): needs_structure
@@ -37,7 +41,7 @@ const ROCK_BATTER = 0.5;    // h per 1 v of an engineered rock-cut face (rock_cu
 const ROCK_BERM = 3.0;      // m: catch berm every ROCK_BENCH_H of height (rock_berm_width)
 const ROCK_BENCH_H = 9.0;   // m: rock-cut face height between berms (rock_bench_height)
 const FILL_STEEP = 1.5;     // h per 1 v: the steepest stable fill slope graded where a wall cannot hold the fill (fill_steep_batter)
-const STEEP_REACH = 45;     // m: reach limit of a steep fill that never meets the ground
+const STEEP_REACH = 15;     // m: reach limit of a steep fill that never meets the ground (= slope_max_run: no long sliver embankment down a hillside; the flagged needs_structure stretch ends here)
 const WALL_VIS_MIN = 0.35;  // m: a stairs wall lower than this is not built (the ground is natural there)
 const CORRIDOR_MAX = 90;    // m: terraced sections may extend this far beyond the footprint edge (grading corridor_max)
 const TIER_PITCH = WALL_THICK + BENCH_MIN;   // m: lateral distance between neighbouring tiers of a terraced section
@@ -150,7 +154,8 @@ function slopeFits(cut, L, s0, E, bt, grd, cn, from) {
   for (let e = from; e < E + 0.5; e += 0.5) {
     const ee = Math.min(e, E), zs = cut ? L + (ee > s0 ? ee - s0 : 0) / bt : L - (ee > s0 ? ee - s0 : 0) / bt;
     if (cn) { const bz = cn(ee); if (bz !== null) return cut ? zs >= bz : zs <= bz; }   // landed on a neighbour's footprint
-    if (cut ? zs >= grd(ee) : zs <= grd(ee)) return true; if (ee >= E) break;
+    if (cut ? zs >= grd(ee) : zs <= grd(ee)) { const H0 = Math.max(0, cut ? grd(s0) - L : L - grd(s0)); return ee - s0 <= SLOPE_MAX_RATIO * H0 * bt + SLOPE_RUN_SLACK; }   // daylights, but only efficiently (else it chases the hillside)
+    if (ee >= E) break;
   }
   return false;
 }
@@ -159,7 +164,7 @@ function solveTiers(cut, z0, E, bt, grd, cn, minTiers, cap) {
   const a = [], z = []; let L = z0, nat = false;
   for (;;) {
     const s0 = a.length ? a[a.length - 1] + WALL_THICK : VERGE;
-    if (a.length >= minTiers && slopeFits(cut, L, s0, a.length ? E + WALL_SLOPE_EXTRA : E, bt, grd, cn, a.length ? s0 : 0.5)) return a.length ? { kind: 'tiers', a, z, nat: false } : { kind: 'none' };
+    if (a.length >= minTiers && slopeFits(cut, L, s0, a.length ? Math.min(E + WALL_SLOPE_EXTRA, s0 + SLOPE_MAX_RUN) : E, bt, grd, cn, a.length ? s0 : 0.5)) return a.length ? { kind: 'tiers', a, z, nat: false } : { kind: 'none' };
     if (a.length >= MAX_TIERS) return { kind: 'fail' };
     const amin = a.length ? a[a.length - 1] + WALL_THICK + BENCH_MIN : 0; if (amin + WALL_THICK > E) return { kind: 'fail' };
     const rise = cut ? grd(amin + WALL_THICK) - L : L - grd(amin + WALL_THICK);
@@ -390,6 +395,17 @@ function segSegDist2(px, py, qx, qy, ax, ay, bx, by) {
   const pt = (x, y, x0, y0, x1, y1) => { const dx = x1 - x0, dy = y1 - y0, L2 = dx * dx + dy * dy; let u = L2 > 1e-12 ? ((x - x0) * dx + (y - y0) * dy) / L2 : 0; u = u < 0 ? 0 : u > 1 ? 1 : u; const ex = x - x0 - u * dx, ey = y - y0 - u * dy; return ex * ex + ey * ey; };
   return Math.min(pt(px, py, ax, ay, bx, by), pt(qx, qy, ax, ay, bx, by), pt(ax, ay, px, py, qx, qy), pt(bx, by, px, py, qx, qy));
 }
+// Does the straight way (qx, qy) -> (tx, ty) enter the footprint of a neighbouring road (strip of half-width sqrt(l2) beside its centreline) ? The round end cap of a FREE end does not
+// count: it is only a temporary finish (the player will extend the road), so a slope of another road may run over it. Sampled every 0.5 m (exact enough for 5 m wide strips).
+function pathHitsFootprint(qx, qy, tx, ty, Sb, l2) {
+  const capFirst = !Sb[0].br && !Sb[0].tu, capLast = !Sb[Sb.length - 1].br && !Sb[Sb.length - 1].tu, L = Math.hypot(tx - qx, ty - qy), n = Math.max(1, Math.ceil(L / 0.5));
+  for (let i = 0; i <= n; i++) { const x = qx + (tx - qx) * i / n, y = qy + (ty - qy) * i / n; let bd = 1e30, bk = -1, bu = 0;   // the nearest point of the centreline decides: beyond a free end it is the end vertex itself (the cap)
+    for (let k = 0; k + 1 < Sb.length; k++) { const A = Sb[k], B = Sb[k + 1]; if ((A.br || A.tu) && (B.br || B.tu)) continue;
+      const dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy; let u = L2 > 1e-12 ? ((x - A.x) * dx + (y - A.y) * dy) / L2 : 0; const ur = u;
+      u = u < 0 ? 0 : u > 1 ? 1 : u; const ex = x - A.x - u * dx, ey = y - A.y - u * dy, d2 = ex * ex + ey * ey; if (d2 < bd) { bd = d2; bk = k; bu = ur; } }
+    if (bd < l2 && !((bu < 0 && capFirst && bk === 0) || (bu > 1 && capLast && bk === Sb.length - 2))) return true; }
+  return false;
+}
 // Ground value of one wall plan at lateral e (beyond the footprint edge): [kind, v]; kind 0 = nothing (natural ground), 1 = inside a solid (v: road-facing value), 2 = cut surface, 3 = fill surface.
 // Tier k occupies e in [w*a[k], w*a[k] + wallT] and levels are zf + w*z[k]; w is the run weight.
 function tierEval(pl, w, e, zf, b, res, wallT, bt) {
@@ -434,7 +450,7 @@ function fullEval(cutP, e, zf, b, res, wallT, verge, bt) {
 // ---- Pure core (portable to C++): plain arrays and numbers only, no THREE / DOM / globals. ----
 // roadsData: [{ hw, reach, bbox:{x0,y0,x1,y1}, samples:[{x,y,z,h,br,tu,wL,wR}] }]; params: { formDrop, batter, wallThick, verge }.
 // baseSampler(x, y) -> base height. Writes nx*ny graded heights to out (row-major, texel (i,j) at x0+i*res, y0+j*res).
-function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
+function gradeTileCore(baseSampler, roadsData, params, x0, y0, nx, ny, res, out, fixOut) {
   const N = nx * ny, bt = params.batter, fd = params.formDrop, half = params.wallThick - res;   // wall band: texels with e <= wallThick-res take the inside (formation) value, so the one-texel ramp to natural lies inside the solid
   const verge = params.verge, hb = params.roundHinge || 0, rk = params.roundK || 0, dD = params.ditchD || 0, dW = params.ditchW || 0, eB = params.endBatter || bt, rfL = params.reachFade || 0;
   let hbc = hb, rkc = rk;   // per-texel rounding: the hinge and the daylight roll-over never take more than a third of the slope's length each (short banks are not all rounding)
@@ -442,9 +458,9 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
   const smax = (d, k) => d >= k ? d : d <= -k ? 0 : (d + k) * (d + k) / (4 * k);   // smooth max(d, 0) over +-rk: rolls the slope over into natural ground
   const dC = (v, b, r, k) => v >= 1e8 ? 0 : r * (k > 0 ? smax(b - v, k) : Math.max(0, b - v)), dF = (v, b, r, k) => v <= -1e8 ? 0 : r * (k > 0 ? smax(v - b, k) : Math.max(0, v - b));   // the displacement a recorded cut / fill surface causes at base b (weight r): the winner across roads is the one that moves the ground most, not the one that is highest (a faded-in neighbour's high slope must not hide a structure's full-weight level)
   // best candidate (cutM/E/R) + the second-best weighted displacement (D2) + the largest unweighted one (U): where a structure tapers out and a neighbour's own slope fades in, the two weighted displacements ADD (a crossfade), capped by the largest full one
-  const recC = (o, v, e, b, r) => { const d = dC(v, b, r, rkc), u = dC(v, b, 1, rkc), c = dC(cutM[o], b, cutR[o], cutK[o]); if (u > cutU[o]) cutU[o] = u; if (d > c) { if (c > cutD2[o]) cutD2[o] = c; cutM[o] = v; cutE[o] = e; cutR[o] = r; cutK[o] = rkc; } else if (d > cutD2[o]) cutD2[o] = d; };
+  const recC = (o, v, e, b, r, dit) => { const d = dC(v, b, r, rkc), u = dC(v, b, 1, rkc), c = dC(cutM[o], b, cutR[o], cutK[o]); if (u > cutU[o]) cutU[o] = u; if (d > c) { if (c > cutD2[o]) cutD2[o] = c; cutM[o] = v; cutE[o] = e; cutR[o] = r; cutK[o] = rkc; cutDit[o] = dit || 0; return true; } else if (d > cutD2[o]) cutD2[o] = d; return false; };
   const recF = (o, v, e, b, r) => { const d = dF(v, b, r, rkc), u = dF(v, b, 1, rkc), c = dF(fillM[o], b, fillR[o], fillK[o]); if (u > fillU[o]) fillU[o] = u; if (d > c) { if (c > fillD2[o]) fillD2[o] = c; fillM[o] = v; fillE[o] = e; fillR[o] = r; fillK[o] = rkc; } else if (d > fillD2[o]) fillD2[o] = d; };
-  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N), rqSp = new Float32Array(N), rqSv = new Float32Array(N), cutR = new Float32Array(N).fill(1), fillR = new Float32Array(N).fill(1), cutD2 = new Float32Array(N), fillD2 = new Float32Array(N), cutU = new Float32Array(N), fillU = new Float32Array(N), cutK = new Float32Array(N), fillK = new Float32Array(N);
+  const base = new Float32Array(N), fpD = new Float32Array(N).fill(9), fpZ = new Float32Array(N).fill(1e9), cutM = new Float32Array(N).fill(1e9), fillM = new Float32Array(N).fill(-1e9), rqW = new Uint8Array(N), rqP = new Array(N).fill(null), rqBt = new Float32Array(N), rqFw = new Float32Array(N), rqWw = new Float32Array(N), rqD = new Float32Array(N), rqZ = new Float32Array(N), rqEx = new Float32Array(N), rqEy = new Float32Array(N), cutE = new Float32Array(N), fillE = new Float32Array(N), rqAl = new Float32Array(N), rqFs = new Float32Array(N), rqFl = new Uint8Array(N), rqBy = new Uint8Array(N), rqSp = new Float32Array(N), rqSv = new Float32Array(N), cutR = new Float32Array(N).fill(1), fillR = new Float32Array(N).fill(1), cutD2 = new Float32Array(N), fillD2 = new Float32Array(N), cutU = new Float32Array(N), fillU = new Float32Array(N), cutK = new Float32Array(N), fillK = new Float32Array(N), cutDit = new Float32Array(N), endCeil = new Float32Array(N).fill(1e9), capF = new Uint8Array(N), rqSt = new Uint8Array(N), rockF = new Uint8Array(N), fixF = new Uint8Array(N);   // fixF bits: 1 footprint / wall solid, 2 rock-cut face, 4 beside a structure or past a portal plane, 8 toe ditch (the smoothing pass leaves them alone)
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) base[j * nx + i] = baseSampler(x0 + i * res, y0 + j * res);
   const tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
   for (let ri = 0; ri < roadsData.length; ri++) {
@@ -456,6 +472,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
       const tx = x0 + i * res, ty = y0 + j * res, ex = rqEx[o], ey = rqEy[o], f = (hw + 0.5) / dd, qx = tx - ex + ex * f, qy = ty - ey + ey * f;
       for (const nb of nbr) { const bx = nb.core; if (bx && (Math.max(qx, tx) < bx.x0 || Math.min(qx, tx) > bx.x1 || Math.max(qy, ty) < bx.y0 || Math.min(qy, ty) > bx.y1)) continue;
         const Sb = nb.samples, l2 = (nb.hw - 0.25) * (nb.hw - 0.25);
+        if ((!Sb[0].br && !Sb[0].tu) || (!Sb[Sb.length - 1].br && !Sb[Sb.length - 1].tu)) { if (pathHitsFootprint(qx, qy, tx, ty, Sb, l2)) return true; continue; }   // a road with a free end: the cap does not block
         for (let k = 0; k + 1 < Sb.length; k++) { const a = Sb[k], b = Sb[k + 1]; if ((a.br || a.tu) && (b.br || b.tu)) continue; const m = nb.hw; if (Math.max(a.x, b.x) + m < Math.min(qx, tx) || Math.min(a.x, b.x) - m > Math.max(qx, tx) || Math.max(a.y, b.y) + m < Math.min(qy, ty) || Math.min(a.y, b.y) - m > Math.max(qy, ty)) continue; if (segSegDist2(qx, qy, tx, ty, a.x, a.y, b.x, b.y) < l2) return true; } }
       return false;
     };
@@ -473,7 +490,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
         const ry = y0 + j * res - A.y;
         for (let i = i0; i <= i1; i++) {
           const rx = x0 + i * res - A.x;
-          if (ap) { const px = rx + A.x, py = ry + A.y; let beyond = false; for (const pl of ap) if ((px - pl.x) * pl.nx + (py - pl.y) * pl.ny > pc) { beyond = true; break; } if (beyond) continue; }   // past a tunnel portal plane: natural ground (the headwall hides the one-texel step)
+          if (ap) { const px = rx + A.x, py = ry + A.y; let beyond = false; for (const pl of ap) if ((px - pl.x) * pl.nx + (py - pl.y) * pl.ny > pc) { beyond = true; break; } if (beyond) { fixF[j * nx + i] |= 4; continue; } }   // past a tunnel portal plane: natural ground (the headwall hides the one-texel step)
           let t = (rx * dx + ry * dy) / L2; if ((B.tu && !A.tu && t > 1 + PLANE_OVER / Math.sqrt(L2)) || (A.tu && !B.tu && t < -PLANE_OVER / Math.sqrt(L2))) continue; const tRaw = t;   // tunnel portal: grading stops exactly at the portal plane (the first tunnel station) (the headwall hides the step); bridges keep the rounded embankment end
           t = t < 0 ? 0 : t > 1 ? 1 : t;
           let ex = rx - t * dx, ey = ry - t * dy, d2 = ex * ex + ey * ey, pro = 0, alongV = 0, fs = 0;
@@ -491,16 +508,21 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
           if (!pro && d2 > R2) continue;
           const dd = Math.sqrt(d2), o = j * nx + i; if (dd >= rqD[o]) continue;   // nearest station of this road decides (one zf, one wall flag per texel)
           rqAl[o] = alongV; rqFl[o] = pro === 2 ? 1 : 0; rqFs[o] = fs; rqBy[o] = !pro && (tRaw < 0 || tRaw > 1) ? (((k === 0 && tRaw < 0 && !A.br && !A.tu) || (k === S.length - 2 && tRaw > 1 && !B.br && !B.tu)) ? 2 : 1) : 0;
-          rqD[o] = dd; rqEx[o] = ex; rqEy[o] = ey; rqZ[o] = A.z + t * dz - fd; { let bte = bt; if (eB > bt && dd > 0 && ((k === 0 && tRaw < 0 && !A.br && !A.tu) || (k === S.length - 2 && tRaw > 1 && !B.br && !B.tu))) { const sq = Math.sqrt(L2), along = tRaw < 0 ? -(rx * dx + ry * dy) / sq : (rx * dx + ry * dy) / sq - sq; bte = bt + (eB - bt) * Math.min(1, along / dd); } rqBt[o] = bte; } const E = (A.br || A.tu) ? B : (B.br || B.tu) ? A : t < 0.5 ? A : B; const lf = (dx * ry - dy * rx) > 0; rqW[o] = lf ? E.wL : E.wR; rqSp[o] = lf ? E.sL : E.sR; { const pa = lf ? A.pL : A.pR, pb = lf ? B.pL : B.pR, ya = pa && pa.stairs ? (pa.alt ? pa.sw : 1) : 0, yb = pb && pb.stairs ? (pb.alt ? pb.sw : 1) : 0; rqSv[o] = (A.br || A.tu) ? yb : (B.br || B.tu) ? ya : ya + (yb - ya) * t; } /* the terraces' share beside a terraced run, interpolated between the stations like the other weights */ rqP[o] = lf ? E.pL : E.pR; { const fa = lf ? A.fwL : A.fwR, fb = lf ? B.fwL : B.fwR; rqFw[o] = (A.br || A.tu) ? fb : (B.br || B.tu) ? fa : fa + (fb - fa) * t; } { const wa = (lf ? A.wwL : A.wwR) ?? 1, wb = (lf ? B.wwL : B.wwR) ?? 1; rqWw[o] = (A.br || A.tu) ? wb : (B.br || B.tu) ? wa : wa + (wb - wa) * t; }   // cross > 0: texel on the left
+          rqSt[o] = (A.br || A.tu || B.br || B.tu) ? 1 : 0; rqD[o] = dd; rqEx[o] = ex; rqEy[o] = ey; rqZ[o] = A.z + t * dz - fd; { let bte = bt; if (eB > bt && dd > 0 && ((k === 0 && tRaw < 0 && !A.br && !A.tu) || (k === S.length - 2 && tRaw > 1 && !B.br && !B.tu))) { const sq = Math.sqrt(L2), along = tRaw < 0 ? -(rx * dx + ry * dy) / sq : (rx * dx + ry * dy) / sq - sq; bte = bt + (eB - bt) * Math.min(1, along / dd); } rqBt[o] = bte; } const E = (A.br || A.tu) ? B : (B.br || B.tu) ? A : t < 0.5 ? A : B; const lf = (dx * ry - dy * rx) > 0; rqW[o] = lf ? E.wL : E.wR; rqSp[o] = lf ? E.sL : E.sR; { const pa = lf ? A.pL : A.pR, pb = lf ? B.pL : B.pR, ya = pa && pa.stairs ? (pa.alt ? pa.sw : 1) : 0, yb = pb && pb.stairs ? (pb.alt ? pb.sw : 1) : 0; rqSv[o] = (A.br || A.tu) ? yb : (B.br || B.tu) ? ya : ya + (yb - ya) * t; } /* the terraces' share beside a terraced run, interpolated between the stations like the other weights */ rqP[o] = lf ? E.pL : E.pR; { const fa = lf ? A.fwL : A.fwR, fb = lf ? B.fwL : B.fwR; rqFw[o] = (A.br || A.tu) ? fb : (B.br || B.tu) ? fa : fa + (fb - fa) * t; } { const wa = (lf ? A.wwL : A.wwR) ?? 1, wb = (lf ? B.wwL : B.wwR) ?? 1; rqWw[o] = (A.br || A.tu) ? wb : (B.br || B.tu) ? wa : wa + (wb - wa) * t; }   // cross > 0: texel on the left
         }
       }
     }
     for (let o = 0; o < N; o++) {
-      const dd = rqD[o]; if (dd > 1e8) continue; const zf = rqZ[o];
+      const dd = rqD[o]; if (dd > 1e8) continue; const zf = rqZ[o]; if (rqSt[o]) fixF[o] |= 4;
+      if (rqBy[o] === 2 && !rqFl[o]) { const c = zf + dd / eB; if (c < endCeil[o]) endCeil[o] = c; if (dd <= hw) capF[o] = 1; }   // beyond a free end the road's own run-out ceiling (rising at the end batter from the end station): where another road's fill stands there, it is cut down to it, so the road does not end against a cliff
       if (rqFl[o]) {   // ahead of a free end of a terraced road: the floor rises / falls with the run-out batter (cut / fill side), across the width it is a crossfall between the two
         const lift = rqAl[o] / eB, fs = rqFs[o], zl = zf + fs * lift, b0 = base[o]; let zz = zf; if (fs > 0) zz = Math.min(b0, zl); else if (fs < 0) zz = Math.max(b0, zl);
         fpD[o] = 0; if (zz < fpZ[o]) fpZ[o] = zz; continue; }
-      if (dd <= hw) { fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }   // union of footprints: lowest formation wins (never pokes through any road)
+      if (dd <= hw) { if (rqBy[o] === 2) {   // the round end cap of a FREE end is only a temporary finish (the player will extend the road): it is a zero-width cut / fill surface at formation level in the ordinary displacement machinery, so it never overrides another road's earthworks and meets them without a step
+          const b0 = base[o], H3c = Math.abs(b0 - zf) / 3; hbc = hb > 0 ? Math.max(0.05, Math.min(hb, H3c * bt)) : 0; rkc = rk > 0 ? Math.max(0.01, Math.min(rk, H3c)) : 0;
+          if (b0 > zf) { if (dC(zf, b0, 1, rkc) > cutD2[o]) recC(o, zf, 0, b0, 1); } else if (dF(zf, b0, 1, rkc) > fillD2[o]) recF(o, zf, 0, b0, 1);
+          continue; }
+        fpD[o] = 0; if (zf < fpZ[o]) fpZ[o] = zf; continue; }   // union of footprints: lowest formation wins (never pokes through any road)
       if (rqSp[o] >= 1) continue;   // the neighbour's structure reaches this road: no earthworks of its own on this side (they fade back in as the structure tapers)
       const e = dd - hw, b = base[o], cutT = b > zf; { const H3 = Math.abs(b - zf) / 3; hbc = hb > 0 ? Math.max(0.05, Math.min(hb, H3 * bt)) : 0; rkc = rk > 0 ? Math.max(0.01, Math.min(rk, H3)) : 0; }   // rounding bound: each end at most a third of the slope (height H: length H * batter)
        let wf = rqW[o], ww = wf ? rqWw[o] : 0, pl = wf ? rqP[o] : null; const bte = rqBt[o];
@@ -508,7 +530,8 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
       const rf = rfL > 0 && dd > R - rfL ? (() => { const u = (R - dd) / rfL; return u <= 0 ? 0 : u * u * (3 - 2 * u); })() : 1;   // a plain slope that has not met the ground by the end of the road's reach fades into it (no cut face / pit at the reach limit)
       const rfs = rf * (1 - rqSp[o]);
       if (wf && pl && pl.stairs && rqBy[o] === 2) continue;   // beyond the run-out of a terraced free end: natural ground (no cone)
-      if (wf && pl && pl.stairs && rqBy[o]) { wf = 0; ww = 0; pl = null; }   // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
+      if (wf && pl && pl.stairs && rqBy[o]) { wf = 0; ww = 0; pl = null; }
+      if (wf && rqBy[o] === 2 && !(pl && pl.stairs)) { wf = 0; ww = 0; pl = null; }   // beyond a free end the wall band does not wrap around the road end as a ring of formation-level ground: the plain run-out slope   // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
       if (wf && !(pl && pl.plat) && (wf === 1) !== cutT) { wf = 0; ww = 0; pl = null; }   // flag says cut but this texel is fill (or vice versa): plain slope
       if (wf && pl && (!pl.full || pl.wing)) {   // stacked walls (see planSide), or a wing wall blended in from the earthworks beside it
         let kind, v;
@@ -532,7 +555,7 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
         if (kind === 0) continue;
         if (kind === 1) { fpD[o] = 0; const zw = pl.cut && !pl.plat ? Math.min(v, b) : pl.stairs && !pl.cut ? Math.max(v, b) : v; /* a shared structure (plat) builds the ground up to the neighbour whatever the natural ground does */ if (zw < fpZ[o]) fpZ[o] = zw; continue; }
         const rr = pl.stairs && pl.kind !== 'terrace' ? rfs * (() => { const u = rqAl[o] / (pl.alongMax + 1e-9); return u <= 0 ? 1 : u >= 1 ? 0 : 1 - u * u * (3 - 2 * u); })() : 1;   // also fades out along the run-out beyond a free end   // rock cut / steep fill fade into the ground at the end of the reach like plain slopes
-        if (kind === 2) { if (rr > 0 && v < b + rk && dC(v, b, rr, rkc) > cutD2[o] && !blk()) recC(o, v, e, b, rr); }
+        if (kind === 2) { if (rr > 0 && v < b + rk && dC(v, b, rr, rkc) > cutD2[o] && !blk()) { if (recC(o, v, e, b, rr)) rockF[o] = pl.stairs && pl.kind === 'rock' ? 1 : 0; } }
         else if (rr > 0 && v > b - rk && dF(v, b, rr, rkc) > fillD2[o] && !blk()) recF(o, v, e, b, rr);
         continue; }
       // Wall (ww = weight 0..1 along the run; verge == wall thickness so ww = 0 is exactly the plain verge + slope).
@@ -548,17 +571,69 @@ function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out) {
         const zff = zf - ww * (zf - b), v = e <= params.wallThick ? zff : zff - (e - verge) / bt; if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fillD2[o] && !blk()) recF(o, v, e, b, rfs);
         continue; }
       if (cutT) {   // toe ditch between verge and slope (fades out in shallow cuts), then the slope
-        let v = zf + sv(e) / bt; if (dD > 0 && dW > 0 && e > verge && e < verge + dW) { const u = Math.sin(Math.PI * (e - verge) / dW); v -= dD * Math.min(1, b - zf) * u * u; }
-        if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cutD2[o] && !blk()) recC(o, v, e, b, rfs); }
+        let v = zf + sv(e) / bt, dit = 0; if (dD > 0 && dW > 0 && e > verge && e < verge + dW) { const u = Math.sin(Math.PI * (e - verge) / dW); dit = dD * Math.min(1, b - zf) * u * u; v -= dit; }
+        if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cutD2[o] && !blk()) recC(o, v, e, b, rfs, dit); }
       else { const v = zf - sv(e) / bte; if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fillD2[o] && !blk()) recF(o, v, e, b, rfs); }
     }
   }
   for (let o = 0; o < N; o++) {
     let g;
     if (fpD[o] < 9) g = fpZ[o]; else { g = base[o]; const dc = cutM[o] < 1e8 ? Math.min(dC(cutM[o], g, cutR[o], cutK[o]) + cutD2[o], Math.max(cutU[o], dC(cutM[o], g, cutR[o], cutK[o]))) : 0, df = fillM[o] > -1e8 ? Math.min(dF(fillM[o], g, fillR[o], fillK[o]) + fillD2[o], Math.max(fillU[o], dF(fillM[o], g, fillR[o], fillK[o]))) : 0;   // dip below natural (cut) / rise above it (fill), rounded near daylight
-    if (dc > 0 && df > 0) { const wc = dc / (cutE[o] + 1), wf = df / (fillE[o] + 1); g = g + (df * wf - dc * wc) / (wc + wf); } else if (dc > 0) g = g - dc; else if (df > 0) g = g + df; }   // a cut and a fill slope of two roads meet: blend their displacements, each weighted by its size over its distance to its own road (one continuous surface; a nearer-wins switch left a pit)
+    if (dc > 0 && df > 0) { const wc = dc / (cutE[o] + 1), wf = df / (fillE[o] + 1); g = g + (df * wf - dc * wc) / (wc + wf); } else if (dc > 0) g = g - dc; else if (df > 0) g = g + df;
+      if (endCeil[o] < 1e8 && (dc > 0 || df > 0)) { if (df > 0) g = Math.min(g, Math.max(base[o], endCeil[o])); if (dc > 0 && capF[o]) g = Math.min(g, endCeil[o]); } }   // a cut and a fill slope of two roads meet: blend their displacements, each weighted by its size over its distance to its own road (one continuous surface; a nearer-wins switch left a pit)
     out[o] = g;
+    if (fpD[o] >= 9 && cutM[o] < 1e8 && cutDit[o] * cutR[o] > 0.01) fixF[o] |= 8;   // the toe ditch is a designed feature (depth below formation): the smoothing pass leaves it alone
+    if (fpD[o] < 9) fixF[o] |= 1; else if (rockF[o] && g < base[o] - 0.05) fixF[o] |= 2;
   }
+  if (fixOut) fixOut.set(fixF);
+  return base;
+}
+
+// ---- Smoothing: a constrained relaxation of the graded ground (after gradeTileCore). Defined on world texels with a halo, so the result does not depend on how the world is cut into tiles. ----
+// FREE texels: within relaxMargin of any texel the grading changed (or fixed), and not within 2 texels of a FIXED texel. FIXED: footprint / wall solid (fix bit 1), rock-cut face (bit 2),
+// beside a structure or past a portal plane (bit 4). Each pass: g' = (1 - s) g + s * mean of the 4 neighbours (Jacobi; outside the window a texel is its own neighbour), then clamped to
+// [lo, hi]: a cut texel never rises above natural ground, a fill texel never sinks below it, and no texel moves more than relaxMaxDelta from its graded value.
+const FACE_STEP = 1.2;   // m between adjacent texels: above this the step is a wall face / abutment, not ground
+function relaxTile(g0, nat, fix, nx, ny, iters, s, mTex, maxD) {
+  const N = nx * ny, W = nx + 1, win = (flag, r) => {   // count of flagged texels in the (2r+1)^2 window around each texel (integral image: exact integers)
+    const I = new Int32Array((nx + 1) * (ny + 1));
+    for (let j = 0; j < ny; j++) { let row = 0; for (let i = 0; i < nx; i++) { row += flag[j * nx + i]; I[(j + 1) * W + i + 1] = I[j * W + i + 1] + row; } }
+    const out = new Int32Array(N);
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const i0 = Math.max(0, i - r), i1 = Math.min(nx - 1, i + r) + 1, j0 = Math.max(0, j - r), j1 = Math.min(ny - 1, j + r) + 1; out[j * nx + i] = I[j1 * W + i1] - I[j0 * W + i1] - I[j1 * W + i0] + I[j0 * W + i0]; }
+    return out;
+  };
+  const fixed = new Uint8Array(N), changed = new Uint8Array(N);
+  for (let o = 0; o < N; o++) { fixed[o] = fix[o] ? 1 : 0; changed[o] = fix[o] || Math.abs(g0[o] - nat[o]) > 1e-4 ? 1 : 0; }
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {   // a texel on either side of a step of more than FACE_STEP between neighbours is part of a face (wall face, abutment, portal step): fixed too
+    const o = j * nx + i;
+    if (i + 1 < nx && Math.abs(g0[o] - g0[o + 1]) > FACE_STEP) { fixed[o] = 1; fixed[o + 1] = 1; changed[o] = 1; changed[o + 1] = 1; }
+    if (j + 1 < ny && Math.abs(g0[o] - g0[o + nx]) > FACE_STEP) { fixed[o] = 1; fixed[o + nx] = 1; changed[o] = 1; changed[o + nx] = 1; }
+  }
+  const ring = win(fixed, 2), near = win(changed, mTex), free = new Uint8Array(N), lo = new Float64Array(N), hi = new Float64Array(N);
+  // The relaxation works on the DISPLACEMENT d = graded - natural, not on the height: natural ground that grading did not touch is never altered (d = 0 stays 0), and the daylight edge blends into it.
+  let a = new Float64Array(N), b = new Float64Array(N);
+  for (let o = 0; o < N; o++) {
+    free[o] = near[o] > 0 && ring[o] === 0 ? 1 : 0;
+    const d = g0[o] - nat[o]; a[o] = d; lo[o] = d > 1e-4 ? Math.max(0, d - maxD) : d - maxD; hi[o] = d < -1e-4 ? Math.min(0, d + maxD) : d + maxD;   // a cut texel never rises above natural, a fill texel never sinks below it
+  }
+  for (let it = 0; it < iters; it++) {
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const o = j * nx + i; if (!free[o]) { b[o] = a[o]; continue; }
+      const c = a[o], l = i > 0 ? a[o - 1] : c, r = i < nx - 1 ? a[o + 1] : c, d = j > 0 ? a[o - nx] : c, u = j < ny - 1 ? a[o + nx] : c;
+      let v = (1 - s) * c + s * ((l + r + d + u) / 4); if (v < lo[o]) v = lo[o]; else if (v > hi[o]) v = hi[o]; b[o] = v;
+    }
+    const t = a; a = b; b = t;
+  }
+  for (let o = 0; o < N; o++) a[o] += nat[o];
+  return a;
+}
+function gradeTile(baseSampler, roadsData, params, x0, y0, nx, ny, res, out, fixOut) {
+  const it = params.relaxIters || 0;
+  if (it <= 0) return gradeTileCore(baseSampler, roadsData, params, x0, y0, nx, ny, res, out, fixOut);
+  const mTex = Math.ceil((params.relaxMargin || 0) / res), H = it + mTex + 2, ex = nx + 2 * H, ey = ny + 2 * H;
+  const g0 = new Float32Array(ex * ey), fx = new Uint8Array(ex * ey), nat = gradeTileCore(baseSampler, roadsData, params, x0 - H * res, y0 - H * res, ex, ey, res, g0, fx);
+  const r = relaxTile(g0, nat, fx, ex, ey, it, params.relaxStrength, mTex, params.relaxMaxDelta);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const oe = (j + H) * ex + i + H; out[j * nx + i] = r[oe]; if (fixOut) fixOut[j * nx + i] = fx[(j + H) * ex + i + H]; }
 }
 // ---- THREE-facing glue: tiles the box into 64 m tiles, feeds gradeTile, writes GH. ----
 const TILE_M = 64;
@@ -643,7 +718,7 @@ function gradeRegion(box) {
   const gi0 = clamp(Math.floor(box.x0 / GRID_RES), 0, GN - 1), gj0 = clamp(Math.floor(box.y0 / GRID_RES), 0, GN - 1);
   const gi1 = clamp(Math.ceil(box.x1 / GRID_RES), 0, GN - 1), gj1 = clamp(Math.ceil(box.y1 / GRID_RES), 0, GN - 1);
   if (gi1 < gi0 || gj1 < gj0) return;
-  const rd = roadsData(), TS = TILE_M / GRID_RES, params = { formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER, reachFade: REACH_FADE };
+  const rd = roadsData(), TS = TILE_M / GRID_RES, params = { formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER, reachFade: REACH_FADE, relaxIters: RELAX_ITERS, relaxStrength: RELAX_STRENGTH, relaxMargin: RELAX_MARGIN, relaxMaxDelta: RELAX_MAX_DELTA };
   for (let tj = gj0; tj <= gj1; tj += TS) for (let ti = gi0; ti <= gi1; ti += TS) {
     const nx = Math.min(TS, gi1 - ti + 1), ny = Math.min(TS, gj1 - tj + 1);
     const tx0 = ti * GRID_RES, ty0 = tj * GRID_RES, tx1 = tx0 + nx * GRID_RES, ty1 = ty0 + ny * GRID_RES;

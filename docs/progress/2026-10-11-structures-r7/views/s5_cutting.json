@@ -1,0 +1,198 @@
+[
+ {
+  "name": "s5_cutting_street",
+  "width": 1600,
+  "height": 900,
+  "pos": [
+   -85,
+   -1.8,
+   1.7
+  ],
+  "target": [
+   -10,
+   0,
+   3
+  ],
+  "fov": 62,
+  "near": 0.2,
+  "shadow": 110,
+  "shadowCentre": [
+   -30,
+   0,
+   3
+  ],
+  "exposure": 1.05,
+  "sun": [
+   190,
+   42
+  ]
+ },
+ {
+  "name": "s5_cutting_aerial",
+  "width": 1600,
+  "height": 900,
+  "pos": [
+   -60,
+   -70,
+   40
+  ],
+  "target": [
+   0,
+   0,
+   3
+  ],
+  "fov": 55,
+  "near": 0.5,
+  "shadow": 160,
+  "shadowCentre": [
+   0,
+   0,
+   3
+  ],
+  "exposure": 1.15,
+  "sun": [
+   150,
+   38
+  ]
+ },
+ {
+  "name": "s5_cutting_along",
+  "width": 1600,
+  "height": 900,
+  "pos": [
+   -120,
+   1.5,
+   2.4
+  ],
+  "target": [
+   0,
+   0,
+   3
+  ],
+  "fov": 58,
+  "near": 0.2,
+  "shadow": 150,
+  "shadowCentre": [
+   -30,
+   0,
+   3
+  ],
+  "exposure": 1.1,
+  "sun": [
+   170,
+   45
+  ]
+ },
+ {
+  "name": "s5_cutting_end",
+  "width": 1600,
+  "height": 900,
+  "pos": [
+   160,
+   -55,
+   22
+  ],
+  "target": [
+   40,
+   5,
+   3
+  ],
+  "fov": 55,
+  "near": 1,
+  "shadow": 170,
+  "shadowCentre": [
+   60,
+   0,
+   3
+  ],
+  "exposure": 1.1,
+  "sun": [
+   200,
+   40
+  ]
+ },
+ {
+  "name": "s5_cutting_toe",
+  "width": 1600,
+  "height": 900,
+  "pos": [
+   -6,
+   -5.6,
+   1.1
+  ],
+  "target": [
+   2,
+   7.6,
+   -0.1
+  ],
+  "fov": 55,
+  "near": 0.1,
+  "shadow": 60,
+  "shadowCentre": [
+   0,
+   6,
+   1
+  ],
+  "exposure": 1.1,
+  "sun": [
+   200,
+   40
+  ]
+ },
+ {
+  "name": "s5_cutting_toe_section",
+  "width": 1600,
+  "height": 900,
+  "pos": [
+   0,
+   -3,
+   0.6
+  ],
+  "target": [
+   0,
+   12,
+   2
+  ],
+  "fov": 70,
+  "near": 0.1,
+  "shadow": 60,
+  "shadowCentre": [
+   0,
+   8,
+   1
+  ],
+  "exposure": 1.1,
+  "sun": [
+   250,
+   35
+  ]
+ },
+ {
+  "name": "s5_cutting_crest_profile",
+  "width": 1600,
+  "height": 900,
+  "pos": [
+   -22,
+   10,
+   9.5
+  ],
+  "target": [
+   0,
+   24,
+   9.5
+  ],
+  "fov": 60,
+  "near": 0.2,
+  "shadow": 90,
+  "shadowCentre": [
+   0,
+   16,
+   6
+  ],
+  "exposure": 1.1,
+  "sun": [
+   200,
+   40
+  ]
+ }
+]

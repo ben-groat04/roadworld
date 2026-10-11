@@ -56,6 +56,9 @@ GradingParams GradingParams::from_rules(const GradingRules& r) {
     p.round_hinge = r.round_hinge;
     p.max_tiers = r.max_tiers;
     p.wall_slope_extra = r.wall_slope_extra;
+    p.slope_max_ratio = r.slope_max_ratio;
+    p.slope_run_slack = r.slope_run_slack;
+    p.slope_max_run = r.slope_max_run;
     p.berm_slope = r.berm_slope;
     p.wall_hard_max = r.wall_hard_max;
     p.rock_cut_batter = r.rock_cut_batter;
@@ -65,6 +68,10 @@ GradingParams GradingParams::from_rules(const GradingRules& r) {
     p.corridor_max = r.corridor_max;
     p.wall_vis_min = r.wall_vis_min;
     p.reach_fade = r.reach_fade;
+    p.relax_iters = r.relax_iterations;
+    p.relax_strength = r.relax_strength;
+    p.relax_margin = r.relax_margin;
+    p.relax_max_delta = r.relax_max_delta;
     return p;
 }
 
@@ -241,13 +248,17 @@ using Contact = std::function<bool(double, double&)>;  // neighbour formation le
 
 // Does the 1:batter slope from level L (starting at lateral s0) daylight within E, or land on a neighbour's
 // footprint the right way?
-bool slope_fits(bool cut, double L, double s0, double E, double bt, const Probe& grd, const Contact* cn, double from) {
+bool slope_fits(bool cut, double L, double s0, double E, double bt, const Probe& grd, const Contact* cn, double from,
+                const GradingParams& p) {
     for (double e = from; e < E + 0.5; e += 0.5) {
         const double ee = std::min(e, E), run = ee > s0 ? ee - s0 : 0.0;
         const double zs = cut ? L + run / bt : L - run / bt;
         double bz = 0;
         if (cn && (*cn)(ee, bz)) return cut ? zs >= bz : zs <= bz;  // landed on a neighbour's footprint
-        if (cut ? zs >= grd(ee) : zs <= grd(ee)) return true;
+        if (cut ? zs >= grd(ee) : zs <= grd(ee)) {  // daylights, but only efficiently (else it chases the hillside and the wall takes the height)
+            const double H0 = std::max(0.0, cut ? grd(s0) - L : L - grd(s0));
+            return ee - s0 <= p.slope_max_ratio * H0 * bt + p.slope_run_slack;
+        }
         if (ee >= E) break;
     }
     return false;
@@ -269,7 +280,7 @@ TierResult solve_tiers(bool cut, double z0, double E, double bt, const Probe& gr
     bool nat = false;
     for (;;) {
         const double s0 = t.n ? t.a[t.n - 1] + T : p.verge;
-        if (t.n >= min_tiers && slope_fits(cut, L, s0, t.n ? E + p.wall_slope_extra : E, bt, grd, cn, t.n ? s0 : 0.5)) {
+        if (t.n >= min_tiers && slope_fits(cut, L, s0, t.n ? std::min(E + p.wall_slope_extra, s0 + p.slope_max_run) : E, bt, grd, cn, t.n ? s0 : 0.5, p)) {
             r.kind = t.n ? TierResult::Tiers : TierResult::None;
             t.nat = false;
             return r;
@@ -309,7 +320,6 @@ struct StairResult {
 double tier_pitch(const GradingParams& p) { return p.wall_thickness + p.bench_min_width; }
 
 constexpr double kFadeK = 6.0;       // the strip behind a full tier carves at most kFadeK * (height still to retain) below natural ground (internal)
-constexpr double kSteepReach = 45.0; // reach limit of a steep fill that never meets the ground (internal)
 
 // mt: tiers allowed (1 or 2); ok = the last tier reaches the ground.
 StairResult stair_profile(bool cut, double zf, double h, const Probe& N, int mt, const GradingParams& p) {
@@ -368,7 +378,7 @@ WallPlan profile_plan(bool cut, double z0, const Probe& N, const RunTreat& run, 
         n = static_cast<int>(pr.tiers.size());
         reach_e = n ? pr.tiers.back().a + p.wall_thickness : 0.0;
     } else {
-        const double lim = run.kind == 2 ? std::min(p.corridor_max, kSteepReach) : p.corridor_max;
+        const double lim = run.kind == 2 ? std::min(p.corridor_max, p.slope_max_run) : p.corridor_max;
         for (double e = 0.5; e <= lim; e += 1) {
             reach_e = e;
             const double z = surf_z(run.kind, e, z0, p);
@@ -1205,6 +1215,31 @@ double seg_seg_dist2(double px, double py, double qx, double qy, double ax, doub
                     std::min(pt(ax, ay, px, py, qx, qy), pt(bx, by, px, py, qx, qy)));
 }
 
+// Does the straight way (qx, qy) -> (tx, ty) enter the footprint of a neighbouring road (strip of half-width sqrt(l2) beside its centreline)? The round end cap of a FREE end does
+// not count: it is only a temporary finish (the player will extend the road), so a slope of another road may run over it. Sampled every 0.5 m.
+bool path_hits_footprint(double qx, double qy, double tx, double ty, const std::vector<GradingSample>& Sb, double l2) {
+    const bool cap_first = !Sb.front().br && !Sb.front().tu, cap_last = !Sb.back().br && !Sb.back().tu;
+    const double L = std::hypot(tx - qx, ty - qy);
+    const int n = std::max(1, static_cast<int>(std::ceil(L / 0.5)));
+    for (int i = 0; i <= n; ++i) {
+        const double x = qx + (tx - qx) * i / n, y = qy + (ty - qy) * i / n;
+        double bd = 1e30, bu = 0;  // the nearest point of the centreline decides: beyond a free end it is the end vertex itself (the cap)
+        std::size_t bk = 0;
+        for (std::size_t k = 0; k + 1 < Sb.size(); ++k) {
+            const GradingSample &A = Sb[k], &B = Sb[k + 1];
+            if ((A.br || A.tu) && (B.br || B.tu)) continue;
+            const double dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy;
+            double u = L2 > 1e-12 ? ((x - A.x) * dx + (y - A.y) * dy) / L2 : 0.0;
+            const double ur = u;
+            u = u < 0 ? 0 : u > 1 ? 1 : u;
+            const double ex = x - A.x - u * dx, ey = y - A.y - u * dy, d2 = ex * ex + ey * ey;
+            if (d2 < bd) { bd = d2; bk = k; bu = ur; }
+        }
+        if (bd < l2 && !((bu < 0 && cap_first && bk == 0) || (bu > 1 && cap_last && bk + 2 == Sb.size()))) return true;
+    }
+    return false;
+}
+
 struct Eval {
     int kind;  // 0 nothing (natural ground), 1 inside a solid (v: road-facing value), 2 cut surface, 3 fill surface
     double v;
@@ -1292,12 +1327,13 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     auto dF = [&](double v, double b, double r, double k) { return v <= -1e8 ? 0.0 : r * (k > 0 ? smax(v - b, k) : std::max(0.0, v - b)); };
     // best candidate (cut_m / e / r) + the second-best weighted displacement (d2) + the largest unweighted one (u): where a structure tapers
     // out and a neighbour's own slope fades in, the two weighted displacements ADD (a crossfade), capped by the largest full one
-    auto recC = [&](std::size_t o, double v, double e, double b, double r) {
+    auto recC = [&](std::size_t o, double v, double e, double b, double r, double dit = 0.0) {
         const double d = dC(v, b, r, rkc), u = dC(v, b, 1, rkc), c = dC(ws.cut_m[o], b, ws.cut_r[o], ws.cut_k2[o]);
         if (u > ws.cut_u[o]) ws.cut_u[o] = static_cast<float>(u);
         if (d > c) {
             if (c > ws.cut_d2[o]) ws.cut_d2[o] = static_cast<float>(c);
             ws.cut_m[o] = static_cast<float>(v); ws.cut_e[o] = static_cast<float>(e); ws.cut_r[o] = static_cast<float>(r); ws.cut_k2[o] = static_cast<float>(rkc);
+            ws.cut_dit[o] = static_cast<float>(dit);
             return true;
         }
         if (d > ws.cut_d2[o]) ws.cut_d2[o] = static_cast<float>(d);
@@ -1320,13 +1356,18 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     const double tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
     ws.fp_d.assign(N, 9.0f);
     ws.fp_z.assign(N, 1e9f);
+    ws.end_ceil.assign(N, 1e9f);
+    ws.cap_f.assign(N, 0);
     ws.cut_m.assign(N, 1e9f);
     ws.fill_m.assign(N, -1e9f);
     ws.cut_r.assign(N, 1.0f);
     ws.cut_k.assign(N, 0);
+    ws.fix.assign(N, 0);
+    if (ws.rq_st.size() < N) ws.rq_st.resize(N);
     ws.fill_r.assign(N, 1.0f);
     ws.cut_d2.assign(N, 0.0f);
     ws.cut_k2.assign(N, 0.0f);
+    ws.cut_dit.assign(N, 0.0f);
     ws.fill_k2.assign(N, 0.0f);
     ws.fill_d2.assign(N, 0.0f);
     ws.cut_u.assign(N, 0.0f);
@@ -1369,6 +1410,10 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 const Box2& bx = nb.core;
                 if (std::max(qx, tx) < bx.x0 || std::min(qx, tx) > bx.x1 || std::max(qy, ty) < bx.y0 || std::min(qy, ty) > bx.y1) continue;
                 const double l2 = (nb.half_width - 0.25) * (nb.half_width - 0.25);
+                if ((!nb.samples.front().br && !nb.samples.front().tu) || (!nb.samples.back().br && !nb.samples.back().tu)) {  // a road with a free end: the cap does not block
+                    if (path_hits_footprint(qx, qy, tx, ty, nb.samples, l2)) return true;
+                    continue;
+                }
                 for (std::size_t k = 0; k + 1 < nb.samples.size(); ++k) {
                     const GradingSample &a = nb.samples[k], &b = nb.samples[k + 1];
                     if ((a.br || a.tu) && (b.br || b.tu)) continue;
@@ -1410,7 +1455,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                         bool beyond = false;
                         for (const PortalPlane* pl : ap)
                             if ((px - pl->x) * pl->nx + (py - pl->y) * pl->ny > p.plane_over) { beyond = true; break; }
-                        if (beyond) continue;
+                        if (beyond) { ws.fix[static_cast<std::size_t>(j) * static_cast<std::size_t>(nx) + static_cast<std::size_t>(i)] |= 4; continue; }
                     }
                     double tt = (rx * dx + ry * dy) / L2;
                     // tunnel portal: grading stops exactly at the portal plane (the first tunnel station); bridges keep the rounded embankment end
@@ -1454,6 +1499,7 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                     rq_by[o] = !pro && (t_raw < 0 || t_raw > 1)
                                    ? (((k == 0 && t_raw < 0 && !A.br && !A.tu) || (k == S.size() - 2 && t_raw > 1 && !B.br && !B.tu)) ? 2 : 1)
                                    : 0;
+                    ws.rq_st[o] = (A.br || A.tu || B.br || B.tu) ? 1 : 0;
                     rq_d[o] = static_cast<float>(dd);
                     rq_ex[o] = static_cast<float>(ex);
                     rq_ey[o] = static_cast<float>(ey);
@@ -1491,7 +1537,13 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             const std::size_t o = static_cast<std::size_t>(jj) * static_cast<std::size_t>(nx) + static_cast<std::size_t>(ii);
             const double dd = rq_d[o];
             if (dd > 1e8) continue;
+            if (ws.rq_st[o]) ws.fix[o] |= 4;
             const double zf = rq_z[o];
+            if (rq_by[o] == 2 && !rq_fl[o]) {  // beyond a free end the road's own run-out ceiling (rising at the end batter from the end station): where another road's fill stands there, it is cut down to it, so the road does not end against a cliff
+                const float c = static_cast<float>(zf + dd / e_b);
+                if (c < ws.end_ceil[o]) ws.end_ceil[o] = c;
+                if (dd <= hw) ws.cap_f[o] = 1;
+            }
             if (rq_fl[o]) {  // ahead of a free end of a terraced road: the floor rises / falls with the run-out batter (cut / fill side), across the width it is a crossfall between the two
                 const double lift = rq_al[o] / e_b, fs = rq_fs[o], zl = zf + fs * lift, b0 = base[o];
                 double zz = zf;
@@ -1502,6 +1554,14 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 continue;
             }
             if (dd <= hw) {  // union of footprints: lowest formation wins (never pokes through any road)
+                if (rq_by[o] == 2) {  // the round end cap of a FREE end is only a temporary finish (the player will extend the road): a zero-width cut / fill surface at formation level in the ordinary displacement machinery, so it never overrides another road's earthworks and meets them without a step
+                    const double b0 = base[o], h3c = std::abs(b0 - zf) / 3;
+                    hbc = hb > 0 ? std::max(0.05, std::min(hb, h3c * bt)) : 0.0;
+                    rkc = rk > 0 ? std::max(0.01, std::min(rk, h3c)) : 0.0;
+                    if (b0 > zf) { if (dC(zf, b0, 1, rkc) > cut_d2[o]) recC(o, zf, 0, b0, 1); }
+                    else if (dF(zf, b0, 1, rkc) > fill_d2[o]) recF(o, zf, 0, b0, 1);
+                    continue;
+                }
                 fp_d[o] = 0;
                 if (zf < fp_z[o]) fp_z[o] = static_cast<float>(zf);
                 continue;
@@ -1525,7 +1585,8 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             }
             const double rfs = rf * (1.0 - static_cast<double>(rq_sp[o]));
             if (wf && pl && pl->stairs && rq_by[o] == 2) continue;  // beyond the run-out of a terraced free end: natural ground (no cone)
-            if (wf && pl && pl->stairs && rq_by[o]) { wf = 0; ww = 0; pl = nullptr; }  // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
+            if (wf && pl && pl->stairs && rq_by[o]) { wf = 0; ww = 0; pl = nullptr; }
+            if (wf && rq_by[o] == 2 && !(pl && pl->stairs)) { wf = 0; ww = 0; pl = nullptr; }  // beyond a free end the wall band does not wrap around the road end as a ring of formation-level ground: the plain run-out slope  // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
             if (wf && !(pl && pl->t.plat) && (wf == 1) != cut_t) { wf = 0; ww = 0; pl = nullptr; }  // flag says cut but this texel is fill (or vice versa): plain slope
             if (wf && pl && (!pl->full || pl->wing)) {  // stacked walls (plan_side), or a wing wall blended in from the earthworks beside it
                 Eval ev;
@@ -1610,12 +1671,13 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 continue;
             }
             if (cut_t) {  // toe ditch between verge and slope (fades out in shallow cuts), then the slope
-                double v = zf + sv(e) / bt;
+                double v = zf + sv(e) / bt, dit = 0.0;
                 if (d_d > 0 && d_w > 0 && e > verge && e < verge + d_w) {
                     const double u = std::sin(3.14159265358979323846 * (e - verge) / d_w);
-                    v -= d_d * std::min(1.0, b - zf) * u * u;
+                    dit = d_d * std::min(1.0, b - zf) * u * u;
+                    v -= dit;
                 }
-                if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cut_d2[o] && !blk()) recC(o, v, e, b, rfs);
+                if (rfs > 0 && v < b + rk && dC(v, b, rfs, rkc) > cut_d2[o] && !blk()) recC(o, v, e, b, rfs, dit);
             } else {
                 const double v = zf - sv(e) / bte;
                 if (rfs > 0 && v > b - rk && dF(v, b, rfs, rkc) > fill_d2[o] && !blk()) recF(o, v, e, b, rfs);
@@ -1640,8 +1702,14 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 g = g + (df * wf - dc * wc) / (wc + wf);
             } else if (dc > 0) g -= dc;
             else if (df > 0) g += df;
+
+            if (ws.end_ceil[o] < 1e8f && (dc > 0 || df > 0)) {
+                if (df > 0) g = std::min(g, std::max(static_cast<double>(base[o]), static_cast<double>(ws.end_ceil[o])));
+                if (dc > 0 && ws.cap_f[o]) g = std::min(g, static_cast<double>(ws.end_ceil[o]));
+            }
         }
         out[o] = static_cast<float>(g);
+        if (fp_d[o] >= 9 && cut_m[o] < 1e8f && static_cast<double>(ws.cut_dit[o]) * cut_r[o] > 0.01) ws.fix[o] |= 8;  // the toe ditch is a designed feature: the smoothing pass leaves it alone
         if (footprint) footprint[o] = fp_d[o] < 9 ? 1 : (cut_k[o] && g < base[o] - 0.05 ? 2 : 0);  // 2: engineered rock-cut face (renderer: rock material)
     }
 }
@@ -1654,6 +1722,118 @@ GradedTile grade_tile(const std::vector<GradingRoad>& roads, const GradingParams
     g.footprint.assign(N, 0);
     if (natural.size() < N) return g;
     grade_tile_into(roads, p, t, natural.data(), g.height.data(), g.footprint.data());
+    return g;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Smoothing: a constrained relaxation of the graded ground (port of relaxTile / gradeTile in earthworks.js)
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+constexpr double kFaceStep = 1.2;  // m between adjacent texels (a 1:2.4 face at 0.5 m texels is 1.0 m per texel): above this the step is a wall face / abutment, not ground
+// Count of flagged texels in the (2r+1)^2 window around each texel (integral image: exact integers).
+std::vector<std::int32_t> window_count(const std::vector<std::uint8_t>& flag, int nx, int ny, int r) {
+    const int W = nx + 1;
+    std::vector<std::int32_t> I(static_cast<std::size_t>(nx + 1) * static_cast<std::size_t>(ny + 1), 0), out(static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny), 0);
+    for (int j = 0; j < ny; ++j) {
+        std::int32_t row = 0;
+        for (int i = 0; i < nx; ++i) {
+            row += flag[static_cast<std::size_t>(j) * nx + i];
+            I[static_cast<std::size_t>(j + 1) * W + i + 1] = I[static_cast<std::size_t>(j) * W + i + 1] + row;
+        }
+    }
+    for (int j = 0; j < ny; ++j)
+        for (int i = 0; i < nx; ++i) {
+            const int i0 = std::max(0, i - r), i1 = std::min(nx - 1, i + r) + 1, j0 = std::max(0, j - r), j1 = std::min(ny - 1, j + r) + 1;
+            out[static_cast<std::size_t>(j) * nx + i] = I[static_cast<std::size_t>(j1) * W + i1] - I[static_cast<std::size_t>(j0) * W + i1] - I[static_cast<std::size_t>(j1) * W + i0] + I[static_cast<std::size_t>(j0) * W + i0];
+        }
+    return out;
+}
+
+// FREE texels: within m_tex of any texel the grading changed (or fixed) and not within 2 texels of a fixed one. Jacobi passes
+// g' = (1 - s) g + s * mean of the 4 neighbours (outside the window a texel is its own neighbour), clamped to [lo, hi]: a cut texel
+// never rises above natural ground, a fill texel never sinks below it, no texel moves more than max_d from its graded value.
+std::vector<double> relax_tile(const float* g0, const float* nat, const std::vector<std::uint8_t>& fix, int nx, int ny, int iters, double s, int m_tex, double max_d,
+                               std::vector<std::uint8_t>* free_out = nullptr) {
+    const std::size_t N = static_cast<std::size_t>(nx) * static_cast<std::size_t>(ny);
+    std::vector<std::uint8_t> fixed(N), changed(N);
+    for (std::size_t o = 0; o < N; ++o) {
+        fixed[o] = fix[o] ? 1 : 0;
+        changed[o] = fix[o] || std::abs(static_cast<double>(g0[o]) - nat[o]) > 1e-4 ? 1 : 0;
+    }
+    // a texel on either side of a step of more than kFaceStep between neighbours is part of a face (wall face, abutment, portal step): fixed too
+    for (int j = 0; j < ny; ++j)
+        for (int i = 0; i < nx; ++i) {
+            const std::size_t o = static_cast<std::size_t>(j) * nx + i;
+            if (i + 1 < nx && std::abs(static_cast<double>(g0[o]) - g0[o + 1]) > kFaceStep) { fixed[o] = 1; fixed[o + 1] = 1; changed[o] = 1; changed[o + 1] = 1; }
+            if (j + 1 < ny && std::abs(static_cast<double>(g0[o]) - g0[o + nx]) > kFaceStep) { fixed[o] = 1; fixed[o + nx] = 1; changed[o] = 1; changed[o + nx] = 1; }
+        }
+    const auto ring = window_count(fixed, nx, ny, 2), near = window_count(changed, nx, ny, m_tex);
+    std::vector<std::uint8_t> free_(N);
+    std::vector<double> lo(N), hi(N), a(N), b(N);
+    for (std::size_t o = 0; o < N; ++o) {
+        free_[o] = near[o] > 0 && ring[o] == 0 ? 1 : 0;
+        const double d = static_cast<double>(g0[o]) - nat[o], g = g0[o];
+        lo[o] = d > 1e-4 ? std::max(0.0, d - max_d) : d - max_d;
+        hi[o] = d < -1e-4 ? std::min(0.0, d + max_d) : d + max_d;
+        a[o] = d;  // the relaxation works on the displacement from natural ground (see relaxTile in earthworks.js)
+    }
+    for (int it = 0; it < iters; ++it) {
+        for (int j = 0; j < ny; ++j)
+            for (int i = 0; i < nx; ++i) {
+                const std::size_t o = static_cast<std::size_t>(j) * nx + i;
+                if (!free_[o]) { b[o] = a[o]; continue; }
+                const double c = a[o], l = i > 0 ? a[o - 1] : c, r = i < nx - 1 ? a[o + 1] : c, d = j > 0 ? a[o - nx] : c, u = j < ny - 1 ? a[o + nx] : c;
+                double v = (1 - s) * c + s * ((l + r + d + u) / 4);
+                if (v < lo[o]) v = lo[o]; else if (v > hi[o]) v = hi[o];
+                b[o] = v;
+            }
+        std::swap(a, b);
+    }
+    if (free_out) *free_out = free_;
+    for (std::size_t o = 0; o < N; ++o) a[o] += nat[o];
+    return a;
+}
+}  // namespace
+
+void grade_tile_smooth_into(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t, const GroundFn& natural,
+                            float* out, std::uint8_t* footprint, GradeWorkspace& ws) {
+    const std::size_t N = static_cast<std::size_t>(t.nx) * static_cast<std::size_t>(t.ny);
+    if (N == 0) return;
+    if (p.relax_iters <= 0) {
+        const std::vector<float> nat = sample_natural_tile(natural, t);
+        grade_tile_into(roads, p, t, nat.data(), out, footprint, ws);
+        return;
+    }
+    const int m_tex = static_cast<int>(std::ceil(p.relax_margin / t.res)), H = p.relax_iters + m_tex + 2;
+    TileSpec e = t;
+    e.x0 = t.x0 - H * t.res;
+    e.y0 = t.y0 - H * t.res;
+    e.nx = t.nx + 2 * H;
+    e.ny = t.ny + 2 * H;
+    const std::size_t NE = static_cast<std::size_t>(e.nx) * static_cast<std::size_t>(e.ny);
+    const std::vector<float> nat = sample_natural_tile(natural, e);
+    std::vector<float> g0(NE);
+    std::vector<std::uint8_t> fp(NE);
+    grade_tile_into(roads, p, e, nat.data(), g0.data(), fp.data(), ws);
+    std::vector<std::uint8_t> fix(NE);
+    for (std::size_t o = 0; o < NE; ++o) fix[o] = fp[o] || (ws.fix[o] & (4 | 8)) ? 1 : 0;
+    const std::vector<double> r = relax_tile(g0.data(), nat.data(), fix, e.nx, e.ny, p.relax_iters, p.relax_strength, m_tex, p.relax_max_delta);
+    for (int j = 0; j < t.ny; ++j)
+        for (int i = 0; i < t.nx; ++i) {
+            const std::size_t o = static_cast<std::size_t>(j) * t.nx + i, oe = static_cast<std::size_t>(j + H) * e.nx + i + H;
+            out[o] = static_cast<float>(r[oe]);
+            if (footprint) footprint[o] = fp[oe];
+        }
+}
+
+GradedTile grade_tile_smooth(const std::vector<GradingRoad>& roads, const GradingParams& p, const TileSpec& t, const GroundFn& natural) {
+    GradedTile g;
+    const std::size_t N = static_cast<std::size_t>(t.nx) * static_cast<std::size_t>(t.ny);
+    g.height.assign(N, 0.0f);
+    g.footprint.assign(N, 0);
+    GradeWorkspace ws;
+    grade_tile_smooth_into(roads, p, t, natural, g.height.data(), g.footprint.data(), ws);
     return g;
 }
 

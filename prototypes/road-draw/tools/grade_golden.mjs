@@ -2,14 +2,15 @@
 // Runs the prototype's own src/earthworks.js headlessly (node:vm, no browser, no THREE) on a handful of deterministic
 // cases and writes tests/data/grading/<case>.json: the sampled roads (inputs), the classification / wall weights / reach /
 // portal planes, graded tiles (heights quantised to 0.1 mm), wall runs, the packed tunnel table and inBore probe answers.
-// Usage: node prototypes/road-draw/tools/grade_golden.mjs [outDir]       (default outDir: tests/data/grading)
+// Usage: node prototypes/road-draw/tools/grade_golden.mjs [outDir] | --disturbed [case ...]  (env GRADE_SRC=<other src dir>)       (default outDir: tests/data/grading)
 // Nothing under src/ is modified; this file only reads it.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
-const src = f => readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
-const outDir = process.argv[2] ? process.argv[2] : fileURLToPath(new URL('../../../tests/data/grading/', import.meta.url));
+const SRC_DIR = process.env.GRADE_SRC || fileURLToPath(new URL('../src/', import.meta.url));   // GRADE_SRC: compare another checkout's src (before / after figures)
+const src = f => readFileSync(`${SRC_DIR}/${f}`, 'utf8');
+const outDir = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : fileURLToPath(new URL('../../../tests/data/grading/', import.meta.url));
 mkdirSync(outDir, { recursive: true });
 
 // ---- headless environment: config constants + geom + stubs for what terrain.js provides + earthworks.js ----
@@ -93,7 +94,7 @@ function buildCase(c) {
   const params = { formDrop: run('FORM_DROP'), batter: run('T.batter'), wallThick: run('WALL_THICK'), verge: run('VERGE'), planeC: run('PLANE_OVER'), roundK: run('ROUND_DAYLIGHT / (2 * T.batter)'), roundHinge: run('ROUND_HINGE'), ditchD: run('DITCH_D'), ditchW: run('DITCH_W'), endBatter: run('END_BATTER'), reachFade: run('REACH_FADE') };
   const out = {
     name: c.name, version: 2, authored: c.authored || null, quant: 1e-4, terrain,
-    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingRatio: run('WING_RATIO'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundHinge: run('ROUND_HINGE'), roundReach: run('ROUND_REACH'), wallRamp: run('WALL_RAMP'), planeMargin: run('PLANE_MARGIN'), wallMaxHeight: run('WALL_MAX_H'), maxTiers: run('MAX_TIERS'), wallSlopeExtra: run('WALL_SLOPE_EXTRA'), bermSlope: run('BERM_SLOPE'), wallHardMax: run('WALL_HARD_MAX'), rockBatter: run('ROCK_BATTER'), rockBerm: run('ROCK_BERM'), rockBenchH: run('ROCK_BENCH_H'), fillSteep: run('FILL_STEEP'), corridorMax: run('CORRIDOR_MAX'), wallVisMin: run('WALL_VIS_MIN'), benchMinWidth: run('BENCH_MIN'), wallMinLength: run('WALL_MIN_LEN'), sampleStep: run('SAMPLE_STEP'), toeDitchDepth: run('DITCH_D'), toeDitchWidth: run('DITCH_W'), endTaperBatter: run('END_BATTER'), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
+    params: { ...params, wallStart: run('T.wallStart'), wallCap: run('T.wallCap'), wallSlack: run('WALL_SLACK'), wingMax: run('WING_MAX'), wingRatio: run('WING_RATIO'), wingMinH: run('WING_MIN_H'), roundDaylight: run('ROUND_DAYLIGHT'), roundHinge: run('ROUND_HINGE'), roundReach: run('ROUND_REACH'), wallRamp: run('WALL_RAMP'), planeMargin: run('PLANE_MARGIN'), wallMaxHeight: run('WALL_MAX_H'), maxTiers: run('MAX_TIERS'), wallSlopeExtra: run('WALL_SLOPE_EXTRA'), slopeMaxRatio: run('SLOPE_MAX_RATIO'), slopeRunSlack: run('SLOPE_RUN_SLACK'), slopeMaxRun: run('SLOPE_MAX_RUN'), bermSlope: run('BERM_SLOPE'), wallHardMax: run('WALL_HARD_MAX'), rockBatter: run('ROCK_BATTER'), rockBerm: run('ROCK_BERM'), rockBenchH: run('ROCK_BENCH_H'), fillSteep: run('FILL_STEEP'), corridorMax: run('CORRIDOR_MAX'), wallVisMin: run('WALL_VIS_MIN'), benchMinWidth: run('BENCH_MIN'), wallMinLength: run('WALL_MIN_LEN'), sampleStep: run('SAMPLE_STEP'), toeDitchDepth: run('DITCH_D'), toeDitchWidth: run('DITCH_W'), endTaperBatter: run("END_BATTER"), relaxIters: run("RELAX_ITERS"), relaxStrength: run("RELAX_STRENGTH"), relaxMargin: run("RELAX_MARGIN"), relaxMaxDelta: run("RELAX_MAX_DELTA"), tunnel: { lining: run('TUN.lining'), margin: run('TUN.margin'), floorDepth: run('TUN.floorDepth'), riseK: run('TUN.riseK'), clearHeight: run('TUNNEL_H'), headT: run('TUN.headT'), chunk: run('TUN.chunk') } },
     roads: [], tiles: [],
   };
   rsJs.forEach((r, ri) => {
@@ -118,7 +119,7 @@ function buildCase(c) {
       const ch = i === 0 || i === S.length - 1 || a.br !== b.br || a.tu !== b.tu || a.wL !== b.wL || a.wR !== b.wR;
       if (ch && picks.length < 5 && farFromPicked(a.x, a.y)) picks.push([a.x, a.y]); } });
   rsJs.forEach(r => { const m = r.samples[r.samples.length >> 1]; if (picks.length < 5 && farFromPicked(m.x, m.y)) picks.push([m.x, m.y]); });
-  const gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER, reachFade: REACH_FADE })');
+  const gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER, reachFade: REACH_FADE, relaxIters: RELAX_ITERS, relaxStrength: RELAX_STRENGTH, relaxMargin: RELAX_MARGIN, relaxMaxDelta: RELAX_MAX_DELTA })');
   for (const [cx, cy] of picks) {
     const x0 = Math.round(cx / 0.5) * 0.5 - 16, y0 = Math.round(cy / 0.5) * 0.5 - 16, nx = 64, ny = 64, res = 0.5, o = new Float32Array(nx * ny);
     ctx.__gp = gp; ctx.__rd = rd; ctx.__o = o;
@@ -147,6 +148,49 @@ function buildCase(c) {
   out.tunnel = { width: W, rows, data: Array.from(data.subarray(0, rows * W * 4), q4), probes, vols: vols.map(v => ({ road: rsJs.indexOf(v.road), a: v.a, b: v.b, n: v.st.length })) };
   return out;
 }
+
+// ---- --disturbed [case ...]: how much natural ground the earthworks change (no files written) ----
+// Per road side: widest lateral reach beyond the formation edge at which the graded ground differs from natural by more than 0.3 m (max / mean over stations), and the
+// disturbed area (beyond the footprint) per metre of road. This is the "chasing" figure: a wall must hold the hillside, not regrade it.
+function disturbed(c) {
+  const [ox, oy] = c.off; ctx.__terrain = terrainFn({ off: c.off, terms: c.terms });
+  run('roads.length = 0;'); ctx.__roadsSpec = c.roads.map(r => ({ type: r.type, pts: r.pts.map(p => ({ x: p[0] + ox, y: p[1] + oy, z: p[2] })) }));
+  run(`__roadsSpec.every(sp => { const r = { type: sp.type, pts: sp.pts, hs: null, he: null, ver: 0, id: roads.length + 1 }; roads.push(r); return rebuild(r); })`);
+  const rd = run('roadsData()'), rsJs = run('roads'), res = 0.5;
+  let X0 = 1e9, Y0 = 1e9, X1 = -1e9, Y1 = -1e9; for (const r of rd) { X0 = Math.min(X0, r.bbox.x0); Y0 = Math.min(Y0, r.bbox.y0); X1 = Math.max(X1, r.bbox.x1); Y1 = Math.max(Y1, r.bbox.y1); }
+  X0 = Math.floor(X0 / res) * res; Y0 = Math.floor(Y0 / res) * res; const nx = Math.ceil((X1 - X0) / res) + 1, ny = Math.ceil((Y1 - Y0) / res) + 1, o = new Float32Array(nx * ny);
+  ctx.__gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER, reachFade: REACH_FADE, relaxIters: RELAX_ITERS, relaxStrength: RELAX_STRENGTH, relaxMargin: RELAX_MARGIN, relaxMaxDelta: RELAX_MAX_DELTA })');
+  ctx.__rd = rd; ctx.__o = o; run(`gradeTile(hBaseFine, __rd, __gp, ${X0}, ${Y0}, ${nx}, ${ny}, ${res}, __o)`);
+  const nat = (x, y) => ctx.__terrain(x, y), at = (x, y) => { const i = Math.round((x - X0) / res), j = Math.round((y - Y0) / res); return i < 0 || j < 0 || i >= nx || j >= ny ? nat(x, y) : o[j * nx + i]; };
+  const rows = [];
+  rsJs.forEach((r, ri) => { const hw = rd[ri].hw, S = r.samples; const len = S[S.length - 1].s - S[0].s;
+    for (const sg of [1, -1]) { let mx = 0, mxAt = '', sum = 0, n = 0, bridge = 0;
+      for (let i = 4; i < S.length - 4; i += 1) { const s = S[i]; if (s.br || s.tu) { bridge++; continue; } let far = 0;
+        for (let d = hw + 0.5; d <= hw + 60; d += 0.5) { const x = s.x - Math.sin(s.h) * sg * d, y = s.y + Math.cos(s.h) * sg * d; if (Math.abs(at(x, y) - nat(x, y)) > 0.3) far = d - hw; }
+        if (far > mx) mxAt = s.x.toFixed(0); mx = Math.max(mx, far); sum += far; n++; }
+      rows.push(`${c.name} road${ri} ${sg > 0 ? 'L' : 'R'}: disturbed width beyond the formation edge max ${mx.toFixed(1)} m (at x ${mxAt}), mean ${(n ? sum / n : 0).toFixed(1)} m (${n} stations, ${bridge} on structures; road length ${len.toFixed(0)} m)`); } });
+  return rows;
+}
+// ---- --faces [case ...]: steep faces in free ground (slope above FACE_MAX_SLOPE between adjacent texels, neither texel footprint / wall solid / rock face) ----
+function faces(c, maxSlope, dump) {
+  const [ox, oy] = c.off; ctx.__terrain = terrainFn({ off: c.off, terms: c.terms });
+  run('roads.length = 0;'); ctx.__roadsSpec = c.roads.map(r => ({ type: r.type, pts: r.pts.map(p => ({ x: p[0] + ox, y: p[1] + oy, z: p[2] })) }));
+  run(`__roadsSpec.every(sp => { const r = { type: sp.type, pts: sp.pts, hs: null, he: null, ver: 0, id: roads.length + 1 }; roads.push(r); return rebuild(r); })`);
+  const rd = run('roadsData()'), res = 0.5;
+  let X0 = 1e9, Y0 = 1e9, X1 = -1e9, Y1 = -1e9; for (const r of rd) { X0 = Math.min(X0, r.bbox.x0); Y0 = Math.min(Y0, r.bbox.y0); X1 = Math.max(X1, r.bbox.x1); Y1 = Math.max(Y1, r.bbox.y1); }
+  X0 = Math.floor(X0 / res) * res; Y0 = Math.floor(Y0 / res) * res; const nx = Math.ceil((X1 - X0) / res) + 1, ny = Math.ceil((Y1 - Y0) / res) + 1, o = new Float32Array(nx * ny), fx = new Uint8Array(nx * ny);
+  ctx.__gp = run('({ formDrop: FORM_DROP, batter: T.batter, wallThick: WALL_THICK, verge: VERGE, planeC: PLANE_OVER, roundK: ROUND_DAYLIGHT / (2 * T.batter), roundHinge: ROUND_HINGE, ditchD: DITCH_D, ditchW: DITCH_W, endBatter: END_BATTER, reachFade: REACH_FADE, relaxIters: RELAX_ITERS, relaxStrength: RELAX_STRENGTH, relaxMargin: RELAX_MARGIN, relaxMaxDelta: RELAX_MAX_DELTA })');
+  ctx.__rd = rd; ctx.__o = o; ctx.__fx = fx; run(`gradeTile(hBaseFine, __rd, __gp, ${X0}, ${Y0}, ${nx}, ${ny}, ${res}, __o, __fx)`);
+  if (dump) { const [dx0, dx1, dy] = dump; const row = []; for (let x = dx0; x <= dx1; x += 1) { const i = Math.round((x + ox - X0) / res), j = Math.round((dy + oy - Y0) / res); row.push(`${x}:${o[j * nx + i].toFixed(2)}/${ctx.__terrain(x + ox, dy + oy).toFixed(2)}f${fx[j * nx + i]}`); } return row.join(' '); }
+  const bad = []; let n = 0;
+  for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) { const k = j * nx + i;
+    for (const k2 of [k + 1, k + nx]) { const s = Math.abs(o[k] - o[k2]) / res; if (s > maxSlope && !((fx[k] | fx[k2]) & 3)) { n++; if (bad.length < 8) bad.push(`(${(X0 + i * res).toFixed(1)}, ${(Y0 + j * res).toFixed(1)}) dz ${(s * res).toFixed(2)}`); } } }
+  return `${c.name}: ${n} free-ground texel pairs steeper than ${maxSlope} (rise per metre)${bad.length ? ': ' + bad.join('; ') : ''}`;
+}
+// the s4b render scenario (docs/progress/*/layouts/s4b_side_hill_realistic.json on mesh-view's sidehill_gentle terrain), only for --disturbed / --faces
+const EXTRA = [{ name: 's4b_side_hill_realistic', off: NOISE_OFF, terms: [{ k: 'plane', c0: 2, cx: 0, cy: 0.4 }, { k: 'sin', amp: 1.2, fx: 1 / 25, fy: 0, ph: 0 }], roads: [{ type: 2, pts: [[-130, 0, 1.5], [130, 0, 3.5]] }] }];
+if (process.argv.includes('--faces')) { const want = process.argv.slice(2).filter(a => !a.startsWith('--')); for (const c of [...CASES, ...EXTRA]) if (!want.length || want.includes(c.name)) console.log(faces(c, 1.0, process.env.DUMP ? process.env.DUMP.split(',').map(Number) : null)); process.exit(0); }
+if (process.argv.includes('--disturbed')) { const want = process.argv.slice(2).filter(a => !a.startsWith('--')); for (const c of [...CASES, ...EXTRA]) if (!want.length || want.includes(c.name)) console.log(disturbed(c).join(String.fromCharCode(10))); process.exit(0); }
 
 let total = 0;
 for (const c of CASES) {

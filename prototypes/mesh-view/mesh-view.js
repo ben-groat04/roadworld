@@ -118,7 +118,7 @@ for (const f of exportInfo.files) {
       if (slot === 'grass') mat.color.setHex(0xc8e2a8);
       if (TINT[f.id] !== undefined) { mat = mats[f.id] ??= mat.clone(); mat.color.setHex(TINT[f.id]); }
     }
-    else mat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.9 });
+    else mat = new THREE.MeshStandardMaterial({ color: f.id === 'rock' ? 0x8a7d70 : f.id === 'needs' ? 0xc9743a : 0x808080, roughness: 0.9 });   // rock-cut faces grey-brown; needs_structure stretches orange
   }
   const m = new THREE.Mesh(geo, mat);
   m.userData.marking = f.kind === 'marking'; m.castShadow = f.kind !== 'marking'; m.receiveShadow = true;

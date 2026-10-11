@@ -38,6 +38,9 @@
     "round_hinge_m": 1.0,
     "max_tiers": 2,
     "wall_slope_extra_m": 15,
+    "slope_max_ratio": 3.0,
+    "slope_run_slack_m": 2.0,
+    "slope_max_run_m": 15,
     "berm_slope": 0.25,
     "wall_hard_max_m": 6.0,
     "rock_cut_batter": 0.5,
@@ -46,7 +49,11 @@
     "fill_steep_batter": 1.5,
     "corridor_max_m": 90,
     "wall_vis_min_m": 0.35,
-    "reach_fade_m": 8.0
+    "reach_fade_m": 8.0,
+    "relax_iterations": 8,
+    "relax_strength": 0.8,
+    "relax_margin_m": 8.0,
+    "relax_max_delta_m": 1.0
   },
   "structures": {
     "_comment": "Structure dimensions (cp::StructureRules); engineering defaults tuned by eye.",
@@ -61,7 +68,11 @@
     "wall_face_thickness_m": 0.4,
     "wall_joint_width_m": 0.12,
     "wall_joint_proud_m": 0.04,
-    "wall_allow_short_panels": false
+    "wall_allow_short_panels": false,
+    "wall_raked_top": true,
+    "wall_top_smooth_m": 3.0,
+    "wall_close_gap_m": 30,
+    "wall_end_taper_m": 0.0
   },
   "roundabout": {
     "_comment": "Roundabout tool and layout tunables; tuned by eye. Roundabout-ness itself comes from the roundabout_ring flag on a road type.",
