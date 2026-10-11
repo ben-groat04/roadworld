@@ -8,6 +8,7 @@ Updated by the main session every time an agent is started, an agent reports, or
 | Earthworks round 9: disturbance view and cross-sections first, then a hard bound on changed ground on every scene, plus round 8 leftovers | `agent/grade-r9`, `..\roadworld-wt-grade-r9` | `agent/grading-r6` 2aff581 + main | `tools/check_handin.mjs` passes on `docs/progress/2026-10-11-structures-r9`; main session opens the disturbance views and sections |
 | Integration: merge, in order, world cover r4 (`agent/world-cover-r2` 0da3c74), junction markings (`agent/junction-markings` d611346), earthworks r7+r8 (`agent/grading-r6` 2aff581), road tool gaps (`agent/road-tool-2` d7dfc99), then main | `integ/2026-10-11`, `..\roadworld-wt-integ` | main | clean builds, full suite on gcc and MSVC after each merge; then fast-forward main |
 | Unreal milestone 2 code (click-click road drawing, undo), compile only | `agent/unreal-m2`, `..\roadworld-wt-m2` | main 269fa1e | compiles; then merge and playtest (below) |
+| Road tool vs ALL prototype screenshots: read-only check, every image opened against the code (the builder opened only 3) | reads `..oadworld-wt-tool2` | - | gap list in its report; main session adds each gap to item 4 below |
 | Vegetation kit round 2 (Blender) | `agent/veg-kit-r2`, `..\roadworld-wt-veg` | main | hand-in with composites and own fault list |
 
 ## Next, in order (start when its blocker clears)
