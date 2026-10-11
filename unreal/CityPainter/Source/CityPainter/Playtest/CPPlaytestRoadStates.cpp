@@ -74,8 +74,11 @@ void ScenarioStates(FBuilder& B)
 	B.ShiftUp();
 	B.Press(EKeys::Escape);
 	B.ShiftDown();
+	// Zoomed in: the finish ring around the last point is a pixel radius, so a 2.5 m offset is only outside it when close.
+	B.View(40.0, 0.0, Polar, 60.0, -100.0);
 	B.Click(60, -100);
-	State(B, TEXT("s12_error_min_span"), 62, -100.8);
+	State(B, TEXT("s12_error_min_span"), 62.5, -100.0);
+	B.View(Dist, 0.0, Polar, 0.0, -80.0);
 	B.Press(EKeys::Escape);
 	// 13 too tight: two points 10 m apart and a hairpin back.
 	B.Click(50, -130);

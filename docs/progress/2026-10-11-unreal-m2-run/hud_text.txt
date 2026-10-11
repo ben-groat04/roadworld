@@ -9,7 +9,7 @@
 [s04_midstroke]: DRAW · Residential street | cursor z -1.6 m · snap: angle | span 72.2 m · bearing 79° · R at cursor ∞ m · min R 153 m | grade -1.1% · max 15.7% · total 120 m | ! grade 15.7% above advisory 10.0%
 [s10_snap_angle_length]: DRAW · Residential street | cursor z -0.9 m · snap: angle | span 56.0 m · bearing 75° · R at cursor ∞ m · min R ∞ m | grade -2.9% · max 2.9% · total 56 m
 [s11_shift_snap_off]: DRAW · Residential street · snap off | cursor z -0.9 m · snap: free | span 49.7 m · bearing 75° · R at cursor ∞ m · min R ∞ m | grade -3.2% · max 3.2% · total 50 m
-[s12_error_min_span]: DRAW · Residential street · snap off | cursor z -1.0 m · snap: free
+[s12_error_min_span]: DRAW · Residential street · snap off | cursor z -1.0 m · snap: free | X segment shorter than 4 m
 [s13_error_too_tight]: DRAW · Residential street · snap off | cursor z -0.9 m · snap: free | span 9.7 m · bearing 341° · R at cursor ∞ m · min R 4 m | grade -0.2% · max 0.2% · total 20 m | X too tight: radius 4.4 m < half-width 7.2 m (edge folds) | ! radius 4 m below comfortable 20 m for Residential street
 [s14_advisory_radius]: DRAW · B road / main road | cursor z -0.6 m · snap: angle | span 24.2 m · bearing 8° · R at cursor ∞ m · min R 31 m | grade -0.7% · max 23.6% · total 74 m | ! radius 31 m below comfortable 180 m for B road / main road | ! grade 23.6% above advisory 8.0%
 [s15_advisory_grade]: DRAW · Residential street · snap off | cursor z 9.0 m (+10 m) · snap: free | span 40.0 m · bearing 360° · R at cursor ∞ m · min R ∞ m | grade +24.3% · max 24.3% · total 40 m | ! grade 24.3% above advisory 10.0%
