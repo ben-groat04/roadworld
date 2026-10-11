@@ -1,0 +1,5 @@
+{ "format": "cp-test-layout", "version": 1, "name": "s1_bridge_over_road", "region": "uk", "driving_side": "left",
+  "roads": [
+ {"type":"a_road_rural","points":[[-220,0,0],[220,0,0]]},
+ {"type":"b_road_rural","points":[[0,-260,0],[0,-110,7.5],[0,110,7.5],[0,260,0]],
+  "structures":[{"kind":"bridge","at":[0,0],"length":40}]} ] }

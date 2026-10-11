@@ -496,6 +496,9 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
         g.round_hinge = opt_number(*gr, "round_hinge_m", g.round_hinge, c, err);
         g.max_tiers = static_cast<int>(opt_number(*gr, "max_tiers", g.max_tiers, c, err));
         g.wall_slope_extra = opt_number(*gr, "wall_slope_extra_m", g.wall_slope_extra, c, err);
+        g.slope_max_ratio = opt_number(*gr, "slope_max_ratio", g.slope_max_ratio, c, err);
+        g.slope_run_slack = opt_number(*gr, "slope_run_slack_m", g.slope_run_slack, c, err);
+        g.slope_max_run = opt_number(*gr, "slope_max_run_m", g.slope_max_run, c, err);
         g.berm_slope = opt_number(*gr, "berm_slope", g.berm_slope, c, err);
         g.wall_hard_max = opt_number(*gr, "wall_hard_max_m", g.wall_hard_max, c, err);
         g.rock_cut_batter = opt_number(*gr, "rock_cut_batter", g.rock_cut_batter, c, err);
@@ -534,6 +537,10 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
         s.wall_face_thickness = opt_number(*sr, "wall_face_thickness_m", s.wall_face_thickness, c, err);
         s.wall_joint_width = opt_number(*sr, "wall_joint_width_m", s.wall_joint_width, c, err);
         s.wall_joint_proud = opt_number(*sr, "wall_joint_proud_m", s.wall_joint_proud, c, err);
+        s.wall_top_smooth = opt_number(*sr, "wall_top_smooth_m", s.wall_top_smooth, c, err);
+        s.wall_close_gap = opt_number(*sr, "wall_close_gap_m", s.wall_close_gap, c, err);
+        s.wall_end_taper = opt_number(*sr, "wall_end_taper_m", s.wall_end_taper, c, err);
+        if (const json* v = member(*sr, "wall_raked_top")) { if (v->is_boolean()) s.wall_raked_top = v->get<bool>(); else err.set(c + ".wall_raked_top: expected a boolean"); }
         if (const json* v = member(*sr, "wall_allow_short_panels")) { if (v->is_boolean()) s.wall_allow_short_panels = v->get<bool>(); else err.set(c + ".wall_allow_short_panels: expected a boolean"); }
         if (!err.failed() && (s.wall_face_thickness <= 0 || s.wall_joint_width < 0 || s.wall_joint_proud < 0)) err.set(c + ": a value is out of range");
         if (!err.failed() && (!(s.parapet_height > 0) || !(s.max_pier_spacing >= 4) || s.min_bridge_length < 0 || s.pier_road_clearance < 0 ||

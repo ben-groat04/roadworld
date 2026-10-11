@@ -85,6 +85,7 @@ struct StructureWallPoint {
 
 struct StructureWallRun {
     char side = 'L';  // 'L' = left of the road direction
+    int tier = 0;     // 0 = lowest tier (runs of different tiers are never joined)
     bool cut = false;
     double lo = 0, hi = 0;  // lateral solid range from the wall line (hi - lo = thickness)
     std::vector<StructureWallPoint> pts;
@@ -191,7 +192,10 @@ struct StructureParams {
     double wall_min_run = 6.0;         // m, shorter wall runs are dropped
     double wall_foot_bury = 1.0;       // m, foot below the lowest ground
     double wall_foot_smooth = 4.0;     // m, half-window of the foot smoothing
-    double wall_taper = 4.0;           // m, free ends blend down to the ground over this length
+    double wall_taper = 4.0;           // m, free ends blend down to the ground over this length (0: blunt end)
+    bool wall_raked_top = false;       // top follows the ground as a smooth raked line (region structures.wall_raked_top)
+    double wall_top_smooth = 3.0;      // m, half-window of the top-line smoothing
+    double wall_close_gap = 0.0;       // m, gaps shorter than this between wall runs of one side / tier are bridged by a minimum-height wall (0: off)
     double coping_thickness = 0.15;
     double coping_overhang = 0.05;     // m each side of the face (NEEDS region-pack field value 0.05; the pack still says 0.04)
 };

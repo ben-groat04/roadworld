@@ -121,6 +121,9 @@ GradingParams parse_params(const json& j) {
     p.toe_ditch_depth = j["toeDitchDepth"];
     p.max_tiers = j["maxTiers"];
     p.wall_slope_extra = j["wallSlopeExtra"];
+    p.slope_max_ratio = j["slopeMaxRatio"];
+    p.slope_run_slack = j["slopeRunSlack"];
+    p.slope_max_run = j["slopeMaxRun"];
     p.berm_slope = j["bermSlope"];
     p.wall_hard_max = j["wallHardMax"];
     p.rock_cut_batter = j["rockBatter"];
@@ -1329,7 +1332,7 @@ TEST_CASE("grading invariants: no crease (slope change between adjacent free tex
         nodr.toe_ditch_depth = 0;
         const std::vector<float> hs0 = grade_tile_smooth(c->prepared, nod, g.t, c->ground).height, hr0 = grade_tile_smooth(c->prepared, nodr, g.t, c->ground).height;
         const double vs = max_crease(*c, g, gs.height, gs.footprint, hs0, &ws), vr = max_crease(*c, g, gr.height, gr.footprint, hr0, &wr);
-        MESSAGE(name << " max slope change per texel: smoothed " << vs << " (" << ws << "), raw " << vr << " (" << wr << ")");
-        CHECK_MESSAGE(vs <= 0.3, name << " " << vs << " at " << ws);
+        MESSAGE(std::string(name) << " max slope change per texel: smoothed " << vs << " (" << ws << "), raw " << vr << " (" << wr << ")");
+        CHECK_MESSAGE(vs <= 0.3, std::string(name) << " " << vs << " at " << ws);
     }
 }

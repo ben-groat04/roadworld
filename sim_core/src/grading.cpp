@@ -56,6 +56,9 @@ GradingParams GradingParams::from_rules(const GradingRules& r) {
     p.round_hinge = r.round_hinge;
     p.max_tiers = r.max_tiers;
     p.wall_slope_extra = r.wall_slope_extra;
+    p.slope_max_ratio = r.slope_max_ratio;
+    p.slope_run_slack = r.slope_run_slack;
+    p.slope_max_run = r.slope_max_run;
     p.berm_slope = r.berm_slope;
     p.wall_hard_max = r.wall_hard_max;
     p.rock_cut_batter = r.rock_cut_batter;
@@ -245,13 +248,17 @@ using Contact = std::function<bool(double, double&)>;  // neighbour formation le
 
 // Does the 1:batter slope from level L (starting at lateral s0) daylight within E, or land on a neighbour's
 // footprint the right way?
-bool slope_fits(bool cut, double L, double s0, double E, double bt, const Probe& grd, const Contact* cn, double from) {
+bool slope_fits(bool cut, double L, double s0, double E, double bt, const Probe& grd, const Contact* cn, double from,
+                const GradingParams& p) {
     for (double e = from; e < E + 0.5; e += 0.5) {
         const double ee = std::min(e, E), run = ee > s0 ? ee - s0 : 0.0;
         const double zs = cut ? L + run / bt : L - run / bt;
         double bz = 0;
         if (cn && (*cn)(ee, bz)) return cut ? zs >= bz : zs <= bz;  // landed on a neighbour's footprint
-        if (cut ? zs >= grd(ee) : zs <= grd(ee)) return true;
+        if (cut ? zs >= grd(ee) : zs <= grd(ee)) {  // daylights, but only efficiently (else it chases the hillside and the wall takes the height)
+            const double H0 = std::max(0.0, cut ? grd(s0) - L : L - grd(s0));
+            return ee - s0 <= p.slope_max_ratio * H0 * bt + p.slope_run_slack;
+        }
         if (ee >= E) break;
     }
     return false;
@@ -273,7 +280,7 @@ TierResult solve_tiers(bool cut, double z0, double E, double bt, const Probe& gr
     bool nat = false;
     for (;;) {
         const double s0 = t.n ? t.a[t.n - 1] + T : p.verge;
-        if (t.n >= min_tiers && slope_fits(cut, L, s0, t.n ? E + p.wall_slope_extra : E, bt, grd, cn, t.n ? s0 : 0.5)) {
+        if (t.n >= min_tiers && slope_fits(cut, L, s0, t.n ? std::min(E + p.wall_slope_extra, s0 + p.slope_max_run) : E, bt, grd, cn, t.n ? s0 : 0.5, p)) {
             r.kind = t.n ? TierResult::Tiers : TierResult::None;
             t.nat = false;
             return r;
@@ -1209,6 +1216,31 @@ double seg_seg_dist2(double px, double py, double qx, double qy, double ax, doub
                     std::min(pt(ax, ay, px, py, qx, qy), pt(bx, by, px, py, qx, qy)));
 }
 
+// Does the straight way (qx, qy) -> (tx, ty) enter the footprint of a neighbouring road (strip of half-width sqrt(l2) beside its centreline)? The round end cap of a FREE end does
+// not count: it is only a temporary finish (the player will extend the road), so a slope of another road may run over it. Sampled every 0.5 m.
+bool path_hits_footprint(double qx, double qy, double tx, double ty, const std::vector<GradingSample>& Sb, double l2) {
+    const bool cap_first = !Sb.front().br && !Sb.front().tu, cap_last = !Sb.back().br && !Sb.back().tu;
+    const double L = std::hypot(tx - qx, ty - qy);
+    const int n = std::max(1, static_cast<int>(std::ceil(L / 0.5)));
+    for (int i = 0; i <= n; ++i) {
+        const double x = qx + (tx - qx) * i / n, y = qy + (ty - qy) * i / n;
+        double bd = 1e30, bu = 0;  // the nearest point of the centreline decides: beyond a free end it is the end vertex itself (the cap)
+        std::size_t bk = 0;
+        for (std::size_t k = 0; k + 1 < Sb.size(); ++k) {
+            const GradingSample &A = Sb[k], &B = Sb[k + 1];
+            if ((A.br || A.tu) && (B.br || B.tu)) continue;
+            const double dx = B.x - A.x, dy = B.y - A.y, L2 = dx * dx + dy * dy;
+            double u = L2 > 1e-12 ? ((x - A.x) * dx + (y - A.y) * dy) / L2 : 0.0;
+            const double ur = u;
+            u = u < 0 ? 0 : u > 1 ? 1 : u;
+            const double ex = x - A.x - u * dx, ey = y - A.y - u * dy, d2 = ex * ex + ey * ey;
+            if (d2 < bd) { bd = d2; bk = k; bu = ur; }
+        }
+        if (bd < l2 && !((bu < 0 && cap_first && bk == 0) || (bu > 1 && cap_last && bk + 2 == Sb.size()))) return true;
+    }
+    return false;
+}
+
 struct Eval {
     int kind;  // 0 nothing (natural ground), 1 inside a solid (v: road-facing value), 2 cut surface, 3 fill surface
     double v;
@@ -1325,6 +1357,8 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
     const double tx1 = x0 + (nx - 1) * res, ty1 = y0 + (ny - 1) * res;
     ws.fp_d.assign(N, 9.0f);
     ws.fp_z.assign(N, 1e9f);
+    ws.end_ceil.assign(N, 1e9f);
+    ws.cap_f.assign(N, 0);
     ws.cut_m.assign(N, 1e9f);
     ws.fill_m.assign(N, -1e9f);
     ws.cut_r.assign(N, 1.0f);
@@ -1377,6 +1411,10 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 const Box2& bx = nb.core;
                 if (std::max(qx, tx) < bx.x0 || std::min(qx, tx) > bx.x1 || std::max(qy, ty) < bx.y0 || std::min(qy, ty) > bx.y1) continue;
                 const double l2 = (nb.half_width - 0.25) * (nb.half_width - 0.25);
+                if ((!nb.samples.front().br && !nb.samples.front().tu) || (!nb.samples.back().br && !nb.samples.back().tu)) {  // a road with a free end: the cap does not block
+                    if (path_hits_footprint(qx, qy, tx, ty, nb.samples, l2)) return true;
+                    continue;
+                }
                 for (std::size_t k = 0; k + 1 < nb.samples.size(); ++k) {
                     const GradingSample &a = nb.samples[k], &b = nb.samples[k + 1];
                     if ((a.br || a.tu) && (b.br || b.tu)) continue;
@@ -1502,6 +1540,11 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             if (dd > 1e8) continue;
             if (ws.rq_st[o]) ws.fix[o] |= 4;
             const double zf = rq_z[o];
+            if (rq_by[o] == 2 && !rq_fl[o]) {  // beyond a free end the road's own run-out ceiling (rising at the end batter from the end station): where another road's fill stands there, it is cut down to it, so the road does not end against a cliff
+                const float c = static_cast<float>(zf + dd / e_b);
+                if (c < ws.end_ceil[o]) ws.end_ceil[o] = c;
+                if (dd <= hw) ws.cap_f[o] = 1;
+            }
             if (rq_fl[o]) {  // ahead of a free end of a terraced road: the floor rises / falls with the run-out batter (cut / fill side), across the width it is a crossfall between the two
                 const double lift = rq_al[o] / e_b, fs = rq_fs[o], zl = zf + fs * lift, b0 = base[o];
                 double zz = zf;
@@ -1512,6 +1555,14 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 continue;
             }
             if (dd <= hw) {  // union of footprints: lowest formation wins (never pokes through any road)
+                if (rq_by[o] == 2) {  // the round end cap of a FREE end is only a temporary finish (the player will extend the road): a zero-width cut / fill surface at formation level in the ordinary displacement machinery, so it never overrides another road's earthworks and meets them without a step
+                    const double b0 = base[o], h3c = std::abs(b0 - zf) / 3;
+                    hbc = hb > 0 ? std::max(0.05, std::min(hb, h3c * bt)) : 0.0;
+                    rkc = rk > 0 ? std::max(0.01, std::min(rk, h3c)) : 0.0;
+                    if (b0 > zf) { if (dC(zf, b0, 1, rkc) > cut_d2[o]) recC(o, zf, 0, b0, 1); }
+                    else if (dF(zf, b0, 1, rkc) > fill_d2[o]) recF(o, zf, 0, b0, 1);
+                    continue;
+                }
                 fp_d[o] = 0;
                 if (zf < fp_z[o]) fp_z[o] = static_cast<float>(zf);
                 continue;
@@ -1535,7 +1586,8 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
             }
             const double rfs = rf * (1.0 - static_cast<double>(rq_sp[o]));
             if (wf && pl && pl->stairs && rq_by[o] == 2) continue;  // beyond the run-out of a terraced free end: natural ground (no cone)
-            if (wf && pl && pl->stairs && rq_by[o]) { wf = 0; ww = 0; pl = nullptr; }  // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
+            if (wf && pl && pl->stairs && rq_by[o]) { wf = 0; ww = 0; pl = nullptr; }
+            if (wf && rq_by[o] == 2 && !(pl && pl->stairs)) { wf = 0; ww = 0; pl = nullptr; }  // beyond a free end the wall band does not wrap around the road end as a ring of formation-level ground: the plain run-out slope  // terraces do not wrap around a bridge abutment / portal (the wing wall does that): plain run-out slope
             if (wf && !(pl && pl->t.plat) && (wf == 1) != cut_t) { wf = 0; ww = 0; pl = nullptr; }  // flag says cut but this texel is fill (or vice versa): plain slope
             if (wf && pl && (!pl->full || pl->wing)) {  // stacked walls (plan_side), or a wing wall blended in from the earthworks beside it
                 Eval ev;
@@ -1651,6 +1703,11 @@ void grade_tile_into(const std::vector<GradingRoad>& roads, const GradingParams&
                 g = g + (df * wf - dc * wc) / (wc + wf);
             } else if (dc > 0) g -= dc;
             else if (df > 0) g += df;
+
+            if (ws.end_ceil[o] < 1e8f && (dc > 0 || df > 0)) {
+                if (df > 0) g = std::min(g, std::max(static_cast<double>(base[o]), static_cast<double>(ws.end_ceil[o])));
+                if (dc > 0 && ws.cap_f[o]) g = std::min(g, static_cast<double>(ws.end_ceil[o]));
+            }
         }
         out[o] = static_cast<float>(g);
         if (fp_d[o] >= 9 && cut_m[o] < 1e8f && static_cast<double>(ws.cut_dit[o]) * cut_r[o] > 0.01) ws.fix[o] |= 8;  // the toe ditch is a designed feature: the smoothing pass leaves it alone
