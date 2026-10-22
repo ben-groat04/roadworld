@@ -323,7 +323,9 @@ export function waiverFindings(diffText, allowed = [], contents = null) {
       const remAssert = hk.rem.filter((l) => ASSERT_RE.test(l));
       for (const nl of hk.add.filter((l) => ASSERT_RE.test(l) && !flaggedLines.has(l))) {
         const same = remAssert.find((ol) => ol !== nl && skeleton(ol) === skeleton(nl) && numbers(ol).join() !== numbers(nl).join());
-        if (same) add(`expected_value:${base}:${skeleton(nl).slice(0, 40)}`, f, `an expected value on an assertion line was edited: "${same.trim().slice(0, 70)}" -> "${nl.trim().slice(0, 70)}" (a changed expectation needs a photo measurement or a written rule behind it, and an allow_waiver line)`);
+        // a comparison made STRICTER (< 0.3 -> < 0.1) is a better test, not an edited expectation
+        const tightened = comparisons(nl).some((nc) => oldC.some((oc) => oc.lhs === nc.lhs && oc.val !== null && nc.val !== null && looserCmp(nc, oc)));
+        if (same && !tightened) add(`expected_value:${base}:${skeleton(nl).slice(0, 40)}`, f, `an expected value on an assertion line was edited: "${same.trim().slice(0, 70)}" -> "${nl.trim().slice(0, 70)}" (a changed expectation needs a photo measurement or a written rule behind it, and an allow_waiver line)`);
       }
     }
     // fewer assertions than before: from the files themselves when they are known (counts only what still runs), else from the diff
@@ -476,7 +478,7 @@ export function pictureProblems(folder, compareText, opts = {}) {
 const AP = "['\u2019]";
 // Reasons that are never accepted (contract item 5 and 17): usage, time, budget, context. Written as reasons, so "a time limit of 240 s" or "the API rate limit" are not hit.
 const USAGE_RE = new RegExp([
-  String.raw`usage\s+(?:limit|cap|allowance|window|warning|quota)`, String.raw`session\s+limit`, String.raw`(?:token|usage|time|context|session)\s+budget`,
+  String.raw`usage\s+(?:limit|cap|allowance|window|warning|quota)`, String.raw`session\s+limit`, String.raw`\btoken\s+(?:limit|cap)\b`,String.raw`(?:token|usage|time|context|session)\s+budget`,
   String.raw`(?:short|low)\s+(?:of|on)\s+(?:tokens|time|context)`, String.raw`ran\s+(?:short|out)\s+of\s+(?:time|tokens|context)`, String.raw`running\s+(?:out\s+of|low\s+on)\s+(?:time|tokens|context)`, String.raw`out\s+of\s+(?:time|tokens|context)`,
   String.raw`(?:hit|reached|exceeded|ran\s+into)\s+(?:the|my|a)\s+(?:quota|rate\s+limit|time\s+limit|token\s+limit|usage)`,
   String.raw`(?:due\s+to|because\s+of|owing\s+to|given|under)\s+(?:the\s+)?(?:time|usage|token|context)\s+(?:constraints?|limits?|pressure)`,
