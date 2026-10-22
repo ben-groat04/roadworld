@@ -23,6 +23,7 @@ The "photo" for this round is the evidence of what went wrong: the real round 9 
 ## Pass 3: dogfood and load
 
 13. The finished gates were run on this hand-in with `--gates-version 2 --prior-audit docs/progress/gates2/AUDIT.md`. Findings are listed under "Pass 3 results" in STATUS.md (what the gates said about their own round, and what was changed).
+16. The live finish hook refused this very hand-in ("COMPARE.md is missing"): with HANDIN_DIR in the prompt it never read the BRIEF-FILE, so `HANDIN: no-visual` and the GATE lines in the file were lost. Fixed in `handin_gate_impl.mjs`, tests in "gates3 hooks, part 4". (Same family as the engine-only briefs that made two builders write placeholder COMPARE tables.)
 14. test_hooks.mjs and test_gates.mjs were run 20 times, 5 at a time; the numbers are in STATUS.md.
 15. The proof table was re-run with the final code on the real round 9, tjunction and roundabout folders (the roadtool3 worktree was removed during the round: see the BLOCKED line in STATUS.md).
 

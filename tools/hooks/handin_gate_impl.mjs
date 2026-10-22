@@ -114,11 +114,13 @@ export async function main() {
   let briefFileText = null;
   let handinDir = info.handinDir;
   let noVisual = info.noVisual;
-  if (!handinDir) {
+  // The BRIEF-FILE is read whenever the prompt names one, also when the prompt itself already holds HANDIN_DIR: a coordinator that pastes the HANDIN_DIR line into the
+  // prompt but keeps the "HANDIN: no-visual" and GATE lines in the file would otherwise be held to COMPARE.md (found when this very round's hand-in was refused for it).
+  {
     const bf = briefFileOf(text);
     if (bf) {
-      try { const ft = fs.readFileSync(bf, 'utf8'); briefFileText = ft; const fi = checkBrief(ft); handinDir = fi.handinDir; noVisual = noVisual || fi.noVisual; }
-      catch (e) { return allow({ ...base, decision: 'allow', reason: 'FAIL-OPEN: BRIEF-FILE unreadable', brief_file: bf, error: e.code || e.message }); }
+      try { const ft = fs.readFileSync(bf, 'utf8'); briefFileText = ft; const fi = checkBrief(ft); handinDir = handinDir || fi.handinDir; noVisual = noVisual || fi.noVisual; }
+      catch (e) { if (!handinDir) return allow({ ...base, decision: 'allow', reason: 'FAIL-OPEN: BRIEF-FILE unreadable', brief_file: bf, error: e.code || e.message }); }
     }
   }
   if (!handinDir) return allow({ ...base, decision: 'allow', reason: 'no HANDIN_DIR in brief' });

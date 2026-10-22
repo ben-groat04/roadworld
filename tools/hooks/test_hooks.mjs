@@ -891,6 +891,20 @@ console.log('gates3 hooks, part 3: a deleted builder record does not cancel the 
   t('a progress folder that no longer exists anywhere is not listed (nothing left to audit; documented limit)', al.auditOwed(sd, rt).length === 0);
 }
 
+console.log('gates3 hooks, part 4: HANDIN_DIR in the prompt, HANDIN: no-visual only in the BRIEF-FILE (this round\'s own hand-in was refused for it)');
+{
+  const round = 'nvfile';
+  const briefText = mk(round, ['--no-visual']);   // holds HANDIN_DIR, HANDIN: no-visual (and the contract)
+  const bfile = path.join(tmp, 'nvfile_brief.txt'); fs.writeFileSync(bfile, briefText);
+  const hdir = hd(round); fs.mkdirSync(hdir, { recursive: true }); fs.writeFileSync(path.join(hdir, 'STATUS.md'), goodStatus);
+  const prompt = `Read the brief file and follow it.\nBRIEF-FILE: ${bfile}\nHANDIN_DIR: ${hdir}\n`;
+  const nv = stop('nv1', transcript('nvfile', prompt));
+  t('prompt with HANDIN_DIR + BRIEF-FILE that says "HANDIN: no-visual": the engine-only check applies (no COMPARE.md demanded), stop allowed', nv.code === 0 && nv.out === '' && lastLog().reason === 'hand-in check passed', nv.out);
+  fs.rmSync(path.join(hdir, 'STATUS.md'));
+  const nv2 = stop('nv2', transcript('nvfile2', prompt));
+  t('...and the check still runs: a missing STATUS.md blocks, without a COMPARE.md complaint', J(nv2.out).decision === 'block' && /STATUS\.md is missing/.test(J(nv2.out).reason) && !/COMPARE\.md is missing/.test(J(nv2.out).reason), nv2.out);
+}
+
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failedNames.length) console.log('FAILED TESTS:\n - ' + failedNames.join('\n - '));
 if (!process.env.KEEP_HOOKTEST) fs.rmSync(tmp, { recursive: true, force: true });

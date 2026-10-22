@@ -2,6 +2,7 @@
 
 BLOCKED: proof row for the roadtool3 hand-in with the final code | tried: ran check_handin on the roadtool3 hand-in twice (before and after the ctest and status fixes) and once more with the final code | blocked by: the worktree C:\Users\bgbg0\Documents\Programming\roadworld-wt-roadtool3 was removed between the runs (merged and cleaned up: the directory does not exist now), so the last run read an empty path; its scene gate had also no node_modules (FAIL-OPEN logged) | needs: a copy of the merged docs/progress/roadtool3 folder, or the worktree restored
 
+- REFUSED by the live finish hook at hand-in: "COMPARE.md is missing". The live hook (main checkout, the older code) reads `HANDIN: no-visual` only from the prompt when the prompt itself holds HANDIN_DIR; this round's prompt held HANDIN_DIR and kept the no-visual line in the BRIEF-FILE. I did not add a placeholder COMPARE.md (the very thing this round forbids). The defect is fixed in this branch (`handin_gate_impl.mjs` reads the BRIEF-FILE whenever the prompt names one; test part 4); the live hook is not touched, so this hand-in may be released after its three refusals with HANDIN_FAILED.txt written: that release is this defect, not an unchecked hand-in (the check passes with `--no-visual`).
 - Nothing pushed or merged (as briefed). No Unreal run, no C++ build; the C++ sources were not changed. The live hooks in the main checkout and `.claude/settings.json` were not changed (the hook timeout there, 300 s, is above the 270 s spawn limit the gates use; the scene gate now needs at most 190 s).
 - Unverified: the hooks ran with synthetic stdin only (the shape the live harness sends was confirmed by the gates2 audit, items a-e of its live results); nothing here ran under a real Claude Code session.
 - Unverified: mesh-view `render.mjs` was not run this round (its stats writer is the gates2 one); `scene.mjs` now writes the same record and was run for 15 views, its record read by `pictureProblems` (cross_slope 23.9 % road passes; overview 0.31 % road is refused as a non-diagnostic view).
@@ -88,6 +89,8 @@ Final run: HAND-IN CHECK PASSED, with the waiver line "4 finding(s) ... 4 allowe
 
 Load: `node tools/hooks/test_hooks.mjs` 20 times, 5 at a time: 20 of 20 "328 passed, 0 failed". `node tools/test_gates.mjs` 3 at once: 3 of 3 "327 passed, 0 failed" (before the 8 name-watch tests were added); the last single run is 335 passed, 0 failed.
 
+5. After the hand-in the live finish hook refused this folder for "COMPARE.md is missing" (see the first section): fixed in the branch, 2 new tests ("gates3 hooks, part 4").
+
 Final proof table runs (21:57-21:59, final gate code): round 9 refused with 46 items, tjunction 28, roundabout 28 (raw files in `..\roadworld-scratch\proof_final2`).
 
 ## Reference files opened
@@ -124,7 +127,7 @@ None: engine-only round, no renders (HANDIN: no-visual). The claims rest on the 
 ## Suite and checks
 
 - `node tools/test_gates.mjs`: 335 passed, 0 failed (the run of record; three earlier concurrent runs 327 passed, 0 failed each, before the last 8 tests).
-- `node tools/hooks/test_hooks.mjs`: 328 passed, 0 failed; 20 runs, 5 at a time, all 328/0.
+- `node tools/hooks/test_hooks.mjs`: 330 passed, 0 failed (20 runs, 5 at a time, all 328/0 before the two part-4 tests were added).
 - `node tools/check_wrappers.mjs` on the main checkout: PASSED, 35 sources. On the roadtool3 merge state 69302ae (scratch archive): FAILED, 3 of 35.
 - `node tools/check_handin.mjs docs/progress/gates3 ...`: see "Pass 3 results".
 - No C++ build, no ctest, no Unreal: no engine file was changed.
