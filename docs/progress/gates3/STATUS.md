@@ -24,9 +24,9 @@ The previous AUDIT.md is docs/progress/gates2/AUDIT.md ("For the next builder", 
 | 2 picture gate | fixed | TG block "picture gate: layouts, forged records, diagnostic flags": after/ and before/ layout passes, record missing beside a render refused, typed hash without PNG refused, counts above the frame refused, width/height vs the PNG header, diagnostic on `*_aerial` refused, diagnostic explained in STATUS accepted; "picture plausibility" block (size, flat PNG); thresholds documented in the source with the round 9 numbers; scene.mjs writes the record (`writeStats`, run on 15 views). Run: round 9 re-render: s4 aerial 50.53 % debug colour and s6 street 0.00 % road refused (proof table). |
 | 3 ctest gate | fixed | TG block "ctest gate": total from CTestTestfile.cmake (no ctest binary), subset refused, unknown total refused, filtered doctest run refused, `== 2` with 0 measured passes, crash counted as failed test and caught by the paired `failed_tests` gate, make_brief refuses `==` and pairs the gates. Multi-config case from the real roadtool3 build. Real log of merge-roadtool3 measured: 2 failed assertions, 0 failed tests, 433 cases. |
 | 4 fail open only for missing infrastructure | fixed | TG block "scene gate": crash without summary, hang, failing build and hanging build are refusals (`fail`), missing node_modules stays `error`; build 40 s + check 150 s < 270 s. |
-| 5 no write into the inspected worktree | fixed | TG: the check runs on a temp copy; test "the REAL scene check on a clean copy of road-draw ... `git status` is still clean"; the proof runs on the r9, tjunction and roundabout worktrees left their `git status` as it was (the `index.html` modification in tjunction and roundabout is from the gates2 run, not new). |
-| 6 waiver guard evasions | fixed | TG block "waiver guard: the cheap evasions": 30 tests, one per evasion in the audit list plus signs, expressions, hunks with extra lines, loop bounds, CMake `#`, LABELS, other test locations, effective count from real file contents. |
-| 7 STATUS reading | fixed | TG block "STATUS reading": 29 excuse phrases refused, 7 honest texts accepted, "not done by design" and "time constraint of 5 ms" accepted, empty `blocked by:` refused, the self-contradicting "not done" test replaced by "ordinary STATUS text is not mistaken for an excuse". |
+| 5 no write into the inspected worktree | fixed | TG: the check runs on a temp copy; test "the REAL scene check on a clean copy of road-draw ... `git status` is still clean"; the proof runs on the r9, tjunction and roundabout worktrees left them as they were: r9 `git status` is clean; the `index.html` modification shown in tjunction and roundabout has the mtime 20:22-20:23, before the final proof runs (21:57-21:59), so it is the earlier gates2 run, not this round. |
+| 6 waiver guard evasions | fixed | TG block "waiver guard: the cheap evasions": 31 tests, one per evasion in the audit list plus signs, expressions, hunks with extra lines, loop bounds, CMake `#`, LABELS, other test locations, effective count from real file contents. |
+| 7 STATUS reading | fixed | TG block "STATUS reading": 30 excuse phrases refused, 10 honest texts accepted, "not done by design" and "time constraint of 5 ms" accepted, empty `blocked by:` refused, the self-contradicting "not done" test replaced by "ordinary STATUS text is not mistaken for an excuse". |
 | 8 NO-CONTRACT cannot carry an auditor | fixed | TH block "gates3 hooks": NO-CONTRACT audit launch denied (docs/progress path with audit/auditor/review wording), proper AUDIT-OF launch unaffected, research launches allowed, the refusal is a notice item. |
 | 9 libraries load inside try/catch | fixed | TH: syntax error in lib.mjs or audit_lib.mjs for each of the four hooks gives exit 0 and one FAIL-OPEN line; broken implementation; missing implementation; `guard.mjs` imports only node built-ins. TG: syntax error in gates_lib.mjs, make_brief still prints the brief and says FAIL-OPEN. check_handin loads both libraries dynamically. |
 | 10 make_brief cases, no-render words, directions | fixed | TG block "make_brief: case counting ...": `s1:`, `1.`, `A)`, `Item N:`, `Cases: 6` counted; drive-path file lists not counted; five no-render phrasings refused; metric direction required and not guessed. |
@@ -79,7 +79,16 @@ Gate lines used: `scene_check >= 20/21 (baseline 20/21, target 21/21)`, `ctest f
 
 ## Pass 3 results
 
-(filled below after the dogfood run)
+The finished gates were run on this very hand-in (`node tools/check_handin.mjs docs/progress/gates3 --no-visual --gates-version 2 --prior-audit docs/progress/gates2/AUDIT.md --gate "allow_waiver deleted_gate_test:test_hooks.mjs"`). First run: 47 items. What they were, and what was changed:
+1. The waiver guard's line analysis fired about 40 times on tools/test_gates.mjs and tools/hooks/test_hooks.mjs: those files hold every waiver word as test data. Changed: the gates' own tests are watched by test NAME (a removed or renamed test is `deleted_gate_test:<file>:<name>`); 8 new tests in "the gates' own tests are watched by test NAME". Four findings remain (the blanket-ack tests replaced by per-item ack tests before this round, see the section above); with the allow line the run passes.
+2. The status reader refused four of my own lines: a quotation of round 9's own wording, a scope statement that used the word for leaving a directory unchanged, and two excuse phrases in the proposed contract text. Rephrased; that word stays an excuse word on purpose (the gates2 audit lists it), so scope statements say "not affected" or "not modified".
+3. The Prior audit items check counted the header row of my second table as a row. Moved the second table under its own heading.
+4. No ctest gate was given (the brief has no Gates section and this worktree has no build): the measured gates are covered by the proof table above.
+Final run: HAND-IN CHECK PASSED, with the waiver line "4 finding(s) ... 4 allowed", the BLOCKED item printed as BLOCKED-ITEM.
+
+Load: `node tools/hooks/test_hooks.mjs` 20 times, 5 at a time: 20 of 20 "328 passed, 0 failed". `node tools/test_gates.mjs` 3 at once: 3 of 3 "327 passed, 0 failed" (before the 8 name-watch tests were added); the last single run is 335 passed, 0 failed.
+
+Final proof table runs (21:57-21:59, final gate code): round 9 refused with 46 items, tjunction 28, roundabout 28 (raw files in `..\roadworld-scratch\proof_final2`).
 
 ## Reference files opened
 
@@ -114,7 +123,11 @@ None: engine-only round, no renders (HANDIN: no-visual). The claims rest on the 
 
 ## Suite and checks
 
-(filled below after the final runs)
+- `node tools/test_gates.mjs`: 335 passed, 0 failed (the run of record; three earlier concurrent runs 327 passed, 0 failed each, before the last 8 tests).
+- `node tools/hooks/test_hooks.mjs`: 328 passed, 0 failed; 20 runs, 5 at a time, all 328/0.
+- `node tools/check_wrappers.mjs` on the main checkout: PASSED, 35 sources. On the roadtool3 merge state 69302ae (scratch archive): FAILED, 3 of 35.
+- `node tools/check_handin.mjs docs/progress/gates3 ...`: see "Pass 3 results".
+- No C++ build, no ctest, no Unreal: no engine file was changed.
 
 ## Next step
 

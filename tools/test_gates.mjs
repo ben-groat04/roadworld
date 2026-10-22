@@ -628,6 +628,24 @@ console.log('small gates3 additions: multi-config ctest, --since on FAULTS.md, t
   t('the brief and STATUS templates show the BLOCKED form and the wrapper check', /BLOCKED: <item> \| tried: <what you attempted> \| blocked by:/.test(bt) && /check_wrappers\.mjs/.test(bt));
 }
 
+console.log('the gates\' own tests are watched by test NAME, not by line analysis (found by dogfooding this round)');
+{
+  const dd = (file, removed, added) => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n${removed.map((l) => '-' + l).join('\n')}${removed.length ? '\n' : ''}${added.map((l) => '+' + l).join('\n')}\n`;
+  const kk = (d, allowed = []) => GL.waiverFindings(d, allowed).refused.map((f) => f.key);
+  const F = 'tools/test_gates.mjs';
+  t('a gate test that merely CONTAINS waiver words as data (should_fail, doctest::skip, || true, #ifdef) is not a finding', kk(dd(F, [], ["k = keys(diff(T, [], ['TEST_CASE(\"w\" * doctest::should_fail()) {'])); t('should_fail found', k.length === 1);", "t('or true', kk(dd(T, ['CHECK(a);'], ['CHECK(a || true);'])).length === 1);", "const x = ['#ifdef NEVER', 'return;'];"])).length === 0);
+  t('new gate tests added: not a finding', kk(dd(F, [], ["t('a brand new gate test', true);", "  t(\"another new one\", 1 === 1);"])).length === 0);
+  let k = kk(dd(F, ["t('picture gate refuses a debug-colour view', x);", "t('another test', y);"], ["t('another test', y);"]));
+  t('a gate test REMOVED: found, keyed by file and name', k.length === 1 && k[0].startsWith('deleted_gate_test:test_gates.mjs:picture gate refuses a debug-colour view'), JSON.stringify(k));
+  k = kk(dd(F, ["t('old name of the test', x);"], ["t('new name of the test', x);"]));
+  t('a gate test RENAMED: found (a renamed test may have changed what it checks)', k.length === 1 && /deleted_gate_test/.test(k[0]), JSON.stringify(k));
+  t('a gate test that moves to the other line of the same file is not "removed"', kk(dd(F, ["k = a(); t('moved test', x);"], ["t('moved test', x); k = a();"])).length === 0);
+  k = kk(dd('tools/hooks/test_hooks.mjs', ["t('ack without text: refused', c);"], []));
+  t('the same rule for tools/hooks/test_hooks.mjs', k.length === 1 && /test_hooks\.mjs/.test(k[0]), JSON.stringify(k));
+  t('allowed by the prefix "deleted_gate_test:test_hooks.mjs" in the task file', kk(dd('tools/hooks/test_hooks.mjs', ["t('ack without text: refused', c);"], []), ['deleted_gate_test:test_hooks.mjs']).length === 0);
+  t('and not by an unrelated allow line', kk(dd('tools/hooks/test_hooks.mjs', ["t('ack without text: refused', c);"], []), ['deleted_gate_test:test_gates.mjs']).length === 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failed.length) console.log('FAILED TESTS:\n - ' + failed.join('\n - '));
 process.exit(fail ? 1 : 0);
