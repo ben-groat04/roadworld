@@ -291,13 +291,8 @@ struct Resolver {
 
 std::optional<ClothoidChain> fit_sane_chain(const std::vector<Vec2>& points, std::optional<double> heading_a,
                                             std::optional<double> heading_b) {
-    auto chain = fit_clothoid_chain(points, {heading_a}, {heading_b});
-    if (!chain) return std::nullopt;
-    double poly = 0;
-    for (std::size_t i = 0; i + 1 < points.size(); ++i) poly += (points[i + 1] - points[i]).length();
-    const double len = chain->length();
-    if (!(len <= 20 * poly + 1.0)) return std::nullopt;  // also catches NaN
-    return chain;
+    // fit_clothoid_chain refuses runaway spirals itself (see kMaxSpanRatio there); nothing more to check here.
+    return fit_clothoid_chain(points, {heading_a}, {heading_b});
 }
 
 std::string crossing_refusal_text(double dz, double headroom) {

@@ -4,7 +4,7 @@ Written 11 Oct 2026 from `prototypes/road-draw/src/*` (read in full: `shell.html
 
 Screenshots: `docs/progress/2026-10-11-prototype-ui/` (file names cited as `NN_name.png` below). Headless captures were taken at 1400x900, world 2048 m, terrain seed 1337. Facts from code are marked (code); facts seen running are marked (seen).
 
-Contents: A elements, B inputs, C feedback while drawing, D tuning panel, E rough edges, F parity checklist and GAPs.
+Contents: A elements, B inputs, C feedback while drawing, D tuning panel, E rough edges, F parity checklist and GAPs, G what the plan missed, H update after roadtool3 (current status of every GAP and the host-side list: read H first).
 
 ## 0. Layout of the screen (seen: `02_idle.png`, `04_midstroke.png`)
 
@@ -340,7 +340,7 @@ Legend. Milestones from `docs/unreal-game-plan.md` section C: M1 camera and grou
 | C17 | On-screen key hints for the active tool | none | NEW `UCPToolHintWidget` | M3 | host only (fixes E.1, E.7) |
 | C18 | Type picker | region pack road types list | NEW `UCPRoadTypeBar` (inside `UCPHudWidget` or separate) | M3 | host only |
 
-### F.4 GAPs, ranked (what blocks parity)
+### F.4 GAPs, ranked (what blocked parity; status in section H.1)
 
 1. **GAP-1, Profile series for the preview (blocks E2, C9).** `DrawPreview` has only scalar `Readouts` and ribbon centrelines. The panel needs per-station arrays: arc length `s`, road z, original-ground z, grade, curvature, structure flag (bridge/tunnel) and the vertical-curve break list (`s`, `z`, `length`) for the whole stroke including the hover segment, plus the road type's max grade and the wall cap. Proposal: add `struct ProfileSeries` to `DrawPreview` (and a matching one for a committed edge for edit mode), built from `VerticalProfile::breaks`, `sample_centreline` and `Heightfield::height`; cut/fill classification stays in the host.
 2. **GAP-2, Edit session (blocks E11, E12, I1/I2/I23/I24 in edit mode, C14; M7).** There is no `EditSession` (plan gap): road pick by pointer, control-point list with hover/drag, live preview during drag without committing, one command on release (`make_move_node` / `make_move_interior_point`), height change of a point, and a regrade-deferred preview. Data (`Edge::interior`, `RoadIndex`) and the commands exist.
@@ -363,3 +363,61 @@ Legend. Milestones from `docs/unreal-game-plan.md` section C: M1 camera and grou
 6. Tuning panel and a settings home for each value; the prototype's sliders map to tool settings, region data or debug-only.
 7. Colour modes (curvature / gradient heat map) and edit-mode highlighting are unmentioned.
 8. Help and key hints, the road-type picker and the one-way/dual semantics (a dual stroke is two roads in one undo step), none of which exist in the plan's class list.
+
+## H. Update after roadtool3 (11 Oct 2026): what sim_core now provides, and the host-side list
+
+Source: all 45 screenshots in `docs/progress/2026-10-11-prototype-ui/` were opened for this round and every one has a row in `docs/progress/roadtool3/COMPARE.md` (screenshot, the sim_core field or behaviour that provides it, the test that pins it). Tests: `tests/test_tool_ui.cpp` (new), `tests/test_road_tool.cpp`, `tests/test_edit_tool.cpp`, `tests/test_clothoid_chain.cpp`. Sections A to G above describe the prototype and were not changed; this section supersedes the statuses in F where they differ.
+
+### H.1 GAP status
+
+| GAP | Status | Where |
+|---|---|---|
+| GAP-1 profile series | closed | `DrawPreview::profile`, `EditPreview::profile`, `ProfileSeries` (stations with road / ground z, depth, grade, water depth; grades with labels and over-limit; curves; structure ranges). Edit mode: the series of the WHOLE road chain (`join_profiles`), live while dragging. Text and axes: `profile_title`, `profile_empty_text`, `profile_axes`, `profile_band` (`cp/tool_hud.h`) |
+| GAP-2 edit session | closed | `EditSession` (`cp/edit_tool.h`): hover picks, road-chain selection, handles, live drag, release as one command, point height, delete, change type / one-way |
+| GAP-3 persistent refusal | closed | `DrawSession::last_refusal()`, `DrawPreview::refusal_active`, crossing errors while hovering (`DrawPreview::crossings`); `error_hud_line(text)` prints a reason a host holds (refused click, finish or edit) |
+| GAP-4 finish cue, finish at cursor | closed, behaviour decided | `finish_at_cursor`, `would_finish`. The click-on-last-point finish is OFF by default now (`DrawParams::finish_pick_px = 0`): as in the prototype a click there is another point, or the min-span error (screenshot 12). Turn it on to get the cue |
+| GAP-5 structure ranges in the preview | closed | `ProfileSeries::structures` (bridge / tunnel ranges from the cut / fill rule), advisories `BridgeNeeded` / `TunnelNeeded` |
+| GAP-6 G2 flag | closed | `Readouts::g2`, printed as `G2 ✓` / `G1` by `draw_hud` |
+| GAP-7 heat-map data | closed | `cp/road_heat.h`: `ColourMode`, `heat_vertices(graph, edge, mode)` (per centreline vertex: s, position, value, class, 0xRRGGBB), classes and colours from region data `road_tool.heat_map` |
+| GAP-8 water level | partly closed | The tuning value exists (`ToolTuning::water_level`, region default `road_tool.water_level_m`), reaches `ProfileSeries::water_level` and each station's `water_depth` (`DrawParams` / `EditParams::water_level`). The water PLANE and the wet-ground tint are host / terrain work: pass the same value to `HeightfieldGround(hf, water_below)` (`structure_mesh.h`) so bridges over water follow the slider |
+| GAP-9 width semantics | closed | `Ribbon::width == total_width` (the prototype's `total`: 14.3 / 10.8 / 10.8 / 17.45 m), `carriageway_width` separate; pinned by `Ghost widths and HUD headers per road type` |
+| GAP-10 region-data homes | partly closed | New `road_tool` section in `region.json` (snap angle and length, min span, water level, K multiplier, chain turn limit, heat-map classes and colours) and `short_name` per road type (`RoadType::hud_name()`, "A road / dual c'way"). Still JS-only constants: shoulder, verge, wall thickness, ditch (grading round owns them) |
+
+### H.2 New or changed sim_core interface (headers in `sim_core/include/cp/`)
+
+- `tool_hud.h`: the words and numbers of the HUD, one source for every host. `draw_hud(DrawPreview, HudContext)` and `edit_hud(EditPreview, HudContext, tool_type_name)` return lines of runs (text, bold, tone Normal / Error / Warning / Muted) with the prototype's glyphs (middle dot, degree, infinity, check, cross, warning). Texts pinned to the screenshots: header (`DRAW · Residential street · colour: plain`, `one-way`, bold `single carriageway`, amber `snap off`), `cursor z 58.4 m (+25 m) · snap: angle`, `span 48.0 m · bearing 105° · R at cursor ∞ m · min R ∞ m`, `grade -2.5% · max 2.5% · G2 ✓ · total 48 m`, `✕ ...` errors then `⚠ ...` advisories, `selected road #N · L m · drag handles, PgUp/PgDn height, Del delete`. Also `ui_theme()` (ring colours and sizes per snap kind, ghost colours and opacity, guide colours and dash, dot, edit-line and handle colours and sizes, turn colours of the inspect view), `ring_style(SnapKind)`, `ghost_colour(preview)`, `help_rows(type names)`, `help_paragraph()`, `inspect_idle_text()`, `inspect_status_text(...)`, `snap_kind_word()`.
+- `road_heat.h`: colour modes and per-vertex heat values (above). `next_colour_mode` is the C key.
+- `tool_tuning.h`: the tuning panel as data. `tuning_fields()` (eight fields, label, range, step, scope Tool / Region / World, whether it regrades), `default_tuning(region)`, `clamped()`, `apply_tuning(t, DrawParams&)`, `apply_tuning(t, EditParams&)`, `tuned_region(base, t)` (a copy of the pack with wall cap, wall start, batter and the K multiplier; give it to `RoadGraph::set_region`, which refits every edge), `tuning_value_text`. Panel rules: values apply live, whole-network grading re-runs about 120 ms after the last change (150 ms for water), tuning is not undoable.
+- `DrawPreview` now carries `road_type`, `road_type_name`, `one_way`, `dual_type` (no lookup by id in the host). `Readouts` unchanged. `DrawParams::water_level`, `DrawParams::finish_pick_px` default 0.
+- `EditSession` (`cp/edit_tool.h`): `RoadChain` / `road_chain_of(graph, edge, max_turn)`: a road through junctions is ONE road for selection, handles, profile, length and Delete (two edges continue each other through a JUNCTION node of three or more edges when same type and one-way flag, tangents turn less than `road_tool.chain_max_turn_deg` = 25 degrees, and each is the other's best continuation; roundabout rings never chain; two roads that merely meet end to end stay two roads, as in the prototype). `EditPreview::selection` (`EditSelection`: chain, `number`, `length`, the selected road's own type name), `EditPreview::hover_chain` (the road to light up for ANY hover kind: the host highlights roads only, as the prototype did, while `hover.kind` still says node / interior point / road for clicks), `EditSession::select_at(point)`, `handles()` in order along the road with each junction node once. `delete_selected`, `change_type`, `set_one_way` act on the whole chain as one command.
+- Edits make junctions as the prototype did (`conformRoad`): when a drag, a point height change or a dropped free end puts the road across another at the same level (or onto it), `EditResult::command` replaces the edited edge by the drawn stroke through its new control points (the same code as drawing: T = 3 arms, crossing = 4), still ONE undo step, and `made_junction` is set. The edited edge's id is gone afterwards: the host calls `invalidate()` and `select_at(result.anchor)`. Dragging a node shared by several roads only advises (`CrossingAtGrade`, "crosses a road at the same level (x m apart): becomes a junction" / "without a junction" with `make_junctions` off). `EditParams::make_junctions`, `chain_selection`, `water_level`, `world_margin`.
+- `fit_clothoid_chain` now refuses runaway chains itself (no span more than 20 times its chord; a stroke that doubles back onto an earlier point gave 1e15 m spans). `fit_sane_chain` is the same call; the stopgap is gone.
+- Advisory words: `grade 38.2% above advisory 10%` (limit printed as a whole number when it is one), road type names in advisories use `hud_name()`.
+
+### H.3 Differences from the prototype, declared
+
+1. Selected-road number: the prototype's `#N` is its road creation order; here `#N` is the lowest engine edge id in the chain (stable, unique, but not creation order after splits). Cosmetic.
+2. Edit header shows the SELECTED road's type (the prototype showed the draw tool's, rough edge E.9).
+3. Dual ghost is refitted through the offset points as committed (the prototype offset the centreline). Measured on a 60 degree arc: worst vertex distance from the exact offset of the fitted centreline 4 cm at R 400 m and 4 cm at R 60 m (`Dual ghost` test).
+4. A refused drag release returns its reason (`EditResult::error`) instead of snapping back silently.
+5. The finish-on-last-point click is an option, not the default (see GAP-4).
+6. Hover reports nodes and interior points of any road for click logic; `hover_chain` is what to highlight.
+7. A snapped road end, node or road keeps its own height; the prototype added the PgUp / PgDn offset to a snapped height too (it could put a road end 25 m off the road it joins).
+8. The tool's HUD prints the road type's `short_name` when the region data has one (`A road / dual c'way`); the long name stays in `name`.
+9. The help table has 14 rows, not 13 as A.4 counts.
+
+### H.4 Host-side (Unreal) list, milestones 2 to 3
+
+Nothing below needs a rule of its own: each item draws or routes data sim_core already returns.
+
+1. HUD widget: draw the lines of `draw_hud` / `edit_hud` in order, runs in their styles, tones as theme colours (`ui_theme().error`, `.warning`, `.muted`, `.text`), glyphs exactly as returned (needs a font with the middle dot, degree sign, infinity, check mark, cross and warning sign), panel at (12, 12), max width `min(560, viewport - 24)`, 82% dark background. Feed `HudContext` from the host's colour mode, Shift state and `DrawSession::height_offset()`. Print refused click / finish / edit reasons with `error_hud_line`.
+2. Profile panel: height `min(220, 0.28 * window)` when shown, P toggles. Axes from `profile_axes`, title from `profile_title`, empty text `profile_empty_text`. Layers back to front as in A.2: under-ground fill, per-segment band coloured by `profile_band(mean depth, wall_cap)` (fill blue, cut orange, over cap red), ground line, road line, vertical-curve bands (`curves[i].s0..s1` where `length > 0`), control dots, grade labels from `grades[i].label` at `s_mid` (amber when `over_limit`). Draw `water_level` if wanted (not in the prototype).
+3. Tuning panel (debug build): eight sliders built from `tuning_fields()` (label, min, max, step, value text); on change `clamped`, `apply_tuning` to the sessions; for Region scope fields build `tuned_region(base, t)` and `RoadGraph::set_region`, then regrade after 120 ms (150 ms water); pass `water_level` to `HeightfieldGround`.
+4. Help overlay from `help_rows`, `help_title`, `help_paragraph` (open at start, H or ? toggles, click closes); key table generated from the input map so it cannot drift. Inspect bar from `inspect_idle_text` / `inspect_status_text`. Frame stats panel (F): host only, 500 ms average, monospace.
+5. Overlay primitives with `ui_theme()` values: cursor ring per `ring_style(snap)` (11 px, free 7 px, screen-constant, flat on the ground 0.5 m up), placed-point dots (4 px, 0.4 m up), ghost ribbon(s) from `DrawPreview::ribbons` at `Ribbon::lift` with `ghost_colour(pv)` at 55% opacity and depth test off, guides from `DrawPreview::guide` (dashed, 4 m dash 3 m gap; faint = angle / length grid at 50%), edit lines (hover `edit_hover_line`, selected `edit_selected_line`, 0.8 m up) along `EditSession::centreline` of every edge in `hover_chain` / `selection.chain`, handles from `EditSession::handles()` (7 px white, hovered 10 px gold; the hovered one is `hover.handle` on `hover.edge`).
+6. Input map and gestures: left click = `click`, Enter / right click without drag = `finish` (or `finish_at_cursor` if the owner wants what-you-see), Esc = `cancel`, Backspace = `undo_point`, PgUp / PgDn and ] / [ = `adjust_height(+-1, Shift +-5)` in draw mode and `adjust_point_height(hover.edge, hover.handle, +-delta)` in edit mode, 1 to 4 = `set_road_type`, O = `set_one_way`, C = `next_colour_mode`, Tab = draw / edit, Delete = `delete_selected`, Ctrl+Z / Ctrl+Y = the command stack. A press that moves more than 4 px (`EditParams::drag_threshold_px`) is a drag, not a click. Pass `metres_per_pixel_per_metre = 2 tan(fov / 2) / viewport_height_px` (or `metres_per_pixel`) and, over a bridge deck, `surface_hit`. After executing any command call `invalidate()` on the session; after an edit result with `made_junction` call `select_at(result.anchor)`.
+7. Heat-map road surface: `heat_vertices(graph, edge, mode)` per road, colour per vertex (class colours from region data), interpolated across the carriageway rows; the ghost is never heat-coloured; mode names in the HUD header.
+8. Scene loader and connector overlay (inspect): `layout_io.h` scene export, connectors from the junction code, colours `ui_theme().turn_*`; J toggles; optional, after M8.
+9. Profile colours and wall cap: the red zone uses `ProfileSeries::wall_cap` (the live tuning value, via `tuned_region`).
+10. Structures after commit (deck, piers, portals, walls, regraded ground; screenshots 37 to 40) come from `WorldCache` / `structure_mesh.h` / `grading.h`, owned by the earthworks and world-cache rounds; not part of this tool. During a drag the terrain regrades on release only (34).
+11. Not ported on purpose: the double-click stray point (E.2), a frozen HUD on a refused crossing (E.3), a silent refused click (E.4).

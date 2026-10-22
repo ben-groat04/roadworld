@@ -1,0 +1,9 @@
+# sim_core output for the scenario of 23_tuning_panel_open.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+Snap angle °  15   [5 .. 45, step 5]
+Snap length m  8   [1 .. 50, step 1]
+Wall cap m (bridge/tunnel)  12   [3 .. 30, step 1]
+Wall start m  12   [2 .. 12, step 1]
+Batter (H per V)  2   [1 .. 4, step 0.1]
+Vert. curve K ×  1   [0.25 .. 2, step 0.05]
+Min segment m  4   [1 .. 20, step 1]
+Water level m  14   [0 .. 60, step 0.5]

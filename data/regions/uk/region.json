@@ -15,6 +15,24 @@
     "footway_crossfall": 0.02,
     "verge_crossfall": 0.05
   },
+  "road_tool": {
+    "_comment": "Road tool defaults from the road-draw prototype (its T table and heat-map thresholds): the tuning panel's starting values, the edit tool's road-chain rule, and the curvature / gradient heat-map classes (factors of each road type's comfortable radius and advisory maximum grade).",
+    "snap_angle_deg": 15,
+    "snap_length_m": 8,
+    "min_span_m": 4,
+    "water_level_m": 14,
+    "vertical_k_multiplier": 1,
+    "chain_max_turn_deg": 25,
+    "heat_map": {
+      "colours": { "ok": "#3fb950", "caution": "#e8d44d", "amber": "#f5a623", "red": "#e5484d" },
+      "curvature_red_below": 0.5,
+      "curvature_amber_below": 1.0,
+      "curvature_caution_below": 2.0,
+      "gradient_red_above": 1.5,
+      "gradient_amber_above": 1.0,
+      "gradient_caution_above": 0.5
+    }
+  },
   "grading": {
     "_comment": "Ground grading and earthwork limits (cp::GradingRules); tuned by eye in the road-draw prototype. wall_cap_m is also the height above which the road must be a bridge or tunnel.",
     "formation_drop_m": 0.15,

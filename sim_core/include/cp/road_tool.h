@@ -8,10 +8,11 @@
 // the one undo step of the whole stroke. After the host executes any command it calls invalidate() (the road
 // index is a snapshot; a cheap size check also notices most changes by itself).
 //
-// Finishing: click() on the last placed point, finish() (the road ends at the last CLICKED point; the prototype's
-// Enter / right-click) and finish_at_cursor() (the road ends where the preview's ghost ends: what you see is what
-// you get) all return the one command to execute. In the would_finish state the preview shows exactly the
-// geometry finish() would commit.
+// Finishing: finish() (the road ends at the last CLICKED point; the prototype's Enter / right-click / double-click),
+// finish_at_cursor() (the road ends where the preview's ghost ends: what you see is what you get) and, only when
+// DrawParams::finish_pick_px is set, a click on the last placed point all return the one command to execute. In the
+// would_finish state (that option) the preview shows exactly the geometry finish() would commit. By default, as in
+// the prototype, a click near the last point is just another point (or the min-span error).
 //
 // Units: metres, radians, doubles. x east, y north, z up. Driving-side agnostic: dual carriageways are laid
 // out from the region's driving side, everything else is symmetric.
@@ -42,7 +43,11 @@ struct DrawParams {
     double guide_drape_step = 3;      // draped(): guide polylines sampled every 3 m
     double guide_lift = 0.5;          // draped(): guides sit 0.5 m above the ground
     double pick_max_distance = 14000; // rayTerrain: max = 14000
-    double finish_pick_px = 10;       // NEW (no JS equivalent): a click within 10 * px of the last placed point finishes the stroke
+    // NEW (no JS equivalent), OFF by default so the tool behaves as the prototype: there a click on the last placed
+    // point is just another point (a segment under min_span: the MinSpan error, no ghost, screenshot 12), and a
+    // stroke ends with Enter / right-click / double-click / a snap onto a road. Set it to e.g. 10: a click within
+    // that many pixels of the last placed point finishes the stroke (DrawPreview::would_finish shows the finish cue).
+    double finish_pick_px = 0;
     // ---- added 11 Oct 2026 (parity work) ----
     double ghost_lift = 0.35;         // JS ghostMesh: the ghost ribbon sits 0.35 m above the centreline (echoed in Ribbon::lift)
     double profile_step = 2.0;        // NEW: spacing of profile stations (m); control points and curve ends are added exactly
@@ -51,6 +56,9 @@ struct DrawParams {
     // refused one (height difference in the band neither joined nor cleared) is an error that refuses the click.
     // Off: the prototype's behaviour, where it was found only when the road is finished.
     bool crossing_feedback = true;
+    // The height of the water plane (tuning panel "Water level m"; ToolTuning). Set: the profile series carries it and
+    // each station says how deep the water is over the ground there.
+    std::optional<double> water_level;
 };
 
 struct Modifiers {
@@ -94,6 +102,7 @@ struct ProfileStation {
     double ground_z = 0;   // m, ORIGINAL ground at the centreline (the heightfield, never the graded ground)
     double depth = 0;      // m, road_z - ground_z: > 0 fill, < 0 cut (the host colours it against ProfileSeries::wall_cap)
     double grade_pct = 0;  // %, signed slope of the road surface at this station
+    double water_depth = 0;  // m, water over the original ground here (ProfileSeries::water_level - ground_z when positive; else 0)
 };
 // One constant-gradient run between two consecutive control points (what the panel labels).
 struct ProfileGrade {
@@ -120,6 +129,7 @@ struct ProfileSeries {
     double length = 0;            // m, centreline length (the panel's horizontal axis runs 0 .. length)
     double step = 0;              // m, nominal station spacing (stations at the control points / curve ends are extra)
     double wall_cap = 0;          // m, region wall cap: |depth| beyond it is the bridge / tunnel zone
+    std::optional<double> water_level;  // m, the water plane (the tuning panel's value) when the host gave one
     double max_grade_pct = 0;     // %, the road type's advisory maximum grade (0 = unset)
     double z_min = 0, z_max = 0;  // m, extent over road and ground (before any padding)
     std::vector<ProfileStation> stations;      // ascending s, first 0, last = length
@@ -154,7 +164,7 @@ enum class IssueCode {
     BridgeNeeded,         // advisory
     TunnelNeeded,         // advisory
     G1Fallback,           // advisory: the G2 solve fell back to G1 (curvature kink)
-    CrossingAtGrade,      // advisory (editing only): the edited road crosses another at the same level; an edit makes no junction
+    CrossingAtGrade,      // advisory (editing only): the edited road crosses another at the same level (the edit makes a junction there unless EditParams::make_junctions is off)
 };
 
 struct Issue {
@@ -184,6 +194,11 @@ struct Ribbon {
 };
 
 struct DrawPreview {
+    // The tool state the HUD header shows, echoed so a host needs no second lookup (set even without a pick).
+    std::string road_type;        // the session's road type id
+    std::string road_type_name;   // its name for the HUD ("A road / dual c'way": RoadType::hud_name()); empty without a region
+    bool one_way = false;         // the one-way flag (O)
+    bool dual_type = false;       // the type draws two carriageways from one stroke (O then draws one: "single carriageway")
     bool has_pick = false;        // the ray hit something; nothing below is meaningful otherwise
     Vec3 cursor;                  // resolved (snapped) cursor point
     SnapKind snap = SnapKind::Free;
@@ -326,12 +341,23 @@ struct AnalysisOptions {
     const CrossingCache* cross_cache = nullptr;
     std::vector<EdgeId> ignore_edges;
     bool edit_mode = false;       // report a same-level crossing as the CrossingAtGrade advisory
+    bool junction_on_join = false;  // edit_mode: the edit will make a junction at that crossing (changes the advisory's words only)
+    std::optional<double> water_level;  // fill ProfileSeries::water_level and the stations' water_depth
 };
 // edge must be fitted (horizontal and vertical). Read-only.
 EdgeAnalysis analyse_edge(const RoadGraph& g, const Heightfield& ground, const Edge& edge, const AnalysisOptions& opt);
 
 // The profile series of a road already in the graph (edit-mode selection / hover), against the original ground.
-ProfileSeries profile_of_edge(const RoadGraph& g, const Heightfield& ground, EdgeId id, double step = 2.0);
+ProfileSeries profile_of_edge(const RoadGraph& g, const Heightfield& ground, EdgeId id, double step = 2.0,
+                              std::optional<double> water_level = std::nullopt);
+// The same for an edge that is NOT in the graph (the geometry a drag would give it); it must be fitted.
+ProfileSeries profile_of_geometry(const RoadGraph& g, const Heightfield& ground, const Edge& edge, double step = 2.0,
+                                  std::optional<double> water_level = std::nullopt);
+
+// Several roads that make one road (an edit-tool road chain) as one series, in the order given. `reversed[i]` says the
+// i-th series runs against the chain direction (its s is flipped, grades negated, labels redone). The control point
+// shared by two neighbours appears once. Gives an invalid series when any part is invalid or the list is empty.
+ProfileSeries join_profiles(const std::vector<ProfileSeries>& parts, const std::vector<bool>& reversed);
 
 // Widths of what one edge of a road type represents (a dual type: one carriageway), from the region's lanes.
 struct RoadWidths {

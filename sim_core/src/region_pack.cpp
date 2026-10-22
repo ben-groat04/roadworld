@@ -230,6 +230,7 @@ RoadType parse_road_type(const json& e, double speed_to_mps, const LaneTypeTable
     const std::string ctx = "road type \"" + rt.id + "\"";
     if (rt.id.empty()) err.set("road type: empty id");
     if (member(e, "name")) rt.name = get_string(e, "name", ctx, err);
+    if (member(e, "short_name")) rt.short_name = get_string(e, "short_name", ctx, err);
     rt.two_way = get_bool(e, "two_way", false, ctx, err);
     rt.dual = get_bool(e, "dual", false, ctx, err);
     if (rt.two_way && rt.dual) err.set(ctx + ": cannot be both two_way and dual");
@@ -355,6 +356,61 @@ void parse_roundabout_extras(const json& rb, RoundaboutRules& r, Err& err) {
     if (r.apron_island_radius_max < 0) err.set(c + ": apron_island_radius_max_m must not be negative");
 }
 
+std::uint32_t get_colour(const json& j, const char* key, std::uint32_t def, const std::string& ctx, Err& err) {
+    const json* v = member(j, key);
+    if (!v) return def;
+    if (!v->is_string()) {
+        err.set(ctx + ": \"" + key + "\" must be a \"#rrggbb\" string");
+        return def;
+    }
+    const std::string t = v->get<std::string>();
+    bool ok = t.size() == 7 && t[0] == '#';
+    std::uint32_t out = 0;
+    for (std::size_t i = 1; ok && i < t.size(); ++i) {
+        const char ch = t[i];
+        const int d = ch >= '0' && ch <= '9' ? ch - '0' : ch >= 'a' && ch <= 'f' ? ch - 'a' + 10 : ch >= 'A' && ch <= 'F' ? ch - 'A' + 10 : -1;
+        if (d < 0) ok = false;
+        else out = out * 16 + static_cast<std::uint32_t>(d);
+    }
+    if (!ok) {
+        err.set(ctx + ": \"" + key + "\" must be a \"#rrggbb\" string");
+        return def;
+    }
+    return out;
+}
+
+void parse_road_tool_rules(const json& tr, RoadToolRules& r, Err& err) {
+    const std::string c = "region.road_tool";
+    r.snap_angle_deg = opt_number(tr, "snap_angle_deg", r.snap_angle_deg, c, err);
+    r.snap_length = opt_number(tr, "snap_length_m", r.snap_length, c, err);
+    r.min_span = opt_number(tr, "min_span_m", r.min_span, c, err);
+    r.water_level = opt_number(tr, "water_level_m", r.water_level, c, err);
+    r.k_multiplier = opt_number(tr, "vertical_k_multiplier", r.k_multiplier, c, err);
+    r.chain_max_turn_deg = opt_number(tr, "chain_max_turn_deg", r.chain_max_turn_deg, c, err);
+    if (const json* hm = member(tr, "heat_map")) {
+        HeatMapRules& h = r.heat;
+        const std::string hc = c + ".heat_map";
+        if (const json* col = member(*hm, "colours")) {
+            h.colour_ok = get_colour(*col, "ok", h.colour_ok, hc + ".colours", err);
+            h.colour_caution = get_colour(*col, "caution", h.colour_caution, hc + ".colours", err);
+            h.colour_amber = get_colour(*col, "amber", h.colour_amber, hc + ".colours", err);
+            h.colour_red = get_colour(*col, "red", h.colour_red, hc + ".colours", err);
+        }
+        h.curvature_red = opt_number(*hm, "curvature_red_below", h.curvature_red, hc, err);
+        h.curvature_amber = opt_number(*hm, "curvature_amber_below", h.curvature_amber, hc, err);
+        h.curvature_caution = opt_number(*hm, "curvature_caution_below", h.curvature_caution, hc, err);
+        h.gradient_red = opt_number(*hm, "gradient_red_above", h.gradient_red, hc, err);
+        h.gradient_amber = opt_number(*hm, "gradient_amber_above", h.gradient_amber, hc, err);
+        h.gradient_caution = opt_number(*hm, "gradient_caution_above", h.gradient_caution, hc, err);
+        if (!err.failed() && !(h.curvature_red > 0 && h.curvature_red <= h.curvature_amber && h.curvature_amber <= h.curvature_caution &&
+                               h.gradient_caution > 0 && h.gradient_caution <= h.gradient_amber && h.gradient_amber <= h.gradient_red))
+            err.set(hc + ": thresholds must be positive and ordered (red < amber < caution for radius, caution < amber < red for grade)");
+    }
+    if (!err.failed() && !(r.snap_angle_deg > 0 && r.snap_angle_deg <= 90 && r.snap_length > 0 && r.min_span >= 0 && r.k_multiplier > 0 &&
+                           r.chain_max_turn_deg >= 0 && r.chain_max_turn_deg < 90))
+        err.set(c + ": a value is out of range");
+}
+
 void parse_junction_rules(const json& jr, JunctionRules& r, Err& err) {
     const std::string c = "region.junction";
     if (const json* tab = member(jr, "corner_radius_by_class")) {
@@ -472,6 +528,7 @@ RegionPack do_parse_region(const LaneTypeTable& lane_types, const std::string& r
                                r.verge_crossfall <= 0.5))
             err.set(c + ": a value is out of range");
     }
+    if (const json* tr = member(rj, "road_tool")) parse_road_tool_rules(*tr, pack.road_tool, err);
     if (const json* jr = member(rj, "junction")) parse_junction_rules(*jr, pack.junction, err);
     if (const json* gr = member(rj, "grading")) {
         GradingRules& g = pack.grading;

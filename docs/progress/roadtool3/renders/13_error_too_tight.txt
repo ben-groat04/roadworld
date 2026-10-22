@@ -1,0 +1,8 @@
+# sim_core output for the scenario of 13_error_too_tight.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain
+cursor z 73.0 m · snap: free
+span 10.9 m · bearing 318° · R at cursor ∞ m · min R 7 m
+grade 0.0% · max 0.0% · G2 ✓ · total 41 m
+✕ too tight: radius 6.8 m < half-width 7.2 m (edge folds)
+⚠ radius 7 m below comfortable 20 m for Residential street
+ghost colour: red (error)

@@ -1,0 +1,5 @@
+# sim_core output for the scenario of 11_shift_snap_off.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain · snap off
+cursor z 71.7 m · snap: free
+span 45.9 m · bearing 101° · R at cursor ∞ m · min R ∞ m
+grade -1.9% · max 1.9% · G2 ✓ · total 46 m

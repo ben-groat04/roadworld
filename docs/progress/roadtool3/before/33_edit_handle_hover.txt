@@ -1,0 +1,2 @@
+# before this round (33_edit_handle_hover.png)
+Base: handle hover existed (pick radius 11 px); handles of one edge only.

@@ -1,0 +1,2 @@
+# before this round (01_idle_help.png)
+Base: no help table in the engine (host would have copied the prototype by hand).

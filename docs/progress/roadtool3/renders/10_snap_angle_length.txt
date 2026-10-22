@@ -1,0 +1,5 @@
+# sim_core output for the scenario of 10_snap_angle_length.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain
+cursor z 71.3 m · snap: angle
+span 48.0 m · bearing 105° · R at cursor ∞ m · min R ∞ m
+grade -2.5% · max 2.5% · G2 ✓ · total 48 m

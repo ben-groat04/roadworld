@@ -1,0 +1,2 @@
+# before this round (37_finished_bridge_viaduct.png)
+Base e0c0d4b (agent/road-tool-2): the preview fields existed (cursor, snap kind, readouts, errors, advisories, profile series) but there was no engine text: a host had to format every HUD line itself and no test pinned the words against this screenshot.

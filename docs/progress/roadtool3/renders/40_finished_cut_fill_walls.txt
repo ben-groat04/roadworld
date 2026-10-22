@@ -1,0 +1,2 @@
+# sim_core output for 40_finished_cut_fill_walls.png
+not this round: cutting, embankment and retaining walls come from grading.h / earthworks.h (other agents). The tool side is the tuning fields wall cap, wall start and batter: see 23_tuning_panel_open.txt. Pinned elsewhere by tests/test_grading.cpp "wall runs match the prototype".

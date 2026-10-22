@@ -1,0 +1,2 @@
+# before this round (27_finished_road_idle.png)
+Base: same as 26 (finish-on-last-point default).

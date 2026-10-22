@@ -2,6 +2,7 @@
 // Region pack loading (data/lane_types.json + data/regions/<id>/*.json) into plain
 // structs. The core assumes nothing about any region: every value comes from here.
 // Internal units: metres, m/s, radians; grades are rise over run (not %).
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <optional>
@@ -68,8 +69,10 @@ struct StreetLightRules {
 struct RoadType {
     std::string id;
     std::string name;
+    std::string short_name;  // optional: the name the tool's HUD and advisories use ("A road / dual c'way"); empty = name
     bool two_way = false;
     bool dual = false;
+    const std::string& hud_name() const { return short_name.empty() ? name : short_name; }
     double speed_limit = 0;   // m/s
     double design_speed = 0;  // m/s
     int road_class = 0;        // relative importance (higher = more major); 0 = unset (use design speed in km/h)
@@ -280,6 +283,28 @@ struct RenderRules {
     double verge_crossfall = 0.05;      // "verge_crossfall": verges fall away from the carriageway
 };
 
+// Road-tool tunables that were constants in the browser prototype (region.json "road_tool"). Colours are 0xRRGGBB
+// ("#rrggbb" in the data). Heat-map factors multiply the road type's own comfortable minimum radius / advisory
+// maximum grade (RoadType::min_radius, advisory_max_grade), so the classes follow the type and the region.
+struct HeatMapRules {
+    std::uint32_t colour_ok = 0x3fb950, colour_caution = 0xe8d44d, colour_amber = 0xf5a623, colour_red = 0xe5484d;
+    double curvature_red = 0.5;       // radius below this x comfortable radius: red
+    double curvature_amber = 1.0;     // below the comfortable radius: amber
+    double curvature_caution = 2.0;   // below this x comfortable radius: caution (yellow); else ok
+    double gradient_red = 1.5;        // grade above this x advisory maximum: red
+    double gradient_amber = 1.0;      // above the advisory maximum: amber
+    double gradient_caution = 0.5;    // above this x advisory maximum: caution; else ok
+};
+struct RoadToolRules {
+    double snap_angle_deg = 15;       // tuning panel "Snap angle": default
+    double snap_length = 8;           // "Snap length m"
+    double min_span = 4;              // "Min segment m"
+    double water_level = 14;          // "Water level m": height of the water plane (a world setting the panel shows)
+    double k_multiplier = 1;          // "Vert. curve K x": multiplies every road type's crest and sag K
+    double chain_max_turn_deg = 25;   // edit tool: two roads meeting at a node are one road when their tangents turn less than this
+    HeatMapRules heat;
+};
+
 struct RegionPack {
     std::string id;
     int version = 0;
@@ -289,6 +314,7 @@ struct RegionPack {
     // use StructureRules::pier_road_clearance and the soffit logic instead.
     double headroom_m = 0;
     RenderRules render;
+    RoadToolRules road_tool;
     double plan_crossing_junction_dz_m = 0;
     RoundaboutRules roundabout;
     JunctionRules junction;

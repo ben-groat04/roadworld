@@ -49,9 +49,10 @@ struct StrokeParams {
     double curve_step = 1.0;  // m: chord length of the stroke centreline when follow_curve
 };
 
-// fit_clothoid_chain with a sanity bound: a chain more than 20 times longer than the polyline through its points
-// is refused (nullopt). The solver returns such chains (up to 1e15 m, which hangs anything that samples them) for
-// a stroke that doubles back exactly onto an earlier point. Used by the road tool, the edit tool and the stroke.
+// fit_clothoid_chain with the heading arguments as plain optionals; used by the road tool, the edit tool and the
+// stroke. The runaway-chain guard (a stroke that doubles back exactly onto an earlier point used to give chains of
+// up to 1e15 m, which hang anything that samples them) now lives in fit_clothoid_chain itself: no span may be more
+// than 20 times its chord, else the fit is refused (nullopt). This is no longer a stopgap on top of it.
 std::optional<ClothoidChain> fit_sane_chain(const std::vector<Vec2>& points, std::optional<double> heading_a = {},
                                             std::optional<double> heading_b = {});
 

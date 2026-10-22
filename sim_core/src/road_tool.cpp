@@ -59,6 +59,16 @@ std::string fmt(const char* f, double a, double b = 0, double c = 0) {
     return buf;
 }
 
+// One decimal with a trailing ".0" dropped: the prototype printed the advisory maximum grade as "8%" and the
+// measured grade as "10.6%" (JS toFixed(1) vs the integer table value).
+std::string trim1(double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.1f", v);
+    std::string t = buf;
+    if (t.size() > 2 && t.compare(t.size() - 2, 2, ".0") == 0) t.resize(t.size() - 2);
+    return t;
+}
+
 bool fit_edge(const RoadGraph& g, const std::string& type, const std::vector<Vec3>& pts, std::optional<double> hs,
               std::optional<double> he, Edge& out) {
     std::vector<Vec2> xy;
@@ -133,7 +143,7 @@ std::vector<StrokeSpec> stroke_specs(const RoadGraph& g, const TypeDims& ty, con
 }
 
 ProfileSeries build_profile(const Edge& edge, const RoadType* rt, double wall_cap, const Heightfield& ground, double step,
-                            const std::vector<ProfileStructure>& req) {
+                            const std::vector<ProfileStructure>& req, std::optional<double> water_level) {
     ProfileSeries ps;
     const double L = edge.horizontal.length();
     if (!(L > 0) || edge.vertical.breaks.size() < 2) return ps;
@@ -144,6 +154,7 @@ ProfileSeries build_profile(const Edge& edge, const RoadType* rt, double wall_ca
     ps.max_grade_pct = rt ? rt->advisory_max_grade * 100 : 0;
     ps.structures = req;
     ps.authored_structures = edge.structure;
+    ps.water_level = water_level;
 
     std::vector<double> ss;
     const int n = std::max(1, static_cast<int>(std::ceil(L / step)));
@@ -168,6 +179,7 @@ ProfileSeries build_profile(const Edge& edge, const RoadType* rt, double wall_ca
         st.road_z = p.z;
         st.ground_z = ground.height(p.x, p.y);
         st.depth = st.road_z - st.ground_z;
+        if (water_level) st.water_depth = std::max(0.0, *water_level - st.ground_z);
         st.grade_pct = edge.vertical.grade(s) * 100;
         ps.z_min = std::min({ps.z_min, st.road_z, st.ground_z});
         ps.z_max = std::max({ps.z_max, st.road_z, st.ground_z});
@@ -260,9 +272,9 @@ EdgeAnalysis analyse_edge(const RoadGraph& g, const Heightfield& ground, const E
 
     const RoadType& rt = *ty.rt;
     if (rt.min_radius > 0 && min_r < rt.min_radius)
-        out.advisories.push_back({IssueCode::RadiusBelowMinimum, fmt("radius %.0f m below comfortable %.0f m", min_r, rt.min_radius) + " for " + rt.name});
+        out.advisories.push_back({IssueCode::RadiusBelowMinimum, fmt("radius %.0f m below comfortable %.0f m", min_r, rt.min_radius) + " for " + rt.hud_name()});
     if (rt.advisory_max_grade > 0 && gmax > rt.advisory_max_grade)
-        out.advisories.push_back({IssueCode::GradeAboveAdvisory, fmt("grade %.1f%% above advisory %.1f%%", gmax * 100, rt.advisory_max_grade * 100)});
+        out.advisories.push_back({IssueCode::GradeAboveAdvisory, "grade " + trim1(gmax * 100) + "% above advisory " + trim1(rt.advisory_max_grade * 100) + "%"});
     std::vector<ProfileStructure> required;
     double wall_cap = 0;
     if (g.region()) {
@@ -278,7 +290,7 @@ EdgeAnalysis analyse_edge(const RoadGraph& g, const Heightfield& ground, const E
     }
     if (!edge.horizontal.g2) out.advisories.push_back({IssueCode::G1Fallback, "G2 solve fell back to G1 (curvature kink)"});
 
-    if (opt.want_profile) out.profile = build_profile(edge, &rt, wall_cap, ground, opt.profile_step, required);
+    if (opt.want_profile) out.profile = build_profile(edge, &rt, wall_cap, ground, opt.profile_step, required, opt.water_level);
 
     // Crossings with existing roads, one test per carriageway of the stroke.
     StrokeParams sp;
@@ -313,7 +325,8 @@ EdgeAnalysis analyse_edge(const RoadGraph& g, const Heightfield& ground, const E
                 if (!dup) out.errors.push_back({IssueCode::Crossing, r.text});
             } else if (c.verdict == CrossingVerdict::Join && opt.edit_mode) {
                 out.advisories.push_back({IssueCode::CrossingAtGrade,
-                                          fmt("crosses a road at the same level (%.1f m apart) without a junction", c.dz)});
+                                          opt.junction_on_join ? fmt("crosses a road at the same level (%.1f m apart): becomes a junction", c.dz)
+                                                               : fmt("crosses a road at the same level (%.1f m apart) without a junction", c.dz)});
             }
             out.crossings.push_back(std::move(r));
         }
@@ -321,9 +334,17 @@ EdgeAnalysis analyse_edge(const RoadGraph& g, const Heightfield& ground, const E
     return out;
 }
 
-ProfileSeries profile_of_edge(const RoadGraph& g, const Heightfield& ground, EdgeId id, double step) {
+ProfileSeries profile_of_edge(const RoadGraph& g, const Heightfield& ground, EdgeId id, double step,
+                              std::optional<double> water_level) {
     const Edge* e = g.edge(id);
-    if (!e || !g.region()) return {};
+    if (!e) return {};
+    return profile_of_geometry(g, ground, *e, step, water_level);
+}
+
+ProfileSeries profile_of_geometry(const RoadGraph& g, const Heightfield& ground, const Edge& edge, double step,
+                                  std::optional<double> water_level) {
+    const Edge* e = &edge;
+    if (!g.region()) return {};
     const RoadType* rt = g.region()->road_type(e->road_type);
     if (!rt) return {};
     const GradingParams gp = GradingParams::from_rules(g.region()->grading);
@@ -331,7 +352,113 @@ ProfileSeries profile_of_edge(const RoadGraph& g, const Heightfield& ground, Edg
     const double hw = cross_section_width(lanes) / 2;
     const SampledRoad sr = sample_edge_for_grading(*e, rt->id, hw, rt->dual, rt->median_gap, gp);
     const std::vector<StructureRange> ranges = required_structures(sr, ground_fn(ground), gp);
-    return build_profile(*e, rt, gp.wall_cap, ground, step, to_profile_structures(sr, ranges));
+    return build_profile(*e, rt, gp.wall_cap, ground, step, to_profile_structures(sr, ranges), water_level);
+}
+
+namespace {
+
+// The series seen from its other end.
+ProfileSeries flipped(const ProfileSeries& p) {
+    ProfileSeries o = p;
+    const double L = p.length;
+    o.stations.assign(p.stations.rbegin(), p.stations.rend());
+    for (ProfileStation& st : o.stations) {
+        st.s = L - st.s;
+        st.grade_pct = -st.grade_pct;
+    }
+    o.grades.assign(p.grades.rbegin(), p.grades.rend());
+    for (ProfileGrade& g : o.grades) {
+        const ProfileGrade w = g;
+        g.s0 = L - w.s1;
+        g.s1 = L - w.s0;
+        g.z0 = w.z1;
+        g.z1 = w.z0;
+        g.s_mid = L - w.s_mid;
+        g.grade_pct = -w.grade_pct;
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%+.1f%%", g.grade_pct);
+        g.label = buf;
+    }
+    o.curves.assign(p.curves.rbegin(), p.curves.rend());
+    for (ProfileCurve& c : o.curves) {
+        const ProfileCurve w = c;
+        c.s = L - w.s;
+        c.s0 = L - w.s1;
+        c.s1 = L - w.s0;
+    }
+    o.structures.assign(p.structures.rbegin(), p.structures.rend());
+    for (ProfileStructure& st : o.structures) {
+        const ProfileStructure w = st;
+        st.s0 = L - w.s1;
+        st.s1 = L - w.s0;
+    }
+    o.authored_structures.assign(p.authored_structures.rbegin(), p.authored_structures.rend());
+    for (StructureSpan& st : o.authored_structures) {
+        const StructureSpan w = st;
+        st.s0 = L - w.s1;
+        st.s1 = L - w.s0;
+    }
+    return o;
+}
+
+}  // namespace
+
+ProfileSeries join_profiles(const std::vector<ProfileSeries>& parts, const std::vector<bool>& reversed) {
+    if (parts.empty()) return {};
+    ProfileSeries out;
+    double offset = 0;
+    for (std::size_t i = 0; i < parts.size(); ++i) {
+        if (!parts[i].valid) return {};
+        const bool rev = i < reversed.size() && reversed[i];
+        const ProfileSeries p = rev ? flipped(parts[i]) : parts[i];
+        if (i == 0) {
+            out = p;
+            out.stations.clear();
+            out.grades.clear();
+            out.curves.clear();
+            out.structures.clear();
+            out.authored_structures.clear();
+            out.length = 0;
+            out.z_min = p.z_min;
+            out.z_max = p.z_max;
+        }
+        for (std::size_t k = 0; k < p.stations.size(); ++k) {
+            if (i > 0 && k == 0) continue;  // the shared control point
+            ProfileStation st = p.stations[k];
+            st.s += offset;
+            out.stations.push_back(st);
+        }
+        for (ProfileGrade g : p.grades) {
+            g.s0 += offset;
+            g.s1 += offset;
+            g.s_mid += offset;
+            out.grades.push_back(std::move(g));
+        }
+        for (std::size_t k = 0; k < p.curves.size(); ++k) {
+            if (i > 0 && k == 0) continue;
+            ProfileCurve c = p.curves[k];
+            c.s += offset;
+            c.s0 += offset;
+            c.s1 += offset;
+            out.curves.push_back(c);
+        }
+        for (ProfileStructure st : p.structures) {
+            st.s0 += offset;
+            st.s1 += offset;
+            out.structures.push_back(st);
+        }
+        for (StructureSpan st : p.authored_structures) {
+            st.s0 += offset;
+            st.s1 += offset;
+            out.authored_structures.push_back(st);
+        }
+        out.z_min = std::min(out.z_min, p.z_min);
+        out.z_max = std::max(out.z_max, p.z_max);
+        offset += p.length;
+    }
+    out.length = offset;
+    out.valid = true;
+    return out;
 }
 
 struct DrawSession::Snap {
@@ -526,6 +653,7 @@ void DrawSession::build_geometry(DrawPreview& pv, const std::vector<Vec3>& pts, 
     opt.dual_pair = dual_pair;
     opt.profile_step = params_.profile_step;
     opt.want_profile = params_.profile_series;
+    opt.water_level = params_.water_level;
     std::vector<StrokeSpec> specs;
     if (params_.crossing_feedback || dual_pair) specs = stroke_specs(g, ty, edge, pts, hs_, he, type_, one_way_);
     if (params_.crossing_feedback) {
@@ -602,6 +730,13 @@ void DrawSession::build_geometry(DrawPreview& pv, const std::vector<Vec3>& pts, 
 
 DrawSession::Resolved DrawSession::resolve(const PointerInput& in, Modifiers mods) {
     Resolved r;
+    {
+        const TypeDims ty = dims_of(graph_, type_, one_way_);
+        r.pv.road_type = type_;
+        r.pv.road_type_name = ty.rt ? ty.rt->hud_name() : std::string();
+        r.pv.one_way = one_way_;
+        r.pv.dual_type = ty.dual;
+    }
     ensure_index();
     GroundPickParams gpp;
     gpp.max_distance = params_.pick_max_distance;

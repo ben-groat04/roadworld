@@ -1,0 +1,4 @@
+# sim_core output for the scenario of 27_finished_road_idle.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain
+cursor z 0.0 m · snap: end
+ring: green, 11 px (end of the finished road)

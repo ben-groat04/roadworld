@@ -113,6 +113,6 @@ FString BuildCue(const FCPToolFeedback& F)
 	{
 		return TEXT("Click to add points   |   Backspace removes the last point   Esc cancels");
 	}
-	return TEXT("Click the last point or press Enter to finish   |   right-click also finishes   Backspace removes the last point   Esc cancels");
+	return TEXT("Press Enter or right-click to finish   |   Backspace removes the last point   Esc cancels");
 }
 }  // namespace CPToolHudFormat
