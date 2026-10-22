@@ -62,6 +62,7 @@ Source of truth for agents: `docs/AGENT_CONTRACT.md` (pasted unchanged into ever
 - Merge one agent branch at a time; run the full suite on both compilers after each merge; after an agent says "N/N pass" in a shared tree, trust only a clean build of the merged state.
 - Verify with `node prototypes/road-draw/tools/scene.mjs --check` (text invariants, ~8 s; one-time `npm install` in prototypes/road-draw) rather than screenshot loops; screenshots only for realism judgement.
 - Every push carries `[skip ci]` until the owner asks for CI. Prefer free tools and assets; flag any cost.
+- Removing a worktree: first unlink its junction with `cmd /c rmdir <worktree>docseference` (removes the link only), check `docseference` in the main checkout still has its files, then `git worktree remove`; never `rm -r`, `rm -rf` or `Remove-Item -Recurse` on a worktree or any folder that may hold a junction (22 Oct 2026 this wiped every private reference photo). After any batch of new reference photos, mirror docseference to C:Usersgbg0oadworld-reference-backup with `robocopy <main>docseference C:Usersgbg0oadworld-reference-backup /MIR` (never the reverse).
 
 ### Decisions and product
 - Ask the owner about product direction, scope, how tools feel to use, purchases, downloads (other than reference photos) and anything irreversible; keep reversible choices moving. Road-engineering details are yours: pick a region-data default and make it a toggle.
