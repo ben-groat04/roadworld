@@ -214,7 +214,7 @@ const testName = (l) => { const m = l.match(/^\s*(?:DOCTEST_)?TEST_CASE(?:_TEMPL
 //   CHECK(true); `if (false)`; Approx epsilon/margin widened; an early `return;`; a redefined CHECK macro; a CHECK moved under an `if`; an edited
 //   expected value on an assertion line; a test case or scene check deleted or renamed; a test source dropped from the test build (CMake `#` comments
 //   stripped first); a scene check with a hard-coded `pass: true`.
-// WHAT IT CANNOT SEE: a test that is made vacuous without touching an assertion line (an empty fixture, a loop over zero cases, input changed so the
+// WHAT IT CANNOT SEE: a check moved into a helper that is never called; a test made vacuous without touching an assertion line (an empty fixture, a loop over zero cases, input changed so the
 // check passes trivially); a reworded expectation spread over several lines; a waiver in a test location outside WAIVER_PATHS; anything done with
 // the build dir or CTest flags instead of the sources. diffText: unified diff (-U0); contents: { file: { old, new } } enables the effective-count check.
 const ASSERT_RE = /\b(?:GRADE_CHECK|(?:DOCTEST_)?(?:CHECK|REQUIRE)(?:_MESSAGE|_EQ|_NE|_FALSE|_THROWS\w*|_NOTHROW)?)\s*\(/;

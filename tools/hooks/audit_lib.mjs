@@ -155,9 +155,26 @@ export function auditProblems(handinDir, rec, root = ROOT, actualId = null, opts
 }
 
 // Every recorded hand-in with no valid AUDIT.md. Records whose folder is gone everywhere are dropped (nothing left to audit).
+// The gate log keeps an "audit owed" line for every hand-in that passed. A builder record that was DELETED (or never verifies, e.g. its signature was lost) does not
+// cancel the debt while the progress folder still exists: the newest owed line per folder stands in for the record (auditgate audit fault 6). The log is only
+// trusted to ADD a debt (a forged line makes a nuisance, never a clearance); a clearance still needs the signed audit record.
+export function owedInLog(stateDir = STATE_DIR) {
+  const NL = String.fromCharCode(10), byDir = new Map();
+  let lines = [];
+  try { lines = fs.readFileSync(path.join(stateDir, 'gate.log'), 'utf8').split(NL); } catch { return []; }
+  for (const l of lines) {
+    if (!l.includes('"decision":"owed"')) continue;
+    const e = parseJson(l);
+    if (e && e.gate === 'audit' && e.decision === 'owed' && e.handin_dir && e.builder_id) byDir.set(path.resolve(e.handin_dir).split(path.sep).join('/').toLowerCase(), { v: 3, handin_dir: e.handin_dir, agent_id: e.builder_id, agent_type: e.builder_type || '', passed_at: e.ts, from_log: true });
+  }
+  return [...byDir.values()];
+}
 export function auditOwed(stateDir = STATE_DIR, root = ROOT) {
   const out = [];
-  for (const rec of allBuilders(stateDir)) {
+  const have = allBuilders(stateDir);
+  const key = (d) => path.resolve(d).split(path.sep).join('/').toLowerCase();
+  const seen = new Set(have.map((r) => key(r.handin_dir)));
+  for (const rec of [...have, ...owedInLog(stateDir).filter((r) => !seen.has(key(r.handin_dir)))]) {
     const folders = auditFiles(rec.handin_dir, root).map((f) => path.dirname(f));
     if (!folders.some((d) => fs.existsSync(d))) continue;
     const problems = auditProblems(rec.handin_dir, rec, root, null, { stateDir });

@@ -609,8 +609,8 @@ console.log('hand-in freshness, counter reset, owner quotes, COMPARE relevance, 
   const cmpDir = path.join(wt, 'cmp', 'docs', 'progress', 'cmp'); fs.mkdirSync(cmpDir, { recursive: true });
   const mkPng = (w, h) => { const b = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0); b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'latin1'); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); return b; };
   for (const f of ['c.png', 'b.png']) fs.writeFileSync(path.join(cmpDir, f), 'x');
-  fs.writeFileSync(path.join(cmpDir, 'r.png'), mkPng(100, 100));
-  fs.writeFileSync(path.join(cmpDir, 'r.stats.json'), JSON.stringify({ view: 'r', width: 100, height: 100, diagnostic: false, road_px: 900, debug_px: 0, png_sha1: crypto.createHash('sha1').update(mkPng(100, 100)).digest('hex') }));
+  fs.writeFileSync(path.join(cmpDir, 'r.png'), mkPng(800, 450));
+  fs.writeFileSync(path.join(cmpDir, 'r.stats.json'), JSON.stringify({ view: 'r', width: 800, height: 450, diagnostic: false, road_px: 9000, debug_px: 0, png_sha1: crypto.createHash('sha1').update(mkPng(800, 450)).digest('hex') }));
   fs.writeFileSync(path.join(cmpDir, 'STATUS.md'), goodStatus);
   fs.writeFileSync(path.join(cmpDir, 'FAULTS.md'), '## Pass 1\n\nthe kerb stops 4 m short of the island on the south arm\n\n## Pass 2\n\nthe give-way line is a stub, not a span across the whole arm\n\n## Pass 3\n\nthe hatching bars cross the kerb line at the island nose\n\n## Residual\n\nnone, all fixed\n');
   const cmp = (rows) => { fs.writeFileSync(path.join(cmpDir, 'COMPARE.md'), '| case | render | reference | composite | before | subject/type | scale | viewpoint |\n|---|---|---|---|---|---|---|---|\n' + rows + '\n'); return spawnSync(process.execPath, [path.join(root, 'tools/check_handin.mjs'), cmpDir, '--main', root, '--gates-version', '2'], { cwd: elsewhere, encoding: 'utf8' }); };
@@ -866,6 +866,29 @@ console.log('gates3 hooks, part 2: BLOCKED for old-layout briefs, once per finis
   t('six processes asking for a secret in a fresh state dir all get the same one', new Set(kids).size === 1 && kids[0].length === 24, JSON.stringify(kids));
   const rec = lib.signRecord({ a: 1, b: 'x' }, sd);
   t('signRecord / verifyRecord: a signed record verifies, an edited one does not, a record without sig does not', lib.verifyRecord(rec, sd) && !lib.verifyRecord({ ...rec, a: 2 }, sd) && !lib.verifyRecord({ a: 1, b: 'x' }, sd) && !lib.verifyRecord(rec, path.join(tmp, 'other_state')));
+}
+
+console.log('gates3 hooks, part 3: a deleted builder record does not cancel the debt (auditgate audit fault 6)');
+{
+  const al = await import(pathToFileURL(path.join(src, 'tools/hooks/audit_lib.mjs')).href);
+  const rt = path.join(tmp, 'debt'); fs.mkdirSync(path.join(rt, '.claude/state/builders'), { recursive: true });
+  const sd = path.join(rt, '.claude/state');
+  const folder = path.join(tmp, 'wtdebt', 'docs', 'progress', 'debt'); fs.mkdirSync(folder, { recursive: true });
+  const B = Date.UTC(2026, 0, 1, 12, 0, 0);
+  const rec = al.recordBuilder(folder, 'db1', 'general-purpose', sd, B).rec;
+  fs.appendFileSync(path.join(sd, 'gate.log'), JSON.stringify({ ts: new Date(B).toISOString(), gate: 'audit', decision: 'owed', reason: 'audit owed: hand-in passed', handin_dir: folder, builder_id: 'db1', builder_type: 'general-purpose' }) + '\n');
+  t('owed while the builder record exists', al.auditOwed(sd, rt).length === 1);
+  fs.rmSync(path.join(sd, 'builders', al.builderKey(folder) + '.json'));
+  const owed = al.auditOwed(sd, rt);
+  t('the builder record DELETED: still owed (the "audit owed" log line stands in), builder id taken from the log', owed.length === 1 && owed[0].builder_id === 'db1', JSON.stringify(owed));
+  const text = 'Auditor agent: da1\nVerdict: accept\nReferences opened: 1 of 1\n\n## Faults, ranked\n\nthe kerb line in render r3 misses the photo by one lane width at the junction\n';
+  fs.writeFileSync(path.join(folder, 'AUDIT.md'), text); fs.utimesSync(path.join(folder, 'AUDIT.md'), new Date(B + 60000), new Date(B + 60000));
+  t('a typed AUDIT.md does not clear it', al.auditOwed(sd, rt).length === 1);
+  al.recordAudit(folder, { auditorId: 'da1', builderId: 'db1', verdict: 'accept', text }, sd, B + 120000);
+  t('the signed audit record clears it', al.auditOwed(sd, rt).length === 0, JSON.stringify(al.auditOwed(sd, rt)));
+  fs.rmSync(folder, { recursive: true, force: true });
+  fs.rmSync(path.join(sd, 'audits', al.builderKey(folder) + '.json'), { force: true });
+  t('a progress folder that no longer exists anywhere is not listed (nothing left to audit; documented limit)', al.auditOwed(sd, rt).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
