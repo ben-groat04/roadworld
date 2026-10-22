@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 
 export const METRICS = ['scene_check', 'ctest failed_assertions', 'ctest failed_tests'];
@@ -397,6 +398,37 @@ export function headlineViews(compareText) {
 function pngSize(file) {
   try { const b = fs.readFileSync(file); if (b.length < 24 || b.toString('latin1', 1, 4) !== 'PNG') return null; return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) }; } catch { return null; }
 }
+// Decodes an 8-bit, non-interlaced RGB/RGBA PNG far enough to count distinct colours (a flat or near-blank picture is not a render). Anything else
+// (palette, 16-bit, interlaced, truncated, header-only) returns { decoded: false } and the check is skipped, never failed: this is a plausibility check on
+// the pictures our own render tools write (Chromium screenshots are 8-bit RGBA), not a PNG validator.
+export function pngColourCount(file) {
+  try {
+    const b = fs.readFileSync(file);
+    if (b.length < 33 || b.toString('latin1', 1, 4) !== 'PNG') return { decoded: false };
+    const W = b.readUInt32BE(16), H = b.readUInt32BE(20), depth = b[24], ctype = b[25], interlace = b[28];
+    if (depth !== 8 || (ctype !== 2 && ctype !== 6) || interlace !== 0 || W * H > 40e6) return { decoded: false };
+    const bpp = ctype === 6 ? 4 : 3, idat = [];
+    for (let o = 8; o + 12 <= b.length;) { const len = b.readUInt32BE(o), type = b.toString('latin1', o + 4, o + 8); if (type === 'IDAT') idat.push(b.subarray(o + 8, o + 8 + len)); if (type === 'IEND') break; o += 12 + len; }
+    if (!idat.length) return { decoded: false };
+    const raw = zlib.inflateSync(Buffer.concat(idat)), stride = W * bpp;
+    if (raw.length < (stride + 1) * H) return { decoded: false };
+    const prev = Buffer.alloc(stride), cur = Buffer.alloc(stride), seen = new Set();
+    for (let y = 0; y < H; y++) {
+      const ft = raw[y * (stride + 1)], line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+      for (let i = 0; i < stride; i++) {
+        const a = i >= bpp ? cur[i - bpp] : 0, up = prev[i], c = i >= bpp ? prev[i - bpp] : 0;
+        let v = line[i];
+        if (ft === 1) v += a; else if (ft === 2) v += up; else if (ft === 3) v += (a + up) >> 1;
+        else if (ft === 4) { const p = a + up - c, pa = Math.abs(p - a), pb = Math.abs(p - up), pc = Math.abs(p - c); v += pa <= pb && pa <= pc ? a : pb <= pc ? up : c; }
+        else if (ft !== 0) return { decoded: false };
+        cur[i] = v & 255;
+      }
+      if (y % 7 === 0) for (let x = 0; x < W; x += 3) seen.add((cur[x * bpp] >> 3) << 10 | (cur[x * bpp + 1] >> 3) << 5 | (cur[x * bpp + 2] >> 3));
+      cur.copy(prev);
+    }
+    return { decoded: true, colours: seen.size, width: W, height: H };
+  } catch { return { decoded: false }; }
+}
 function walkFiles(dir, depth = 0, out = []) {
   if (depth > 4) return out;
   let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
@@ -464,6 +496,10 @@ export function pictureProblems(folder, compareText, opts = {}) {
     if (sz.width !== W || sz.height !== H) { problems.push(`${b}.stats.json says ${W}x${H} but the PNG is ${sz.width}x${sz.height}`); continue; }
     const counts = [s.road_px, s.marking_px || 0, s.ground_px || 0, s.debug_px || 0];
     if (counts.some((c) => !(c >= 0) || !Number.isFinite(c)) || s.road_px > px || (s.debug_px || 0) > px || (s.road_px + (s.debug_px || 0)) > px) { problems.push(`${b}.stats.json: pixel counts do not fit the ${W}x${H} frame (road ${s.road_px}, debug ${s.debug_px || 0}, frame ${px})`); continue; }
+    // plausibility of the picture itself: a real render is not tiny and not one flat colour (a typed record with a matching stub PNG would otherwise pass)
+    if (W < 320 || H < 180) { problems.push(`${path.basename(pngFile)} is only ${W}x${H}: a render the cold viewer opens is at least 320x180`); continue; }
+    const pc = pngColourCount(pngFile);
+    if (pc.decoded && pc.colours < 16) { problems.push(`${path.basename(pngFile)} has ${pc.colours} distinct colours: a flat or blank picture is not a render of the subject`); continue; }
     const roadFrac = s.road_px / px, dbg = (s.debug_px || 0) / px;
     if (roadFrac < minRoad) problems.push(`view "${b}": road surface covers ${(roadFrac * 100).toFixed(2)}% of the frame (need at least ${(minRoad * 100).toFixed(1)}%): the subject is not in the picture. If this is deliberately a close-up of something else, declare it "diagnostic": true in the views json, keep it out of COMPARE.md and explain it in STATUS.md. If you cannot produce a view of the subject, write a BLOCKED line in STATUS.md instead of handing in a picture without it`);
     if (dbg > maxDebug) problems.push(`view "${b}": ${(dbg * 100).toFixed(2)}% of the frame is in debug colours (${Object.entries(s.debug_by_class || {}).map(([k, v]) => k + ' ' + v + ' px').join(', ')}; allowed ${(maxDebug * 100).toFixed(2)}%): a placeholder "needs structure" or rock-cut surface is on screen where a structure or ground should be`);

@@ -203,7 +203,7 @@ try {
     const mb = headMain.status === 0 ? git(wtRoot, 'merge-base', 'HEAD', String(headMain.stdout).trim()) : { status: 1 };
     if (mb.status === 0) {
       const base = String(mb.stdout).trim();
-      const added = [...String(git(wtRoot, 'diff', '--name-only', '--diff-filter=A', base, '--', 'sim_core/src').stdout).split('\n'), ...String(git(wtRoot, 'ls-files', '--others', '--exclude-standard', '--', 'sim_core/src').stdout).split('\n')].filter((f) => /^sim_core\/src\/[^/]+\.cpp$/.test(f));
+      const added = [...String(git(wtRoot, 'diff', '--name-only', '--diff-filter=AR', base, '--', 'sim_core/src').stdout).split('\n'), ...String(git(wtRoot, 'ls-files', '--others', '--exclude-standard', '--', 'sim_core/src').stdout).split('\n')].filter((f) => /^sim_core\/src\/[^/]+\.cpp$/.test(f));
       if (added.length) {
         const cw = await import('./check_wrappers.mjs');
         const wp = cw.wrapperProblems(wtRoot);
