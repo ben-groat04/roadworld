@@ -29,3 +29,6 @@ docs/reference/_compare/
 
 # Stray logs at the repo root (build logs, downloads)
 /*.log
+
+# Personal Claude settings
+.claude/settings.local.json
