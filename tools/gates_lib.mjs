@@ -279,8 +279,8 @@ export function pictureProblems(folder, compareText, opts = {}) {
 }
 
 // ---------- D: STATUS reading ----------
-const USAGE_RE = /usage\s+(?:limit|window|warning)|session\s+limit|token\s+(?:budget|limit)|\bquota\b|out\s+of\s+(?:time|tokens|context)|running\s+(?:out\s+of|low\s+on)\s+(?:time|tokens|context)|context\s+(?:limit|window)|rate\s+limit|ran\s+out\s+of\s+(?:time|tokens)|no\s+time\s+left|time\s+limit|(?:short|low)\s+on\s+time|ran\s+short\s+of\s+time|limited\s+time|time\s+constraints?/i;
-const NOT_ATTEMPTED_RE = /\bnot\s+(?:attempted|tried|started|done)\b|\b(?:did|have|had)\s+not\s+(?:attempt|try|get\s+to)|\bdidn'?t\s+(?:attempt|try|get\s+to)|\bnever\s+(?:attempted|tried)|\bleft\s+(?:undone|for\s+later)\b|\bdeferred\b|\bpostponed\b|\bfor\s+the\s+next\s+round\b/i;
+const USAGE_RE = /usage\s+(?:limit|window|warning)|session\s+limit|token\s+(?:budget|limit)|(?:hit|reached|exceeded)\s+(?:the|my|a)\s+quota|out\s+of\s+(?:time|tokens|context)|running\s+(?:out\s+of|low\s+on)\s+(?:time|tokens|context)|context\s+(?:limit|window)|rate\s+limit|ran\s+out\s+of\s+(?:time|tokens)|no\s+time\s+left|(?:hit|reach\w*|due\s+to|because\s+of|ran\s+into)\s+(?:the\s+|a\s+)?time\s+limit|(?:short|low)\s+on\s+time|ran\s+short\s+of\s+time|limited\s+time|time\s+constraints?/i;
+const NOT_ATTEMPTED_RE = /\bnot\s+(?:attempted|tried|started|done)\b|\b(?:did|have|had)\s+not\s+(?:attempt|try|get\s+to)|\bdidn'?t\s+(?:attempt|try|get\s+to)|\bnever\s+(?:attempted|tried)|\bleft\s+(?:undone|for\s+later)\b|\bdeferred\b|\bpostponed\b|\bfor\s+the\s+next\s+round\b|\bwill\s+do\s+(?:this\s+)?(?:next\s+round|later)\b/i;
 export function statusProblems(statusText, faultsText) {
   const problems = [];
   const lines = String(statusText || '').replace(/<!--[\s\S]*?-->/g, '').split('\n');

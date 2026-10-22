@@ -71,6 +71,8 @@ const good3 = '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe
 t('clean STATUS and 3 passes: no problems', GL.statusProblems('## Skipped, refused or failed\n\nNothing skipped.\n', good3).length === 0);
 let sp = GL.statusProblems('## Skipped, refused or failed\n- Not attempted: wall curl at road ends\n', good3); t('"Not attempted" item: refused', sp.length === 1 && /not attempted/i.test(sp[0]), sp.join('|'));
 sp = GL.statusProblems('- I did not attempt a fix of the pit\n', good3); t('"did not attempt": refused', sp.length === 1);
+for (const ok of ['- the time limit of the scene check is 240 s', '- the quota of lane widths per arm is 3']) { sp = GL.statusProblems(ok + '\n', good3); t('ordinary use of "time limit"/"quota" is not a usage reason: ' + ok, sp.length === 0, sp.join('|')); }
+for (const bad of ['hit the time limit', 'will do next round']) { sp = GL.statusProblems('- ' + bad + '\n', good3); t('refused: ' + bad, sp.length >= 1, sp.join('|')); }
 sp = GL.statusProblems('- never tried the curl\n', good3); t('"never tried": refused', sp.length === 1);
 sp = GL.statusProblems('- wall curl: tried a ramp, blocked by the crossing road (the ground stays 2 m high)\n', good3); t('"tried ... blocked by ...": allowed', sp.length === 0, sp.join('|'));
 for (const phrase of ['Pass 3 not done (usage window)', 'stopped because of the usage limit', 'ran out of tokens', 'running out of time', 'context window nearly full', 'hit the rate limit', 'token budget', 'no time left']) {
