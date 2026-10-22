@@ -17,6 +17,16 @@ const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok  
 const git = (cwd, ...a) => { const r = spawnSync('git', a, { cwd, encoding: 'utf8' }); if (r.status !== 0) throw new Error('git ' + a.join(' ') + ': ' + r.stderr); return r.stdout.trim(); };
 const w = (p, s) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); };
 const mkPng = (wd, ht) => { const b = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0); b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'latin1'); b.writeUInt32BE(wd, 16); b.writeUInt32BE(ht, 20); return b; };
+import zlib from 'node:zlib';
+// a real 8-bit RGBA PNG (filter 0), pixel colour from fn(x, y) -> [r, g, b]
+const realPng = (wd, ht, fn) => {
+  const raw = Buffer.alloc((wd * 4 + 1) * ht);
+  for (let y = 0; y < ht; y++) for (let x = 0; x < wd; x++) { const [r, g, b] = fn(x, y); const o = y * (wd * 4 + 1) + 1 + x * 4; raw[o] = r; raw[o + 1] = g; raw[o + 2] = b; raw[o + 3] = 255; }
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const body = Buffer.concat([Buffer.from(type, 'latin1'), data]); const crc = Buffer.alloc(4); crc.writeInt32BE(crc32(body)); return Buffer.concat([len, body, crc]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(wd, 0); ihdr.writeUInt32BE(ht, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+};
+const crc32 = (buf) => { let c, crc = -1; for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 255; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; crc = (crc >>> 8) ^ c; } return ~crc; };
 const sha1 = (buf) => crypto.createHash('sha1').update(buf).digest('hex');
 
 // ======================================================= grammar
@@ -289,13 +299,13 @@ console.log('self-audit hardening');
   let sp = GL.statusProblems('ok\n', '## Pass 1\n\n## Pass 2\n\n## Pass 3\n\n## Residual\nnone\n'); t('three EMPTY "## Pass N" headings are not three passes', sp.some((x) => /empty, filler or under 40/.test(x)) && sp.some((x) => /need 3/.test(x)), sp.join('|'));
   // stats bound to the picture bytes
   const pf3 = path.join(tmp, 'pic3'); fs.mkdirSync(pf3);
-  const realPng = mkPng(100, 100); w(path.join(pf3, 'v_aerial.png'), realPng);
+  const realPng = mkPng(800, 450); w(path.join(pf3, 'v_aerial.png'), realPng);
   const sha = (s) => crypto.createHash('sha1').update(s).digest('hex');
-  const st = (o) => w(path.join(pf3, 'v_aerial.stats.json'), JSON.stringify({ width: 100, height: 100, diagnostic: false, road_px: 900, debug_px: 0, ...o }));
+  const st = (o) => w(path.join(pf3, 'v_aerial.stats.json'), JSON.stringify({ width: 800, height: 450, diagnostic: false, road_px: 9000, debug_px: 0, ...o }));
   st({ png_sha1: sha(realPng) }); let pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('stats with the hash of the PNG next to it: passes', pp2.problems.length === 0, pp2.problems.join('|'));
   st({ png_sha1: sha('another picture') }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('stats made for another picture (hash differs): refused, says to render again', pp2.problems.some((x) => /not made for v_aerial\.png/.test(x)), pp2.problems.join('|'));
   st({}); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('a hand-typed stats file without png_sha1: refused', pp2.problems.some((x) => /no png_sha1/.test(x)), pp2.problems.join('|'));
-  w(path.join(pf3, 'v_aerial.png'), mkPng(100, 101)); st({ png_sha1: sha(realPng) }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('the PNG edited after the stats were written: refused', pp2.problems.some((x) => /hash differs/.test(x)), pp2.problems.join('|'));
+  w(path.join(pf3, 'v_aerial.png'), mkPng(800, 451)); st({ png_sha1: sha(realPng) }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('the PNG edited after the stats were written: refused', pp2.problems.some((x) => /hash differs/.test(x)), pp2.problems.join('|'));
   // --accept does not fail open
   fakeScene(21, 21);
   fs.rmSync(path.join(wt, 'prototypes/road-draw/node_modules'), { recursive: true });
@@ -357,10 +367,10 @@ console.log('STATUS reading: excuses, honest blocks, false positives (gates2 aud
 {
   const ok3 = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe line is a stub and not a span across the arm\n## Pass 3\nthe bars cross the kerb line at the island nose\n## Residual\nnone\n';
   const bad = (txt) => GL.statusProblems('## Skipped, refused or failed\n' + txt + '\n', ok3);
-  for (const phrase of ['not implemented', 'not finished', 'still open', 'out of scope', 'skipped the curl', 'TODO: curl', 'a follow-up for the curl', 'future work', 'ran short of tokens', 'usage cap hit', 'usage allowance used up', 'not enough time for the pit', 'no time for the pit', 'time pressure', 'token budget gone', 'untouched', 'not addressed', 'not fixed', "wasn't attempted", 'wasn\u2019t attempted', 'would need a bigger change, later round', 'left for later', 'will do next round', 'budget ran out']) {
+  for (const phrase of ['not implemented', 'not finished', 'still open', 'out of scope', 'skipped the curl', 'TODO: curl', 'a follow-up for the curl', 'future work', 'ran short of tokens', 'usage cap hit', 'usage allowance used up', 'not enough time for the pit', 'no time for the pit', 'time pressure', 'token budget gone', 'untouched', 'not addressed', 'not fixed', "wasn't attempted", 'wasn\u2019t attempted', 'would need a bigger change, later round', 'left for later', 'will do next round', 'budget ran out', 'could not finish the curl', 'unable to implement the pit', 'gave up on the curl', 'the pit is unfinished', 'the kerb is partly done', 'half implemented']) {
     t('excuse refused: "' + phrase + '"', bad('- ' + phrase).length >= 1, bad('- ' + phrase).join('|'));
   }
-  for (const okp of ['deferred shading is used for the sky dome', 'a time constraint of 5 ms per frame applies to the tile build', 'the API rate limit is 100 requests per minute', 'the context window of the camera is 90 degrees', 'not done by design: the road ends at the island', 'Nothing skipped, refused or failed.', 'no tests were skipped']) {
+  for (const okp of ['deferred shading is used for the sky dome', 'a time constraint of 5 ms per frame applies to the tile build', 'the API rate limit is 100 requests per minute', 'the context window of the camera is 90 degrees', 'not done by design: the road ends at the island', 'Nothing skipped, refused or failed.', 'no tests were skipped', 'the engine cannot model a tunnel under a river in one mesh', 'the scene check failed to find node_modules and I installed it', 'incomplete data in the fixture is handled by a default']) {
     t('honest text is not mistaken for an excuse: "' + okp + '"', bad('- ' + okp).length === 0, bad('- ' + okp).join('|'));
   }
   const blk = 'BLOCKED: wall curl at the road ends | tried: a ramp, a fillet and a longer fade, three renders | blocked by: the crossing road keeps the ground 2 m high (see s4 render) | needs: a decision on the crossing level';
@@ -435,6 +445,22 @@ console.log('picture gate: layouts, forged records, diagnostic flags (gates2 aud
   // scene.mjs writes the same record (task C named scene.mjs)
   const sceneSrc = fs.readFileSync(path.join(src, 'prototypes/road-draw/tools/scene.mjs'), 'utf8');
   t('scene.mjs writes <view>.stats.json next to each render (png_sha1, road_px, debug_px, width, height)', /stats\.json/.test(sceneSrc) && /png_sha1/.test(sceneSrc) && /road_px/.test(sceneSrc) && /debug_px/.test(sceneSrc) && /writeStats\(name\)/.test(sceneSrc));
+}
+
+console.log('picture plausibility: size and flat pictures');
+{
+  const pq = path.join(tmp, 'picq'); fs.mkdirSync(pq);
+  const put = (name, png, o = {}) => { w(path.join(pq, name + '.png'), png); w(path.join(pq, name + '.stats.json'), JSON.stringify({ width: o.width || 800, height: o.height || 450, diagnostic: false, road_px: o.road_px ?? 30000, debug_px: 0, png_sha1: sha1(png) })); };
+  const cm = (n) => '| c | ' + n + '.png | r | c | b | x | y | z |';
+  put('real_aerial', realPng(800, 450, (x, y) => [(x * 7) & 255, (y * 5) & 255, ((x + y) * 3) & 255]));
+  let pp = GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm('real_aerial') + '\n'); t('a decodable 800x450 picture with many colours: passes', pp.problems.length === 0, pp.problems.join('|'));
+  t('pngColourCount decodes the writer\'s PNG', GL.pngColourCount(path.join(pq, 'real_aerial.png')).decoded === true && GL.pngColourCount(path.join(pq, 'real_aerial.png')).colours > 100);
+  put('flat_aerial', realPng(800, 450, () => [90, 120, 60]));
+  pp = GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm('flat_aerial') + '\n'); t('a flat single-colour PNG with a matching typed record: refused ("flat or blank picture")', pp.problems.some((x) => /flat or blank picture/.test(x)), pp.problems.join('|'));
+  put('tiny_aerial', realPng(40, 20, (x, y) => [x * 6, y * 12, 7]), { width: 40, height: 20, road_px: 100 });
+  pp = GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm('tiny_aerial') + '\n'); t('a 40x20 picture: refused as too small', pp.problems.some((x) => /tiny_aerial/.test(x) && /only 40x20/.test(x)), pp.problems.join('|'));
+  put('hdr_aerial', mkPng(800, 450));
+  pp = GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm('hdr_aerial') + '\n'); t('a header-only PNG cannot be decoded: the colour check is skipped, not failed (size and hash still apply)', !pp.problems.some((x) => /hdr_aerial/.test(x)), pp.problems.join('|'));
 }
 
 console.log('ctest gate (gates2 audit fault 3)');

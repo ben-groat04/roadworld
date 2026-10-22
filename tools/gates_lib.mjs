@@ -534,7 +534,14 @@ const NOT_DONE_RE = new RegExp([
 ].join('|'), 'i');
 
 // "skipped" is an excuse unless the sentence negates it ("nothing skipped", "no tests were skipped", "not skipped")
-const notDone = (l) => NOT_DONE_RE.test(l) || (/(?<![\d%]\s?)\bskipped\b/i.test(l) && !/\b(?:no|nothing|none|not|never|without)\b[^.\n]{0,40}\bskipped\b/i.test(l));
+// Further disguises of "not done": could not / unable to + a work verb, gave up, unfinished / unresolved / incomplete, partly done. (A bare "cannot" or "incomplete" in
+// technical prose about the engine is not matched: the verb or the word "work" must be there.)
+const NOT_DONE_MORE_RE = new RegExp([
+  String.raw`\b(?:could\s*not|couldn${AP}t|unable\s+to)\s+(?:finish|complete|implement|fix|do|get|make|build|address|add|write|run|render|attempt)\b`,
+  String.raw`\bgave\s+up\b`, String.raw`\bunfinished\b`, String.raw`\bunresolved\b`, String.raw`\b(?:partial(?:ly)?|partly|half)[- ](?:done|implemented|finished|fixed|complete|completed)\b`,
+  String.raw`\bnot\s+(?:yet\s+)?(?:been\s+)?(?:done|implemented|finished|fixed|addressed|written|built)\s+(?:yet|at\s+all)\b`,
+].join('|'), 'i');
+const notDone = (l) => NOT_DONE_RE.test(l) || NOT_DONE_MORE_RE.test(l) || (/(?<![\d%]\s?)\bskipped\b/i.test(l) && !/\b(?:no|nothing|none|not|never|without)\b[^.\n]{0,40}\bskipped\b/i.test(l));
 
 // BLOCKED form: `BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | needs: <what unblocks it>`
 const FILLER_RE = /^(?:nothing|none|n\/?a|no|tbd|todo|unknown|time|\?+|-+|\.+|see above|same)\W*$/i;
