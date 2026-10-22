@@ -8,12 +8,14 @@
 // closes help, hides the profile panel, then writes <outDir>/<view>.png at 1400x800.
 // Prints console errors and exits 1 if there are any.
 import { chromium } from 'playwright-core';
-import { mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PAGE = pathToFileURL(resolve(HERE, '..', 'index.html')).href;
+const pageArg = process.argv.indexOf('--page') >= 0 ? process.argv[process.argv.indexOf('--page') + 1] : null;   // --page <file>: load this built page instead of ../index.html (the hand-in gate builds into a temp dir)
+const PAGE = pathToFileURL(pageArg ? resolve(pageArg) : resolve(HERE, '..', 'index.html')).href;
 
 // ===================== TWEAKABLE CONSTANTS (world metres; x east, y north; terrain seed 1337) =====================
 // Road type ids: 1 residential, 2 B road, 3 A road dual, 4 motorway.
@@ -77,7 +79,7 @@ const CAM = optVal('--cam'), SCENARIO = optVal('--scenario') || 'canonical', CAM
 const camNums = CAM ? CAM.split(',').map(Number) : null;
 if (CAM && (camNums.length !== 6 || camNums.some(isNaN))) { console.error('--cam wants x,y,z,tx,ty,tz (world metres; z up)'); process.exit(2); }
 if (!['canonical', 'interchange'].includes(SCENARIO)) { console.error('unknown --scenario ' + SCENARIO + '; have: canonical interchange'); process.exit(2); }
-const argv = []; { const a = process.argv.slice(2); for (let i = 0; i < a.length; i++) { if (a[i] === '--check') continue; if (['--cam', '--scenario', '--name', '--eval'].includes(a[i])) { i++; continue; } argv.push(a[i]); } }
+const argv = []; { const a = process.argv.slice(2); for (let i = 0; i < a.length; i++) { if (a[i] === '--check') continue; if (['--cam', '--scenario', '--name', '--eval', '--page'].includes(a[i])) { i++; continue; } argv.push(a[i]); } }
 const outDir = resolve(argv[0] || '.');
 const wanted = argv.slice(1);
 const names = CAM || optVal('--eval') ? [] : wanted.length ? wanted : Object.keys(VIEWS);
@@ -277,6 +279,33 @@ for (const name of names.sort((a, b) => (a === 'interchange') - (b === 'intercha
   await page.waitForTimeout(250);   // let the main loop apply updateCamera (terrain-following) before the final render
   await page.evaluate(() => window.__proto.renderNow());
   await page.screenshot({ path: resolve(outDir, name + '.png') });
+  await writeStats(name);
+}
+
+
+// Per-view record next to each render (hand-in gate, tools/gates_lib.mjs pictureProblems): a flat-colour pass over the same camera counts the pixels
+// showing road surface (userData.kind 'surface'), structures and everything else. This viewer has no debug-colour classes, so debug_px is 0 by construction.
+async function writeStats(name) {
+  try {
+    const st = await page.evaluate(() => {
+      const P = window.__proto, THREE = P.THREE, scene = P.scene, saved = new Map(), flat = {};
+      const CLS = { road: [255, 0, 0], structure: [0, 255, 0], other: [255, 0, 255] };
+      const mat = c => (flat[c] ??= new THREE.MeshBasicMaterial({ color: new THREE.Color(CLS[c][0] / 255, CLS[c][1] / 255, CLS[c][2] / 255), fog: false, toneMapped: false }));
+      scene.traverse(o => { if (o.isMesh && o.material && !o.userData.isSky) { saved.set(o, o.material); o.material = mat(o.userData.kind === 'surface' ? 'road' : ['wall', 'pier', 'deck', 'abutment', 'parapet', 'portal', 'lining'].includes(o.userData.kind) ? 'structure' : 'other'); } });
+      const fogN = scene.fog.near, fogF = scene.fog.far, bg = scene.background; scene.fog.near = 1e9; scene.fog.far = 2e9; scene.background = new THREE.Color(0, 0, 0);
+      P.renderNow();
+      const cv = document.querySelector('canvas'), c = document.createElement('canvas'); c.width = cv.width; c.height = cv.height;
+      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(cv, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data, counts = {};
+      for (let i = 0; i < d.length; i += 4) for (const n of Object.keys(CLS)) { const k = CLS[n]; if (Math.abs(d[i] - k[0]) < 24 && Math.abs(d[i + 1] - k[1]) < 24 && Math.abs(d[i + 2] - k[2]) < 24) { counts[n] = (counts[n] || 0) + 1; break; } }
+      for (const [o, m] of saved) o.material = m;
+      scene.fog.near = fogN; scene.fog.far = fogF; scene.background = bg; P.renderNow();
+      return { width: c.width, height: c.height, counts };
+    });
+    const png = resolve(outDir, name + '.png');
+    writeFileSync(resolve(outDir, name + '.stats.json'), JSON.stringify({ view: name, png_sha1: createHash('sha1').update(readFileSync(png)).digest('hex'), width: st.width, height: st.height, diagnostic: false,
+      road_px: st.counts.road || 0, marking_px: 0, ground_px: st.counts.other || 0, structure_px: st.counts.structure || 0, debug_px: 0, debug_by_class: {}, written_by: 'prototypes/road-draw/tools/scene.mjs' }, null, 1));
+  } catch (e) { console.error('stats pass failed for ' + name + ': ' + e.message); }
 }
 
 if (optVal('--eval') && SCENARIO === 'interchange') { const fx = ['interchange.json', 'sample.json'].map(f => resolve(HERE, '..', 'fixtures', f)).find(existsSync); await page.evaluate(j => window.__inspect.load(j, 'fixture'), readFileSync(fx, 'utf8')); }
@@ -294,7 +323,7 @@ if (CAM) {   // custom camera: the target is moved along the view ray onto the g
   }, { c: camNums });
   console.log('cam: looking at ground (' + camInfo.ground.map(v => v.toFixed(1)).join(', ') + '), camera at (' + camInfo.camera.map(v => v.toFixed(1)).join(', ') + ')');
   await page.waitForTimeout(250); await page.evaluate(() => window.__proto.renderNow());
-  await page.screenshot({ path: resolve(outDir, CAM_NAME + '.png') }); names.push(CAM_NAME);
+  await page.screenshot({ path: resolve(outDir, CAM_NAME + '.png') }); names.push(CAM_NAME); await writeStats(CAM_NAME);
 }
 await browser.close();
 const secs = ((Date.now() - t0) / 1000).toFixed(1);
