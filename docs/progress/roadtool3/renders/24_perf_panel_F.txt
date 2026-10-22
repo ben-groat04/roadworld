@@ -1,0 +1,2 @@
+# sim_core output for 24_perf_panel_F.png
+host only: the frame stats panel (ms per frame, GPU name, draw calls) has no engine part. See docs/unreal-ui-parity.md H.4 item 4.

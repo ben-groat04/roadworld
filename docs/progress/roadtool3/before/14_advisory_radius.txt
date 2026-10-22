@@ -1,0 +1,2 @@
+# before this round (14_advisory_radius.png)
+Base: radius advisory used the long type name ("A road / dual carriageway"); no short name in region data.

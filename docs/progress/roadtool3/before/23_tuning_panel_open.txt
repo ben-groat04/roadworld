@@ -1,0 +1,2 @@
+# before this round (23_tuning_panel_open.png)
+Base: only snap angle, snap length and min span existed (DrawParams); no wall start, batter, K multiplier or water level field anywhere in sim_core; no panel data.

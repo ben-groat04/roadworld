@@ -1,0 +1,2 @@
+# before this round (36_edit_after_delete.png)
+Base: profile after delete = none, but not pinned by a test.

@@ -1,0 +1,7 @@
+# sim_core output for the scenario of 14_advisory_radius.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · B road / main road · colour: plain
+cursor z 0.0 m · snap: free
+span 36.8 m · bearing 20° · R at cursor ∞ m · min R 26 m
+grade 0.0% · max 0.0% · G2 ✓ · total 78 m
+⚠ radius 26 m below comfortable 180 m for B road / main road
+ghost colour: normal (advisories do not tint)

@@ -1,0 +1,4 @@
+# sim_core output for the scenario of 42_edit_select_tunnel_profile.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+EDIT · Residential street · colour: plain
+selected road #4 · 240 m · drag handles, PgUp/PgDn height, Del delete
+the second road: 2 edges, profile length 240 m

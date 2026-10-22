@@ -1,0 +1,2 @@
+# sim_core output for 39_finished_tunnel_portal_side.png
+not this round: same as 38_finished_tunnel_portal (portal seen from the side).

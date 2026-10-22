@@ -679,6 +679,7 @@ TEST_CASE("DrawSession: height offset and surface hits") {
 TEST_CASE("DrawSession: clicking the last placed point finishes the stroke; finish and cancel keep the session usable") {
     Rig rig;
     DrawSession d(rig.g, rig.hf);
+    d.params().finish_pick_px = 10;  // the finish cue is opt-in (the prototype has none)
     d.set_road_type("residential");
     // one point: finishing is refused with a reason and nothing is lost
     d.click(at(0, 0), kFree);
@@ -1017,6 +1018,7 @@ TEST_CASE("DrawSession: finish_at_cursor commits exactly the stroke the preview 
 TEST_CASE("DrawSession: finish() still ends at the last clicked point; the would_finish preview is that road") {
     Rig rig;
     DrawSession d(rig.g, rig.hf);
+    d.params().finish_pick_px = 10;  // the finish cue is opt-in (the prototype has none)
     d.set_road_type("residential");
     d.click(at(0, 0), kFree);
     CHECK(d.hover(at(0, 0), kFree).ribbons.empty());  // one point: nothing to show yet
@@ -1047,6 +1049,7 @@ TEST_CASE("DrawSession: finish() still ends at the last clicked point; the would
     // a click on the last point finishes with the same geometry
     Rig rig2;
     DrawSession d2(rig2.g, rig2.hf);
+    d2.params().finish_pick_px = 10;
     d2.set_road_type("residential");
     d2.click(at(0, 0), kFree);
     d2.click(at(60, 10), kFree);
@@ -1373,6 +1376,7 @@ TEST_CASE("DrawSession: the G1 fallback advisory and the CannotFit error through
         DrawSession d(rig.g, rig.hf);
         d.set_road_type("residential");
         d.click(at(0, 0), kFree);
+        d.params().finish_pick_px = 10;
         const DrawPreview guarded = d.hover(at(0.0, 0.0), kFree);
         CHECK(guarded.would_finish);
         const DrawPreview short_span = d.hover(at(2, 0, 0.1), kFree);

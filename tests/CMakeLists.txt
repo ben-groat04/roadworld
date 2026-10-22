@@ -34,6 +34,7 @@ add_executable(sim_core_tests
   test_world.cpp
   test_road_tool.cpp
   test_edit_tool.cpp
+  test_tool_ui.cpp
 )
 target_link_libraries(sim_core_tests PRIVATE sim_core scene_tools)
 target_include_directories(sim_core_tests SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party)

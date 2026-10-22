@@ -1,0 +1,6 @@
+# sim_core output for the scenario of 08b_snap_offset_guide_3x.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain
+cursor z 0.0 m · snap: guide
+span 297.7 m · bearing 150° · R at cursor ∞ m · min R ∞ m
+grade 0.0% · max 0.0% · G2 ✓ · total 298 m
+guide: dashed copy of the road at lateral offset 42.9 m (3 x 14.3 m), ring cyan

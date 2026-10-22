@@ -1,0 +1,2 @@
+# before this round (35_edit_after_drag.png)
+Base: committed as one command; the road's HUD length was one edge; an edit across another road at the same level made no junction.

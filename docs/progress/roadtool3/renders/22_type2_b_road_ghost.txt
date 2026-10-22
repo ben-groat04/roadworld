@@ -1,0 +1,6 @@
+# sim_core output for the scenario of 22_type2_b_road_ghost.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · B road / main road · colour: plain
+cursor z 0.0 m · snap: free
+span 74.8 m · bearing 86° · R at cursor ∞ m · min R 186 m
+grade 0.0% · max 0.0% · G2 ✓ · total 151 m
+ghost ribbons: 1, width each 10.8 m (carriageway 6.5 m)

@@ -1,0 +1,7 @@
+# sim_core output for the scenario of 28_error_crossing_too_close.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain
+cursor z 2.6 m · snap: free
+span 160.0 m · bearing 0° · R at cursor ∞ m · min R ∞ m
+grade 0.0% · max 0.0% · G2 ✓ · total 160 m
+✕ crossing too close vertically (2.6 m): raise/lower to junction or clear 5.3 m
+ghost colour: red (error), ghost ribbons: 1

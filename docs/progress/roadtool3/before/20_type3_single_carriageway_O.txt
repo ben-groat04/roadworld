@@ -1,0 +1,2 @@
+# before this round (20_type3_single_carriageway_O.png)
+Base: one-way flag was not echoed in the preview; no "single carriageway" header.

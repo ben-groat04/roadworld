@@ -1,0 +1,4 @@
+# sim_core output for the scenario of 07_snap_extension_guide.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+DRAW · Residential street · colour: plain
+cursor z 79.2 m · snap: guide
+guide: cyan dashed line from the road end (x 200) to the cursor (x 260), ring cyan 11 px

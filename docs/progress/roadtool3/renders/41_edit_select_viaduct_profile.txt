@@ -1,0 +1,4 @@
+# sim_core output for the scenario of 41_edit_select_viaduct_profile.png (tests/test_tool_ui.cpp; UTF-8, one HUD line per row)
+EDIT · Residential street · colour: plain
+selected road #2 · 300 m · drag handles, PgUp/PgDn height, Del delete
+one road of 2 edges; profile length 300 m, 3 control points, grades +5.0% +5.0%

@@ -1,0 +1,2 @@
+# before this round (12_error_min_span.png)
+Base: MinSpan error, no ghost and no profile were produced but not tested; the HUD line was not produced by the engine.

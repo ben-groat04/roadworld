@@ -1,0 +1,2 @@
+# before this round (32_edit_selected_handles.png)
+Base: selection per engine edge, no length field for the HUD line ("selected road #N . L m ..."), header showed no road type.
