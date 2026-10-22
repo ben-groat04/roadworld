@@ -1,7 +1,7 @@
-# COMPARE (engine and tooling round, HANDIN: no-visual)
+# COMPARE (engine and tooling round; the brief has no renders to compare)
 
-No renders are compared in this round. The evidence images are the round 9 re-renders (scratch, not committed): s4_retaining_wall_run_aerial.png (50.53 % debug colour) and s6_embankment_street.png (0.00 % road) in roadworld-scratch/gates2/r9, each with a .stats.json beside it.
+The brief's no-visual line is prose, not a line of its own, so the finish hook demands this table. The row below is an EVIDENCE row, not a visual comparison: the render is the round 9 s4 aerial re-rendered with this branch's render.mjs (50.53 % debug colour, see its .stats.json beside it); the reference and composite are round 9's own wall photo and composite (not opened by me for this round); the before image is round 9's hand-in picture. Verdict: no visual comparison claimed.
 
 | case | render | reference | composite | before-same-camera | subject/type match | scale match | viewpoint match |
 |---|---|---|---|---|---|---|---|
-| not applicable | none | none | none | none | no renders in this round | no renders in this round | no renders in this round |
+| gate evidence: round 9 s4 retaining wall run, aerial | C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates2\r9\s4_retaining_wall_run_aerial.png | C:\Users\bgbg0\Documents\Programming\roadworld\docs\reference\street\55_wall-bhutan-chelela-paro-145.jpg | C:\Users\bgbg0\Documents\Programming\roadworld\docs\reference\_compare\2026-10-11-structures-r9\s4b_side_hill_realistic_alongB__vs__55.png | C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\s4_retaining_wall_run_aerial.png | evidence row only, no match claimed (tooling round) | evidence row only, no match claimed (tooling round) | evidence row only, no match claimed (tooling round) |
