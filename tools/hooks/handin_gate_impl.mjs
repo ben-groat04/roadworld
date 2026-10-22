@@ -140,8 +140,18 @@ export async function main() {
   if (passed) {
     resetCounter(id);
     // BLOCKED items (STATUS.md "BLOCKED: <item> | tried: ... | blocked by: ... | needs: ..."): an honest "cannot do this" is news for the main session.
-    const blockedLines = String(r.stdout || '').split(String.fromCharCode(10)).filter((l) => l.startsWith('BLOCKED-ITEM:')).map((l) => l.slice(13).trim());
-    if (blockedLines.length) log({ gate: 'blocked', ...base, decision: 'allow', reason: 'BLOCKED', handin_dir: handinDir, items: blockedLines.slice(0, 10), count: blockedLines.length });
+    const NL = String.fromCharCode(10);
+    let blockedLines = String(r.stdout || '').split(NL).filter((l) => l.startsWith('BLOCKED-ITEM:')).map((l) => l.slice(13).trim());
+    if (!blockedLines.length) {
+      // a brief of the older layout (no measured gates): check_handin does not read the form, but the news still goes to the main session
+      try { blockedLines = fs.readFileSync(path.join(handinDir, 'STATUS.md'), 'utf8').split(NL).map((l) => l.trim().replace(/^[-*]\s+/, '')).filter((l) => /^BLOCKED\s*:/i.test(l)).map((l) => l.slice(0, 400)); } catch { /* no STATUS.md: nothing to report */ }
+    }
+    if (blockedLines.length) {
+      // the finish hook runs twice at one finish (PreToolUse, then Stop): the same items are one notice
+      let dup = false;
+      try { const last = fs.readFileSync(path.join(STATE_DIR, 'gate.log'), 'utf8').split(NL).filter((l) => l.includes('"gate":"blocked"') && l.includes(JSON.stringify(handinDir).slice(1, -1))).pop(); dup = !!last && JSON.stringify(parseJson(last).items) === JSON.stringify(blockedLines.slice(0, 10)); } catch { /* no log yet */ }
+      if (!dup) log({ gate: 'blocked', ...base, decision: 'allow', reason: 'BLOCKED', handin_dir: handinDir, items: blockedLines.slice(0, 10), count: blockedLines.length });
+    }
     try {
       const { changed, rec } = recordBuilder(handinDir, id, input.agent_type, STATE_DIR);
       if (changed) log({ gate: 'audit', decision: 'owed', reason: 'audit owed: hand-in passed, no AUDIT.md by a different agent yet', handin_dir: handinDir, builder_id: id, builder_type: rec.agent_type });

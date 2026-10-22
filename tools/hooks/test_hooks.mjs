@@ -844,6 +844,30 @@ console.log('gates3 hooks');
   bl = stop('pa1', paTp); t('...with the table: allowed', bl.code === 0 && bl.out === '', bl.out);
 }
 
+console.log('gates3 hooks, part 2: BLOCKED for old-layout briefs, once per finish; secret creation');
+{
+  const logLines = () => fs.readFileSync(logPath, 'utf8').trim().split('\n').map(J);
+  const blkLine = 'BLOCKED: slip road taper | tried: three taper lengths, each rendered and measured | blocked by: the roundabout branch is not merged so the arm type does not exist yet | needs: the roundabout merge';
+  const tp1 = transcript('blkv1', mk('blkv1', ['--no-visual']));   // a brief of the older layout: no GATES-VERSION line, no status reader
+  fs.mkdirSync(hd('blkv1'), { recursive: true }); fs.writeFileSync(path.join(hd('blkv1'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', blkLine));
+  let b1 = stop('bv1', tp1);
+  t('old-layout brief: a STATUS with a BLOCKED line passes as before and the BLOCKED news is logged anyway (read from STATUS.md by the hook)', b1.code === 0 && b1.out === '' && logLines().filter((e) => e.gate === 'blocked' && e.handin_dir === hd('blkv1')).length === 1, b1.out);
+  b1 = stop('bv1', tp1);
+  t('...the finish hook runs twice at one finish (PreToolUse, then Stop): still ONE blocked entry', logLines().filter((e) => e.gate === 'blocked' && e.handin_dir === hd('blkv1')).length === 1);
+  fs.writeFileSync(path.join(hd('blkv1'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', blkLine + '\nBLOCKED: second thing | tried: another attempt at it | blocked by: another exact error message here | needs: a tool'));
+  stop('bv1', tp1);
+  t('...and a changed set of BLOCKED items is news again', logLines().filter((e) => e.gate === 'blocked' && e.handin_dir === hd('blkv1')).length === 2);
+  // secret creation: never overwritten, exclusive create
+  const lib = await import(pathToFileURL(path.join(src, 'tools/hooks/lib.mjs')).href);
+  const sd = path.join(tmp, 'secret_state');
+  const s1 = lib.ensureSecret(sd), s2 = lib.ensureSecret(sd);
+  t('ensureSecret returns the same secret on every call and never overwrites it', s1 === s2 && lib.readSecret(sd) === s1 && /^[0-9a-f]{24}$/.test(s1));
+  const kids = [0, 1, 2, 3, 4, 5].map(() => spawnSync(process.execPath, ['-e', `import(${JSON.stringify(pathToFileURL(path.join(src, 'tools/hooks/lib.mjs')).href)}).then((m) => console.log(m.ensureSecret(${JSON.stringify(path.join(tmp, 'secret_state2'))})))`], { encoding: 'utf8' }).stdout.trim());
+  t('six processes asking for a secret in a fresh state dir all get the same one', new Set(kids).size === 1 && kids[0].length === 24, JSON.stringify(kids));
+  const rec = lib.signRecord({ a: 1, b: 'x' }, sd);
+  t('signRecord / verifyRecord: a signed record verifies, an edited one does not, a record without sig does not', lib.verifyRecord(rec, sd) && !lib.verifyRecord({ ...rec, a: 2 }, sd) && !lib.verifyRecord({ a: 1, b: 'x' }, sd) && !lib.verifyRecord(rec, path.join(tmp, 'other_state')));
+}
+
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failedNames.length) console.log('FAILED TESTS:\n - ' + failedNames.join('\n - '));
 if (!process.env.KEEP_HOOKTEST) fs.rmSync(tmp, { recursive: true, force: true });

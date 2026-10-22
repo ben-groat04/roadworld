@@ -87,7 +87,8 @@ export function ensureSecret(stateDir = STATE_DIR) {
   if (have) return have;
   const s = crypto.randomBytes(12).toString('hex');
   fs.mkdirSync(stateDir, { recursive: true });
-  fs.writeFileSync(path.join(stateDir, 'ack_secret'), s);
+  // exclusive create: two hook processes starting together must end up with ONE secret (the loser reads the winner's), or one of their signed records would not verify
+  try { fs.writeFileSync(path.join(stateDir, 'ack_secret'), s, { flag: 'wx' }); } catch (e) { const other = readSecret(stateDir); if (other) return other; throw e; }
   return s;
 }
 const canon = (o) => JSON.stringify(Object.keys(o).filter((k) => k !== 'sig').sort().map((k) => [k, o[k]]));
