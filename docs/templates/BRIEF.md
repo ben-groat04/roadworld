@@ -18,6 +18,8 @@ Downloads of reference photos are pre-approved: see the Agent contract below, it
 ## Known faults (starting list)
 {{FAULTS}}
 
+If this is a send-back round: every item in the prior AUDIT.md and your own FAULTS.md must be fixed (contract item 17); fill the STATUS.md table "Prior audit items"; an item stays open only if too pedantic for the owner to notice or the audit's reading is doubtful, with your own evidence.
+
 ## Self-audit (required)
 Per the Agent contract item 4: render each case at the framing of its best photo, make composites (render | photo | before, same camera) into `docs/reference/_compare/{{ROUND}}/`, write FAULTS.md Pass 1 with faults that are NOT in the list above, fix, re-render, Pass 2, Pass 3, then Residual.
 
