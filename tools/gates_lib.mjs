@@ -274,6 +274,14 @@ export function waiverFindings(diffText, allowed = [], contents = null) {
   const add = (key, file, what) => { if (!findings.some((x) => x.key === key && x.file === file)) findings.push({ key, file, what }); };
   for (const { file: f, add: A, rem: R, hunks } of files) {
     const base = path.basename(f), code = isCodeFile(f), cmake = /CMakeLists\.txt$|\.cmake$/.test(f);
+    // The gates' OWN tests (tools/test_gates.mjs, tools/hooks/test_hooks.mjs) are test DATA for the guard (they contain every waiver word as a string), so the line
+    // analysis below is meaningless there. What is watched is the list of test names: a removed or renamed test is a finding (a weakened gate is a waiver).
+    if (/(^|\/)test_(gates|hooks)\.mjs$/.test(f)) {
+      const names = (L) => new Set(L.flatMap((l) => [...l.matchAll(/(?<![\w.])t\(\s*(['"`])((?:(?!\1).)+)\1/g)].map((m) => m[2])));
+      const addedN = names(A);
+      for (const n of names(R)) if (!addedN.has(n)) add(`deleted_gate_test:${base}:${n.slice(0, 60)}`, f, `gate test "${n.slice(0, 90)}" was removed or renamed (a weakened gate test is a waiver: say why in an allow_waiver line)`);
+      continue;
+    }
     // keyword waivers: more occurrences than before in the file
     for (const [kind, re] of KIND_RE) {
       const a = A.filter((l) => re.test(l)), r = R.filter((l) => re.test(l));
