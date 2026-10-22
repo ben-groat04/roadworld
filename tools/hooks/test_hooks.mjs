@@ -737,6 +737,113 @@ console.log('measured gates through the finish hook');
   t('hook: gates in a BRIEF-FILE are read as well', J(g.out).decision === 'block' && /measured 15\/21/.test(J(g.out).reason), g.out + g.err);
 }
 
+// ---- gates3: guard (fail open on a broken library), helper agents, NO-CONTRACT grouping and auditors, BLOCKED, PRIOR-AUDIT
+console.log('gates3 hooks');
+{
+  const al = await import(pathToFileURL(path.join(src, 'tools/hooks/audit_lib.mjs')).href);
+  const stateDir = path.join(root, '.claude/state');
+  const ptxt3 = (o) => (J(o).hookSpecificOutput || {}).additionalContext || '';
+  const noticeOf = (rt = root) => ptxt3(spawnSync(process.execPath, [path.join(rt, 'tools/hooks/gate_notice.mjs')], { input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's9', prompt: 'hi', cwd: elsewhere }), cwd: elsewhere, encoding: 'utf8' }).stdout);
+  const mkCheckout = (name) => {
+    const rt = path.join(tmp, name);
+    for (const f of fs.readdirSync(path.join(src, 'tools/hooks')).filter((n) => n.endsWith('.mjs') && !/^test_/.test(n))) { fs.mkdirSync(path.join(rt, 'tools/hooks'), { recursive: true }); fs.copyFileSync(path.join(src, 'tools/hooks', f), path.join(rt, 'tools/hooks', f)); }
+    for (const f of ['tools/check_handin.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'tools/check_wrappers.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md']) { fs.mkdirSync(path.dirname(path.join(rt, f)), { recursive: true }); fs.copyFileSync(path.join(src, f), path.join(rt, f)); }
+    fs.mkdirSync(path.join(rt, '.git'), { recursive: true });
+    return rt;
+  };
+  const logOf = (rt) => { try { return fs.readFileSync(path.join(rt, '.claude/state/gate.log'), 'utf8').trim().split('\n').map(J); } catch { return []; } };
+  const runIn = (rt, script, stdin) => spawnSync(process.execPath, [path.join(rt, 'tools/hooks', script)], { input: JSON.stringify(stdin), cwd: elsewhere, encoding: 'utf8', timeout: 60000 });
+
+  // -- fail open on a broken library or a broken implementation (gates2 audit fault 9)
+  const stdins = { 'brief_gate.mjs': { hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { prompt: 'x', subagent_type: 'general-purpose' } }, 'handin_gate.mjs': { hook_event_name: 'SubagentStop', agent_id: 'g1', agent_type: 'general-purpose' }, 'gate_notice.mjs': { hook_event_name: 'UserPromptSubmit', session_id: 's' }, 'contract_inject.mjs': { hook_event_name: 'SubagentStart', agent_id: 'g1', agent_type: 'general-purpose' } };
+  for (const broken of ['lib.mjs', 'audit_lib.mjs']) {
+    for (const [script, input] of Object.entries(stdins)) {
+      if (broken === 'audit_lib.mjs' && script === 'contract_inject.mjs') continue;
+      const rt = mkCheckout('guard_' + broken + '_' + script);
+      fs.writeFileSync(path.join(rt, 'tools/hooks', broken), 'export const broken = ;;; syntax error\n');
+      const g = runIn(rt, script, input);
+      const l = logOf(rt).filter((e) => /FAIL-OPEN: hook implementation could not load or crashed/.test(e.reason || ''));
+      t(`${script} with a syntax error in ${broken}: exit 0 (fail open) and ONE logged FAIL-OPEN line`, g.status === 0 && l.length === 1 && l[0].error.length > 0, g.status + ' ' + g.stderr.slice(0, 200) + JSON.stringify(logOf(rt)));
+    }
+  }
+  { const rt = mkCheckout('guard_impl'); fs.writeFileSync(path.join(rt, 'tools/hooks/brief_gate_impl.mjs'), 'export async function main() { throw new Error("boom in the implementation"); }\n'); const g = runIn(rt, 'brief_gate.mjs', stdins['brief_gate.mjs']); t('an exception thrown by the implementation: exit 0, FAIL-OPEN logged with the message', g.status === 0 && logOf(rt).some((e) => /FAIL-OPEN/.test(e.reason || '') && /boom in the implementation/.test(e.error || '')), JSON.stringify(logOf(rt))); }
+  { const rt = mkCheckout('guard_missing'); fs.rmSync(path.join(rt, 'tools/hooks/handin_gate_impl.mjs')); const g = runIn(rt, 'handin_gate.mjs', stdins['handin_gate.mjs']); t('an implementation file that is missing: exit 0, FAIL-OPEN logged', g.status === 0 && logOf(rt).some((e) => /FAIL-OPEN/.test(e.reason || '')), JSON.stringify(logOf(rt))); }
+  t('guard.mjs imports only node built-ins (so no library can stop its FAIL-OPEN line)', [...fs.readFileSync(path.join(src, 'tools/hooks/guard.mjs'), 'utf8').matchAll(/^import .* from '([^']+)'/gm)].every((m) => m[1].startsWith('node:')));
+  { const g = spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), tmp, '--no-visual', '--main', root], { cwd: elsewhere, encoding: 'utf8' }); t('check_handin has no static import of gates_lib or the hook libraries (dynamic imports inside try)', !/^import .* from '\.\/(gates_lib|hooks\/)/m.test(fs.readFileSync(path.join(src, 'tools/check_handin.mjs'), 'utf8')) && g.status !== null); }
+
+  // -- helper agents vs real agents without a transcript
+  let h = run('handin_gate.mjs', { hook_event_name: 'SubagentStop', session_id: 's1', cwd: elsewhere, agent_id: 'helper1', agent_type: '' });
+  t('empty agent_type, no transcript, never launched: a separate non-alarm log entry (no FAIL-OPEN)', h.code === 0 && /internal helper agent/.test(lastLog().reason) && !/FAIL-OPEN/.test(lastLog().reason), JSON.stringify(lastLog()));
+  t('...and it raises no gate notice item', !/helper1/.test(noticeOf()));
+  h = run('handin_gate.mjs', { hook_event_name: 'SubagentStop', session_id: 's1', cwd: elsewhere, agent_id: 'real1', agent_type: 'general-purpose' });
+  t('a real agent type with no transcript: still FAIL-OPEN', h.code === 0 && /FAIL-OPEN: no readable agent transcript/.test(lastLog().reason), JSON.stringify(lastLog()));
+  run('contract_inject.mjs', { hook_event_name: 'SubagentStart', agent_id: 'known1', agent_type: '', cwd: elsewhere });
+  h = run('handin_gate.mjs', { hook_event_name: 'SubagentStop', session_id: 's1', cwd: elsewhere, agent_id: 'known1', agent_type: '' });
+  t('an empty agent_type whose id the launch hook saw (a known agent id): FAIL-OPEN', /FAIL-OPEN: no readable agent transcript/.test(lastLog().reason), JSON.stringify(lastLog()));
+  t('twelve helper agents in a row raise no notice item of their own', (() => { const before = (noticeOf().match(/FAIL-OPEN x(\d+)/) || [0, 0])[1]; for (let i = 0; i < 12; i++) run('handin_gate.mjs', { hook_event_name: 'SubagentStop', agent_id: 'hlp' + i, agent_type: '' }); return (noticeOf().match(/FAIL-OPEN x(\d+)/) || [0, 0])[1] === before; })());
+
+  // -- NO-CONTRACT launches are ONE summary item per notice
+  { const rt = mkCheckout('nc_group');
+    fs.mkdirSync(path.join(rt, '.claude/state'), { recursive: true });
+    const lines = []; for (let i = 0; i < 5; i++) lines.push(JSON.stringify({ ts: '2026-01-01T00:00:0' + i + 'Z', gate: 'brief', agent_type: 'general-purpose', description: 'job ' + i, decision: 'allow', reason: 'NO-CONTRACT', no_contract_reason: i % 2 ? 'read-only research of the docs tree' : 'merge of branch X into main, no hand-in' }));
+    fs.writeFileSync(path.join(rt, '.claude/state/gate.log'), lines.join('\n') + '\n');
+    const c1 = noticeOf(rt); const ncLines = c1.split('\n').filter((l) => /NO-CONTRACT/.test(l));
+    t('five NO-CONTRACT launches: ONE summary line carrying the count and the distinct reasons', ncLines.length === 1 && /x5/.test(ncLines[0]) && /2 distinct reason/.test(ncLines[0]) && /read-only research|merge of branch X/.test(ncLines[0]), c1);
+    t('...with exactly one #n[code] token for the whole group', (ncLines[0].match(/#\d+\[[0-9a-f]{6}\]/g) || []).length === 1);
+    t('...and the notice says 1 open item', /1 open item/.test(c1), c1.slice(0, 200));
+    const tok = ncLines[0].match(/#(\d+)\[([0-9a-f]{6})\]/); const ak = spawnSync(process.execPath, [path.join(rt, 'tools/hooks/gate_ack.mjs'), tok[1] + ':' + tok[2], 'looked at the five launches, all were research and merges'], { cwd: elsewhere, encoding: 'utf8' });
+    t('acking that one token clears all five launches', ak.status === 0 && noticeOf(rt) === '', ak.stderr + ak.stdout + noticeOf(rt));
+    fs.appendFileSync(path.join(rt, '.claude/state/gate.log'), JSON.stringify({ ts: '2026-01-02T00:00:00Z', gate: 'brief', description: 'later', decision: 'allow', reason: 'NO-CONTRACT', no_contract_reason: 'another research job started later' }) + '\n');
+    t('a launch after the ack shows up again, alone (x1)', /NO-CONTRACT launches x1/.test(noticeOf(rt)), noticeOf(rt)); }
+
+  // -- a NO-CONTRACT launch cannot carry an auditor (gates2 audit fault 8)
+  let l3 = launch('Audit the round for me.\nNO-CONTRACT: independent audit of the hand-in in docs/progress/gates2 please');
+  t('NO-CONTRACT launch naming an audit of docs/progress/...: DENIED (exit 2), says to use make_brief --audit', l3.code === 2 && /make_brief\.mjs <task-file> --audit/.test(l3.err) && lastLog().reason === 'NO-CONTRACT audit launch refused', l3.err);
+  l3 = launch('You are the auditor.\nRead C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\STATUS.md\nNO-CONTRACT: read-only check of a hand-in folder for the main session');
+  t('...an "auditor" prompt with a Windows docs\\progress path: denied too', l3.code === 2, l3.err);
+  l3 = launch('Second look.\nNO-CONTRACT: read-only review of the work in docs/progress/earthworks r9 by someone else');
+  t('...a "review of ... docs/progress" prompt: denied', l3.code === 2, l3.err);
+  l3 = launch('Review the code.\nNO-CONTRACT: read-only review of the hook scripts, no hand-in expected');
+  t('a review that names no progress folder: allowed', l3.code === 0 && lastLog().reason === 'NO-CONTRACT', l3.err);
+  l3 = launch('Format check.\nNO-CONTRACT: read the docs/progress/README naming rules and report them');
+  t('a read of docs/progress without audit/review wording: allowed', l3.code === 0, l3.err);
+  const withAof = launch(mkAuditBrief());
+  t('a proper AUDIT-OF launch is unaffected', withAof.code === 0 && lastLog().reason === 'AUDIT-OF', withAof.err);
+  t('the refused audit launch is on the notice (news to the main session)', /NO-CONTRACT AUDIT LAUNCH REFUSED x\d/.test(noticeOf()), noticeOf());
+  function mkAuditBrief() { const tf = path.join(tmp, 'aud_nc.md'); fs.writeFileSync(tf, '# T\n## Owner\'s words\n"The photo is the target." (11 Oct)\n## Cases\ncase A | a.jpg b.jpg c.jpg\n'); return spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tf, '--audit', hd('ncaud')], { encoding: 'utf8' }).stdout; }
+
+  // -- BLOCKED through the finish hook
+  const faults3 = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Pass 3\nthe hatching bars cross the kerb line at the island nose\n## Residual\nnone, all fixed\n';
+  const blkLine = 'BLOCKED: wall curl at the road ends | tried: a ramp, a fillet and a longer fade, three renders | blocked by: the crossing road keeps the ground 2 m high (render s4) | needs: a decision on the crossing level';
+  const blkTp = transcript('blk', mk('blk', ['--no-visual', '--v2']));
+  fs.mkdirSync(hd('blk'), { recursive: true }); fs.writeFileSync(path.join(hd('blk'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', blkLine)); fs.writeFileSync(path.join(hd('blk'), 'FAULTS.md'), faults3);
+  let bl = stop('blk1', blkTp);
+  const lg = logOf(root);
+  t('a STATUS whose only open item is a complete BLOCKED line: the stop is ALLOWED', bl.code === 0 && bl.out === '' && lg.some((e) => e.gate === 'handin' && e.reason === 'hand-in check passed' && e.agent_id === 'blk1'), bl.out + bl.err);
+  const bev = lg.filter((e) => e.gate === 'blocked');
+  t('...and a `blocked` line is written to gate.log with the item text', bev.length === 1 && bev[0].reason === 'BLOCKED' && /wall curl at the road ends/.test(bev[0].items[0]) && bev[0].handin_dir === hd('blk'), JSON.stringify(bev));
+  const nb = noticeOf(); t('...which raises a gate notice item (news, not noise) with the item', /BLOCKED x1/.test(nb) && /wall curl at the road ends/.test(nb), nb);
+  const btok = nb.split('\n').find((l) => /BLOCKED x1/.test(l) === false && /#\d+\[[0-9a-f]{6}\]/.test(l) && /blk/.test(l));
+  const allToks = [...nb.matchAll(/#(\d+)\[([0-9a-f]{6})\]/g)].map((m) => m[1] + ':' + m[2]);
+  const blockedTok = (nb.split('\n').find((l, i, a) => /#\d+\[[0-9a-f]{6}\]/.test(l) && /blk/.test(l)) || '').match(/#(\d+)\[([0-9a-f]{6})\]/);
+  t('...whose token can be acknowledged and then disappears', (() => { if (!blockedTok) return false; const ak = spawnSync(process.execPath, [path.join(root, 'tools/hooks/gate_ack.mjs'), blockedTok[1] + ':' + blockedTok[2], 'saw the blocked wall curl item, will take it to the owner'], { cwd: elsewhere, encoding: 'utf8' }); return ak.status === 0 && !/BLOCKED x1/.test(noticeOf()); })());
+  // excuses still refuse, and the refusal points at the BLOCKED form
+  const exTp = transcript('exc', mk('exc', ['--no-visual', '--v2']));
+  fs.mkdirSync(hd('exc'), { recursive: true }); fs.writeFileSync(path.join(hd('exc'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', 'The wall curl is out of scope and a later round will do it.')); fs.writeFileSync(path.join(hd('exc'), 'FAULTS.md'), faults3);
+  bl = stop('exc1', exTp); t('an excuse ("out of scope", "later round") with no tried / blocked by: the stop is BLOCKED, the reason shows the BLOCKED form', J(bl.out).decision === 'block' && /left undone or deferred/.test(J(bl.out).reason) && /BLOCKED: <item> \| tried/.test(J(bl.out).reason), bl.out);
+  fs.writeFileSync(path.join(hd('exc'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', 'BLOCKED: wall curl | tried: a ramp and a fade | blocked by: time'));
+  bl = stop('exc1', exTp); t('"blocked by: time" is an excuse in the BLOCKED form: still refused', J(bl.out).decision === 'block' && /BLOCKED line is incomplete/.test(J(bl.out).reason), bl.out);
+  // placeholder COMPARE through the hook
+  // PRIOR-AUDIT line reaches check_handin
+  const priorF = path.join(tmp, 'prior_for_hook_AUDIT.md'); fs.writeFileSync(priorF, '## Faults\nx\n## For the next builder\n\n1. fix the first thing\n2. fix the second thing\n');
+  const paTp = transcript('pa', mk('pa', ['--no-visual', '--v2', '--prior-audit', priorF]));
+  t('make_brief --prior-audit emits a PRIOR-AUDIT: line', /^PRIOR-AUDIT: /m.test(mk('pa', ['--no-visual', '--v2', '--prior-audit', priorF])));
+  fs.mkdirSync(hd('pa'), { recursive: true }); fs.writeFileSync(path.join(hd('pa'), 'STATUS.md'), goodStatus); fs.writeFileSync(path.join(hd('pa'), 'FAULTS.md'), faults3);
+  bl = stop('pa1', paTp); t('send-back brief (PRIOR-AUDIT): a STATUS without the "Prior audit items" table is refused by the finish hook', J(bl.out).decision === 'block' && /Prior audit items/.test(J(bl.out).reason), bl.out);
+  fs.writeFileSync(path.join(hd('pa'), 'STATUS.md'), goodStatus + '\n## Prior audit items\n\n| Item | Status | Proof |\n|---|---|---|\n| 1 | fixed | test "x" in tools/test_gates.mjs passes |\n| 2 | fixed | run of the real round 9 folder refuses, see STATUS table |\n');
+  bl = stop('pa1', paTp); t('...with the table: allowed', bl.code === 0 && bl.out === '', bl.out);
+}
+
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failedNames.length) console.log('FAILED TESTS:\n - ' + failedNames.join('\n - '));
 if (!process.env.KEEP_HOOKTEST) fs.rmSync(tmp, { recursive: true, force: true });
