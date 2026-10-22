@@ -586,6 +586,22 @@ console.log('BLOCKED form and placeholder refusal, end to end (coordinator addit
   t('under a v1 brief (no GATES-VERSION) the placeholder rules do not apply: running agents are not newly refused', v1.status === 0 && !/placeholder/.test(v1.stderr), v1.stderr);
 }
 
+console.log('small gates3 additions: multi-config ctest, --since on FAULTS.md, template wording');
+{
+  const ct2 = path.join(tmp, 'ctw2'); fs.mkdirSync(path.join(ct2, 'build/Testing/Temporary'), { recursive: true }); fs.mkdirSync(path.join(ct2, 'tests'), { recursive: true });
+  w(path.join(ct2, 'build/tests/CTestTestfile.cmake'), ['Debug', 'Release', 'MinSizeRel'].map((cfg) => `if(CTEST_CONFIGURATION_TYPE MATCHES "${cfg}")\n  add_test([=[sim_core_tests]=] "C:/x/${cfg}/sim_core_tests.exe")\nendif()`).join('\n') + '\n');
+  w(path.join(ct2, 'build/Testing/Temporary/LastTest.log'), '1/1 Testing: sim_core_tests\n1/1 Test: sim_core_tests\n[doctest] assertions: 10 | 10 passed | 0 failed |\nTest Passed.\n');
+  t('a multi-config build registers ONE test under three configurations: counted once (the roadtool3 build-audit-msvc case), so the whole-suite log passes', GL.countRegisteredTests(path.join(ct2, 'build')) === 1 && !GL.measureCtest(ct2).fail, JSON.stringify(GL.measureCtest(ct2)));
+  // --since applies to FAULTS.md on a v2 engine-only hand-in
+  const sf = path.join(wt, 'docs/progress/since'); w(path.join(sf, 'STATUS.md'), statusBase()); w(path.join(sf, 'FAULTS.md'), faults3);
+  const old = new Date(Date.now() - 7200 * 1000); fs.utimesSync(path.join(sf, 'FAULTS.md'), old, old);
+  const run = (flags) => spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), sf, '--main', main, '--worktree', wt, '--no-visual', '--since', String(Date.now() - 3600 * 1000), ...flags], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } });
+  let r = run(['--gates-version', '2']); t('v2 engine-only: a FAULTS.md from before the agent started is refused as stale', r.status === 1 && /older than this agent's run/.test(r.stderr) && /FAULTS\.md/.test(r.stderr), r.stderr);
+  r = run([]); t('v1 engine-only: FAULTS.md is not asked for, so its age is not either (running agents unchanged)', !/FAULTS\.md/.test(r.stderr), r.stderr);
+  const bt = fs.readFileSync(path.join(src, 'docs/templates/BRIEF.md'), 'utf8') + fs.readFileSync(path.join(src, 'docs/templates/STATUS.md'), 'utf8');
+  t('the brief and STATUS templates show the BLOCKED form and the wrapper check', /BLOCKED: <item> \| tried: <what you attempted> \| blocked by:/.test(bt) && /check_wrappers\.mjs/.test(bt));
+}
+
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failed.length) console.log('FAILED TESTS:\n - ' + failed.join('\n - '));
 process.exit(fail ? 1 : 0);

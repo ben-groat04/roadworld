@@ -102,18 +102,20 @@ export function measureSceneCheck(wt, opts = {}) {
 
 // Number of tests ctest knows in a build dir: add_test( calls in every CTestTestfile.cmake below it (no ctest binary needed: it is not on PATH here).
 export function countRegisteredTests(buildDir) {
-  let n = 0;
+  const names = new Set();
   const walk = (d, depth) => {
     if (depth > 4) return;
     let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) { if (!/^(CMakeFiles|_deps|Testing)$/.test(e.name)) walk(p, depth + 1); }
-      else if (e.name === 'CTestTestfile.cmake') { try { n += (fs.readFileSync(p, 'utf8').match(/^\s*add_test\s*\(/gm) || []).length; } catch { /* skip */ } }
+      else if (e.name === 'CTestTestfile.cmake') {
+        try { for (const m of fs.readFileSync(p, 'utf8').matchAll(/^\s*add_test\s*\(\s*(?:\[=*\[([^\]]+)\]=*\]|"?([^\s")]+))/gm)) names.add(m[1] || m[2]); } catch { /* skip */ }
+      }
     }
   };
   walk(buildDir, 0);
-  return n;
+  return names.size;
 }
 const countTestCases = (wt) => {
   let n = 0;
@@ -487,16 +489,16 @@ const USAGE_RE = new RegExp([
 ].join('|'), 'i');
 // "Not done" in any of its disguises. Contract item 17 names "out of scope", "time", "would need a bigger change" and "later round" as non-reasons.
 const NOT_DONE_RE = new RegExp([
-  String.raw`\bnot\s+(?:attempted|tried|started|implemented|finished|completed|fixed|addressed|handled|built|touched|done(?!\s+by\s+design))\b`,
-  String.raw`\b(?:did|have|had|was|were|is|are|has)\s*(?:not|n${AP}t)\s+(?:been\s+)?(?:attempt|try|tried|get\s+to|implement|finish|complet|fix|address|touch|start|built|done)\w*`,
-  String.raw`\b(?:didn|wasn|weren|hasn|haven|isn|aren|hadn)${AP}t\s+(?:been\s+)?(?:attempt|try|tried|get\s+to|implement|finish|complet|fix|address|touch|start|built|done)\w*`,
+  String.raw`\bnot\s+(?:attempted|tried|started|implemented|finished|completed|fixed|addressed|handled|built|done(?!\s+by\s+design))\b`,
+  String.raw`\b(?:did|have|had|was|were|is|are|has)\s*(?:not|n${AP}t)\s+(?:been\s+)?(?:attempt|try|tried|get\s+to|implement|finish|complet|fix|address|start|built|done)\w*`,
+  String.raw`\b(?:didn|wasn|weren|hasn|haven|isn|aren|hadn)${AP}t\s+(?:been\s+)?(?:attempt|try|tried|get\s+to|implement|finish|complet|fix|address|start|built|done)\w*`,
   String.raw`\bnever\s+(?:attempted|tried|started)`, String.raw`\bstill\s+open\b`, String.raw`\bout\s+of\s+scope\b`, String.raw`\bbigger\s+change\b`, String.raw`\b(?:later|next)\s+round\b`,
   String.raw`\bleft\s+(?:undone|for\s+later|open)\b`, String.raw`\bfollow[- ]?ups?\b`, String.raw`\bfuture\s+work\b`, String.raw`\buntouched\b`, String.raw`\bTODO\b`, String.raw`\bpostponed\b`,
   String.raw`\b(?:was|were|is|are|been|being|get|got)\s+deferred\b`, String.raw`\bdeferred\s+(?:to|until|for)\b`, String.raw`\bwill\s+do\s+(?:this\s+)?(?:next\s+round|later)`,
 ].join('|'), 'i');
 
 // "skipped" is an excuse unless the sentence negates it ("nothing skipped", "no tests were skipped", "not skipped")
-const notDone = (l) => NOT_DONE_RE.test(l) || (/\bskipped\b/i.test(l) && !/\b(?:no|nothing|none|not|never|without)\b[^.\n]{0,40}\bskipped\b/i.test(l));
+const notDone = (l) => NOT_DONE_RE.test(l) || (/(?<![\d%]\s?)\bskipped\b/i.test(l) && !/\b(?:no|nothing|none|not|never|without)\b[^.\n]{0,40}\bskipped\b/i.test(l));
 
 // BLOCKED form: `BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | needs: <what unblocks it>`
 const FILLER_RE = /^(?:nothing|none|n\/?a|no|tbd|todo|unknown|time|\?+|-+|\.+|see above|same)\W*$/i;
