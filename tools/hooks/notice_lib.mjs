@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { ROOT, STATE_DIR, parseJson } from './lib.mjs';
+import { ROOT, STATE_DIR, parseJson, readSecret, ensureSecret } from './lib.mjs';
 import { auditOwed } from './audit_lib.mjs';
 
 export const MIN_ACK_CHARS = 20;
@@ -51,27 +51,24 @@ export function pendingItems(entries, opts = {}) {
   const handinFailed = live.filter((e) => e.gate === 'handin' && /^check still failing after/.test(String(e.reason || ''))).reverse()
     .filter((e) => { const k = e.handin_dir || e.agent_id; if (seen.has(k)) return false; seen.add(k); return true; }).reverse()
     .filter((e) => !acked.has(e.n));
-  const noContract = live.filter((e) => e.gate === 'brief' && e.reason === 'NO-CONTRACT' && !acked.has(e.n));
+  // NO-CONTRACT launches are ONE item (the newest line stands for the group; acking it acks every line in `ns`): a summary, not one item per launch
+  const ncAll = live.filter((e) => e.gate === 'brief' && e.reason === 'NO-CONTRACT' && !acked.has(e.n));
+  const noContract = ncAll.length ? [{ ...ncAll[ncAll.length - 1], ns: ncAll.map((e) => e.n), count: ncAll.length, reasons: [...new Set(ncAll.map((e) => e.no_contract_reason))] }] : [];
+  // an agent that finished with BLOCKED items (an honest "cannot do this") is news for the main session; a NO-CONTRACT launch of an audit was refused
+  const blocked = live.filter((e) => e.gate === 'blocked' && e.reason === 'BLOCKED' && !acked.has(e.n));
+  const ncAudit = live.filter((e) => e.gate === 'brief' && e.reason === 'NO-CONTRACT audit launch refused' && !acked.has(e.n));
   // auditOwed (opts.stateDir/opts.root, default the main checkout): hand-ins that passed with no valid AUDIT.md by a different
   // agent. Computed from builder records + the files themselves, NOT from the log, so no ack can clear it.
   let owed = [];
   try { owed = auditOwed(opts.stateDir || STATE_DIR, opts.root || ROOT); } catch { /* fail open: logged by the caller if it matters */ }
-  return { failOpen, handinFailed, noContract, auditOwed: owed, total: failOpen.length + handinFailed.length + noContract.length + owed.length };
+  return { failOpen, handinFailed, noContract, blocked, ncAudit, auditOwed: owed, total: failOpen.length + handinFailed.length + noContract.length + blocked.length + ncAudit.length + owed.length };
 }
 
 // ---- per-item acknowledgement. An item is acked by its log line number n AND a code only the notice shows: sha1(secret:n).
 // The secret is .claude/state/ack_secret, created by the notice hook (the main session's context) and never printed. A subagent
 // that does not read that file cannot ack; one that does has gone out of its way (documented limit, audit fault 2).
-export const ackItems = (p) => [...p.failOpen, ...p.handinFailed, ...p.noContract];
-export function readSecret(stateDir = STATE_DIR) { try { return fs.readFileSync(path.join(stateDir, 'ack_secret'), 'utf8').trim() || null; } catch { return null; } }
-export function ensureSecret(stateDir = STATE_DIR) {
-  const have = readSecret(stateDir);
-  if (have) return have;
-  const s = crypto.randomBytes(12).toString('hex');
-  fs.mkdirSync(stateDir, { recursive: true });
-  fs.writeFileSync(path.join(stateDir, 'ack_secret'), s);
-  return s;
-}
+export const ackItems = (p) => [...p.failOpen, ...p.handinFailed, ...p.noContract, ...(p.blocked || []), ...(p.ncAudit || [])];
+export { readSecret, ensureSecret };
 export const ackCode = (secret, n) => crypto.createHash('sha1').update(`${secret}:${n}`).digest('hex').slice(0, 6);
 // Text must say what was done: enough length, words and variety (rejects "aaaaaaaaaaaaaaaaaaaa" and filler).
 export function ackTextProblem(text) {
@@ -103,10 +100,17 @@ export function formatNotice(p, secret = null) {
     for (const e of p.handinFailed.slice(-12).reverse()) L.push(`    ${id(e)} ${e.ts} HANDIN_DIR=${e.handin_dir} agent=${e.agent_type || '?'}/${e.agent_id}`);
     if (more(p.handinFailed, 12)) L.push(more(p.handinFailed, 12));
   }
+  if (p.blocked && p.blocked.length) {
+    L.push(`- BLOCKED x${p.blocked.length}: an agent finished with items it says it cannot do (STATUS.md "BLOCKED: <item> | tried | blocked by | needs"); this is news, not noise:`);
+    for (const e of p.blocked.slice(-8).reverse()) { L.push(`    ${id(e)} ${e.ts} ${clip(e.handin_dir, 90)} agent=${e.agent_type || '?'}/${e.agent_id}`); for (const it of (e.items || []).slice(0, 4)) L.push('      ' + clip(it, 200)); }
+  }
+  if (p.ncAudit && p.ncAudit.length) {
+    L.push(`- NO-CONTRACT AUDIT LAUNCH REFUSED x${p.ncAudit.length} (a launch that named an audit of a progress folder without AUDIT-OF was denied; use make_brief.mjs --audit):`);
+    for (const e of p.ncAudit.slice(-8).reverse()) L.push(`    ${id(e)} ${e.ts} ${clip(e.description, 60)} ${clip(e.no_contract_reason, 80)}`);
+  }
   if (p.noContract.length) {
-    L.push(`- NO-CONTRACT launches x${p.noContract.length} (no contract, no hand-in gate; reasons given):`);
-    for (const e of p.noContract.slice(-12).reverse()) L.push(`    ${id(e)} ${e.ts} "${clip(e.no_contract_reason, 120)}" (${clip(e.description, 50)})`);
-    if (more(p.noContract, 12)) L.push(more(p.noContract, 12));
+    const g = p.noContract[0];
+    L.push(`- NO-CONTRACT launches x${g.count} since the last ack (no contract, no hand-in gate); ${g.reasons.length} distinct reason(s), newest: ${g.reasons.slice(-3).reverse().map((r) => '"' + clip(r, 80) + '"').join('; ')} (acks as one item ${id(g)}, last launch ${g.ts})`);
   }
   if (p.total - p.auditOwed.length > 0) {
     L.push(`${p.auditOwed.length ? 'The log items (all except AUDIT OWED) repeat' : 'This notice is repeated'} on every prompt until each is acknowledged BY ITS OWN #n[code]. The only thing that clears an item: ${ACK_CMD} (text of at least ${MIN_ACK_CHARS} characters, 4 words, saying what was done; recorded in the log with a timestamp).`);

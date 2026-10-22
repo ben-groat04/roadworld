@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { ROOT, STATE_DIR, parseJson } from './lib.mjs';
+import { ROOT, STATE_DIR, parseJson, signRecord, verifyRecord } from './lib.mjs';
 
 export const AUDIT_FILE = 'AUDIT.md';
 export const sanitizeId = (s) => String(s || '').replace(/[^\w.-]/g, '_');
@@ -22,8 +22,9 @@ export const builderKey = (dir) => crypto.createHash('sha1')
   .update(path.resolve(dir).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()).digest('hex').slice(0, 16);
 const buildersDir = (stateDir) => path.join(stateDir, 'builders');
 
+// Records are HMAC-signed (lib.mjs signRecord, v:3). An unsigned or edited record reads as null, so typing one by hand achieves nothing.
 export function readBuilder(handinDir, stateDir = STATE_DIR) {
-  try { return parseJson(fs.readFileSync(path.join(buildersDir(stateDir), builderKey(handinDir) + '.json'), 'utf8')) || null; } catch { return null; }
+  try { const r = parseJson(fs.readFileSync(path.join(buildersDir(stateDir), builderKey(handinDir) + '.json'), 'utf8')); return r && verifyRecord(r, stateDir) ? r : null; } catch { return null; }
 }
 // Every PASSED hand-in renews passed_at (audit fault 3: a builder resumed after "send back" keeps its agent id, so a new pass
 // must invalidate the audit of the old work). changed = a new record, another agent id, or an audit was recorded after the previous pass
@@ -33,7 +34,7 @@ export function recordBuilder(handinDir, agentId, agentType, stateDir = STATE_DI
   const prev = readBuilder(handinDir, stateDir);
   const ar = prev && readAudit(handinDir, stateDir);
   const changed = !prev || prev.agent_id !== agentId || !!(ar && Date.parse(ar.recorded_at) >= Date.parse(prev.passed_at));
-  const rec = { v: 2, handin_dir: path.resolve(handinDir), agent_id: agentId, agent_type: agentType || '', passed_at: new Date(now).toISOString() };
+  const rec = signRecord({ v: 3, handin_dir: path.resolve(handinDir), agent_id: agentId, agent_type: agentType || '', passed_at: new Date(now).toISOString() }, stateDir);
   fs.mkdirSync(buildersDir(stateDir), { recursive: true });
   fs.writeFileSync(path.join(buildersDir(stateDir), builderKey(handinDir) + '.json'), JSON.stringify(rec));
   return { changed, rec };
@@ -46,13 +47,13 @@ export function recordBuilder(handinDir, agentId, agentType, stateDir = STATE_DI
 const auditsDir = (stateDir) => path.join(stateDir, 'audits');
 export const auditSha = (text) => crypto.createHash('sha1').update(String(text).split(String.fromCharCode(13) + String.fromCharCode(10)).join(String.fromCharCode(10))).digest('hex');
 export function recordAudit(handinDir, { auditorId, builderId, verdict, text }, stateDir = STATE_DIR, now = Date.now()) {
-  const rec = { v: 2, handin_dir: path.resolve(handinDir), auditor_id: sanitizeId(auditorId), builder_id: builderId ? sanitizeId(builderId) : null, verdict, sha1: auditSha(text), recorded_at: new Date(now).toISOString() };
+  const rec = signRecord({ v: 3, handin_dir: path.resolve(handinDir), auditor_id: sanitizeId(auditorId), builder_id: builderId ? sanitizeId(builderId) : null, verdict, sha1: auditSha(text), recorded_at: new Date(now).toISOString() }, stateDir);
   fs.mkdirSync(auditsDir(stateDir), { recursive: true });
   fs.writeFileSync(path.join(auditsDir(stateDir), builderKey(handinDir) + '.json'), JSON.stringify(rec));
   return rec;
 }
 export function readAudit(handinDir, stateDir = STATE_DIR) {
-  try { return parseJson(fs.readFileSync(path.join(auditsDir(stateDir), builderKey(handinDir) + '.json'), 'utf8')) || null; } catch { return null; }
+  try { const r = parseJson(fs.readFileSync(path.join(auditsDir(stateDir), builderKey(handinDir) + '.json'), 'utf8')); return r && verifyRecord(r, stateDir) ? r : null; } catch { return null; }
 }
 // Audit fault 4: no builder record. Recover the builder id from the gate log (a "hand-in check passed" line for this folder).
 export function findBuilderInLog(handinDir, stateDir = STATE_DIR) {
@@ -71,7 +72,7 @@ export function allBuilders(stateDir = STATE_DIR) {
   try { names = fs.readdirSync(buildersDir(stateDir)); } catch { return []; }
   return names.filter((n) => n.endsWith('.json'))
     .map((n) => parseJson(fs.readFileSync(path.join(buildersDir(stateDir), n), 'utf8')))
-    .filter((r) => r && r.handin_dir && r.agent_id);
+    .filter((r) => r && r.handin_dir && r.agent_id && verifyRecord(r, stateDir));
 }
 
 // Structural check of AUDIT.md text. Returns { problems, auditor, verdict, opened, total }.
@@ -121,11 +122,11 @@ export function auditFiles(handinDir, root = ROOT) {
   return [...new Set([path.join(handinDir, AUDIT_FILE), path.join(root, 'docs', 'progress', path.basename(handinDir), AUDIT_FILE)])];
 }
 // Problems for a hand-in folder across its candidate files: [] = a valid independent audit exists.
-// opts: { stateDir, requireRecord (default: rec.v === 2), requireAccept }.
+// opts: { stateDir, requireRecord (default TRUE in every path: a typed AUDIT.md never clears an audit; only check_handin --legacy turns it off, logged), requireAccept }.
 export function auditProblems(handinDir, rec, root = ROOT, actualId = null, opts = {}) {
   const stateDir = opts.stateDir || STATE_DIR;
   const notBefore = rec && rec.passed_at ? Date.parse(rec.passed_at) - 2000 : 0;
-  const needRecord = opts.requireRecord ?? !!(rec && rec.v === 2);
+  const needRecord = opts.requireRecord ?? true;
   let best = null;
   for (const f of auditFiles(handinDir, root)) {
     const p = checkAuditFile(f, { builderId: rec && rec.agent_id, actualId, notBefore });
@@ -142,6 +143,7 @@ export function auditProblems(handinDir, rec, root = ROOT, actualId = null, opts
           if (ar.sha1 !== auditSha(text)) q.push('AUDIT.md was edited after the auditor finished (its hash differs from the audit record)');
           if (rec && rec.passed_at && Date.parse(ar.recorded_at) < Date.parse(rec.passed_at)) q.push('the audit record is older than the builder\'s latest passed hand-in (a fresh audit is owed)');
           if (rec && ar.auditor_id === sanitizeId(rec.agent_id)) q.push('the recorded auditor is the builder');
+          if (rec && ar.builder_id && ar.builder_id !== sanitizeId(rec.agent_id)) q.push(`the audit record is of builder ${ar.builder_id}'s hand-in, the current builder is ${sanitizeId(rec.agent_id)}: a fresh audit is owed`);
         }
         if (q.length) { best = q; continue; }
       }

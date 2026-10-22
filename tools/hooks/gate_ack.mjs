@@ -29,7 +29,8 @@ for (const tok of tokens) {
   items.push(n);
 }
 const sel = items.map((n) => pending.get(n));
-log({ gate: 'ack', items, text, cleared: { fail_open: sel.filter((e) => /FAIL-OPEN/.test(String(e.reason || ''))).length, handin_failed: sel.filter((e) => e.gate === 'handin').length, no_contract: sel.filter((e) => e.reason === 'NO-CONTRACT').length } });
+const itemsAll = [...new Set(items.flatMap((n) => pending.get(n).ns || [n]))];   // a grouped NO-CONTRACT item acks every launch line it stands for
+log({ gate: 'ack', items: itemsAll, text, cleared: { fail_open: sel.filter((e) => /FAIL-OPEN/.test(String(e.reason || ''))).length, handin_failed: sel.filter((e) => e.gate === 'handin').length, no_contract: sel.filter((e) => e.reason === 'NO-CONTRACT').reduce((k, e) => k + (e.count || 1), 0), blocked: sel.filter((e) => e.gate === 'blocked').length } });
 const left = p.total - p.auditOwed.length - items.length;
 console.log(`Acknowledged ${items.length} item(s): ${items.map((n) => '#' + n).join(', ')}. Recorded in .claude/state/gate.log. ${left} log item(s) still open.` +
   (p.auditOwed.length ? `\nStill open (an ack cannot clear it, only a valid AUDIT.md can): AUDIT OWED x${p.auditOwed.length}: ${p.auditOwed.map((e) => e.handin_dir).join(', ')}` : ''));

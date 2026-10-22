@@ -11,7 +11,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseGateLine, parseRounds, methodChangeProblem } from './gates_lib.mjs';
+// gates_lib loads dynamically: if it is broken the brief is still printed (old layout, no GATES-VERSION line) and a FAIL-OPEN line is logged.
+let GL = null;
+try { GL = await import('./gates_lib.mjs'); } catch (e) {
+  console.error('FAIL-OPEN: gates_lib.mjs could not be loaded (' + (e && e.message) + '); the brief is printed WITHOUT the measured gates');
+  try { const lib = await import('./hooks/lib.mjs'); lib.log({ gate: 'make_brief', decision: 'allow', reason: 'FAIL-OPEN: gates_lib could not be loaded', error: String((e && e.message) || e).slice(0, 300) }); } catch { /* the console line above is all that is left */ }
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -46,14 +51,19 @@ if (/time-box|whole task/i.test(text.replace(get("owner's words"), ''))) missing
 // ---- gates v2 (tools/gates_lib.mjs). Builder briefs only; `GATES-VERSION: 2` switches the measured checks on in check_handin.
 const gateLines = [];
 let overrideLog = null;
-if (!auditMode) {
+if (!auditMode && GL) {
+  const { parseGateLine, parseRounds, methodChangeProblem, FAILURE_METRICS } = GL;
   const noVisualFlag = args.includes('--no-visual');
   // Engine-only briefs without HANDIN: no-visual made two builders write placeholder COMPARE tables to get through.
-  if (!noVisualFlag && /\bno renders?\b|\bno-visual\b|engine[- ]only|no pictures?\b/i.test(get('cases'))) {
-    missing.push('"## Cases" says there are no renders / no pictures but the brief is not built with --no-visual (without it the hand-in demands COMPARE.md with composites, and builders fabricate placeholders)');
+  if (!noVisualFlag && /\bno[- ]renders?\b|\bno-visual\b|engine[- ]only|no[- ]pictures?\b|\bheadless\b|no[- ]screenshots?\b|\bno (?:views?|images?|visuals?)\b|nothing (?:is )?rendered/i.test(get('cases'))) {
+    missing.push('"## Cases" says there are no renders / pictures / screenshots (engine-only, headless) but the brief is not built with --no-visual (without it the hand-in demands COMPARE.md with composites, and builders fabricate placeholders)');
   }
-  // Scope (G): at most 3 cases per round unless the task file says why more.
-  const nCases = (get('cases').match(/^\s*(?:[-*]\s*)?(?:Case|Scenario|View)\s*[\w.-]*\s*[:,|(-]/gim) || []).length;
+  // Scope (G): at most 3 cases per round unless the task file says why more. Cases are counted by what the section lists: "Case|Scenario|View|Item|Test N:" lines,
+  // "s1:" / "1." / "2)" / "A)" lines, and an explicit "Cases: N" / "N scenarios" statement; the largest count counts. Lines that start with a drive path are file lists.
+  const caseLine = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:(?:Case|Scenario|View|Item|Test)\s*[\w.-]*\s*[:.)|-]|[A-Za-z]{1,2}\d+\s*[:.)|-]|\d+\s*[.)]|[A-Z]\s*\))/i;
+  const caseLines = get('cases').split('\n').filter((l) => caseLine.test(l) && !/^\s*(?:[-*]\s*)?[A-Za-z]:[\/]/.test(l));
+  const stated = Math.max(0, ...[...get('cases').matchAll(/\bcases?\s*[:=]\s*(\d+)|\b(\d+)\s+(?:cases|scenarios|views)\b/gi)].map((m) => Number(m[1] || m[2])));
+  const nCases = Math.max(caseLines.length, stated);
   if (nCases > 3 && get('scope').length < 20) missing.push('"## Cases" names ' + nCases + ' cases; a round takes at most 3 unless the task file has a "## Scope" section (20+ characters) saying why more. One round with eight scenarios is how earthworks round 9 left several untouched');
   // Gates
   for (const raw of get('gates').split('\n')) {
@@ -64,12 +74,18 @@ if (!auditMode) {
       if (/(>=|<=|==|^allow_waiver|^picture_)/i.test(g.raw)) missing.push('"## Gates": ' + g.raw + ' -> ' + g.why);
       continue;
     }
+    if (g.kind === 'metric' && FAILURE_METRICS.includes(g.metric) && g.op === '==') { missing.push('"## Gates": ' + g.raw + ' -> "==" on a failure count would refuse an improvement (a fix that brings it to 0); write "' + g.metric + ' <= ' + g.floor + '"'); continue; }
     gateLines.push(g.raw);
   }
+  // A ctest failed-assertions gate is paired with failed_tests: a crashed test shows 0 failed assertions. Failed tests cannot exceed failed assertions
+  // unless a test crashed, so the assertion floor is a valid upper bound for the pair.
+  const fa = gateLines.map(parseGateLine).find((g) => g && g.kind === 'metric' && g.metric === 'ctest failed_assertions');
+  if (fa && !gateLines.some((l) => /^ctest failed_tests\b/i.test(l))) gateLines.push('ctest failed_tests <= ' + fa.floor);
   // Method-change rule (E)
   const prev = text.match(/^Previous round:[ \t]*(\S.*)$/mi);
   const rounds = parseRounds(get('rounds'));
-  if (prev && !rounds.length) missing.push('the task file names a previous round ("' + prev[1].slice(0, 60) + '") but has no "## Rounds" section with its baseline numbers, one line per round, oldest first: "round8: scene_check=20, ctest_failed_assertions=2"');
+  if (prev && !rounds.length) missing.push('the task file names a previous round ("' + prev[1].slice(0, 60) + '") but has no "## Rounds" section with its baseline numbers, one line per round, oldest first: "round8: scene_check=20, ctest_failed_assertions=2, bare_steps=3 (lower)"');
+  for (const r of rounds) if (r.undirected && r.undirected.length) missing.push('"## Rounds": ' + r.round + ' has metric(s) with no stated direction: ' + r.undirected.join(', ') + ' (write e.g. "bare_steps=3 (lower)" or "(higher)"; the direction is never guessed from the name)');
   if (rounds.length && rounds.some((r) => !Object.keys(r.values).length)) missing.push('"## Rounds": a line has no numbers (' + rounds.find((r) => !Object.keys(r.values).length).raw.slice(0, 60) + ')');
   const mc = methodChangeProblem(rounds);
   const ov = opt('override');
@@ -111,7 +127,8 @@ if (auditMode) {
 const round = opt('round');
 const worktree = opt('worktree', path.join(path.dirname(root), 'roadworld-wt', round)); // matches new_agent_worktree.ps1 (new worktrees live under ..\roadworld-wt\<name>)
 const handinDir = path.join(path.resolve(worktree), 'docs', 'progress', round);
-const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + '\nGATES-VERSION: 2' + gateLines.map((g) => '\nGATE: ' + g).join('');
+const priorAudit = opt('prior-audit') ? path.resolve(opt('prior-audit')) : '';   // send-back round: the previous AUDIT.md; the hand-in gate then demands the "Prior audit items" table
+const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + (GL ? '\nGATES-VERSION: 2' + gateLines.map((g) => '\nGATE: ' + g).join('') : '') + (priorAudit ? '\nPRIOR-AUDIT: ' + priorAudit : '');
 const fill = {
   TASK: task,
   ROUND: opt('round'),

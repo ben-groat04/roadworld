@@ -1,6 +1,7 @@
 // Shared helpers for the agent-rule hooks. See brief_gate.mjs for the failure policy (FAIL OPEN).
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 // Main checkout = two levels above tools/hooks. Hooks are wired through ${CLAUDE_PROJECT_DIR}, so this is the
@@ -76,3 +77,26 @@ export function firstUserText(transcriptPath) {
   }
   return '';
 }
+
+// ---- secret + signed records. The secret (.claude/state/ack_secret) is created by the notice hook and read by nothing a subagent is
+// told about; builder and audit records are HMAC-signed with it so a hand-typed JSON file does not verify. LIMIT: an agent that reads
+// the secret file (or writes gate.log, which findBuilderInLog reads) has gone out of its way; this stops accidents and shortcuts, not sabotage.
+export function readSecret(stateDir = STATE_DIR) { try { return fs.readFileSync(path.join(stateDir, 'ack_secret'), 'utf8').trim() || null; } catch { return null; } }
+export function ensureSecret(stateDir = STATE_DIR) {
+  const have = readSecret(stateDir);
+  if (have) return have;
+  const s = crypto.randomBytes(12).toString('hex');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(path.join(stateDir, 'ack_secret'), s);
+  return s;
+}
+const canon = (o) => JSON.stringify(Object.keys(o).filter((k) => k !== 'sig').sort().map((k) => [k, o[k]]));
+export function signRecord(rec, stateDir = STATE_DIR) { const sec = ensureSecret(stateDir); return { ...rec, sig: crypto.createHmac('sha256', sec).update(canon(rec)).digest('hex') }; }
+export function verifyRecord(rec, stateDir = STATE_DIR) {
+  const sec = readSecret(stateDir);
+  if (!rec || !sec || typeof rec.sig !== 'string') return false;
+  const want = crypto.createHmac('sha256', sec).update(canon(rec)).digest('hex');
+  return want.length === rec.sig.length && crypto.timingSafeEqual(Buffer.from(want), Buffer.from(rec.sig));
+}
+
+// Fallback logger for guard.mjs: uses nothing but fs/path so a broken library cannot stop the FAIL-OPEN line being written.

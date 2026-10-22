@@ -67,7 +67,7 @@ t('empty diff: nothing found', GL.waiverFindings('').findings.length === 0);
 
 // ======================================================= STATUS reading
 console.log('status reading');
-const good3 = '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Pass 3\nthe hatching bars cross the kerb line\n## Residual\nnone, all fixed\n';
+const good3 = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Pass 3\nthe hatching bars cross the kerb line at the island nose\n## Residual\nnone, all fixed\n';
 t('clean STATUS and 3 passes: no problems', GL.statusProblems('## Skipped, refused or failed\n\nNothing skipped.\n', good3).length === 0);
 let sp = GL.statusProblems('## Skipped, refused or failed\n- Not attempted: wall curl at road ends\n', good3); t('"Not attempted" item: refused', sp.length === 1 && /not attempted/i.test(sp[0]), sp.join('|'));
 sp = GL.statusProblems('- I did not attempt a fix of the pit\n', good3); t('"did not attempt": refused', sp.length === 1);
@@ -78,9 +78,9 @@ sp = GL.statusProblems('- wall curl: tried a ramp, blocked by the crossing road 
 for (const phrase of ['Pass 3 not done (usage window)', 'stopped because of the usage limit', 'ran out of tokens', 'running out of time', 'context window nearly full', 'hit the rate limit', 'token budget', 'no time left']) {
   sp = GL.statusProblems('- ' + phrase + '\n', good3); t('usage/time reason refused: "' + phrase + '"', sp.some((x) => /usage\/time limit/.test(x)), sp.join('|'));
 }
-sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Residual\nthe pit remains\n'); t('2 passes, no residual-only line: refused', sp.length === 1 && /3 unless/.test(sp[0]), sp.join('|'));
-sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Residual\nthe pit remains\nResidual only unfixable: the pit needs a tunnel the engine cannot model and I tried a bridge and a wall.\n'); t('2 passes + a residual-only-unfixable line: allowed', sp.length === 0, sp.join('|'));
-sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Residual\nResidual only unfixable: none\n'); t('residual-only line too short (under 40 chars): refused', sp.length === 1);
+sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Residual\nthe pit remains\n'); t('2 passes, no residual-only line: refused', sp.length === 1 && /3 unless/.test(sp[0]), sp.join('|'));
+sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Residual\nthe pit remains\nResidual only unfixable: the pit needs a tunnel the engine cannot model and I tried a bridge and a wall.\n'); t('2 passes + a residual-only-unfixable line: allowed', sp.length === 0, sp.join('|'));
+sp = GL.statusProblems('ok\n', '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Residual\nResidual only unfixable: none\n'); t('residual-only line too short (under 40 chars): refused', sp.length === 1);
 sp = GL.statusProblems('ok\n', good3 + '\nPass 4 skipped, usage window\n'); t('usage wording in FAULTS.md: refused', sp.some((x) => /^FAULTS/.test(x)));
 t('usage words inside an HTML comment (the template) are not read', GL.statusProblems('<!-- e.g. "usage window" -->\nok\n', good3).length === 0);
 
@@ -142,7 +142,7 @@ const fakeScene = (passed, total, failing = []) => {
 fs.mkdirSync(path.join(wt, 'prototypes/road-draw/node_modules'), { recursive: true });
 const folder = path.join(wt, 'docs/progress/x');
 const statusBase = (skip = 'Nothing skipped, refused or failed. I did not verify the Unreal side (not part of this round).') => `## Skipped, refused or failed\n\n${skip}\n\nReferences opened: 3 of 3 listed\n\n## Reference files opened\n\nCase: A | Opened: aerial/a.jpg, street/b.jpg, gsv/c.jpg\n`;
-const faults3 = '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Pass 3\nthe hatching bars cross the kerb line\n## Residual\nnone, all fixed\n';
+const faults3 = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Pass 3\nthe hatching bars cross the kerb line at the island nose\n## Residual\nnone, all fixed\n';
 w(path.join(folder, 'STATUS.md'), statusBase()); w(path.join(folder, 'FAULTS.md'), faults3);
 const check = (flags = [], extra = {}) => spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), folder, '--main', main, '--worktree', wt, '--no-visual', ...flags], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' }, ...extra });
 const SC = ['--gates-version', '2', '--gate', 'scene_check >= 20/21 (baseline 20/21, target 21/21)'];
@@ -196,7 +196,7 @@ git(wt, 'reset', '-q', '--hard', 'HEAD~1');
 
 // STATUS reading in a hand-in
 w(path.join(folder, 'STATUS.md'), statusBase('- Not attempted: the S-curl at wall ends.\n- Self-audit: 2 passes, not 3 (usage window).'));
-w(path.join(folder, 'FAULTS.md'), '## Pass 1\nthe kerb stops 4 m short of the island\n## Pass 2\nthe give-way line is a stub, not a span\n## Residual\nthe curl\n');
+w(path.join(folder, 'FAULTS.md'), '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Residual\nthe curl\n');
 c = check(WG); t('hand-in with "not attempted", 2 passes and a usage-window reason: refused for all three', c.status === 1 && /not attempted/i.test(c.stderr) && /usage\/time limit/.test(c.stderr) && /3 unless/.test(c.stderr), c.stderr);
 fs.rmSync(path.join(folder, 'FAULTS.md')); w(path.join(folder, 'STATUS.md'), statusBase());
 c = check(WG); t('v2 engine-only hand-in without FAULTS.md: refused (v1 does not ask)', c.status === 1 && /FAULTS\.md is missing/.test(c.stderr), c.stderr);
