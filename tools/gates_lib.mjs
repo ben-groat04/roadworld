@@ -421,7 +421,7 @@ export function pictureProblems(folder, compareText, opts = {}) {
   const rel = (p) => path.relative(folder, p).split(path.sep).join('/');
   const png = (p) => p.replace(/\.stats\.json$/, '.png');
   const records = new Map();
-  for (const p of all.filter((x) => x.endsWith('.stats.json'))) {
+  for (const p of all.filter((x) => x.endsWith('.stats.json') && !/(^|\/)before\//i.test(rel(x)))) {   // pictures under before/ are history, not the round's work
     try { records.set(path.resolve(p), JSON.parse(fs.readFileSync(p, 'utf8'))); } catch { problems.push(`${rel(p)} is not valid JSON`); }
   }
   // which pictures must have a record
@@ -478,7 +478,7 @@ export function pictureProblems(folder, compareText, opts = {}) {
 const AP = "['\u2019]";
 // Reasons that are never accepted (contract item 5 and 17): usage, time, budget, context. Written as reasons, so "a time limit of 240 s" or "the API rate limit" are not hit.
 const USAGE_RE = new RegExp([
-  String.raw`usage\s+(?:limit|cap|allowance|window|warning|quota)`, String.raw`session\s+limit`, String.raw`\btoken\s+(?:limit|cap)\b`,String.raw`(?:token|usage|time|context|session)\s+budget`,
+  String.raw`usage\s+(?:limit|cap|allowance|window|warning|quota)`, String.raw`session\s+limit`, String.raw`\btoken\s+(?:limit|cap)\b`,String.raw`(?:token|usage|time|context|session)\s+budget`, String.raw`\bbudget\s+(?:ran\s+out|is\s+gone|gone|spent|exhausted)`,
   String.raw`(?:short|low)\s+(?:of|on)\s+(?:tokens|time|context)`, String.raw`ran\s+(?:short|out)\s+of\s+(?:time|tokens|context)`, String.raw`running\s+(?:out\s+of|low\s+on)\s+(?:time|tokens|context)`, String.raw`out\s+of\s+(?:time|tokens|context)`,
   String.raw`(?:hit|reached|exceeded|ran\s+into)\s+(?:the|my|a)\s+(?:quota|rate\s+limit|time\s+limit|token\s+limit|usage)`,
   String.raw`(?:due\s+to|because\s+of|owing\s+to|given|under)\s+(?:the\s+)?(?:time|usage|token|context)\s+(?:constraints?|limits?|pressure)`,
@@ -491,9 +491,12 @@ const NOT_DONE_RE = new RegExp([
   String.raw`\b(?:did|have|had|was|were|is|are|has)\s*(?:not|n${AP}t)\s+(?:been\s+)?(?:attempt|try|tried|get\s+to|implement|finish|complet|fix|address|touch|start|built|done)\w*`,
   String.raw`\b(?:didn|wasn|weren|hasn|haven|isn|aren|hadn)${AP}t\s+(?:been\s+)?(?:attempt|try|tried|get\s+to|implement|finish|complet|fix|address|touch|start|built|done)\w*`,
   String.raw`\bnever\s+(?:attempted|tried|started)`, String.raw`\bstill\s+open\b`, String.raw`\bout\s+of\s+scope\b`, String.raw`\bbigger\s+change\b`, String.raw`\b(?:later|next)\s+round\b`,
-  String.raw`\bleft\s+(?:undone|for\s+later|open)\b`, String.raw`\bfollow[- ]?ups?\b`, String.raw`\bfuture\s+work\b`, String.raw`(?<!\bno\s)(?<!\bnothing\s)\bskipped\b`, String.raw`\buntouched\b`, String.raw`\bTODO\b`, String.raw`\bpostponed\b`,
+  String.raw`\bleft\s+(?:undone|for\s+later|open)\b`, String.raw`\bfollow[- ]?ups?\b`, String.raw`\bfuture\s+work\b`, String.raw`\buntouched\b`, String.raw`\bTODO\b`, String.raw`\bpostponed\b`,
   String.raw`\b(?:was|were|is|are|been|being|get|got)\s+deferred\b`, String.raw`\bdeferred\s+(?:to|until|for)\b`, String.raw`\bwill\s+do\s+(?:this\s+)?(?:next\s+round|later)`,
 ].join('|'), 'i');
+
+// "skipped" is an excuse unless the sentence negates it ("nothing skipped", "no tests were skipped", "not skipped")
+const notDone = (l) => NOT_DONE_RE.test(l) || (/\bskipped\b/i.test(l) && !/\b(?:no|nothing|none|not|never|without)\b[^.\n]{0,40}\bskipped\b/i.test(l));
 
 // BLOCKED form: `BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | needs: <what unblocks it>`
 const FILLER_RE = /^(?:nothing|none|n\/?a|no|tbd|todo|unknown|time|\?+|-+|\.+|see above|same)\W*$/i;
@@ -526,7 +529,7 @@ export function statusProblems(statusText, faultsText, opts = {}) {
   const lines = stat.split('\n');
   lines.forEach((l, i) => {
     if (/^\s*#/.test(l) || blockedLines.has(i + 1)) return;
-    if (NOT_DONE_RE.test(l) && !/^\s*(?:Case|References opened|\|)/i.test(l)) problems.push(`STATUS.md line ${i + 1}: an item is left undone or deferred ("${l.trim().slice(0, 100)}"): do it (contract items 5 and 17), or, if something really blocks it, write "BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | needs: <what unblocks it>"; "out of scope", "later round" and "bigger change" are not reasons`);
+    if (notDone(l) && !/^\s*(?:Case|References opened|\|)/i.test(l)) problems.push(`STATUS.md line ${i + 1}: an item is left undone or deferred ("${l.trim().slice(0, 100)}"): do it (contract items 5 and 17), or, if something really blocks it, write "BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | needs: <what unblocks it>"; "out of scope", "later round" and "bigger change" are not reasons`);
     if (USAGE_RE.test(l)) problems.push(`STATUS.md line ${i + 1}: a usage/time limit is given as a reason ("${l.trim().slice(0, 100)}"): that is not an accepted reason; finish the item or write a BLOCKED line with the technical block`);
   });
   // partial reads do not count as opened (contract item 1)

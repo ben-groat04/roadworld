@@ -12,8 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GL = await import(pathToFileURL(path.join(src, 'tools/gates_lib.mjs')).href);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gatetest-'));
-let pass = 0, fail = 0;
-const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok   ' + name); } else { fail++; console.log('  FAIL ' + name + (detail ? '\n       ' + String(detail).replace(/\n/g, '\n       ').slice(0, 900) : '')); } };
+let pass = 0, fail = 0; const failed = [];
+const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok   ' + name); } else { fail++; failed.push(name); console.log('  FAIL ' + name + (detail ? '\n       ' + String(detail).replace(/\n/g, '\n       ').slice(0, 900) : '')); } };
 const git = (cwd, ...a) => { const r = spawnSync('git', a, { cwd, encoding: 'utf8' }); if (r.status !== 0) throw new Error('git ' + a.join(' ') + ': ' + r.stderr); return r.stdout.trim(); };
 const w = (p, s) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); };
 const mkPng = (wd, ht) => { const b = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0); b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'latin1'); b.writeUInt32BE(wd, 16); b.writeUInt32BE(ht, 20); return b; };
@@ -306,5 +306,286 @@ console.log('self-audit hardening');
 }
 
 
+// ======================================================= gates3: the sixteen items of the gates2 audit, each with its own test
+console.log('waiver guard: the cheap evasions (gates2 audit fault 6)');
+{
+  const dd = (file, removed, added) => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n${removed.map((l) => '-' + l).join('\n')}${removed.length ? '\n' : ''}${added.map((l) => '+' + l).join('\n')}\n`;
+  const kk = (d, allowed = [], contents = null) => GL.waiverFindings(d, allowed, contents).refused.map((f) => f.key);
+  const T = 'tests/test_a.cpp';
+  const has = (k, prefix) => k.some((x) => x.startsWith(prefix));
+  let k = kk(dd(T, ['    CHECK(a == 1);'], ['    CHECK(a == 1 || true);'])); t('"|| true" added to a check: found', has(k, 'or_true:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(a == 1);'], ['    CHECK(true);'])); t('CHECK(true) swapped in for a real check: found', has(k, 'trivial_check:'), JSON.stringify(k));
+  k = kk(dd(T, ['    REQUIRE(a == 1);'], ['    REQUIRE(1);'])); t('REQUIRE(1): found', has(k, 'trivial_check:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(a);', '    CHECK(b);'], ['    /* CHECK(a);', '    CHECK(b); */']), [], { [T]: { old: '    CHECK(a);\n    CHECK(b);\n', new: '    /* CHECK(a);\n    CHECK(b); */\n' } });
+  t('two checks block-commented with /* */ (the diff alone still shows them): found as fewer_checks from the file contents', has(k, 'fewer_checks:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(a);'], ['    #if 0', '    CHECK(a);', '    #endif']), [], { [T]: { old: '    CHECK(a);\n', new: '    #if 0\n    CHECK(a);\n    #endif\n' } });
+  t('a check wrapped in #if 0: found (if0 and fewer_checks)', has(k, 'if0:') && has(k, 'fewer_checks:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(a);'], ['    if (false) { CHECK(a); }']), [], { [T]: { old: '    CHECK(a);\n', new: '    if (false) { CHECK(a); }\n' } });
+  t('a check inside if (false): found (dead_branch and fewer_checks)', has(k, 'dead_branch:') && has(k, 'fewer_checks:'), JSON.stringify(k));
+  k = kk(dd(T, [], ['#ifdef NEVER_DEFINED', 'CHECK(a);', '#endif'])); t('#ifdef NEVER added: found', has(k, 'preproc:'), JSON.stringify(k));
+  k = kk(dd(T, [], ['#ifndef SOME_FLAG', '#endif'])); t('#ifndef added: found', has(k, 'preproc:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(x == doctest::Approx(1.0).epsilon(0.001));'], ['    CHECK(x == doctest::Approx(1.0).epsilon(0.5));'])); t('Approx epsilon widened 0.001 -> 0.5: found', has(k, 'approx:'), JSON.stringify(k));
+  k = kk(dd(T, [], ['    CHECK(x == doctest::Approx(1.0).margin(0.3));'])); t('a new Approx margin: found', has(k, 'approx:'), JSON.stringify(k));
+  t('Approx epsilon tightened: not found', kk(dd(T, ['    CHECK(x == doctest::Approx(1.0).epsilon(0.1));'], ['    CHECK(x == doctest::Approx(1.0).epsilon(0.01));'])).filter((x) => x.startsWith('approx:')).length === 0);
+  k = kk(dd(T, [], ['    return;'])); t('an early bare `return;` added in a test: found', has(k, 'early_return:'), JSON.stringify(k));
+  t('`return;` in a JS file is not the C++ early-return waiver', kk(dd('prototypes/road-draw/test-geom.mjs', [], ['  return;'])).filter((x) => x.startsWith('early_return')).length === 0);
+  k = kk(dd(T, [], ['#define CHECK(x) (void)0'])); t('#define CHECK(x) (void)0: found', has(k, 'macro_redefined:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(n == 5);'], ['    CHECK(n == 6);'])); t('an edited expected value (5 -> 6): found, with the rule behind it in the message', has(k, 'expected_value:'), JSON.stringify(k));
+  t('...and the message says a photo measurement or written rule is needed', GL.waiverFindings(dd(T, ['    CHECK(n == 5);'], ['    CHECK(n == 6);'])).refused[0].what.includes('photo measurement'));
+  t('...allowed by the prefix "expected_value:test_a.cpp" in the task file', kk(dd(T, ['    CHECK(n == 5);'], ['    CHECK(n == 6);']), ['expected_value:test_a.cpp']).length === 0);
+  k = kk(dd(T, [], ['    if (b) CHECK(a == 1);'])); t('a check moved under an if on the same line: found', has(k, 'guarded_check:'), JSON.stringify(k));
+  k = kk(dd('tests/CMakeLists.txt', ['    test_markings.cpp', '    test_lanes.cpp'], ['    #test_markings.cpp', '    test_lanes.cpp'])); t('a CMake source commented out with # (the name is still in the text): found', k.includes('deleted_file:test_markings.cpp'), JSON.stringify(k));
+  k = kk(dd('tests/CMakeLists.txt', ['    test_markings.cpp'], ['    test_markings.cpp # still here'])); t('a CMake source with a trailing comment but still listed: not found', !k.includes('deleted_file:test_markings.cpp'), JSON.stringify(k));
+  k = kk(dd('tests/CMakeLists.txt', [], ['set_tests_properties(sim_core_tests PROPERTIES LABELS "skip")'])); t('LABELS added to a ctest test: found', has(k, 'ctest_labels:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(w < 0.3);'], ['    int extra = 1;', '    CHECK(w < 0.9);'])); t('a loosened threshold plus an extra added line in the same hunk (shapes differ): found', has(k, 'threshold:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(w < 0.3);'], ['    CHECK(w < 0.3 * 3);'])); t('0.3 -> 0.3 * 3 (an expression is evaluated): found', has(k, 'threshold:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(n == 0);'], ['    CHECK(n <= 5);'])); t('== 0 -> <= 5: found', has(k, 'threshold:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(n > 5);'], ['    CHECK(n > -5);'])); t('> 5 -> > -5 (the sign is read): found', has(k, 'threshold:'), JSON.stringify(k));
+  k = kk(dd(T, ['    CHECK(n < 5);'], ['    CHECK(n <= 5);'])); t('< 5 -> <= 5 (the same bound made inclusive): found', has(k, 'threshold:'), JSON.stringify(k));
+  k = kk(dd(T, ['    for (int i = 0; i < 100; ++i) {'], ['    for (int i = 0; i < 10; ++i) {'])); t('a loop bound narrowed 100 -> 10: found', has(k, 'loop_bound:'), JSON.stringify(k));
+  t('a threshold tightened (< 0.3 -> < 0.1, > 5 -> > 9, <= 5 -> == 5): not found', ['    CHECK(w < 0.1);', '    CHECK(w > 9);'].every((n, i) => kk(dd(T, [i ? '    CHECK(w > 5);' : '    CHECK(w < 0.3);'], [n])).length === 0) && kk(dd(T, ['    CHECK(n <= 5);'], ['    CHECK(n == 5);'])).filter((x) => x.startsWith('threshold')).length === 0);
+  k = kk(dd(T, [], ['    std::vector<int> v;', '    std::map<int, int> m = {};'])); t('template brackets and plain code are not read as comparisons', k.length === 0, JSON.stringify(k));
+  t('WAIVER_PATHS now watch the Unreal test folders, prototype tests and the gates\' own tests', ['unreal', 'prototypes/*/test', 'tools/test_gates.mjs', 'tools/hooks/test_hooks.mjs'].every((x) => GL.WAIVER_PATHS.some((p) => p.includes(x))), JSON.stringify(GL.WAIVER_PATHS));
+  // the real collector supplies old and new contents of every changed guarded code file
+  w(path.join(wt, 'tests/test_a.cpp'), 'TEST_CASE("alpha") {\n  CHECK(1 == 1);\n}\n');
+  const gd = GL.collectWaiverDiff(wt);
+  t('collectWaiverDiff returns the merge-base content and the working content of a changed guarded file', gd.contents && gd.contents['tests/test_a.cpp'] && /alpha/.test(gd.contents['tests/test_a.cpp'].old) && /CHECK\(1 == 1\)/.test(gd.contents['tests/test_a.cpp'].new), JSON.stringify(gd.contents));
+  git(wt, 'checkout', '-q', '--', 'tests/test_a.cpp');
+}
+
+console.log('STATUS reading: excuses, honest blocks, false positives (gates2 audit fault 7)');
+{
+  const ok3 = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe line is a stub and not a span across the arm\n## Pass 3\nthe bars cross the kerb line at the island nose\n## Residual\nnone\n';
+  const bad = (txt) => GL.statusProblems('## Skipped, refused or failed\n' + txt + '\n', ok3);
+  for (const phrase of ['not implemented', 'not finished', 'still open', 'out of scope', 'skipped the curl', 'TODO: curl', 'a follow-up for the curl', 'future work', 'ran short of tokens', 'usage cap hit', 'usage allowance used up', 'not enough time for the pit', 'no time for the pit', 'time pressure', 'token budget gone', 'untouched', 'not addressed', 'not fixed', "wasn't attempted", 'wasn\u2019t attempted', 'would need a bigger change, later round', 'left for later', 'will do next round', 'budget ran out']) {
+    t('excuse refused: "' + phrase + '"', bad('- ' + phrase).length >= 1, bad('- ' + phrase).join('|'));
+  }
+  for (const okp of ['deferred shading is used for the sky dome', 'a time constraint of 5 ms per frame applies to the tile build', 'the API rate limit is 100 requests per minute', 'the context window of the camera is 90 degrees', 'not done by design: the road ends at the island', 'Nothing skipped, refused or failed.', 'no tests were skipped']) {
+    t('honest text is not mistaken for an excuse: "' + okp + '"', bad('- ' + okp).length === 0, bad('- ' + okp).join('|'));
+  }
+  const blk = 'BLOCKED: wall curl at the road ends | tried: a ramp, a fillet and a longer fade, three renders | blocked by: the crossing road keeps the ground 2 m high (see s4 render) | needs: a decision on the crossing level';
+  t('a complete BLOCKED line passes the status reader', bad(blk).length === 0, bad(blk).join('|'));
+  t('...even when its own words would be an excuse elsewhere ("not done", "skipped")', bad('BLOCKED: skipped curl | tried: the fade and the ramp, not done yet | blocked by: the crossing road holds the ground at 2 m | needs: a decision').length === 0);
+  t('BLOCKED without "tried:" is refused and the message shows the form', bad('BLOCKED: wall curl | blocked by: the crossing road keeps the ground high').some((x) => /tried/.test(x) && /BLOCKED: <item>/.test(x)));
+  t('BLOCKED without "blocked by:" is refused', bad('BLOCKED: wall curl | tried: a ramp and a longer fade').some((x) => /blocked by/.test(x)));
+  t('BLOCKED with "blocked by: time" is refused (an excuse in the form of a block)', bad('BLOCKED: wall curl | tried: a ramp and a fillet | blocked by: time').some((x) => /not a block|too short/.test(x)));
+  t('BLOCKED with "blocked by: the usage window ran out" is refused', bad('BLOCKED: wall curl | tried: a ramp and a fillet | blocked by: the usage window ran out of room').some((x) => /not a block/.test(x)));
+  t('BLOCKED with "blocked by: nothing" is refused', bad('BLOCKED: wall curl | tried: a ramp and a fillet | blocked by: nothing').length >= 1);
+  t('the old exemption "tried ...; blocked by nothing" no longer hides a not-attempted item', bad('Not attempted: item 4 (tried: it; blocked by nothing)').length >= 1);
+  t('parseBlocked returns item, tried, blocked by, needs', (() => { const b = GL.parseBlocked(blk)[0]; return b.ok && b.item === 'wall curl at the road ends' && /ramp/.test(b.tried) && /crossing road/.test(b.blockedBy) && /decision/.test(b.needs); })());
+  t('a BLOCKED line in an HTML comment (the template) is not read', GL.parseBlocked('<!-- BLOCKED: x | tried: y | blocked by: z -->').length === 0);
+  // partial reads
+  const stPart = '## Skipped, refused or failed\n- hooks, scene.mjs and the audit read partly (heads and greps)\n\nReferences opened: 12 of 12 listed\n\n## Reference files opened\n';
+  t('"12 of 12 opened" next to "read partly": refused (a partial read counts as not opened)', GL.statusProblems(stPart, ok3).some((x) => /partial read counts as not opened/.test(x)));
+  t('"11 of 12" with a not-opened line is not touched by that rule', !GL.statusProblems(stPart.replace('12 of 12', '11 of 12'), ok3).some((x) => /partial read/.test(x)));
+  // residual-only line names items; pass filler
+  const two = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe line is a stub and not a span across the arm\n## Residual\n1. the pit\n';
+  t('"Residual only unfixable:" that names no item: refused', GL.statusProblems('ok\n', two + 'Residual only unfixable: the pit needs a tunnel the engine cannot model at all\n').some((x) => /must name the residual items/.test(x)));
+  t('"Residual only unfixable:" that names item 1: accepted', GL.statusProblems('ok\n', two + 'Residual only unfixable: item 1, the pit needs a tunnel the engine cannot model at all\n').length === 0);
+  t('a Pass body of filler ("n/a", "none", a dozen characters) is not a pass', GL.statusProblems('ok\n', '## Pass 1\nn/a n/a n/a n/a n/a n/a n/a n/a n/a n/a n/a\n## Pass 2\nnone\n## Pass 3\ntwelve chars\n## Residual\nnone\n').some((x) => /empty, filler/.test(x)));
+  t('a BLOCKED self-audit item lets fewer than 3 passes through', GL.statusProblems('BLOCKED: the self-audit passes 2 and 3 | tried: a render of both views and a composite | blocked by: the viewer exits with code 4 on launch (log in scratch) | needs: a working GPU\n', two).length === 0);
+}
+
+console.log('prior audit items table (contract item 17)');
+{
+  const prior = '## Faults\nx\n## For the next builder\n\n1. fix the escape\n2. fix the picture gate\n3. fix the ctest gate\n\n## Exclusions\nnone\n';
+  const head = '## Skipped, refused or failed\nok\n\n## Prior audit items\n\n| Item | Status | Proof |\n|---|---|---|\n';
+  const rows = ['| 1 | fixed | tools/test_gates.mjs "accept with a typed fake id" |', '| 2 | fixed | test "picture gate finds records in after/" passes |', '| 3 | open (b) | the audit read ctest -N; my own check in build/ shows add_test count 1 and the log covers it, numbers in FAULTS.md |'];
+  t('a complete table: no problems', GL.priorAuditProblems(head + rows.join('\n') + '\n', prior).length === 0, GL.priorAuditProblems(head + rows.join('\n') + '\n', prior).join('|'));
+  t('no "Prior audit items" section at all: refused', GL.priorAuditProblems('## Skipped, refused or failed\nok\n', prior)[0].includes('no "## Prior audit items" section'));
+  t('fewer rows than audit items: refused', GL.priorAuditProblems(head + rows.slice(0, 2).join('\n') + '\n', prior).some((x) => /2 row\(s\) but the previous AUDIT.md lists 3/.test(x)));
+  t('"fixed" without proof: refused', GL.priorAuditProblems(head + ['| 1 | fixed | done |', rows[1], rows[2]].join('\n') + '\n', prior).some((x) => /needs the test, run or image/.test(x)));
+  t('"open" without reason (a) or (b): refused', GL.priorAuditProblems(head + [rows[0], rows[1], '| 3 | open | later round, needs a bigger change to the build system than there is room for here |'].join('\n') + '\n', prior).some((x) => /reason \(a\)/.test(x)));
+  t('a status that is neither fixed nor open: refused', GL.priorAuditProblems(head + [rows[0], rows[1], '| 3 | skipped | none |'].join('\n') + '\n', prior).some((x) => /must start with "fixed" or "open"/.test(x)));
+  // end to end through check_handin --prior-audit
+  const pa = path.join(tmp, 'prior_AUDIT.md'); w(pa, prior);
+  w(path.join(folder, 'STATUS.md'), statusBase());
+  c = check(['--gates-version', '2', '--prior-audit', pa]); t('check_handin --prior-audit: a STATUS without the table is refused', c.status === 1 && /GATE prior audit/.test(c.stderr), c.stderr);
+  w(path.join(folder, 'STATUS.md'), statusBase() + '\n' + head.replace('## Skipped, refused or failed\nok\n\n', '') + rows.join('\n') + '\n');
+  c = check(['--gates-version', '2', '--prior-audit', pa]); t('...and with the table: passes', c.status === 0, c.stderr);
+  w(path.join(folder, 'STATUS.md'), statusBase());
+}
+
+console.log('picture gate: layouts, forged records, diagnostic flags (gates2 audit fault 2)');
+{
+  const root3 = path.join(tmp, 'picgate'); fs.mkdirSync(root3);
+  const put = (rel, o = {}, png = mkPng(o.width || 800, o.height || 450)) => { w(path.join(root3, rel + '.png'), png); w(path.join(root3, rel + '.stats.json'), JSON.stringify({ view: path.basename(rel), width: 800, height: 450, diagnostic: false, road_px: 30000, debug_px: 0, png_sha1: sha1(png), ...o })); };
+  const cmpFor = (...paths) => '| case | render |\n|---|---|\n' + paths.map((p) => `| c | ${p} | r | c | b | x | y | z |`).join('\n') + '\n';
+  put('after/t_aerial'); put('after/t_street'); put('before/t_aerial', { road_px: 0 });
+  let pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png', 'after/t_street.png'));
+  t('the real tjunction layout (renders and stats in after/ and before/): passes; before/ history is not judged', pp.problems.length === 0, pp.problems.join('|'));
+  t('...and both after/ views were measured', pp.notes.length === 2, JSON.stringify(pp.notes));
+  fs.rmSync(path.join(root3, 'after/t_street.stats.json'));
+  pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png', 'after/t_street.png')); t('a COMPARE render in after/ without its record beside it: refused, names the file', pp.problems.some((x) => /after\/t_street\.png/.test(x) && /t_street\.stats\.json/.test(x)), pp.problems.join('|'));
+  put('after/t_street', { png_sha1: 'f'.repeat(40) }); pp = GL.pictureProblems(root3, cmpFor('after/t_street.png')); t('a typed hash that does not match the PNG: refused', pp.problems.some((x) => /hash differs/.test(x)), pp.problems.join('|'));
+  put('after/t_street'); fs.rmSync(path.join(root3, 'after/t_street.png'));
+  pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png')); t('a stats record with NO png beside it (typed hash, picture elsewhere): refused', pp.problems.some((x) => /has no t_street\.png beside it/.test(x)), pp.problems.join('|'));
+  fs.rmSync(path.join(root3, 'after/t_street.stats.json'));
+  put('after/big_street', { road_px: 400000 }); pp = GL.pictureProblems(root3, cmpFor('after/big_street.png')); t('road_px larger than the 800x450 frame: refused as not fitting the frame', pp.problems.some((x) => /do not fit the 800x450 frame/.test(x)), pp.problems.join('|'));
+  put('after/big_street', { debug_px: 360000, road_px: 30000 }); pp = GL.pictureProblems(root3, cmpFor('after/big_street.png')); t('road + debug together larger than the frame: refused', pp.problems.some((x) => /do not fit/.test(x)), pp.problems.join('|'));
+  put('after/big_street', { width: 640, height: 480 }, mkPng(800, 450)); w(path.join(root3, 'after/big_street.stats.json'), JSON.stringify({ width: 640, height: 480, diagnostic: false, road_px: 30000, debug_px: 0, png_sha1: sha1(mkPng(800, 450)) }));
+  pp = GL.pictureProblems(root3, cmpFor('after/big_street.png')); t('stats width/height that disagree with the PNG header: refused', pp.problems.some((x) => /says 640x480 but the PNG is 800x450/.test(x)), pp.problems.join('|'));
+  fs.rmSync(path.join(root3, 'after/big_street.stats.json')); fs.rmSync(path.join(root3, 'after/big_street.png'));
+  put('after/hidden_aerial', { diagnostic: true, road_px: 0, debug_px: 400000 });
+  pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png'), { statusText: 'hidden_aerial is a diagnostic view of nothing in particular, listed here' }); t('round 9\'s s4 aerial flagged diagnostic and not in COMPARE.md: still refused (a headline-named view cannot be diagnostic)', pp.problems.some((x) => /hidden_aerial/.test(x) && /headline view/.test(x)), pp.problems.join('|'));
+  put('after/section_close', { diagnostic: true, road_px: 0 });
+  pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png'), { statusText: 'section_close: diagnostic view of the wall face, no road in frame on purpose, for the section sheet' });
+  t('a diagnostic close-up explained in STATUS.md (name + reason): accepted', !pp.problems.some((x) => /section_close/.test(x)), pp.problems.join('|'));
+  t('the thresholds are documented in the source with their origin (no photo behind them, stated)', /no photo measurement stands behind these numbers/.test(fs.readFileSync(path.join(src, 'tools/gates_lib.mjs'), 'utf8')));
+  // scene.mjs writes the same record (task C named scene.mjs)
+  const sceneSrc = fs.readFileSync(path.join(src, 'prototypes/road-draw/tools/scene.mjs'), 'utf8');
+  t('scene.mjs writes <view>.stats.json next to each render (png_sha1, road_px, debug_px, width, height)', /stats\.json/.test(sceneSrc) && /png_sha1/.test(sceneSrc) && /road_px/.test(sceneSrc) && /debug_px/.test(sceneSrc) && /writeStats\(name\)/.test(sceneSrc));
+}
+
+console.log('ctest gate (gates2 audit fault 3)');
+{
+  const ct = path.join(tmp, 'ctw'); fs.mkdirSync(path.join(ct, 'build/Testing/Temporary'), { recursive: true }); fs.mkdirSync(path.join(ct, 'tests'), { recursive: true });
+  const reg = (n) => w(path.join(ct, 'build/tests/CTestTestfile.cmake'), Array.from({ length: n }, (_, i) => `add_test(t${i} "x")`).join('\n') + '\n');
+  const block = (i, n, o = {}) => `${i}/${n} Testing: t${i}\n${i}/${n} Test: t${i}\n${o.crash ? 'terminate called\n' : `[doctest] test cases: ${o.cases ?? 5} | 5 passed | 0 failed | 0 skipped\n[doctest] assertions: 50 | ${50 - (o.fa || 0)} passed | ${o.fa || 0} failed |\n`}${o.crash ? 'Test Failed.\n' : o.fa ? 'Test Failed.\n' : 'Test Passed.\n'}`;
+  const log = (txt) => w(path.join(ct, 'build/Testing/Temporary/LastTest.log'), txt);
+  w(path.join(ct, 'tests/a.cpp'), 'TEST_CASE("a") {}\nTEST_CASE("b") {}\nTEST_CASE("c") {}\nTEST_CASE("d") {}\nTEST_CASE("e") {}\n');
+  reg(1); log(block(1, 1, { fa: 2 }));
+  let m = GL.measureCtest(ct); t('one suite, 2 failed assertions measured from LastTest.log (no ctest binary needed)', m.failed_assertions === 2 && m.registered === 1 && m.failed_tests === 1, JSON.stringify(m));
+  let g = GL.runMeasuredGates(GL.parseGates(['ctest failed_assertions == 2']), ct);
+  t('"== 2" with 2 measured: passes', g.problems.length === 0, g.problems.join('|'));
+  log(block(1, 1, {})); g = GL.runMeasuredGates(GL.parseGates(['ctest failed_assertions == 2']), ct);
+  t('"== 2" with an IMPROVEMENT to 0 measured: passes (== behaves as <= on failure counts)', g.problems.length === 0, g.problems.join('|'));
+  log(block(1, 1, { fa: 3 })); g = GL.runMeasuredGates(GL.parseGates(['ctest failed_assertions == 2']), ct); t('3 measured: refused', g.problems.length === 1 && /measured 3/.test(g.problems[0]));
+  log(block(1, 1, { crash: true }));
+  m = GL.measureCtest(ct); t('a crashed test (no doctest summary) shows 0 failed assertions but counts as a failed TEST', m.failed_assertions === 0 && m.failed_tests === 1, JSON.stringify(m));
+  g = GL.runMeasuredGates(GL.parseGates(['ctest failed_assertions <= 2', 'ctest failed_tests <= 0']), ct); t('...so the paired failed_tests gate refuses the crash', g.problems.some((x) => /ctest failed_tests/.test(x)), g.problems.join('|'));
+  log(block(1, 1, { crash: true }).replace('Test Failed.', 'Test Passed.')); m = GL.measureCtest(ct); t('a non-doctest test that ctest reports as Passed is not counted as a failure', m.failed_tests === 0, JSON.stringify(m));
+  reg(3); log(block(1, 3) + block(2, 3));
+  m = GL.measureCtest(ct); t('the log covers 2 of the 3 registered tests (a subset run): refused with the numbers', /covers 2 of 3 registered tests/.test(m.fail || ''), JSON.stringify(m));
+  fs.rmSync(path.join(ct, 'build/tests/CTestTestfile.cmake')); log(block(1, 1));
+  m = GL.measureCtest(ct); t('no add_test anywhere in the build (the total cannot be found): refused, never silently skipped', /cannot tell how many tests the build registers/.test(m.fail || ''), JSON.stringify(m));
+  reg(1); log(block(1, 1, { cases: 2 })); m = GL.measureCtest(ct); t('doctest ran 2 cases but the sources hold 5 TEST_CASEs (a -tc= filtered run): refused', /ran 2 doctest cases but the sources hold 5/.test(m.fail || ''), JSON.stringify(m));
+  log(block(1, 1, { cases: 5 })); m = GL.measureCtest(ct); t('5 of 5 cases: accepted', m.failed_tests === 0 && !m.fail, JSON.stringify(m));
+  t('make_brief refuses "ctest failed_assertions == 2" and says to write <= 2', (() => { const b2 = mb(tf('## Gates\nctest failed_assertions == 2\n')); return b2.status === 1 && /write "ctest failed_assertions <= 2"/.test(b2.stderr); })());
+  t('make_brief pairs ctest failed_assertions <= 2 with ctest failed_tests <= 2 automatically', (() => { const b2 = mb(tf('## Gates\nctest failed_assertions <= 2\n')); return b2.status === 0 && /^GATE: ctest failed_tests <= 2$/m.test(b2.stdout); })());
+  t('an explicit failed_tests line is not duplicated', (() => { const b2 = mb(tf('## Gates\nctest failed_assertions <= 2\nctest failed_tests <= 1\n')); return b2.status === 0 && (b2.stdout.match(/^GATE: ctest failed_tests/gm) || []).length === 1; })());
+}
+
+console.log('scene gate: broken run is a refusal, no write into the worktree (gates2 audit faults 4 and 5)');
+{
+  const sw = path.join(tmp, 'sw'); const rd = path.join(sw, 'prototypes/road-draw');
+  fs.mkdirSync(path.join(rd, 'tools'), { recursive: true }); fs.mkdirSync(path.join(rd, 'node_modules'), { recursive: true });
+  w(path.join(rd, 'build.mjs'), "import fs from 'node:fs'; fs.writeFileSync('index.html', '<html></html>'); console.log('wrote index.html');\n");
+  const sceneJs = (body) => w(path.join(rd, 'tools/scene.mjs'), body);
+  sceneJs("console.log('PASS a ok'); console.log('1/1 passed in 0.1s');\n");
+  let m = GL.measureSceneCheck(sw); t('a good scene check is measured', m.value === '1/1', JSON.stringify(m));
+  t('...and the worktree under inspection was NOT written to (no index.html appeared; the build ran in a temp copy)', !fs.existsSync(path.join(rd, 'index.html')));
+  sceneJs("console.log('PASS a ok'); throw new Error('browser crashed');\n");
+  m = GL.measureSceneCheck(sw); t('scene.mjs crashes without a summary line: a REFUSAL ("fail"), not a FAIL-OPEN error', /printed no "N\/M passed" line/.test(m.fail || '') && !m.error, JSON.stringify(m));
+  sceneJs('setTimeout(() => {}, 60000);\n');
+  m = GL.measureSceneCheck(sw, { checkMs: 600 }); t('scene check hangs past the cap: a refusal that names the timeout', /timed out after/.test(m.fail || '') && !m.error, JSON.stringify(m));
+  w(path.join(rd, 'build.mjs'), "process.exit(3);\n"); sceneJs("console.log('1/1 passed in 0.1s');\n");
+  m = GL.measureSceneCheck(sw); t('node build.mjs fails: a refusal naming the build', /node build\.mjs failed/.test(m.fail || ''), JSON.stringify(m));
+  w(path.join(rd, 'build.mjs'), "setTimeout(() => {}, 60000);\n"); m = GL.measureSceneCheck(sw, { buildMs: 500 }); t('node build.mjs hangs: a refusal naming the timeout', /build\.mjs timed out/.test(m.fail || ''), JSON.stringify(m));
+  fs.rmSync(path.join(rd, 'node_modules'), { recursive: true }); m = GL.measureSceneCheck(sw); t('node_modules missing is infrastructure: { error } (fail open), not { fail }', !!m.error && !m.fail, JSON.stringify(m));
+  t('the time budget fits inside the spawn limit (build + check < 270 s)', GL.SCENE_BUILD_MS + GL.SCENE_CHECK_MS < 270000, GL.SCENE_BUILD_MS + ' + ' + GL.SCENE_CHECK_MS);
+  // the real gate on a clean copy of the real road-draw leaves git status clean
+  const rg = path.join(tmp, 'realrd'); fs.mkdirSync(path.join(rg, 'prototypes'), { recursive: true });
+  fs.cpSync(path.join(src, 'prototypes/road-draw'), path.join(rg, 'prototypes/road-draw'), { recursive: true, filter: (s) => !/[\\/](node_modules|screenshots|x|\.git)$/.test(s) });
+  git(rg, 'init', '-q'); git(rg, 'config', 'user.email', 't@t'); git(rg, 'config', 'user.name', 't'); git(rg, 'add', '-A'); git(rg, 'commit', '-qm', 'base');
+  if (fs.existsSync(path.join(src, 'prototypes/road-draw/node_modules'))) {
+    fs.symlinkSync(path.join(src, 'prototypes/road-draw/node_modules'), path.join(rg, 'prototypes/road-draw/node_modules'), 'junction');
+    m = GL.measureSceneCheck(rg);
+    t('the REAL scene check on a clean copy of road-draw: measured (' + (m.value || m.fail || m.error) + ') and `git status` is still clean afterwards', (m.value || m.fail) !== undefined && git(rg, 'status', '--porcelain').replace(/\?\? prototypes\/road-draw\/node_modules\/?/, '').trim() === '', git(rg, 'status', '--porcelain'));
+  } else t('the REAL scene check on a clean copy of road-draw (skipped: no node_modules in this checkout)', true);
+}
+
+console.log('make_brief: case counting, no-render wording, directions, broken library (gates2 audit faults 9 and 10)');
+{
+  const cnt = (cases) => mb(tf('', cases));
+  t('five cases written "s1: ... s5:" are counted (round 9 named its views s1..s8): refused without a Scope', (() => { const b2 = cnt('s1: a\n- a.jpg\ns2: b\n- b.jpg\ns3: c\n- c.jpg\ns4: d\n- d.jpg\ns5: e\n- e.jpg\n'); return b2.status === 1 && /names 5 cases/.test(b2.stderr); })());
+  t('five cases written "1. ... 5." are counted', cnt('1. a a.jpg\n2. b b.jpg\n3. c c.jpg\n4. d d.jpg\n5. e e.jpg\n').status === 1);
+  t('four cases written "A) B) C) D)" are counted', cnt('A) a a.jpg\nB) b b.jpg\nC) c c.jpg\nD) d d.jpg\n').status === 1);
+  t('"Item 1:" lines are counted', cnt('Item 1: a a.jpg\nItem 2: b b.jpg\nItem 3: c c.jpg\nItem 4: d d.jpg\n').status === 1);
+  t('an explicit "Cases: 6" statement is counted', cnt('Cases: 6 views of one junction\n- a.jpg b.jpg c.jpg\n').status === 1);
+  t('a list of drive-path files is not a list of cases', cnt('Files to open:\n- C:\\a\\one.md\n- C:\\a\\two.md\n- C:\\a\\three.md\n- C:\\a\\four.md\n- D:\\x\\five.md\n').status === 0);
+  t('three cases in any of those forms are allowed', cnt('s1: a\ns2: b\ns3: c\n- a.jpg b.jpg c.jpg\n').status === 0);
+  for (const phrase of ['Engine work, headless: no views', 'no screenshots are produced', 'nothing is rendered by this task', 'no images at all', 'no visuals']) {
+    t('Cases saying "' + phrase + '" without --no-visual: refused', mb(tf('', phrase + '\ncase A | a.jpg b.jpg c.jpg')).status === 1);
+  }
+  t('a round line with an unknown metric and no direction is refused ("bare_steps=3")', (() => { const b2 = mb(tf('Previous round: r9\n## Rounds\nr7: bare_steps=3\nr8: bare_steps=3\nr9: bare_steps=3\n')); return b2.status === 1 && /no stated direction: bare_steps/.test(b2.stderr); })());
+  t('...with "(lower)" stated and the count RISING: method review demanded (the direction is stated, not guessed from the name)', (() => { const b2 = mb(tf('Previous round: r9\n## Rounds\nr7: bare_steps=3 (lower)\nr8: bare_steps=4 (lower)\nr9: bare_steps=5 (lower)\n')); return b2.status === 1 && /METHOD REVIEW FIRST/.test(b2.stderr); })());
+  t('...and a count that falls with "(lower)" is an improvement', mb(tf('Previous round: r9\n## Rounds\nr7: bare_steps=5 (lower)\nr8: bare_steps=4 (lower)\nr9: bare_steps=4 (lower)\n')).status === 0);
+  t('a metric named like a failure but stated "(higher)" is read as higher', mb(tf('Previous round: r9\n## Rounds\nr7: faults_found=3 (higher)\nr8: faults_found=4 (higher)\nr9: faults_found=5 (higher)\n')).status === 0);
+  // broken gates_lib: the brief is still printed, FAIL-OPEN on stderr
+  const bt = path.join(tmp, 'brokentools'); fs.mkdirSync(path.join(bt, 'tools/hooks'), { recursive: true }); fs.mkdirSync(path.join(bt, 'docs/templates'), { recursive: true });
+  for (const f of ['tools/make_brief.mjs', 'tools/hooks/lib.mjs']) fs.copyFileSync(path.join(src, f), path.join(bt, f));
+  fs.copyFileSync(path.join(src, 'docs/AGENT_CONTRACT.md'), path.join(bt, 'docs/AGENT_CONTRACT.md')); fs.copyFileSync(path.join(src, 'docs/templates/BRIEF.md'), path.join(bt, 'docs/templates/BRIEF.md'));
+  w(path.join(bt, 'tools/gates_lib.mjs'), 'export const x = ;;; this is not javascript\n');
+  const bb = spawnSync(process.execPath, [path.join(bt, 'tools/make_brief.mjs'), tf(), '--round', 'rr', '--worktree', path.join(tmp, 'wtrr')], { encoding: 'utf8' });
+  t('a SYNTAX ERROR in gates_lib.mjs: make_brief still prints the brief (exit 0), without GATES-VERSION, and says FAIL-OPEN', bb.status === 0 && /^HANDIN_DIR:/m.test(bb.stdout) && !/^GATES-VERSION/m.test(bb.stdout) && /FAIL-OPEN: gates_lib\.mjs could not be loaded/.test(bb.stderr), bb.stdout.slice(0, 200) + bb.stderr);
+}
+
+console.log('wrapper gate: every sim_core source needs its Unreal wrapper');
+{
+  const CW = await import(pathToFileURL(path.join(src, 'tools/check_wrappers.mjs')).href);
+  const rw = path.join(tmp, 'wraproot'); const wd = path.join(rw, CW.WRAP_DIR);
+  for (const n of ['alpha', 'beta']) { w(path.join(rw, 'sim_core/src', n + '.cpp'), 'int x;\n'); w(path.join(wd, 'Wrap_' + n + '.cpp'), '#include "x"\n'); }
+  let r = CW.wrapperProblems(rw); t('every source has a wrapper: nothing missing', r.missing.length === 0 && r.checked === 2, JSON.stringify(r));
+  w(path.join(rw, 'sim_core/src/road_heat.cpp'), 'int h;\n'); w(path.join(rw, 'sim_core/src/tool_hud.cpp'), 'int h;\n'); w(path.join(rw, 'sim_core/src/tool_tuning.cpp'), 'int h;\n');
+  r = CW.wrapperProblems(rw); t('road_heat, tool_hud and tool_tuning added without wrappers (the roadtool3 merge state): all three reported by name', r.missing.length === 3 && ['road_heat', 'tool_hud', 'tool_tuning'].every((n) => r.missing.some((m) => m.includes(`Wrap_${n}.cpp`))), JSON.stringify(r));
+  const cli = (root) => spawnSync(process.execPath, [path.join(src, 'tools/check_wrappers.mjs'), root], { encoding: 'utf8' });
+  let cr = cli(rw); t('the standalone script exits 1 and lists them', cr.status === 1 && /WRAPPER CHECK FAILED \(3 of 5/.test(cr.stderr), cr.stderr);
+  for (const n of ['road_heat', 'tool_hud', 'tool_tuning']) w(path.join(wd, 'Wrap_' + n + '.cpp'), '#include "x"\n');
+  cr = cli(rw); t('...and exits 0 once the wrappers exist (the fixed state)', cr.status === 0 && /WRAPPER CHECK PASSED: 5 sim_core sources/.test(cr.stdout), cr.stderr + cr.stdout);
+  w(path.join(wd, 'Wrap_old.cpp'), 'x'); cr = cli(rw); t('an orphan wrapper is only a warning', cr.status === 0 && /warning: Wrap_old\.cpp/.test(cr.stderr));
+  t('no sim_core/src folder: exit 2 with a message (not a false pass)', cli(path.join(tmp, 'nowhere')).status === 2);
+  // check_handin runs it when a round ADDS a sim_core source (in the e2e repo)
+  w(path.join(wt, CW.WRAP_DIR, 'Wrap_a.cpp'), '#include "x"\n'); git(wt, 'add', '-A'); git(wt, 'commit', '-qm', 'wrapper for a');
+  w(path.join(wt, 'sim_core/src/newthing.cpp'), 'int n;\n'); git(wt, 'add', '-A'); git(wt, 'commit', '-qm', 'adds newthing.cpp without a wrapper');
+  c = check(); t('check_handin: this round ADDS sim_core/src/newthing.cpp with no wrapper: refused, names the file and the wrapper path', c.status === 1 && /WRAPPER GATE/.test(c.stderr) && /newthing\.cpp has no .*Wrap_newthing\.cpp/.test(c.stderr), c.stderr);
+  w(path.join(wt, CW.WRAP_DIR, 'Wrap_newthing.cpp'), '#include "x"\n'); git(wt, 'add', '-A'); git(wt, 'commit', '-qm', 'wrapper');
+  c = check(); t('...with the wrapper added: passes', c.status === 0, c.stderr);
+  git(wt, 'reset', '-q', '--hard', 'HEAD~3');
+}
+
+console.log('BLOCKED form and placeholder refusal, end to end (coordinator addition)');
+{
+  const SCg = ['--gates-version', '2', '--gate', 'scene_check >= 20/21 (baseline 20/21, target 21/21)'];
+  w(path.join(folder, 'FAULTS.md'), faults3);
+  fakeScene(17, 21);
+  w(path.join(folder, 'STATUS.md'), statusBase('Nothing else skipped.\nBLOCKED: scene_check below the floor (17/21) | tried: three changes to the wall fade and a longer ramp, each re-measured | blocked by: ground_under_road keeps failing because the crossing road holds the ground 2 m high | needs: a decision on the crossing level'));
+  c = check(SCg);
+  t('scene 17/21 (below the floor) with a complete BLOCKED line that names scene_check: PASSES, the measurement is still printed as BLOCKED', c.status === 0 && /BLOCKED \(named in STATUS\.md\): scene_check measured 17\/21/.test(c.stdout), c.stdout + c.stderr);
+  t('...and prints one BLOCKED-ITEM line per item for the hand-in hook to log', /^BLOCKED-ITEM: BLOCKED: scene_check below the floor/m.test(c.stdout), c.stdout);
+  w(path.join(folder, 'STATUS.md'), statusBase('Nothing else skipped.\nBLOCKED: the wall curl | tried: a ramp and a fade, re-measured twice | blocked by: the crossing road holds the ground 2 m high here | needs: a decision'));
+  c = check(SCg); t('...a BLOCKED line about something ELSE does not excuse the floor miss: refused', c.status === 1 && /measured 17\/21/.test(c.stderr), c.stderr);
+  w(path.join(folder, 'STATUS.md'), statusBase('Nothing else skipped.\nBLOCKED: scene_check below the floor | tried: it | blocked by: time'));
+  c = check(SCg); t('...an incomplete BLOCKED line (no real tried / blocked by) excuses nothing and is itself refused', c.status === 1 && /BLOCKED line is incomplete/.test(c.stderr) && /measured 17\/21/.test(c.stderr), c.stderr);
+  w(path.join(folder, 'STATUS.md'), statusBase('- scene_check is below the floor, out of scope for this round, a later round will fix it'));
+  c = check(SCg); t('...excuses without tried / blocked by (scope, later round) refuse as before', c.status === 1 && /left undone or deferred/.test(c.stderr), c.stderr);
+  w(path.join(folder, 'STATUS.md'), statusBase('BLOCKED: wall curl at the road ends | tried: a ramp, a fillet and a longer fade, three renders | blocked by: the crossing road keeps the ground 2 m high | needs: a decision on the crossing level'));
+  fakeScene(21, 21); c = check(SCg); t('an item that only the STATUS reader sees (no metric involved) in the BLOCKED form: passes at 21/21 and is reported', c.status === 0 && /BLOCKED-ITEM: BLOCKED: wall curl/.test(c.stdout), c.stdout + c.stderr);
+  w(path.join(folder, 'STATUS.md'), statusBase());
+
+  // placeholder COMPARE tables (gates2's own COMPARE row, roadtool3 and gradelayer): refused firmly, pointing to the BLOCKED form
+  const vf2 = path.join(wt, 'docs/progress/vis2'); w(path.join(vf2, 'STATUS.md'), statusBase()); w(path.join(vf2, 'FAULTS.md'), faults3);
+  for (const f of ['comp.png', 'before.png']) w(path.join(vf2, f), 'x');
+  w(path.join(vf2, 'r.png'), mkPng(800, 450)); w(path.join(vf2, 'r.stats.json'), JSON.stringify({ width: 800, height: 450, diagnostic: false, road_px: 30000, debug_px: 0, png_sha1: sha1(mkPng(800, 450)) }));
+  const hdr = '| case | render | reference | composite | before | subject/type match | scale match | viewpoint match |\n|---|---|---|---|---|---|---|---|\n';
+  const cv = (rows) => { w(path.join(vf2, 'COMPARE.md'), hdr + rows + '\n'); return spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), vf2, '--main', main, '--worktree', wt, '--gates-version', '2'], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } }); };
+  c = cv('| s | r.png | aerial/a.jpg | comp.png | before.png | evidence row only, no match claimed | evidence row only, no match claimed | evidence row only, no match claimed |');
+  t('gates2\'s own placeholder row ("evidence row only, no match claimed" x3): refused, and the message points to the BLOCKED form', c.status === 1 && /placeholder/.test(c.stderr) && /BLOCKED: <item> \| tried/.test(c.stderr), c.stderr);
+  c = cv('| s | r.png | aerial/a.jpg | comp.png | before.png | placeholder until the render exists | n/a for this case | to be done |');
+  t('"placeholder" and "n/a" in the match cells: refused, both cells named, BLOCKED form shown', c.status === 1 && /subject\/type match cell is a placeholder/.test(c.stderr) && /scale match/.test(c.stderr) && /BLOCKED: <item>/.test(c.stderr), c.stderr);
+  c = cv('| s | r.png | aerial/a.jpg | comp.png | before.png | same junction type as the photo | same junction type as the photo | same junction type as the photo |');
+  t('one sentence copied into the three match cells: refused', c.status === 1 && /identical/.test(c.stderr), c.stderr);
+  c = cv('');
+  t('a COMPARE.md with a header and no rows: refused, with the BLOCKED hint', c.status === 1 && /no table rows/.test(c.stderr) && /BLOCKED: <item>/.test(c.stderr), c.stderr);
+  fs.rmSync(path.join(vf2, 'COMPARE.md'));
+  c = spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), vf2, '--main', main, '--worktree', wt, '--gates-version', '2'], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } });
+  t('COMPARE.md missing: refused, with the BLOCKED hint', c.status === 1 && /COMPARE\.md is missing/.test(c.stderr) && /BLOCKED: <item>/.test(c.stderr), c.stderr);
+  c = cv('| s | r.png | aerial/a.jpg | comp.png | before.png | two-lane road, same junction type | both about 40 m across | top-down view, both |');
+  t('a real row passes the same gate', c.status === 0, c.stderr);
+  const v1 = spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), vf2, '--main', main, '--worktree', wt], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } });
+  t('under a v1 brief (no GATES-VERSION) the placeholder rules do not apply: running agents are not newly refused', v1.status === 0 && !/placeholder/.test(v1.stderr), v1.stderr);
+}
+
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
+if (failed.length) console.log('FAILED TESTS:\n - ' + failed.join('\n - '));
 process.exit(fail ? 1 : 0);

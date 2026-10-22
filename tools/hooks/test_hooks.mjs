@@ -27,8 +27,8 @@ const run = (script, stdin) => {
   const r = spawnSync(process.execPath, [path.join(root, 'tools/hooks', script)], { input: typeof stdin === 'string' ? stdin : JSON.stringify(stdin), cwd: elsewhere, encoding: 'utf8', timeout: 60000 });
   return { code: r.status, out: r.stdout, err: r.stderr };
 };
-let pass = 0, fail = 0;
-const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok   ' + name); } else { fail++; console.log('  FAIL ' + name + (detail ? '\n       ' + String(detail).replace(/\n/g, '\n       ') : '')); } };
+let pass = 0, fail = 0; const failedNames = [];
+const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok   ' + name); } else { fail++; failedNames.push(name); console.log('  FAIL ' + name + (detail ? '\n       ' + String(detail).replace(/\n/g, '\n       ') : '')); } };
 const J = (s) => { try { return JSON.parse(s); } catch { return {}; } };
 
 // ---- briefs
@@ -738,5 +738,6 @@ console.log('measured gates through the finish hook');
 }
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
+if (failedNames.length) console.log('FAILED TESTS:\n - ' + failedNames.join('\n - '));
 if (!process.env.KEEP_HOOKTEST) fs.rmSync(tmp, { recursive: true, force: true });
 process.exit(fail ? 1 : 0);
