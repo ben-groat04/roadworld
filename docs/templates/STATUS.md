@@ -5,6 +5,13 @@ References opened: N of M listed   <!-- e.g. `References opened: 44 of 44 listed
 <!-- FIRST. Everything you skipped, were refused, could not do, failed, or did not verify, one line each, with what blocked it.
      Write "Nothing skipped, refused or failed." only if true, then say what you did NOT verify. Never leave this empty. -->
 
+## Prior audit items
+
+<!-- Every item from the prior AUDIT.md "For the next builder" and your own FAULTS.md. Only two reasons keep an item open: (a) too pedantic for the owner to notice; (b) the audit's measurement or reading is doubtful, shown by your own check. "Out of scope", "time", "bigger change", "later round" are not reasons. Write "No prior audit." in a first round. -->
+
+| Item | Status | Proof (image or test) or reason a/b with evidence |
+|---|---|---|
+
 ## Reference files opened
 
 <!-- One line per case. Paths relative to docs/reference/ (or absolute in the main checkout). At least 3 existing files per case.
