@@ -11,10 +11,11 @@ The photo is the target. The list of faults in your brief is a starting list, no
 5. **Never mark an item "not done" without having tried it.** Say what blocked it. Stop when the residual list holds only things you cannot fix, or after 3 passes.
 6. **Skipped, refused, failed or unverified items go in the FIRST lines of your report and under the first heading of `STATUS.md`.** Nothing fails silently.
 7. **Hand in** the files named in the brief (see `docs/templates/STATUS.md`), then run `node tools/check_handin.mjs <progress-folder>` and fix what it reports.
-8. **Work in your own git worktree and branch**, with ONE build dir (`<worktree>\build`, no other `build-*` dirs; scratch goes to `..\roadworld-scratch\<slug>`) and CLEAN builds. Commit after every verified step. Do not stop early because of a usage warning: finish the current verified step, commit, update `STATUS.md`, then carry on. The owner: "It's max 5x so don't rush a stop".
+8. **Work in your own git worktree and branch**, with ONE build dir (`<worktree>\build`, no other `build-*` dirs; scratch goes to `..\roadworld-scratch\<slug>`) and CLEAN builds. Commit after every verified step.
 9. **Never kill processes you did not start** (compilers, Unreal, other agents). Unreal is a single lane: one editor or plugin build at a time.
 10. **Never ask the owner to open Unreal or playtest.** You launch, drive, screenshot and close it yourself.
 11. **Mute any video** you play in a browser. The owner hears it.
 12. **Every push and commit message carries `[skip ci]`.** Run slow commands (builds, pushes) in the background.
 13. **The browser prototype (`prototypes/road-draw`) is the UI spec** for the game. Prefer free tools and assets; flag any cost.
 14. **Research Unreal, plugin and tool facts from source (`C:\UE_5.8`) or docs, never from memory.**
+15. **Photos outrank tests, audits and fault lists.** If a test, an earlier audit or the brief's fault list disagrees with what the matched photos show, the photos win: say so in STATUS.md and change the test. A test whose expected value has no photo measurement or written rule (for example `docs/road-marking-rules.md`) behind it may be rewritten or deleted; say which and what it pinned. Rebuild a shape from measurements rather than tuning one that did not come from a photo. Never change the design to suit the renderer: fix the view.

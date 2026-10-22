@@ -34,7 +34,7 @@ Two tracks: ENGINE (sim_core, many parallel worktrees) feeds GAME (Unreal, one b
 - Never ask him to open Unreal or playtest: "i will never open it, this takes too long. just mess around with it yourself to test it (ideally in an agent)". An agent launches, drives, screenshots and closes it.
 - Reference photos must match subject, scale and viewpoint: "it isn't even getting relevant ref images!!!". A near miss is never paired; no matching photo = say so and fetch one (downloads of reference photos are pre-approved; they go in private `docs/reference/`).
 - Free assets are approved for everything (11 Oct: use the best free assets, for everything); paid assets are not: ask and flag any cost. Vegetation scripted kit is stopped.
-- Do not tell agents about usage limits or ask them to stop early (this supersedes the usage-limit message text in CLAUDE.md, which still needs reconciling: QUEUE "Needs the owner"). Commit WIP often instead.
+- Agents are never told about usage limits and never asked to stop early; the wording was deleted from CLAUDE.md and the contract on 11 Oct (owner: "yes delete it all"). Commit WIP often instead.
 - Send pictures to him as JPEG files (he often reads on a phone), with your own fault list; screenshots of the browser pane are not a deliverable.
 - Photos are the target, all the time; builder and auditor are never the same agent; nothing fails silently (skipped items first in every report).
 - The prototype UI is the target UI: "remember a lot of these features were in the inital html, that ui was sort of what i want, that was the point of it".
