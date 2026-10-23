@@ -58,7 +58,7 @@ The 9 re-opened items of the gates3 audit table (1 --accept, 2 picture gate, 6 w
 | A measured gates | done | `gates_lib.runMeasuredGates`, `measureSceneCheck`, `measureCtest`, new metric `ctest assertions`; TG "ctest gate", "scene gate", the proof runs below measured 17/21 on round 9 and 20/21 on roadtool3 |
 | B waiver guard | done | `waiverFindings` evasions, TG "waiver guard" blocks (about 90 tests); real findings on the tjunction2 and roundabout2 hand-ins |
 | C picture sanity | done | `pictureProblems`, mask pictures from `scene.mjs` and `mesh-view`, 40 TG picture tests; round 9 s6 street and s4 aerial refused in the earlier numbers table |
-| D STATUS reading | done | `statusProblems`, `parseBlocked`, `itemsProblems`; TG BLOCKED and rewording blocks |
+| D STATUS reading | done | tools/gates_lib.mjs `statusProblems`, `parseBlocked`, `itemsProblems`; 60 TG tests in the BLOCKED and rewording blocks |
 | E method-change rule | done | `methodChangeProblem` and `parseRounds` were built in gates2 and kept; their 6 tests pass in TG "method-change rule" |
 | F audit-gate faults | done | Items 2 and 3 above; TH made-up id, state guard, launch gap tests |
 | G scope line | done | `docs/templates/BRIEF.md` line 13 "at most 3 per round unless the task file says why more" and `make_brief` refusal at 4 cases (TG "make_brief: case counting") |
@@ -95,7 +95,11 @@ None: engine and tooling round (HANDIN: no-visual). The claims rest on the runs 
 
 ## Suite and checks
 
-See the numbers at the end of this file (final runs).
+- `node tools/test_gates.mjs`: 462 passed, 0 failed. `node tools/hooks/test_hooks.mjs`: 399 passed, 0 failed. `node tools/test_worktree_tools.mjs`: 18 passed, 0 failed. Run as 2 + 2 + 1 processes at the same time (final), and earlier as 3 + 3 + 1: every run green (no 20-run batch was done; 7 at once is what ran).
+- Waiver-guard deletions against main in this branch: the picture tests of gates2/gates3 that fed typed records were replaced by tests on real masks (names kept where the claim is the same; the one test that said a changed-value line is not a finding was rewritten into `assertion_retargeted`, because the gates3 audit lists exactly that evasion). The four blanket-ack tests of the old hooks were replaced by per-item ack tests in gates2 (see gates3 STATUS): self-run allows `deleted_gate_test:test_hooks.mjs`; `try_catch_added:scene.mjs` is the stats writer's catch in `writeStats` (a try around a picture pass, no assertion inside it).
+- `node tools/check_wrappers.mjs` on this worktree: PASSED, 35 sources.
+- `node tools/check_handin.mjs docs/progress/gates4 --no-visual --gates-version 2 --prior-audit docs/progress/gates3/AUDIT.md --gate "scene_check >= 20/21 (baseline 20/21, target 21/21)" --gate "allow_waiver try_catch_added:scene.mjs" --gate "allow_waiver deleted_gate_test:test_hooks.mjs" --item ...` (11 ITEM lines): see the last line of the report for the final result; the reference-provenance line prints FAIL-OPEN on this machine until `ref_seed` has been run in main.
+- The real `docs\reference` of the main checkout still holds its photos (421 files counted at the end of the round); no recursive delete was run near a worktree by this round except one `rm -rf` of a scratch folder I had created by mistake under `roadworld-wt` (no link inside it).
 
 ## Proof table
 
