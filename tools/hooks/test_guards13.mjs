@@ -123,7 +123,9 @@ console.log('gates13 B: launches by allow-list (decision 1): contract / BRIEF-FI
 
 // ================================================================ C  decision 2: the suite record is written by tools/run_suite.mjs at the run END
 console.log('gates13 C: tools/run_suite.mjs and the build-phase record (decision 2)');
-{
+const RUN_SUITE_OK = fs.existsSync(path.join(src, 'tools', 'run_suite.mjs'));
+t('C tools/run_suite.mjs exists (the one way to run the suite)', RUN_SUITE_OK);
+if (RUN_SUITE_OK) {
   const rs = path.join(src, 'tools', 'run_suite.mjs');
   const ds = path.join(tmp, 'state-c'); mkdirs(ds);
   const sr = await import(new URL('./suite_record.mjs', import.meta.url).href);
