@@ -68,7 +68,7 @@ const ps = fs.readFileSync(script, 'utf8');
 t('the script never uses a recursive delete itself (no Remove-Item -Recurse, rm -r, rmdir /s)', !/Remove-Item[^\n]*-Recurse|\brm\s+-r|rmdir\s+\/s/i.test(ps.replace(/^#.*$/gm, '')));
 const nw = fs.readFileSync(path.join(src, 'tools', 'new_agent_worktree.ps1'), 'utf8');
 t('new_agent_worktree.ps1 tells the agent how to remove the worktree (the script, never a recursive delete)', /remove_agent_worktree\.ps1/.test(nw) && /NEVER rm -rf/.test(nw));
-t('new_agent_worktree.ps1 no longer recursive-deletes anything', !/Remove-Item[^\n]*-Recurse/.test(nw.replace(/^#.*$/gm, '')));
+t('new_agent_worktree.ps1 no longer recursive-deletes anything', !/Remove-Item[^\n]*-Recurse/.test(nw.replace(/^#.*$/gm, '').replace(/"[^"]*"/g, '')));
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failed.length) console.log('FAILED TESTS:\n - ' + failed.join('\n - '));

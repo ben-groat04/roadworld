@@ -47,26 +47,29 @@ function Count-Files([string]$dir) {
   foreach ($f in [System.IO.Directory]::EnumerateFiles($dir, '*', [System.IO.SearchOption]::AllDirectories)) { $n++ }
   return $n
 }
-# walk WITHOUT following links: returns the reparse points (links) found below $dir
-function Find-Links([string]$dir) {
-  $out = @()
+# walk WITHOUT following links: fills $script:found with the reparse points (links) found below $dir
+function Find-LinksInto([string]$dir, $list) {
   foreach ($d in [System.IO.Directory]::EnumerateDirectories($dir)) {
     $attr = [System.IO.File]::GetAttributes($d)
-    if (($attr -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { $out += ,@('dir', $d) }
-    elseif ($d -notmatch '[\\/]\.git$') { $out += Find-Links $d }
+    if (($attr -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { [void]$list.Add([pscustomobject]@{ Kind = 'dir'; Path = $d }) }
+    elseif ($d -notmatch '[\\/]\.git$') { Find-LinksInto $d $list }
   }
   foreach ($f in [System.IO.Directory]::EnumerateFiles($dir)) {
-    if (([System.IO.File]::GetAttributes($f) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { $out += ,@('file', $f) }
+    if (([System.IO.File]::GetAttributes($f) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { [void]$list.Add([pscustomobject]@{ Kind = 'file'; Path = $f }) }
   }
-  return $out
+}
+function Get-Links([string]$dir) {
+  $list = New-Object System.Collections.ArrayList
+  Find-LinksInto $dir $list
+  return ,$list
 }
 
 $refMain = Join-Path $Main 'docs\reference'
 $before = Count-Files $refMain
 Write-Host "Main checkout docs\reference: $before file(s) before."
-$links = @(Find-Links $wt)
+$links = Get-Links $wt
 foreach ($lk in $links) {
-  $kind = $lk[0]; $p = $lk[1]
+  $kind = $lk.Kind; $p = $lk.Path
   Write-Host "Unlinking $kind link (link only, target untouched): $p"
   if ($kind -eq 'dir') {
     & cmd.exe /c rmdir "`"$p`"" | Out-Null
@@ -78,8 +81,8 @@ foreach ($lk in $links) {
 $after = Count-Files $refMain
 if ($after -ne $before) { Write-Host "ALARM: docs\reference file count changed ($before -> $after). STOP."; exit 2 }
 # the worktree must now hold no link at all
-$left = @(Find-Links $wt)
-if ($left.Count -gt 0) { Fail ("links still present: " + (($left | ForEach-Object { $_[1] }) -join ', ')) }
+$left = Get-Links $wt
+if ($left.Count -gt 0) { Fail ("links still present: " + (($left | ForEach-Object { $_.Path }) -join ', ')) }
 
 $gitArgs = @('-C', $Main, 'worktree', 'remove')
 if ($Force) { $gitArgs += '--force' }
