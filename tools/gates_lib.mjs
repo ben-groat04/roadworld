@@ -220,7 +220,7 @@ const testName = (l) => { const m = l.match(/^\s*(?:DOCTEST_)?TEST_CASE(?:_TEMPL
 // WHAT IT CANNOT SEE: a check moved into a helper that is never called; a test made vacuous without touching an assertion line (an empty fixture, a loop over zero cases, input changed so the
 // check passes trivially); a reworded expectation spread over several lines; a waiver in a test location outside WAIVER_PATHS; anything done with
 // the build dir or CTest flags instead of the sources. diffText: unified diff (-U0); contents: { file: { old, new } } enables the effective-count check.
-const ASSERT_RE = /\b(?:GRADE_CHECK|(?:DOCTEST_)?(?:CHECK|REQUIRE)(?:_MESSAGE|_EQ|_NE|_FALSE|_THROWS\w*|_NOTHROW)?)\s*\(/;
+const ASSERT_RE = /\b(?:GRADE_CHECK|(?:DOCTEST_)?(?:CHECK|REQUIRE)(?:_MESSAGE|_EQ|_NE|_FALSE|_THROWS\w*|_NOTHROW)?|Test(?:True|False|Equal|NotEqual|Null|NotNull|Valid|Invalid)|UTEST_\w+|assert(?:\.\w+)?)\s*\(/;
 const numbers = (l) => [...l.matchAll(/(?<![\w.])(\d+\.?\d*(?:[eE][-+]?\d+)?)(?![\w.])/g)].map((m) => Number(m[1]));
 const skeleton = (l) => l.replace(/(?<![\w.])\d+\.?\d*(?:[eE][-+]?\d+)?(?![\w.])/g, '#').replace(/\s+/g, ' ').trim();
 const isCodeFile = (f) => /\.(cpp|cc|h|hpp|mjs|js)$/.test(f);
@@ -235,17 +235,17 @@ const countAssertions = (text) => stripCode(text).split('\n').filter((l) => ASSE
 export function comparisons(line) {
   if (/\w<[\w:,\s]+>/.test(line.replace(/<\s*\d/g, ' '))) return [];
   const out = [];
-  const re = /(<=|>=|==|!=|(?<![<\-])<(?![<=])|(?<![\->])>(?![>=]))/g;
+  const re = /(===|!==|<=|>=|==|!=|(?<![<\-])<(?![<=])|(?<![\->])>(?![>=]))/g;
   let m;
   while ((m = re.exec(line))) {
     const lhs = line.slice(Math.max(0, m.index - 30), m.index).replace(/\s+/g, ' ').trim();
     const rest = line.slice(m.index + m[1].length);
     let depth = 0, end = rest.length;
-    for (let i = 0; i < rest.length; i++) { const c = rest[i]; if (c === '(') depth++; else if (c === ')') { if (depth === 0) { end = i; break; } depth--; } else if ((c === ';' || c === ',' || c === '&' || c === '|' || c === '{' || c === '?' || c === ':') && depth === 0) { end = i; break; } }
+    for (let i = 0; i < rest.length; i++) { const c = rest[i]; if (c === '(') depth++; else if (c === ')') { if (depth === 0) { end = i; break; } depth--; } else if ((c === ';' || c === ',' || c === '&' || c === '|' || c === '{' || c === '}' || c === '?' || c === ':') && depth === 0) { end = i; break; } }
     const rhs = rest.slice(0, end).trim();
     let val = null;
     if (/^[-+*/().\d\seE]+$/.test(rhs) && /\d/.test(rhs)) { try { val = Function('"use strict"; return (' + rhs + ')')(); if (!Number.isFinite(val)) val = null; } catch { val = null; } }
-    out.push({ lhs, op: m[1], val });
+    out.push({ lhs, op: m[1] === '===' ? '==' : m[1] === '!==' ? '!=' : m[1], val });
   }
   return out;
 }
@@ -310,6 +310,59 @@ export function waiverFindings(diffText, allowed = [], contents = null) {
       const eo = eps(R), en = eps(A);
       if (en.length && (!eo.length || Math.max(...en) > Math.max(...eo))) add('approx:' + base, f, `an Approx epsilon/margin was ${eo.length ? 'widened ' + Math.max(...eo) + ' -> ' + Math.max(...en) : 'added: ' + Math.max(...en)}`);
     }
+    // ---- gates4 (gates3 audit faults 6 and 7): more evasions of the assertion, its expected value and the test run
+    const isTestData = /(^|\/)tests\/.+\.(?:json|txt|golden|csv|dat|expected|ref|bin|tsv|yml|yaml|ini)$/i.test(f) || /(^|\/)(?:golden|expected|fixtures?)\//i.test(f);
+    if (isTestData && (A.length || R.length)) add('test_data:' + f, f, `a test data / golden file was edited (${A.length} line(s) added, ${R.length} removed): expected values live there; a changed expectation needs a photo measurement or a written rule`);
+    if (cmake) {
+      for (const l of A) if (/\badd_test\b|\bset_tests_properties\b|\bCTEST_\w+/.test(l) && /(?:^|\s)(?:-tc=|-tce=|-ts=|-sc=|-sfe=|--test-case|--dt-\w+|--no-run|-E\s|-R\s|--exclude|--tests-regex|--filter)|\bWILL_FAIL\b|\bDISABLED\b/.test(l) && !R.includes(l)) add('ctest_args:' + base + ':' + l.trim().slice(0, 40), f, `a test registration gained a filter, exclusion or disable argument: ${l.trim().slice(0, 100)} (it can run fewer tests than before)`);
+    }
+    if (code) {
+      const orCount = (L) => L.reduce((n, l) => n + (l.match(/\|\|/g) || []).length, 0), andCount = (L) => L.reduce((n, l) => n + (l.match(/&&/g) || []).length, 0);
+      const argKey = (l) => (l.match(/\(\s*([A-Za-z_][\w.>-]*)/) || [])[1];
+      const assertish = (l) => ASSERT_RE.test(l) || /\bpass\s*:/.test(l);
+      for (const hk of hunks) {
+        const remA = hk.rem.filter(assertish), addA = hk.add.filter(assertish);
+        if (remA.length) {
+          if (orCount(addA) > orCount(remA)) add('or_widened:' + base + ':' + skeleton(addA[0]).slice(0, 40), f, `an "||" clause was added to an assertion (it can only pass more often): "${remA[0].trim().slice(0, 60)}" -> "${addA[0].trim().slice(0, 70)}"`);
+          if (andCount(addA) < andCount(remA)) add('and_dropped:' + base + ':' + skeleton(addA[0] || remA[0]).slice(0, 40), f, `an "&&" condition was dropped from an assertion: "${remA[0].trim().slice(0, 60)}"`);
+          const fl = (L) => L.filter((l) => /_FALSE\s*\(/.test(l)).length;
+          if (fl(addA) > fl(remA) && remA.some((l) => !/_FALSE\s*\(/.test(l))) add('check_false_swap:' + base + ':' + skeleton(addA[0]).slice(0, 40), f, `a CHECK was swapped for a CHECK_FALSE: "${remA[0].trim().slice(0, 60)}" -> "${addA.find((l) => /_FALSE\s*\(/.test(l)).trim().slice(0, 70)}" (a new negative claim can pass where the old positive one failed)`);
+          for (const nl of addA) {
+            // the same assertion now checks a DIFFERENT value (CHECK(a.width > 3.0) -> CHECK(b.width > 1.0)): old and new comparisons share no left side
+            const nc = ASSERT_RE.test(nl) && !R.includes(nl) ? comparisons(nl) : [];
+            if (nc.length) {
+              const cand = remA.filter((o) => ASSERT_RE.test(o) && comparisons(o).length === nc.length);
+              if (cand.length && !cand.some((o) => comparisons(o).every((c, i) => c.lhs === nc[i].lhs))) add('assertion_retargeted:' + base + ':' + skeleton(nl).slice(0, 40), f, `an assertion now checks a different value: "${cand[0].trim().slice(0, 60)}" -> "${nl.trim().slice(0, 60)}"`);
+            }
+            const ol = remA.find((o) => argKey(o) && argKey(o) === argKey(nl) && comparisons(o).length > comparisons(nl).length && comparisons(nl).length === 0);
+            if (ol && !R.includes(nl)) add('comparison_removed:' + base + ':' + skeleton(nl).slice(0, 40), f, `an assertion lost its comparison: "${ol.trim().slice(0, 60)}" -> "${nl.trim().slice(0, 60)}" (it now only checks that the value is truthy)`);
+          }
+        }
+        for (const nl of hk.add) {
+          if (!assertish(nl) || R.includes(nl)) continue;
+          if (/([A-Za-z_][\w.[\]()]*)\s*(?:===|==|>=|<=)\s*\1(?![\w.(])/.test(nl) || /\bTest\w+\s*\([^,]*,\s*([\w.]+)\s*,\s*\1\s*\)/.test(nl)) add('self_compare:' + base + ':' + skeleton(nl).slice(0, 40), f, `an assertion compares a value with itself: ${nl.trim().slice(0, 90)}`);
+          if (/\bTest(?:True|False)\s*\([^,]*,\s*(?:true|1|!false)\s*\)/.test(nl) || /\bTest(?:Equal|NotEqual)\s*\([^,]*,\s*(\w+)\s*,\s*\1\s*\)/.test(nl)) add('unreal_trivial:' + base + ':' + skeleton(nl).slice(0, 40), f, `an Unreal automation assertion that cannot fail: ${nl.trim().slice(0, 90)}`);
+        }
+        // an input or fixture made empty on an edited line (make_roads(5) -> make_roads(0)), without touching an assertion
+        for (const nl of hk.add) {
+          if (assertish(nl)) continue;
+          const ol = hk.rem.find((o) => o !== nl && skeleton(o) === skeleton(nl) && numbers(o).some((v, i) => v > 0 && numbers(nl)[i] === 0));
+          if (ol && /\w\s*\(/.test(nl)) add('zeroed_input:' + base + ':' + skeleton(nl).slice(0, 40), f, `an input was set to 0 on an edited line: "${ol.trim().slice(0, 60)}" -> "${nl.trim().slice(0, 60)}" (a test over an empty input passes without checking anything)`);
+        }
+      }
+      if (A.filter((l) => /\btry\s*\{|\bcatch\s*\(/.test(l)).length > R.filter((l) => /\btry\s*\{|\bcatch\s*\(/.test(l)).length) add('try_catch_added:' + base, f, 'a try/catch was added to a test file: an assertion inside it can be swallowed (check by hand that no assertion moved under it)');
+      for (const l of A) {
+        const m = l.match(/(?:auto|const\s+auto)\s+(\w+)\s*=\s*\[[^\]]*\]\s*\(/);
+        if (!m || R.includes(l)) continue;
+        const nc = contents && contents[f] ? contents[f].new : null;
+        if (nc === null || !new RegExp('\\b' + m[1] + '\\s*\\(').test(nc)) add('uncalled_lambda:' + base + ':' + m[1], f, `a lambda "${m[1]}" was added ${nc === null ? '(its calls could not be checked)' : 'and is never called'}: assertions inside it never run`);
+      }
+      for (const l of A) if (!R.includes(l) && (/for\s*\([^)]*:\s*(?:std::vector<[^>]*>\s*)?\{\s*\}\s*\)/.test(l) || /for\s*\(\s*(?:const|let)\s+\w+\s+of\s+\[\s*\]\s*\)/.test(l))) add('vacuous_loop:' + base + ':' + skeleton(l).slice(0, 40), f, `a loop over nothing: ${l.trim().slice(0, 90)} (its body never runs)`);
+      const EXPECT_RE = /\b((?:k\w*)?(?:[Ee]xpect(?:ed)?\w*|[Gg]olden\w*)|\w*_expect(?:ed)?\w*)\s*(?:=|\{)\s*(-?[0-9]*\.?[0-9]+(?:[eE][-+]?\d+)?)/;
+      const expOf = (L) => { const m = new Map(); for (const l of L) { const t = l.match(EXPECT_RE); if (t) m.set(t[1], Number(t[2])); } return m; };
+      const oldE = expOf(R), newE = expOf(A);
+      for (const [n, v] of newE) if (oldE.has(n) && oldE.get(n) !== v) add(`expected_const:${n}`, f, `expected-value constant ${n} changed ${oldE.get(n)} -> ${v} (a changed expectation needs a photo measurement or a written rule, and an allow_waiver line)`);
+    }
     // is_rough(...) list and more softened checks
     const roughNames = (L) => new Set(L.filter((l) => /is_rough|n\s*==\s*"/.test(l)).flatMap((l) => [...l.matchAll(/"([\w]+)"/g)].map((x) => x[1])));
     const oldR = roughNames(R); for (const n of roughNames(A)) if (!oldR.has(n)) add(`is_rough:${n}`, f, `is_rough() waiver list gained "${n}" (turns EVERY GRADE_CHECK(is_rough(name),...) for that case into a warning, not just the check you describe)`);
@@ -358,7 +411,7 @@ export function waiverFindings(diffText, allowed = [], contents = null) {
     }
     // scene.mjs: hard-coded pass
     if (/scene\.mjs$/.test(f)) {
-      const pt = (L) => L.filter((l) => /pass:\s*true\b/.test(l));
+      const pt = (L) => L.filter((l) => /pass:\s*(?:true|1|!0|!!1)\b/.test(l));
       for (const l of pt(A).filter((x) => !pt(R).includes(x))) add(`pass_true:${(l.match(/name:\s*'([^']+)'/) || [])[1] || 'unnamed'}`, f, 'check with hard-coded pass: true added: ' + l.trim().slice(0, 100));
       for (const l of R) { const n = (l.match(/name:\s*'([^']+)'/) || [])[1]; if (n && !addedJsNames.has(n) && /results\.push/.test(l)) add(`deleted_check:${n}`, f, `scene check "${n}" removed`); }
     }

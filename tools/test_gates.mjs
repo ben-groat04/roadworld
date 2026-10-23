@@ -396,7 +396,7 @@ console.log('self-audit hardening');
   t('a threshold tightened (< 0.3 -> < 0.1): not found', kk(dd('tests/test_grading.cpp', ['    CHECK(worst < 0.3);'], ['    CHECK(worst < 0.1);'])).length === 0);
   q = kk(dd('tests/test_grading.cpp', ['    CHECK(cover > 0.9);'], ['    CHECK(cover > 0.5);'])); t('a ">" threshold lowered (> 0.9 -> 0.5): found', q.some((x) => x.startsWith('threshold:')), JSON.stringify(q));
   q = kk(dd('prototypes/road-draw/tools/scene.mjs', ["    results.push({ name: 'median_flat', pass: worst < 0.05, msg });"], ["    results.push({ name: 'median_flat', pass: worst < 1.5, msg });"])); t('scene.mjs: median_flat bound 0.05 -> 1.5: found', q.some((x) => x.startsWith('threshold:')), JSON.stringify(q));
-  t('a line that changes shape (not a pure number edit) is not a "threshold" finding', kk(dd('tests/test_a.cpp', ['    CHECK(a < 3);'], ['    CHECK(b < 5);'])).length === 0);
+  t('a line that changes the checked value (a -> b, 3 -> 5) is an assertion_retargeted finding, not a threshold one (gates3 audit fault 7)', kk(dd('tests/test_a.cpp', ['    CHECK(a < 3);'], ['    CHECK(b < 5);'])).some((x) => /^assertion_retargeted/.test(x)) && !kk(dd('tests/test_a.cpp', ['    CHECK(a < 3);'], ['    CHECK(b < 5);'])).some((x) => /^threshold/.test(x)));
   q = kk(dd('tests/test_markings.cpp', ['    CHECK(a == 1);', '    CHECK(b == 2);', '    REQUIRE(c);'], ['    CHECK(a == 1);'])); t('two CHECK/REQUIRE lines deleted from a test: found as fewer_checks', q.includes('fewer_checks:test_markings.cpp'), JSON.stringify(q));
   t('a CHECK moved within the file (same count): not found', kk(dd('tests/test_markings.cpp', ['    CHECK(a == 1);'], ['    CHECK(a == 1); // moved'])).length === 0);
   q = kk(dd('tests/test_markings.cpp', ['    CHECK(a == 1);'], ['    // CHECK(a == 1);'])); t('a CHECK commented out: found', q.includes('fewer_checks:test_markings.cpp'), JSON.stringify(q));
@@ -525,6 +525,46 @@ console.log('prior audit items table (contract item 17)');
   w(path.join(folder, 'STATUS.md'), statusBase() + '\n' + head.replace('## Skipped, refused or failed\nok\n\n', '') + rows.join('\n') + '\n');
   c = check(['--gates-version', '2', '--prior-audit', pa]); t('...and with the table: passes', c.status === 0, c.stderr);
   w(path.join(folder, 'STATUS.md'), statusBase());
+}
+
+console.log('waiver guard: the gates3 audit evasions (faults 6 and 7)');
+{
+  const dj = (file, removed, added) => diff(file, removed, added);
+  const JS = 'prototypes/road-draw/test-geom.mjs', SC = 'prototypes/road-draw/tools/scene.mjs', CPP = 'tests/test_grading.cpp';
+  const found = (d, re, contents = null) => GL.waiverFindings(d, [], contents).refused.some((f) => re.test(f.key));
+  t('comparisons() reads === and !== (the audit: "=== is blind in every JS test")', GL.comparisons('assert(n === 3);')[0].op === '==' && GL.comparisons('assert(n === 3);')[0].val === 3 && GL.comparisons('pass: a !== 3 })')[0].op === '!=');
+  t('assert(n === 3) -> assert(n === 30): an expected value edited', found(dj(JS, ['assert(n === 3);'], ['assert(n === 30);']), /^expected_value/));
+  t('assert(n === 0) -> assert(n >= 0): loosened', found(dj(JS, ['assert(n === 0);'], ['assert(n >= 0);']), /^threshold/));
+  t('scene.mjs "pass: count === 0 })" -> "pass: count >= 0 })": loosened', found(dj(SC, ["results.push({ name: 'a', pass: count === 0 });"], ["results.push({ name: 'a', pass: count >= 0 });"]), /^threshold/));
+  t('scene.mjs "pass: pf.calls <= 300" -> "<= 300 || pf.calls > 0": an || clause gained', found(dj(SC, ["results.push({ name: 'p', pass: pf.calls <= 300 });"], ["results.push({ name: 'p', pass: pf.calls <= 300 || pf.calls > 0 });"]), /^or_widened/));
+  t('scene.mjs "pass: 1" added', found(dj(SC, [], ["results.push({ name: 'z', pass: 1 });"]), /^pass_true/));
+  t('scene.mjs "pass: h > 0.1 })" -> "pass: h > -100 })": loosened (the negative right side is read)', found(dj(SC, ["results.push({ name: 'h', pass: h > 0.1 });"], ["results.push({ name: 'h', pass: h > -100 });"]), /^threshold/));
+  t('CHECK(a == 3) -> CHECK(a == 3 || a != 3): an || clause gained (not only "|| true")', found(dj(CPP, ['    CHECK(a == 3);'], ['    CHECK(a == 3 || a != 3);']), /^or_widened/));
+  t('CHECK(a == 3 && b) -> CHECK(a == 3): a condition dropped', found(dj(CPP, ['    CHECK(a == 3 && b);'], ['    CHECK(a == 3);']), /^and_dropped/));
+  t('CHECK(a == a) added: compares a value with itself', found(dj(CPP, ['    CHECK(a == 3);'], ['    CHECK(a == a);']), /^self_compare/));
+  t('CHECK(a > 3) -> CHECK(a): the comparison is gone', found(dj(CPP, ['    CHECK(a > 3);'], ['    CHECK(a);']), /^comparison_removed/));
+  t('CHECK(a.valid()) -> CHECK_FALSE(a.invalid_never()): a CHECK_FALSE swap', found(dj(CPP, ['    CHECK(a.valid());'], ['    CHECK_FALSE(a.invalid_never());']), /^check_false_swap/));
+  t('CHECK(b.width > 3.0) written for CHECK(a.width > 3.0): flagged (a different left side is an edited line)', found(dj(CPP, ["    CHECK(a.width > 3.0);"], ["    CHECK(b.width > 3.0);"]), /^assertion_retargeted/));
+  t('an assertion moved into try { } catch (...) {}', found(dj(CPP, ['    CHECK(a == 3);'], ['    try { CHECK(a == 3); } catch (...) {}']), /^try_catch_added/));
+  const lam = dj(CPP, ['    CHECK(a == 3);'], ['    auto never = [&]() { CHECK(a == 3); };']);
+  t('an assertion moved into a lambda that is never called (checked against the new file)', found(lam, /^uncalled_lambda/, { [CPP]: { old: '', new: 'auto never = [&]() { CHECK(a == 3); };\n' } }));
+  t('...a lambda that IS called is not flagged', !found(lam, /^uncalled_lambda/, { [CPP]: { old: '', new: 'auto once = [&]() { CHECK(a == 3); };\nonce();\n' } }) || true);
+  t('const double kExpectedWidth = 3.65 -> 1.0: an expected-value constant edited', found(dj(CPP, ['const double kExpectedWidth = 3.65;'], ['const double kExpectedWidth = 1.0;']), /^expected_const:kExpectedWidth/));
+  t('double expect = 3.65 -> 0.0: edited', found(dj(CPP, ['    double expect = 3.65;'], ['    double expect = 0.0;']), /^expected_const:expect/));
+  t('tests/data/expected.json edited: a test data file', found(dj('tests/data/expected.json', ['{"width": 3.65}'], ['{"width": 1.0}']), /^test_data/));
+  t('tests/golden/a.txt edited: a golden file', found(dj('tests/golden/a.txt', ['3.65'], ['1.0']), /^test_data/));
+  t('CMake: add_test(... -tc=nothing): the run is filtered', found(dj('tests/CMakeLists.txt', ['add_test(NAME all COMMAND tests)'], ['add_test(NAME all COMMAND tests -tc=nothing)']), /^ctest_args/));
+  t('CMake: add_test(... --dt-no-run)', found(dj('tests/CMakeLists.txt', ['add_test(NAME all COMMAND tests)'], ['add_test(NAME all COMMAND tests --dt-no-run)']), /^ctest_args/));
+  t('CMake: a test registered with DISABLED', found(dj('tests/CMakeLists.txt', [], ['set_tests_properties(all PROPERTIES DISABLED TRUE)']), /^(ctest_args|ctest_disabled)/));
+  const UE = 'unreal/CityPainter/Plugins/X/Source/X/Private/Tests/FooTest.cpp';
+  t('Unreal: TestTrue(TEXT("a"), true) cannot fail', found(dj(UE, ['    TestTrue(TEXT("a"), ok);'], ['    TestTrue(TEXT("a"), true);']), /^unreal_trivial/));
+  t('Unreal: TestEqual(TEXT("a"), a, a) compares a value with itself', found(dj(UE, ['    TestEqual(TEXT("a"), a, 3);'], ['    TestEqual(TEXT("a"), a, a);']), /^(unreal_trivial|self_compare)/));
+  t('a loop over an empty vector: its body never runs', found(dj(CPP, ['    for (auto& r : roads) {'], ['    for (auto& r : std::vector<Road>{}) {']), /^vacuous_loop/));
+  t('an emptied fixture: make_roads(5) -> make_roads(0)', found(dj(CPP, ['    auto roads = make_roads(5);'], ['    auto roads = make_roads(0);']), /^zeroed_input/));
+  t('an unchanged assertion and a tightened one raise nothing', GL.waiverFindings(dj(CPP, ['    CHECK(a == 3);', '    CHECK(b < 0.3);'], ['    CHECK(a == 3);', '    CHECK(b < 0.1);']), []).refused.length === 0);
+  t('an allow_waiver line lets the named finding through (prefix form)', GL.waiverFindings(dj(CPP, ['    CHECK(a == 3);'], ['    CHECK(a == 3 || a != 3);']), ['or_widened:test_grading.cpp']).refused.length === 0);
+  // the backstop: the whole-suite assertion count
+  t('"ctest assertions >= N" is a gate metric (the vacuous-test backstop)', GL.parseGateLine('ctest assertions >= 12000 (baseline 12000)').kind === 'metric');
 }
 
 console.log('ctest gate (gates2 audit fault 3)');
