@@ -22,6 +22,22 @@ Times from `date`, git and gate.log. Truth for branches: `tools\worktree_status.
 | Built-in Unreal trees (pvetrees) | `..\roadworld-wt\pvetrees` (2f51dcd, no commits) | NOT STARTED (Unreal lane) | Unchanged. |
 Raise with the owner at once: the gates4 guards false-block required Unreal-lane work, so gates5 must land before any live hook deployment; the photo set was damaged on 22 Oct (Machine notes).
 
+## 23 Oct 2026, 11:30Z state (main session): supersedes the 02:05 UTC table wherever they differ
+**Running builders:**
+- **roundabout4**: tracing photo kerbs into a polyline test. Paused by a usage limit, resumed.
+- **tjunction5**: sends back tjunction4 (audit commit 580b2b3 on agent/tjunction4). Faults: corners drawn as circular bites (90); centre patterns lost at the mouth (94, 80, 90); symmetric default radii needing typed overrides (78, 90, 91, 94); missing side-road marks (78, 90); worn marks wrongly removed (89, 91). Main-session decision: per-corner default radii by rule from approach angle (acute tight, obtuse sweeping); typed overrides stay as a toggle.
+- **grade-r12**: sends back grade-r11 (audit commit 5ab6c2b, 21 faults). Faults: walls and rails run about 25 m past road ends; square road ends; case 2 put on a viaduct where photo 98 shows an at-grade shelf; a 23-29 m single rock slab; case 1 walls 3-6 m against 2-3 m in photos; crease limit raised to hide a ridge; tunables rule broken. Decisions: structure choice is shelf, then wall, then viaduct; benched rock faces with a soil batter above; low 2-3 m walls with a steeper slope above; crease limit 0.3 for all cases.
+- **m2fix5a**: sends back m2fix4a (audit commit 39dafcb, 14 faults). Faults: regrade cost scaled with the whole network (956 ms at 901 roads); the 100 ms target was missed; HUD slope came from natural ground; tests that could not fail; no clean Unreal build. Decisions: spatial index; only nearby roads re-prepared; grading off the game thread if needed; tests shown failing on old code.
+
+**Ready, waiting for a builder slot:**
+- **gates8**, the LAST gates round (worktree agent/gates8): fix the 6 false blocks, the 5 checklist items and the holes an honest agent could type from the gates7 audit; accept the obfuscated holes 5-8 as residual; add locked tests (auditor-written, a builder cannot edit them); add a CHECKPOINT.md early hand-back. gates7 (audited, send back) is merged only after gates8.
+
+**Waiting:** m2fix4b and m2fix4c come after m2fix5a; pvetrees; m3ui waits for M2.
+
+**Done today:** stray commit 59f4174 (710 raw asset files committed by a builder in the main checkout) undone; `.gitignore` gained the two asset folders (069f6b1); `git lfs prune` freed 4.8 GB.
+
+**New follow-ups to queue:** Unreal mapping for the earthworks wall facing; wiring the new junction road types and keys into Unreal; a ghost-island and turn-pocket round (photo 81); a road-content round (chevrons, bollards, signs, lamp columns, using free GOV.UK sign assets); the shallow 20 degree junction wedge, which goes to the slip-road round; adjustable, varied junction geometry per node.
+
 ## First actions for the new session (in order)
 1. DONE 11 Oct evening: hand-in checks passed and auditors have run for grade-r9, gradelayer, roadtool3, tjunction, roundabout (stages in the Jobs table). From now on: run `tools\worktree_status.ps1`; a worktree with a new commit and a STATUS.md in `docs/progress/` is a hand-in: `node tools/check_handin.mjs <folder>`, failures go back unread; an auditor for every hand-in that passes.
 2. DONE 11 Oct night: integ merged to main as 2d282c7 (see Jobs table). Everything else is based on an older main: rebase or merge it first (order in step 5, minus integ).
