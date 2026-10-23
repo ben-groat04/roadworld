@@ -4,6 +4,7 @@
 // runs every script as a child process from a different cwd, as the harness would. Exit 1 if any test fails.
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -30,6 +31,22 @@ const run = (script, stdin) => {
 let pass = 0, fail = 0; const failedNames = [];
 const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok   ' + name); } else { fail++; failedNames.push(name); console.log('  FAIL ' + name + (detail ? '\n       ' + String(detail).replace(/\n/g, '\n       ') : '')); } };
 const J = (s) => { try { return JSON.parse(s); } catch { return {}; } };
+// a real render PNG + flat-colour class mask + record (the picture gate counts the road pixels in the mask itself)
+const crc32 = (buf) => { let c, crc = -1; for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 255; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; crc = (crc >>> 8) ^ c; } return ~crc; };
+const realPng = (wd, ht, fn) => {
+  const raw = Buffer.alloc((wd * 4 + 1) * ht);
+  for (let y = 0; y < ht; y++) for (let x = 0; x < wd; x++) { const [r, g, b] = fn(x, y); const o = y * (wd * 4 + 1) + 1 + x * 4; raw[o] = r; raw[o + 1] = g; raw[o + 2] = b; raw[o + 3] = 255; }
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const body = Buffer.concat([Buffer.from(type, 'latin1'), data]); const crc = Buffer.alloc(4); crc.writeInt32BE(crc32(body)); return Buffer.concat([len, body, crc]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(wd, 0); ihdr.writeUInt32BE(ht, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+};
+const sha1b = (b) => crypto.createHash('sha1').update(b).digest('hex');
+const mkViewFiles = (dir, name, road = 30000, W = 800, H = 450) => {
+  const mask = realPng(W, H, (x, y) => (y * W + x < road ? [255, 0, 0] : [0, 0, 0]));
+  const render = realPng(W, H, (x, y) => (y * W + x < road ? [60 + ((x * 7 + y * 3) % 40), 58 + ((x * 5) % 40), 55 + ((y * 11) % 40)] : [150 + ((x * 3) % 60), 170 + (y % 50), 215]));
+  fs.writeFileSync(path.join(dir, name + '.png'), render); fs.writeFileSync(path.join(dir, name + '.mask.png'), mask);
+  fs.writeFileSync(path.join(dir, name + '.stats.json'), JSON.stringify({ view: name, width: W, height: H, diagnostic: false, png_sha1: sha1b(render), mask_png: name + '.mask.png', mask_sha1: sha1b(mask), road_px: road, debug_px: 0, debug_by_class: { needs: 0, rock: 0 }, written_by: 'prototypes/mesh-view/render.mjs' }));
+};
 
 // ---- briefs
 const task = (owner = '"The photo is the target." (11 Oct)') => `# T\n## Owner's words\n${owner}\n## Cases\ncase A | a.jpg b.jpg c.jpg\n## Faults\nnone known\n## Launched\nx\n## Waiting\nnone\n`;
@@ -608,9 +625,8 @@ console.log('hand-in freshness, counter reset, owner quotes, COMPARE relevance, 
   // COMPARE relevance: subject/type, scale, viewpoint
   const cmpDir = path.join(wt, 'cmp', 'docs', 'progress', 'cmp'); fs.mkdirSync(cmpDir, { recursive: true });
   const mkPng = (w, h) => { const b = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0); b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'latin1'); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); return b; };
-  for (const f of ['c.png', 'b.png']) fs.writeFileSync(path.join(cmpDir, f), 'x');
-  fs.writeFileSync(path.join(cmpDir, 'r.png'), mkPng(800, 450));
-  fs.writeFileSync(path.join(cmpDir, 'r.stats.json'), JSON.stringify({ view: 'r', width: 800, height: 450, diagnostic: false, road_px: 9000, debug_px: 0, png_sha1: crypto.createHash('sha1').update(mkPng(800, 450)).digest('hex') }));
+  fs.writeFileSync(path.join(cmpDir, 'c.png'), 'composite c'); fs.writeFileSync(path.join(cmpDir, 'b.png'), 'before b');
+  mkViewFiles(cmpDir, 'r', 9000); mkViewFiles(cmpDir, 'r2', 12000); fs.writeFileSync(path.join(cmpDir, 'c2.png'), 'composite c2'); fs.writeFileSync(path.join(cmpDir, 'b2.png'), 'before b2');
   fs.writeFileSync(path.join(cmpDir, 'STATUS.md'), goodStatus);
   fs.writeFileSync(path.join(cmpDir, 'FAULTS.md'), '## Pass 1\n\nthe kerb stops 4 m short of the island on the south arm\n\n## Pass 2\n\nthe give-way line is a stub, not a span across the whole arm\n\n## Pass 3\n\nthe hatching bars cross the kerb line at the island nose\n\n## Residual\n\nnone, all fixed\n');
   const cmp = (rows) => { fs.writeFileSync(path.join(cmpDir, 'COMPARE.md'), '| case | render | reference | composite | before | subject/type | scale | viewpoint |\n|---|---|---|---|---|---|---|---|\n' + rows + '\n'); return spawnSync(process.execPath, [path.join(root, 'tools/check_handin.mjs'), cmpDir, '--main', root, '--gates-version', '2'], { cwd: elsewhere, encoding: 'utf8' }); };
@@ -622,7 +638,7 @@ console.log('hand-in freshness, counter reset, owner quotes, COMPARE relevance, 
   cc = cmp(okRow.replace('two-lane road, same junction type', 'yes')); t('COMPARE row with a one-word "yes": fails (must say what matches)', cc.status === 1 && /subject\/type match/.test(cc.stderr));
   cc = cmp(okRow.replace('two-lane road, same junction type', 'N/A for this case')); t('COMPARE row with "N/A": fails', cc.status === 1);
   cc = cmp(okRow.replace('two-lane road, same junction type', 'north-side road, same junction type')); t('a statement that merely starts with the letters "no" ("north-side ...") is not mistaken for "no"', cc.status === 0, cc.stderr);
-  cc = cmp(okRow + '\n| B | r.png | aerial/a.jpg | c.png | b.png | street view of a bus stop | 5 m wide frame | eye-level, both |'); t('every row is checked, not just the first', cc.status === 0, cc.stderr);
+  cc = cmp(okRow + '\n| B | r2.png | aerial/a.jpg | c2.png | b2.png | street view of a bus stop | 5 m wide frame | eye-level, both |'); t('every row is checked, not just the first', cc.status === 0, cc.stderr);
   cc = cmp(okRow + '\n| B | r.png | aerial/a.jpg | c.png | b.png | street view of a bus stop | 5 m wide frame |'); t('a second incomplete row fails and names its case', cc.status === 1 && /needs 8 columns/.test(cc.stderr));
 
   // fault 4: canary for the hand-in gate (RULE 3)
@@ -814,7 +830,7 @@ console.log('gates3 hooks');
 
   // -- BLOCKED through the finish hook
   const faults3 = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Pass 3\nthe hatching bars cross the kerb line at the island nose\n## Residual\nnone, all fixed\n';
-  const blkLine = 'BLOCKED: wall curl at the road ends | tried: a ramp, a fillet and a longer fade, three renders | blocked by: the crossing road keeps the ground 2 m high (render s4) | needs: a decision on the crossing level';
+  const blkLine = 'BLOCKED: wall curl at the road ends | tried: `node tools/scene.mjs --check` after a ramp, a fillet and a longer fade | blocked by: `FAIL ground_under_road` stays at worst 2.1 m (src/earthworks.js:412) | needs: a decision on the crossing level';
   const blkTp = transcript('blk', mk('blk', ['--no-visual', '--v2']));
   fs.mkdirSync(hd('blk'), { recursive: true }); fs.writeFileSync(path.join(hd('blk'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', blkLine)); fs.writeFileSync(path.join(hd('blk'), 'FAULTS.md'), faults3);
   let bl = stop('blk1', blkTp);
@@ -832,7 +848,7 @@ console.log('gates3 hooks');
   fs.mkdirSync(hd('exc'), { recursive: true }); fs.writeFileSync(path.join(hd('exc'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', 'The wall curl is out of scope and a later round will do it.')); fs.writeFileSync(path.join(hd('exc'), 'FAULTS.md'), faults3);
   bl = stop('exc1', exTp); t('an excuse ("out of scope", "later round") with no tried / blocked by: the stop is BLOCKED, the reason shows the BLOCKED form', J(bl.out).decision === 'block' && /left undone or deferred/.test(J(bl.out).reason) && /BLOCKED: <item> \| tried/.test(J(bl.out).reason), bl.out);
   fs.writeFileSync(path.join(hd('exc'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', 'BLOCKED: wall curl | tried: a ramp and a fade | blocked by: time'));
-  bl = stop('exc1', exTp); t('"blocked by: time" is an excuse in the BLOCKED form: still refused', J(bl.out).decision === 'block' && /BLOCKED line is incomplete/.test(J(bl.out).reason), bl.out);
+  bl = stop('exc1', exTp); t('"blocked by: time" is an excuse in the BLOCKED form: still refused', J(bl.out).decision === 'block' && /BLOCKED line is not acceptable/.test(J(bl.out).reason), bl.out);
   // placeholder COMPARE through the hook
   // PRIOR-AUDIT line reaches check_handin
   const priorF = path.join(tmp, 'prior_for_hook_AUDIT.md'); fs.writeFileSync(priorF, '## Faults\nx\n## For the next builder\n\n1. fix the first thing\n2. fix the second thing\n');
