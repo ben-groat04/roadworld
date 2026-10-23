@@ -633,6 +633,8 @@ export function pictureProblems(folder, compareText, opts = {}) {
 
 // Rows of COMPARE.md as files: [{ kase, render, reference, composite, before }] where each is an absolute path or null. Every role is a DIFFERENT file by content:
 // a render copied over as the reference, a composite that is the render, a "before" identical to the render (nothing changed), the same render for two cases: refused.
+// 0.05 % of a 1400x800 frame is 560 pixels: more than any stray anti-aliasing change, fewer than a moved marking line or a changed kerb. No photo measurement: a floor against the one-pixel edit.
+export const MIN_MOVED = 0.0005;
 export function compareIntegrity(rows) {
   const problems = [];
   const roles = ['render', 'reference', 'composite', 'before'];
@@ -641,6 +643,15 @@ export function compareIntegrity(rows) {
     for (let a = 0; a < roles.length; a++) for (let c = a + 1; c < roles.length; c++) {
       const ha = hashes[i][roles[a]], hc = hashes[i][roles[c]];
       if (ha && hc && ha === hc) problems.push(`COMPARE.md row "${r.kase}": the ${roles[a]} and the ${roles[c]} are the same file (identical bytes): ${roles[a] === 'render' && roles[c] === 'before' ? 'the render shows no change from the before picture; a round that changed something moves the picture' : 'a copy is not a ' + roles[c]}`);
+    }
+    // render vs before from the SAME camera: when both decode and have the same size, at least MIN_MOVED of the pixels must differ clearly (a one-pixel edit is not a change)
+    if (r.render && r.before && hashes[i].render && hashes[i].before && hashes[i].render !== hashes[i].before) {
+      const a = decodePng(r.render), b = decodePng(r.before);
+      if (a.decoded && b.decoded && a.width === b.width && a.height === b.height) {
+        let moved = 0; const n = a.width * a.height;
+        for (let k = 0; k < n; k++) { const o = k * 3; if (Math.abs(a.rgb[o] - b.rgb[o]) > 16 || Math.abs(a.rgb[o + 1] - b.rgb[o + 1]) > 16 || Math.abs(a.rgb[o + 2] - b.rgb[o + 2]) > 16) moved++; }
+        if (moved / n < MIN_MOVED) problems.push(`COMPARE.md row "${r.kase}": the render differs from the before picture in only ${(100 * moved / n).toFixed(3)}% of its pixels (need at least ${(MIN_MOVED * 100).toFixed(2)}%): same-camera before/after must show real movement, else change the method (CLAUDE.md gate 4)`);
+      }
     }
   });
   for (const role of ['render', 'composite']) {
@@ -742,8 +753,10 @@ const VAGUE_RE = /\b(?:complexity|complex|complicated|difficult(?:y|ies)?|hard|t
 const TIME_RE = /\b(?:(?:more|extra|additional|enough)\s+(?:time|tokens|context|budget)|tokens?|usage|quota|rate limit|budget)\b/i;
 export function anchorsOf(text) {
   const t = String(text || ''), out = new Set();
-  for (const m of t.matchAll(/`([^`]{3,})`/g)) out.add(m[1].trim().toLowerCase());
-  for (const m of t.matchAll(/"([^"]{8,})"|“([^”]{8,})”/g)) out.add((m[1] || m[2]).trim().toLowerCase());
+  // quoted or backticked text counts only when it looks like something that can be looked up (a path, a command, an identifier, a number), not prose ("`the complexity`")
+  const lookable = (x) => /[\\/._:=()\d-]/.test(x) && !VAGUE_RE.test(x);
+  for (const m of t.matchAll(/`([^`]{3,})`/g)) if (lookable(m[1])) out.add(m[1].trim().toLowerCase());
+  for (const m of t.matchAll(/"([^"]{8,})"|“([^”]{8,})”/g)) if (lookable(m[1] || m[2])) out.add((m[1] || m[2]).trim().toLowerCase());
   for (const m of t.matchAll(/(?:[A-Za-z]:)?[\w.-]*[\\/][\w./\\-]*[\w-]\.\w{1,6}\b|\b[\w-]+\.(?:mjs|js|cpp|h|hpp|json|md|ps1|cmake|txt|log|png|jpe?g|exe|uasset|py|yml|yaml)(?::\d+)?\b/g)) out.add(m[0].toLowerCase());
   for (const m of t.matchAll(/\b(?:E[A-Z]{3,}|C\d{4}|LNK\d{4}|exit (?:code|status) -?\d+|HTTP \d{3}|status (?:code )?\d{3})\b/g)) out.add(m[0].toLowerCase());
   return [...out];
@@ -801,7 +814,7 @@ export function itemsProblems(statusText, items) {
     const cells = row.split('|').map((c) => c.trim()).filter(Boolean);
     const status = (cells[1] || '').toLowerCase(), proof = cells.slice(2).join(' ');
     if (!/^(?:done|fixed)\b/.test(status)) problems.push(`item ${it.id}: the row says "${(cells[1] || '').slice(0, 30)}"; use "done" with its proof, or a BLOCKED line`);
-    else if (proof.length < 15 || /^(?:done|ok|fixed|yes)\W*$/i.test(proof)) problems.push(`item ${it.id}: "done" needs the test, run or image that proves it (15+ characters)`);
+    else if (proof.length < 15 || /^(?:done|ok|fixed|yes)\W*$/i.test(proof) || !(anchorsOf(proof).length || /\d/.test(proof))) problems.push(`item ${it.id}: "done" needs the test, run or image that proves it (15+ characters, naming a file, a test in quotes, a command or a number: "it works" proves nothing)`);
   }
   return problems;
 }

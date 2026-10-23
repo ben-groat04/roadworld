@@ -231,6 +231,12 @@ console.log('picture gate: file identity across roles, reference provenance (gat
   ci = GL.compareIntegrity([{ kase: 'x', render: A, reference: B, composite: A2, before: D }]); t('the composite is the render: refused', ci.some((x) => /render and the composite are the same file/.test(x)), ci.join('|'));
   ci = GL.compareIntegrity([{ kase: 'x', render: A, reference: B, composite: C, before: A2 }]); t('before identical to the render (nothing moved): refused, says so', ci.some((x) => /shows no change from the before picture/.test(x)), ci.join('|'));
   ci = GL.compareIntegrity([{ kase: 'x', render: A, reference: B, composite: C, before: D }, { kase: 'y', render: A2, reference: B, composite: D, before: D }]); t('the same render used for two cases: refused', ci.some((x) => /rows "x" and "y" use the same render/.test(x)), ci.join('|'));
+  // same-camera movement: a one-pixel edit is not a change
+  const base = (x, y) => [(x * 5) & 255, (y * 3) & 255, 90];
+  const P0 = f('mv_before.png', realPng(400, 300, base)), P1 = f('mv_one_px.png', realPng(400, 300, (x, y) => (x === 7 && y === 9 ? [255, 255, 255] : base(x, y)))), P2 = f('mv_moved.png', realPng(400, 300, (x, y) => (y < 40 ? [200, 30, 30] : base(x, y))));
+  ci = GL.compareIntegrity([{ kase: 'x', render: P1, reference: B, composite: C, before: P0 }]); t('the render differs from before in ONE pixel: refused as no real movement', ci.some((x) => /same-camera before\/after must show real movement/.test(x)), ci.join('|'));
+  ci = GL.compareIntegrity([{ kase: 'x', render: P2, reference: B, composite: C, before: P0 }]); t('the render differs from before in 13% of the frame: passes', ci.length === 0, ci.join('|'));
+  ci = GL.compareIntegrity([{ kase: 'x', render: P2, reference: B, composite: C, before: A }]); t('a before picture that cannot be decoded as the same size: movement not judged (identity only)', ci.length === 0, ci.join('|'));
   t('three copies of one image are one reference: refused (STATUS Case line)', GL.distinctReferenceProblems('k', [A, A2, f('a_copy2.png', 'AAAA picture one')]).length === 1);
   t('three different images are three references', GL.distinctReferenceProblems('k', [A, B, C]).length === 0);
   // provenance
@@ -623,6 +629,9 @@ console.log('BLOCKED needs a concrete cause; items table; rewordings of "not don
   t('a vague BLOCKED row does not stand for the item', GL.itemsProblems(sheet('| A | done | test "measured gates" in test_gates.mjs |\n| B | done | test "waiver guard" in test_gates.mjs |\n| G | BLOCKED: scope line | tried: tried | blocked by: complexity | needs: time |'), items).some((x) => /item G/.test(x)));
   t('no "## Items" section at all: refused, the item ids are listed', GL.itemsProblems('## Skipped, refused or failed\nx\n', items).some((x) => /no "## Items" section/.test(x) && /A, B, G/.test(x)));
   t('no items in the brief: nothing to check', GL.itemsProblems('x', []).length === 0);
+  t('"done" with a proof that proves nothing ("it works fine now"): refused', GL.itemsProblems(sheet('| A | done | it works fine now |\n| B | done | test "waiver guard" in test_gates.mjs |\n| G | done | docs/templates/BRIEF.md line 13 |'), items).some((x) => /item A/.test(x)));
+  t('a backticked judgement is not a concrete anchor: "`the complexity of it`" in blocked by: refused', bp('BLOCKED: layout | tried: `node a.mjs` was run | blocked by: `the complexity of it` | needs: a decision').length === 1);
+  t('...but a backticked command or identifier is', bp('BLOCKED: layout | tried: `node a.mjs` was run | blocked by: `node a.mjs` exits with `EACCES` on x.json | needs: a decision').length === 0);
   // references count
   const refSt = (n) => `References opened: ${n} of 12\nnot opened: x.md (reason)\n\n## Reference files opened\nCase: a | Opened: 1.md, 2.md, 3.md, 4.md\nCase: b | Opened: 5.md, 6.md, 7.md, 8.md\nCase: c | Opened: 9.md, 10.md, 11.md\n`;
   t('"References opened: 10 of 12" next to 11 named files: refused (the gates3 STATUS arithmetic)', GL.statusProblems(refSt(10), null).some((x) => /names 11 distinct file/.test(x)));
