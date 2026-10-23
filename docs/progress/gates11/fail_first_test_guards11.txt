@@ -1,0 +1,920 @@
+gates11 A: time-limit guard (contract item 26): REFUSE a long job with no limit, ALLOW limited forms and commands that only mention the names
+  FAIL A REFUSE (Bash): the suite with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): ctest with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): a limit over 900 s
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): timeout 0 is no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): cmake --build with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): ninja with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): msbuild with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): scene.mjs with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): render.mjs with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): any *_tests program
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): a t_full* program
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): a nested shell does not hide it
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): time is not a limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): ctest piped to tail with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (Bash): two jobs, none limited
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): Run-Playtest.ps1 with no -TimeoutSec
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): -TimeoutMinutes is not the limit the guard wants
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): Run-EditorPython.ps1 with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): Build-Editor.ps1 -TimeoutSec over its 5400 s cap
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): -TimeoutSec 0
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): the suite in PowerShell with no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): Start-Process + Wait-Process with no -Timeout
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): timeout typed in PowerShell is Windows timeout.exe, a pause
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A REFUSE (PowerShell): Start-Process -Wait has no limit
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): timeout 900 suite
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): timeout 600 ctest
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): timeout 15m = 900 s
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): timeout cmake --build
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): timeout -k 10 600 ninja
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): timeout scene.mjs
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): timeout around a nested shell
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): timeout t_full
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): cmake configure is not a run
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): listing test cases is not a run
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): ctest -N lists
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): cmake --build --help
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): grep that mentions ctest
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): cat of a log named after the suite
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): git log --grep ninja
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): a commit message that names them
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): echo
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): git diff of a file named like the suite
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (Bash): an unrelated node tool
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): Run-Playtest.ps1 -TimeoutSec 600
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): Build-Editor.ps1 -TimeoutSec 4000 (cap 5400)
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): -TimeoutSec:900 form
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): Start-Process + Wait-Process -Timeout 600
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): a nested bash with GNU timeout
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): Select-String that mentions ctest
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): Get-Content of the suite log
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): git log --grep Run-Playtest
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A ALLOW (PowerShell): listing the script
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A the refusal is on record in gate.log (gate time_guard, decision deny)
+       []
+  FAIL A the Bash refusal names `timeout 900 <cmd>` and the PowerShell refusal names -TimeoutSec and Wait-Process -Timeout
+       node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+           at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+           at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+           at Module._load (node:internal/modules/cjs/loader:1341:5)
+           at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+           at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+           at node:internal/main/run_main_module:33:47 {
+         code: 'MODULE_NOT_FOUND',
+         requireStack: []
+       }
+       
+       Node.js v24.20.0
+       node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+           at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+           at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+           at Module._load (node:internal/modules/cjs/loader:1341:5)
+           at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+           at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+           at node:internal/main/run_main_module:33:47 {
+         code: 'MODULE_NOT_FOUND',
+         requireStack: []
+       }
+       
+       Node.js v24.20.0
+       
+gates11 A: a second copy of a running test, and the 300 ms process lookup
+  FAIL A dup: the first limited run is allowed (and recorded)
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+           at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+           at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+           at Module._load (node:internal/modules/cjs/loader:1341:5)
+           at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+           at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+           at node:internal/main/run_main_module:33:47 {
+         code: 'MODULE_NOT_FOUND',
+         requireStack: []
+       }
+       
+       Node.js v24.20.0
+       
+  FAIL A dup: a second copy of the same test from the same worktree while the process is still running is refused
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:in
+  FAIL A dup: the same holds for ctest (first allowed, second refused)
+       1 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Mod
+  FAIL A dup: the same command is allowed once the process is gone (the earlier run ended)
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+           at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+           at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+           at Module._load (node:internal/modules/cjs/loader:1341:5)
+           at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+           at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+           at node:internal/main/run_main_module:33:47 {
+         code: 'MODULE_NOT_FOUND',
+         requireStack: []
+       }
+       
+       Node.js v24.20.0
+       
+  FAIL A dup: another worktree may run the same test at the same time
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+           at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+           at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+           at Module._load (node:internal/modules/cjs/loader:1341:5)
+           at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+           at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+           at node:internal/main/run_main_module:33:47 {
+         code: 'MODULE_NOT_FOUND',
+         requireStack: []
+       }
+       
+       Node.js v24.20.0
+       
+  FAIL A dup: a different test program is not a second copy
+       status 1 node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+           at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+           at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+           at Module._load (node:internal/modules/cjs/loader:1341:5)
+           at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+           at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+           at node:internal/main/run_main_module:33:47 {
+         code: 'MODULE_NOT_FOUND',
+         requireStack: []
+       }
+       
+       Node.js v24.20.0
+       
+  FAIL A dup: a process lookup that hangs is cut at 300 ms; the command is allowed and a FAIL-OPEN line is logged
+       status 1 took 157 ms node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+           at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+           at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+           at Module._load (node:internal/modules/cjs/loader:1341:5)
+           at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+           at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+           at node:internal/main/run_main_module:33:47 {
+         code: 'MODULE_NOT_FOUND',
+         requireStack: []
+       }
+       
+       Node.js v24.20.0
+        []
+  FAIL A dup: processRunning(name) with a stuck lookup command returns null within 1 s (the bound)
+       THREW Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates11\old_export\tools\hooks\time_guard_impl.mjs' imported from C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gate
+gates11 A: wiring and the -TimeoutSec parameter of the unreal scripts
+  FAIL A settings.json wires tools/hooks/time_guard.mjs on Bash|PowerShell
+       [["${CLAUDE_PROJECT_DIR}/tools/hooks/delete_guard.mjs"],["${CLAUDE_PROJECT_DIR}/tools/hooks/git_guard.mjs"],["${CLAUDE_PROJECT_DIR}/tools/hooks/state_guard.mjs"],["${CLAUDE_PROJECT_DIR}/tools/hooks/lock_guard.mjs"]]
+  FAIL A Build-Editor.ps1 has a -TimeoutSec parameter that sets its time limit
+  FAIL A Run-Playtest.ps1 has a -TimeoutSec parameter that sets its time limit
+  FAIL A Run-EditorPython.ps1 has a -TimeoutSec parameter that sets its time limit
+gates11 B: the launch gate refuses a NO-CONTRACT launch by its DESCRIPTION (real descriptions of 23 Oct 2026)
+  ok   B REFUSE "Audit gate-notice hooks independently" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit earthworks round 9" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit T-junction round" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit road tool round 3" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Auditor for gates9 hand-in" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Auditor for m2fix5a hand-in" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit of the earthworks hand-in" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Auditing for the roundabout round" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Opus first look on grade-r12 images" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Opus first look: tjunction5 images" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "First look at the m2fix hand-in" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Fresh auditor for the junction round" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "AUDITOR for x" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE a prompt line that orders an audit of a progress folder (Check the round)
+  ok   B REFUSE a prompt line that orders an audit of a progress folder (Quick job)
+  FAIL B ALLOW "Write audit first-look rule into docs"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Write audit first-look rule into docs"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <pr
+  FAIL B ALLOW "Audit the audit-gate tooling"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Audit the audit-gate tooling"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progress-fo
+  FAIL B ALLOW "Audit repo organisation, read-only"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Audit repo organisation, read-only"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progr
+  FAIL B ALLOW "Audit gradelayer WorldCache layers"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Audit gradelayer WorldCache layers"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progr
+  FAIL B ALLOW "Earthworks method review (read-only)"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Earthworks method review (read-only)"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <pro
+  FAIL B ALLOW "Clerk: photos-outrank-tests rule, commit review"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Clerk: photos-outrank-tests rule, commit review"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --firs
+  FAIL B ALLOW "Add every-audit-item-fixed rule to docs"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Add every-audit-item-fixed rule to docs"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <
+  FAIL B ALLOW "Clerk: contract speed rules, queue, acceptance"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Clerk: contract speed rules, queue, acceptance"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first
+  FAIL B ALLOW "Merge gates7 then gates9 into main"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Merge gates7 then gates9 into main"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progr
+  FAIL B ALLOW "Research: Unreal plugin facts"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Research: Unreal plugin facts"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progress-f
+  FAIL B ALLOW "Re-fetch 18 truncated photos and back up"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Re-fetch 18 truncated photos and back up"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look 
+  FAIL B ALLOW "Queue catch-up for 22-23 Oct events"
+       LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an first look ("Queue catch-up for 22-23 Oct events"). An first look agent launched without its marker is not recorded and its file is not validated. Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <prog
+  ok   B ALLOW a clerk prompt that only says an audit of a progress folder was accepted
+  ok   B ALLOW an "Auditor for ..." description that carries AUDIT-OF (the real audit launch)
+  ok   B ALLOW an "Opus first look ..." description that carries FIRSTLOOK-OF (the real first-look launch)
+  FAIL B disguisedJob(description, reason, prompt): the reason text is not read any more
+gates11 C: measure phase (decision 5): photo files must exist, M = the brief's count, one table per case of the brief
+  ok   C measure: a GOOD MEASURE.md with the brief's REFS and CASE lines passes
+  FAIL C measure: BAD (a table row names a photo file that does not exist) is refused with the matching reason
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_m_atablerownames\docs\progress\rr (phase measure)
+       
+  FAIL C measure: BAD (M is not the brief's count (3 listed in the file, 5 in the brief)) is refused with the matching reason
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_m_Misnotthebrief\docs\progress\rr (phase measure)
+       
+  FAIL C measure: BAD ("opened 3 of 4" when the brief lists 3) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_m_opened3of4when\docs\progress\rr (phase measure):
+        - "References opened: 3 of 4": the 1 unopened file(s) need a line saying "not opened" with the file name and why
+       
+  FAIL C measure: BAD (the brief has two cases, MEASURE.md one table) is refused with the matching reason
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_m_thebriefhastwo\docs\progress\rr (phase measure)
+       
+  FAIL C measure: BAD (a case of the brief with no section of that name) is refused with the matching reason
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_m_acaseofthebrie\docs\progress\rr (phase measure)
+       
+gates11 C: build phase (decisions 2-4): suite_build.log is read, never run; a code commit is required; fail_first shows a failure in the runner format
+  FAIL C build: GOOD (code commit, log newer than it, real summary, fail_first in the runner format) passes
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_good\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: a doctest log whose only failure is the brief's allowed pier test passes
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_doc\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: a ctest log with only the allowed failure passes
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_ctest\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (no commit touches code (a .md note only)) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_nocommittouche\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (no suite_build.log) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_nosuite_buildl\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (log older than the last code commit) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_logolderthanth\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (log with no summary (a half-written file)) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_logwithnosumma\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (log is a timeout (exit=124)) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_logisatimeoute\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (a failing test that the brief does not allow) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_afailingtestth\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (a failing test and no allow list at all) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_afailingtestan\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (a failure count with no failing name) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_afailurecountw\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (the suite binary is older than the last code commit) is refused with the matching reason
+       HAND-IN CHECK FAILED (2) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_thesuitebinary\docs\progress\rr (phase build):
+        - commit 626cb85d (BUILD.md and log) was made since the measure phase but BUILD.md does not list it
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (a new test file with a fail_first that shows no failure) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_anewtestfilewi\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: BAD (a fail_first that says "all passed" in a long sentence) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_afail_firsttha\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: fail_first in the format "a doctest ERROR block" is accepted
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_ff_adoctestER\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: fail_first in the format "a ctest ***Failed line" is accepted
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_ff_actestFail\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: fail_first in the format "a FAIL line of the repo runner" is accepted
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_ff_aFAILlineo\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL C build: fail_first in the format "a "N failed" summary above zero" is accepted
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_b_ff_aNfailedsu\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  ok   C build: the check never runs a suite command (a --suite sentinel command was not started)
+  FAIL C make_brief --phase measure|build: the brief carries REFS: (the count), one CASE: line per case and the ALLOW-FAIL: lines of the task file; the finish hook reads them back
+       # BRIEF: T round
+       
+       ROUND: rr   WORKTREE: C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_mb   BRANCH: agent/rr   BASE: current main (run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`, do not start from a stale branch)
+       Progress folder for hand-in: docs/progress/rr/
+       HANDIN_DIR: C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_mb\docs\progress\rr
+       PHASE: build
+       SUITE: node -e "process.exit(0)"
+       HANDIN: no-visual
+       GATES-VERSION: 3
+       
+       ## Owner's words (verbatim, with date; never paraphrase)
+       "and ofc it needs to work with the gate system, have you been sidestepping it?" (23 Oct 2026)
+       
+       ## Phase
+       BUILD phase (second of up to three short agents). Read MEASURE.md and the decisions in this brief; write the code and its tests; commit after each verified step with [skip ci]. Write BUILD.md in the progress folder with a "Commits:" line listing every commit yo
+       ---
+       # BRIEF: T round
+       
+       ROUND: rr   WORKTREE: C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_mb   BRANCH: agent/rr   BASE: current main (run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`, do not start from a stale branch)
+       Progress folder for hand-in: docs/progress/rr/
+       HANDIN_DIR: C:\Users\bgbg0\AppData\Local\Temp\guards11-iFmXJH\c_mb\docs\progress\rr
+       PHASE: measure
+       HANDIN: no-visual
+       GATES-VERSION: 3
+       
+       ## Owner's words (verbatim, with date; never paraphra
+  FAIL C make_brief: the build-phase text tells the agent to write suite_build.log under timeout 900 and names the allowed-failure list
+  FAIL C audit brief template: the auditor re-runs the suite itself
+gates11 D: first-look file (decision 6): placeholders fail; a reference photo under docs/reference and a picture of the round are both needed
+  ok   D a GOOD first look (round pictures and a reference photo, real observations) passes
+  FAIL D BAD first look (Top 3 line 1 is a <placeholder>) is refused
+       (no problem reported)
+  FAIL D BAD first look (Top 3 line 2 is TODO) is refused
+       (no problem reported)
+  FAIL D BAD first look (Top 3 line 3 is tbd) is refused
+       (no problem reported)
+  FAIL D BAD first look (Top 3 line is one word repeated) is refused
+       (no problem reported)
+  FAIL D BAD first look ("would never be built" is TODO) is refused
+       (no problem reported)
+  FAIL D BAD first look ("would never be built" is a <placeholder>) is refused
+       (no problem reported)
+  ok   D BAD first look ("would never be built" is a short non-answer (under 15 characters)) is refused
+  FAIL D BAD first look (no reference photo under docs/reference (an image from elsewhere on disk)) is refused
+       (no problem reported)
+  ok   D BAD first look (only reference photos, no picture of the round) is refused
+gates11 E: [unreal] frames (decision 7): in the round's _compare or hand-in folder, cited in STATUS next to a playtest log newer than the brief that names the frame
+  ok   E a frame in the hand-in folder, cited in STATUS with a fresh log that names it, passes
+  ok   E a frame in the round's _compare folder passes the same way
+  FAIL E a frame outside the round's _compare and hand-in folders is refused
+  FAIL E STATUS that does not cite the frame by name is refused
+  FAIL E STATUS that cites no playtest log file is refused
+  FAIL E a cited log that does not exist is refused
+  FAIL E a cited log older than the brief is refused
+  FAIL E a fresh log that does not name the frame is refused
+  ok   E without a context only the old integrity checks run (library callers)
+gates11 F: lock_guard (decisions 8 and 9): chained fs.rm, git stash / reset --hard / checkout -- / revert against locked files; patch --dry-run allowed
+  FAIL F REFUSE chained and aliased fs write forms on a locked test: 10 real payloads
+       require('fs').rmSync: node -e "require('fs').rmSync('tests/listed_test.mjs')": status 0 
+       require('node:fs').rm: node -e "require('node:fs').rm('tests/listed_test.mjs',()=>{})": status 0 
+       require('fs').promises.rm: node -e "require('fs').promises.rm('tests/listed_test.mjs')": status 0 
+       require('fs/promises').rm: node -e "require('fs/promises').rm('tests/listed_test.mjs')": status 0 
+       require('node:fs/promises').unlink: node -e "require('node:fs/promises').unlink('tests/listed_test.mjs')": status 0 
+       import('fs').then(m => m.rmSync): node -e "import('fs').then(m=>m.rmSync('tests/listed_test.mjs'))": status 0 
+       fs['rmSync']: node -e "const fs=require('fs'); fs['rmSync']('tests/listed_test.mjs')": status 0 
+       require('fs').writeFileSync: node -e "require('fs').writeFileSync('tests/listed_test.mjs','')": status 0 
+       an alias of the module (f.truncateSync): node -e "const f=require('fs'); f.truncateSync('tests/listed_test.mjs')": status 0 
+  ok   F ALLOW the same forms on an unlocked file and reads: 3 real payloads
+  FAIL F REFUSE git stash / reset --hard / checkout -- / restore against a MODIFIED locked test: 11 real payloads
+       git stash: git stash: status 0 
+       git stash push: git stash push: status 0 
+       git stash save: git stash save wip: status 0 
+       git stash push -m: git stash push -m wip: status 0 
+       git stash -- <locked>: git stash -- tests/listed_test.mjs: status 0 
+       git stash push -- <locked>: git stash push -- tests/listed_test.mjs: status 0 
+       git reset --hard: git reset --hard: status 0 
+       git reset --hard HEAD: git reset --hard HEAD: status 0 
+  ok   F ALLOW git commands that read, or that do not touch the locked test: 8 real payloads
+  ok   F ALLOW git stash and reset --hard while only an UNLOCKED file is modified: 3 real payloads
+  FAIL F REFUSE git revert of a commit that changed a locked test: 3 real payloads
+       git revert HEAD: git revert HEAD: status 0 
+       git revert --no-edit HEAD: git revert --no-edit HEAD: status 0 
+       git revert -n HEAD: git revert -n HEAD: status 0 
+  ok   F ALLOW git revert --abort / --continue and a revert of a commit that left the locked test alone: 3 real payloads
+  FAIL F decision 9: patch --dry-run on a diff of a locked test is only a read (ALLOW): 5 real payloads
+       patch --dry-run -i: patch --dry-run -p1 -i upd_locked.diff: status 2 REFUSED by the lock guard (tools/hooks/lock_guard.mjs): locked test: written by the auditor; make it pass, or write BLOC
+       patch --dry-run < diff: patch --dry-run -p1 < upd_locked.diff: status 2 REFUSED by the lock guard (tools/hooks/lock_guard.mjs): locked test: written by the auditor; make it pass, or write BLOC
+       patch -C (check): patch -C -p1 -i upd_locked.diff: status 2 REFUSED by the lock guard (tools/hooks/lock_guard.mjs): locked test: written by the auditor; make it pass, or write BLOC
+       patch --check: patch --check -p1 -i upd_locked.diff: status 2 REFUSED by the lock guard (tools/hooks/lock_guard.mjs): locked test: written by the auditor; make it pass, or write BLOC
+  FAIL F ... and a real patch of the locked test is still refused: 3 real payloads
+       cat diff | patch: cat upd_locked.diff | patch -p1: status 0 
+gates11 G: delete_guard (decision 11): a heredoc written to a file is text; a heredoc fed to an interpreter is code
+  ok   G ALLOW: cat > file <<EOF (a recursive delete named inside text)
+  FAIL G ALLOW: a command before it, then cat > file <<EOF (a recursive delete named inside text)
+       refused: node -v && cat > /tmp/s.mjs <<'EOF'
+       const fs = require('fs'); fs.rmSync(dirx, { recursive: true });
+       EOF
+  ok   G ALLOW: cat >> file <<END-OF-FILE (a recursive delete named inside text)
+  ok   G ALLOW: tee file <<EOF (a recursive delete named inside text)
+  ok   G ALLOW: the file is written, a later line runs another tool (a recursive delete named inside text)
+  ok   G ALLOW: git commit -F - <<EOF (a recursive delete named inside text)
+  FAIL G ALLOW: PowerShell Set-Content here-string (a recursive delete named inside text)
+       refused: Set-Content s.mjs @'
+       const fs = require('fs'); fs.rmSync(dirx, { recursive: true });
+       '@
+  FAIL G ALLOW: PowerShell here-string into a variable then Set-Content (a recursive delete named inside text)
+       refused: $code = @'
+       const fs = require('fs'); fs.rmSync(dirx, { recursive: true });
+       '@
+       Set-Content s.mjs $code
+  ok   G REFUSE: node - <<EOF (the heredoc is the program) (the code runs)
+  ok   G REFUSE: cat <<EOF | node - (the code runs)
+  ok   G REFUSE: bash <<EOF with rm -rf (the code runs)
+  ok   G REFUSE: write the file, then run it in the same command (the code runs)
+  ok   G REFUSE: node <<EOF (the code runs)
+  ok   G REFUSE: PowerShell here-string piped to node - (the code runs)
+  ok   G REFUSE: python - <<EOF with rmtree (the code runs)
+
+clean_test_temp prefix: guards11- is cleaned with the other suites
+  FAIL clean_test_temp lists the guards11- prefix
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the temp folder is removed
+
+44 passed, 127 failed
+FAILED TESTS:
+ - A REFUSE (Bash): the suite with no limit
+ - A REFUSE (Bash): ctest with no limit
+ - A REFUSE (Bash): a limit over 900 s
+ - A REFUSE (Bash): timeout 0 is no limit
+ - A REFUSE (Bash): cmake --build with no limit
+ - A REFUSE (Bash): ninja with no limit
+ - A REFUSE (Bash): msbuild with no limit
+ - A REFUSE (Bash): scene.mjs with no limit
+ - A REFUSE (Bash): render.mjs with no limit
+ - A REFUSE (Bash): any *_tests program
+ - A REFUSE (Bash): a t_full* program
+ - A REFUSE (Bash): a nested shell does not hide it
+ - A REFUSE (Bash): time is not a limit
+ - A REFUSE (Bash): ctest piped to tail with no limit
+ - A REFUSE (Bash): two jobs, none limited
+ - A REFUSE (PowerShell): Run-Playtest.ps1 with no -TimeoutSec
+ - A REFUSE (PowerShell): -TimeoutMinutes is not the limit the guard wants
+ - A REFUSE (PowerShell): Run-EditorPython.ps1 with no limit
+ - A REFUSE (PowerShell): Build-Editor.ps1 -TimeoutSec over its 5400 s cap
+ - A REFUSE (PowerShell): -TimeoutSec 0
+ - A REFUSE (PowerShell): the suite in PowerShell with no limit
+ - A REFUSE (PowerShell): Start-Process + Wait-Process with no -Timeout
+ - A REFUSE (PowerShell): timeout typed in PowerShell is Windows timeout.exe, a pause
+ - A REFUSE (PowerShell): Start-Process -Wait has no limit
+ - A ALLOW (Bash): timeout 900 suite
+ - A ALLOW (Bash): timeout 600 ctest
+ - A ALLOW (Bash): timeout 15m = 900 s
+ - A ALLOW (Bash): timeout cmake --build
+ - A ALLOW (Bash): timeout -k 10 600 ninja
+ - A ALLOW (Bash): timeout scene.mjs
+ - A ALLOW (Bash): timeout around a nested shell
+ - A ALLOW (Bash): timeout t_full
+ - A ALLOW (Bash): cmake configure is not a run
+ - A ALLOW (Bash): listing test cases is not a run
+ - A ALLOW (Bash): ctest -N lists
+ - A ALLOW (Bash): cmake --build --help
+ - A ALLOW (Bash): grep that mentions ctest
+ - A ALLOW (Bash): cat of a log named after the suite
+ - A ALLOW (Bash): git log --grep ninja
+ - A ALLOW (Bash): a commit message that names them
+ - A ALLOW (Bash): echo
+ - A ALLOW (Bash): git diff of a file named like the suite
+ - A ALLOW (Bash): an unrelated node tool
+ - A ALLOW (PowerShell): Run-Playtest.ps1 -TimeoutSec 600
+ - A ALLOW (PowerShell): Build-Editor.ps1 -TimeoutSec 4000 (cap 5400)
+ - A ALLOW (PowerShell): -TimeoutSec:900 form
+ - A ALLOW (PowerShell): Start-Process + Wait-Process -Timeout 600
+ - A ALLOW (PowerShell): a nested bash with GNU timeout
+ - A ALLOW (PowerShell): Select-String that mentions ctest
+ - A ALLOW (PowerShell): Get-Content of the suite log
+ - A ALLOW (PowerShell): git log --grep Run-Playtest
+ - A ALLOW (PowerShell): listing the script
+ - A the refusal is on record in gate.log (gate time_guard, decision deny)
+ - A the Bash refusal names `timeout 900 <cmd>` and the PowerShell refusal names -TimeoutSec and Wait-Process -Timeout
+ - A dup: the first limited run is allowed (and recorded)
+ - A dup: a second copy of the same test from the same worktree while the process is still running is refused
+ - A dup: the same holds for ctest (first allowed, second refused)
+ - A dup: the same command is allowed once the process is gone (the earlier run ended)
+ - A dup: another worktree may run the same test at the same time
+ - A dup: a different test program is not a second copy
+ - A dup: a process lookup that hangs is cut at 300 ms; the command is allowed and a FAIL-OPEN line is logged
+ - A dup: processRunning(name) with a stuck lookup command returns null within 1 s (the bound)
+ - A settings.json wires tools/hooks/time_guard.mjs on Bash|PowerShell
+ - A Build-Editor.ps1 has a -TimeoutSec parameter that sets its time limit
+ - A Run-Playtest.ps1 has a -TimeoutSec parameter that sets its time limit
+ - A Run-EditorPython.ps1 has a -TimeoutSec parameter that sets its time limit
+ - B ALLOW "Write audit first-look rule into docs"
+ - B ALLOW "Audit the audit-gate tooling"
+ - B ALLOW "Audit repo organisation, read-only"
+ - B ALLOW "Audit gradelayer WorldCache layers"
+ - B ALLOW "Earthworks method review (read-only)"
+ - B ALLOW "Clerk: photos-outrank-tests rule, commit review"
+ - B ALLOW "Add every-audit-item-fixed rule to docs"
+ - B ALLOW "Clerk: contract speed rules, queue, acceptance"
+ - B ALLOW "Merge gates7 then gates9 into main"
+ - B ALLOW "Research: Unreal plugin facts"
+ - B ALLOW "Re-fetch 18 truncated photos and back up"
+ - B ALLOW "Queue catch-up for 22-23 Oct events"
+ - B disguisedJob(description, reason, prompt): the reason text is not read any more
+ - C measure: BAD (a table row names a photo file that does not exist) is refused with the matching reason
+ - C measure: BAD (M is not the brief's count (3 listed in the file, 5 in the brief)) is refused with the matching reason
+ - C measure: BAD ("opened 3 of 4" when the brief lists 3) is refused with the matching reason
+ - C measure: BAD (the brief has two cases, MEASURE.md one table) is refused with the matching reason
+ - C measure: BAD (a case of the brief with no section of that name) is refused with the matching reason
+ - C build: GOOD (code commit, log newer than it, real summary, fail_first in the runner format) passes
+ - C build: a doctest log whose only failure is the brief's allowed pier test passes
+ - C build: a ctest log with only the allowed failure passes
+ - C build: BAD (no commit touches code (a .md note only)) is refused with the matching reason
+ - C build: BAD (no suite_build.log) is refused with the matching reason
+ - C build: BAD (log older than the last code commit) is refused with the matching reason
+ - C build: BAD (log with no summary (a half-written file)) is refused with the matching reason
+ - C build: BAD (log is a timeout (exit=124)) is refused with the matching reason
+ - C build: BAD (a failing test that the brief does not allow) is refused with the matching reason
+ - C build: BAD (a failing test and no allow list at all) is refused with the matching reason
+ - C build: BAD (a failure count with no failing name) is refused with the matching reason
+ - C build: BAD (the suite binary is older than the last code commit) is refused with the matching reason
+ - C build: BAD (a new test file with a fail_first that shows no failure) is refused with the matching reason
+ - C build: BAD (a fail_first that says "all passed" in a long sentence) is refused with the matching reason
+ - C build: fail_first in the format "a doctest ERROR block" is accepted
+ - C build: fail_first in the format "a ctest ***Failed line" is accepted
+ - C build: fail_first in the format "a FAIL line of the repo runner" is accepted
+ - C build: fail_first in the format "a "N failed" summary above zero" is accepted
+ - C make_brief --phase measure|build: the brief carries REFS: (the count), one CASE: line per case and the ALLOW-FAIL: lines of the task file; the finish hook reads them back
+ - C make_brief: the build-phase text tells the agent to write suite_build.log under timeout 900 and names the allowed-failure list
+ - C audit brief template: the auditor re-runs the suite itself
+ - D BAD first look (Top 3 line 1 is a <placeholder>) is refused
+ - D BAD first look (Top 3 line 2 is TODO) is refused
+ - D BAD first look (Top 3 line 3 is tbd) is refused
+ - D BAD first look (Top 3 line is one word repeated) is refused
+ - D BAD first look ("would never be built" is TODO) is refused
+ - D BAD first look ("would never be built" is a <placeholder>) is refused
+ - D BAD first look (no reference photo under docs/reference (an image from elsewhere on disk)) is refused
+ - E a frame outside the round's _compare and hand-in folders is refused
+ - E STATUS that does not cite the frame by name is refused
+ - E STATUS that cites no playtest log file is refused
+ - E a cited log that does not exist is refused
+ - E a cited log older than the brief is refused
+ - E a fresh log that does not name the frame is refused
+ - F REFUSE chained and aliased fs write forms on a locked test: 10 real payloads
+ - F REFUSE git stash / reset --hard / checkout -- / restore against a MODIFIED locked test: 11 real payloads
+ - F REFUSE git revert of a commit that changed a locked test: 3 real payloads
+ - F decision 9: patch --dry-run on a diff of a locked test is only a read (ALLOW): 5 real payloads
+ - F ... and a real patch of the locked test is still refused: 3 real payloads
+ - G ALLOW: a command before it, then cat > file <<EOF (a recursive delete named inside text)
+ - G ALLOW: PowerShell Set-Content here-string (a recursive delete named inside text)
+ - G ALLOW: PowerShell here-string into a variable then Set-Content (a recursive delete named inside text)
+ - clean_test_temp lists the guards11- prefix
