@@ -3,7 +3,7 @@
 //   A  time-limit guard (decision 13, contract item 26 made mechanical): REFUSE a long job with no limit, ALLOW the limited forms and commands that only MENTION the names; second copy of a
 //      running test; process lookup bounded to 300 ms and failing open; -TimeoutSec in the unreal scripts; the hook is wired in settings.json
 //   B  launch gate (decision 1): a NO-CONTRACT launch is refused by its DESCRIPTION (or a prompt line that orders an audit of a progress folder), not by words anywhere in the reason
-//   C  phase checks (decisions 2-5): build phase reads suite_build.log (no suite run inside the hook), needs a code commit, fail_first in the runner's format; measure phase needs real photo
+//   C  phase checks (decisions 2-5): build phase reads suite_node.log (no suite run inside the hook), needs a code commit, fail_first in the runner's format; measure phase needs real photo
 //      files, M equal to the brief's count, one table per case of the brief
 //   D  first-look file (decision 6): placeholders fail, a reference photo under docs/reference and a picture of the round are both needed
 //   E  [unreal] frames (decision 7): frame in the round's _compare or hand-in folder, cited in STATUS next to a playtest log newer than the brief that names the frame
@@ -21,7 +21,8 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolateState, cleanupTmp } from '../test_isolation.mjs';
-import { logRun } from './test_record_lib.mjs';   // gates12: a suite_build.log is made through the real hooks (a typed log has no run record)
+import { logRun } from './test_record_lib.mjs';
+import { signRecord } from './lib.mjs';   // gates12: a suite_node.log is made through the real hooks (a typed log has no run record)
 
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guards11-'));
@@ -150,14 +151,14 @@ console.log('gates11 B: the launch gate refuses a NO-CONTRACT launch by its DESC
   // descriptions refused by the decision-1 pattern: auditor | audit(ing) of/for | opus first look | first look, plus "Audit <x> independently|round|hand-in" (all real descriptions in the log)
   const refuse = ['Audit gate-notice hooks independently', 'Audit earthworks round 9', 'Audit T-junction round', 'Audit road tool round 3', 'Auditor for gates9 hand-in', 'Auditor for m2fix5a hand-in', 'Audit of the earthworks hand-in', 'Auditing for the roundabout round', 'Audit the audit-gate tooling', 'Audit repo organisation, read-only', 'Audit gradelayer WorldCache layers',   /* gates12 decision 3: audits of agents' work that are not named hand-in or round are still audits */
     'Opus first look on grade-r12 images', 'Opus first look: tjunction5 images', 'First look at the m2fix hand-in', 'Fresh auditor for the junction round', 'AUDITOR for x'];
-  for (const d of refuse) { const r = launch(d, nc('clerk work with no audit in it, 20+ characters')); t(`B REFUSE "${d}" (a reason that says nothing about audits does not save it)`, r.status === 2 && /is an? (?:audit|first look)/.test(r.stderr) && /make_brief\.mjs/.test(r.stderr), r.stderr.slice(0, 300)); }
+  for (const d of refuse) { const r = launch(d, nc('clerk work with no audit in it, 20+ characters')); t(`B REFUSE "${d}" (a reason that says nothing about audits does not save it)`, r.status === 2 && /free-text NO-CONTRACT form is not accepted/.test(r.stderr) && /make_brief\.mjs/.test(r.stderr), r.stderr.slice(0, 300)); }
   // a prompt that opens a line with the audit order and names a progress folder
   const pf = path.join(tmp, 'x', 'docs', 'progress', 'gates9');
   for (const [d, p] of [['Check the round', `Audit ${pf} and write AUDIT.md\nNO-CONTRACT: just a quick look for the main session today`], ['Quick job', `You are the auditor of ${pf}.\nNO-CONTRACT: nothing special at all about this one`]]) { const r = launch(d, p); t(`B REFUSE a prompt line that orders an audit of a progress folder (${d})`, r.status === 2 && /audit/.test(r.stderr), r.stderr.slice(0, 300)); }
   const allow = ['Write audit first-look rule into docs', 'Earthworks method review (read-only)', 'Clerk: photos-outrank-tests rule, commit review', 'Add every-audit-item-fixed rule to docs',
     'Clerk: contract speed rules, queue, acceptance', 'Merge gates7 then gates9 into main', 'Research: Unreal plugin facts', 'Re-fetch 18 truncated photos and back up', 'Queue catch-up for 22-23 Oct events'];
-  for (const d of allow) { const r = launch(d, nc('clerk or merge or research job; mentions the audit and first look rules only in passing')); t(`B ALLOW "${d}"`, r.status === 0, r.stderr.slice(0, 300)); }
-  let r = launch('Docs clerk', `Docs clerk.\nNO-CONTRACT: docs clerk: update docs/QUEUE.md and record that the audit of ${pf} was accepted`);
+  for (const d of allow) { const r = launch(d, nc('clerk: clerk or merge or research job; mentions the audit and first look rules only in passing')); t(`B ALLOW "${d}"`, r.status === 0, r.stderr.slice(0, 300)); }
+  let r = launch('Docs clerk', `Docs clerk.\nNO-CONTRACT: clerk: update docs/QUEUE.md and record that the audit of ${pf} was accepted`);
   t('B ALLOW a clerk prompt that only says an audit of a progress folder was accepted', r.status === 0, r.stderr.slice(0, 300));
   const hdA = path.join(tmp, 'fl_a', 'docs', 'progress', 'fl'); mk(hdA);
   r = launch('Auditor for x hand-in', `AUDIT-OF: ${hdA}\nAGENT-CONTRACT-MARKER: v1\n## Owner's words\n"x" (1 Oct)\n`);
@@ -187,16 +188,16 @@ console.log('gates11 C: measure phase (decision 5): photo files must exist, M = 
   ];
   for (const [label, mut, a, re] of bad) { const rr = chk(measureHandin('c_m_' + label.replace(/\W+/g, '').slice(0, 14), mut).hd, ...a); t(`C measure: BAD (${label}) is refused with the matching reason`, failedWith(rr, re), rr.stderr + rr.stdout); }
 }
-console.log('gates11 C: build phase (decisions 2-4): suite_build.log is read, never run; a code commit is required; fail_first shows a failure in the runner format');
+console.log('gates11 C: build phase (decisions 2-4): suite_node.log is read, never run; a code commit is required; fail_first shows a failure in the runner format');
 const DOC_FAIL = 'TEST CASE:  pier clearance\nsrc/pier.cpp:10: ERROR: CHECK( a == b ) is NOT correct!\n[doctest] test cases: 5 | 4 passed | 1 failed | 0 skipped\n';
 function buildHandin(name, o = {}) {
   const x = measureHandin(name); commit(x.w, 'measure phase'); const shas = [];
   if (o.code === false) { wr(path.join(x.w, 'notes.md'), 'n'); shas.push(commit(x.w, 'docs only')); } else { wr(path.join(x.w, 'src.mjs'), 'code'); shas.push(commit(x.w, 'code step')); }
   if (o.testFile) { wr(path.join(x.w, 'tests', 'test_new_thing.mjs'), 'tests'); shas.push(commit(x.w, 'add test_new_thing')); }
-  const bin = o.bin || 'src.mjs'; if (o.bin) { wr(path.join(x.w, o.bin), 'binary'); if (o.binOld) { const old = new Date(Date.now() - 3600 * 1000); fs.utimesSync(path.join(x.w, o.bin), old, old); } }
+  const bin = o.bin || 'src.mjs'; if (o.bin) { wr(path.join(x.w, o.bin), 'binary'); if (o.binOld) { const old = new Date(Date.now() - 3600 * 1000); fs.utimesSync(path.join(x.w, o.bin), old, old); } shas.push(commit(x.w, 'add binary')); }
   if (o.ff !== undefined) wr(path.join(x.hd, 'fail_first_new_thing.txt'), o.ff);
   wr(path.join(x.hd, 'BUILD.md'), `# BUILD\nCommits: ${shas.map((s) => s.slice(0, 10)).join(' ')}\nSuite binary: ${bin}\n`);
-  if (o.log !== null) { const lg = o.log === undefined ? '12 passed, 0 failed\n' : o.log; logRun(x.w, path.join(x.hd, 'suite_build.log'), lg, { stateDir: state, exit: /[1-9]\d* failed|\bFAIL\b|ERROR:|Failed/.test(lg) ? 1 : 0 }); if (o.logOld) { const old = new Date(Date.now() - 7200 * 1000); fs.utimesSync(path.join(x.hd, 'suite_build.log'), old, old); } }
+  if (o.log !== null) { const lg = o.log === undefined ? '12 passed, 0 failed\n' : o.log; logRun(x.w, path.join(x.hd, 'suite_node.log'), lg, { stateDir: state, exit: /[1-9]\d* failed|\bFAIL\b|ERROR:|Failed/.test(lg) ? 1 : 0 }); if (o.bin) { const rf = path.join(state, 'suite_records.jsonl'); const ls = fs.readFileSync(rf, 'utf8').trim().split('\n'); const last = JSON.parse(ls.pop()); delete last.sig; last.binary = path.join(x.w, o.bin); last.binarySha = null; fs.writeFileSync(rf, ls.concat(JSON.stringify(signRecord(last, state))).join('\n') + '\n'); }   /* a recorded run whose binary is a real file of this worktree (the fake suite is a script, which the age rule skips) */ if (o.logOld) { const old = new Date(Date.now() - 7200 * 1000); fs.utimesSync(path.join(x.hd, 'suite_node.log'), old, old); } }
   commit(x.w, 'BUILD.md and log'); return x;
 }
 {
@@ -209,7 +210,7 @@ function buildHandin(name, o = {}) {
   t('C build: a ctest log with only the allowed failure passes', passed(r), r.stderr + r.stdout);
   const cases = [
     ['no commit touches code (a .md note only)', { code: false }, B, /touches code or tests outside the hand-in folder/],
-    ['no suite_build.log', { log: null }, B, /suite_build\.log is missing/],
+    ['no suite_node.log', { log: null }, B, /no suite log in the hand-in folder/],
     ['log older than the last code commit', { logOld: true }, B, /older than the last code commit/],
     ['log with no summary (a half-written file)', { log: 'compiling...\nrunning...\n' }, B, /holds no doctest/],
     ['log is a timeout (exit=124)', { log: '[doctest] test cases: 5 | 5 passed | 0 failed | 0 skipped\nexit=124\n' }, B, /time limit/],
@@ -239,7 +240,7 @@ function buildHandin(name, o = {}) {
     const okm = rm.status === 0 && /^REFS: 3$/m.test(rm.stdout) && /^CASE: Case A/m.test(rm.stdout) && !/^ALLOW-FAIL:/m.test(rm.stdout);
     return { ok: okb && okm, detail: rb.stderr + rb.stdout.split('# AGENT CONTRACT')[0].slice(0, 900) + '\n---\n' + rm.stderr + rm.stdout.split('# AGENT CONTRACT')[0].slice(0, 500) };
   });
-  await tt('C make_brief: the build-phase text tells the agent to write suite_build.log under timeout 900 and names the allowed-failure list', async () => { const txt = fs.readFileSync(path.join(src, 'tools', 'make_brief.mjs'), 'utf8'); return /timeout 900/.test(txt) && /suite_build\.log/.test(txt) && /ALLOW-FAIL/.test(txt); });
+  await tt('C make_brief: the build-phase text tells the agent to run the suite with tools/run_suite.mjs and names the allowed-failure list', async () => { const txt = fs.readFileSync(path.join(src, 'tools', 'make_brief.mjs'), 'utf8'); return /node tools\/run_suite\.mjs/.test(txt) && /--compiler msvc/.test(txt) && /ALLOW-FAIL/.test(txt); });
   await tt('C audit brief template: the auditor re-runs the suite itself', async () => /Re-run the suite yourself/.test(fs.readFileSync(path.join(src, 'docs', 'templates', 'AUDIT_BRIEF.md'), 'utf8')));
 }
 
