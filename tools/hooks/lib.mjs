@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { resolveMainRoot } from './root.mjs';
 
-// Main checkout = two levels above tools/hooks. Hooks are wired through ${CLAUDE_PROJECT_DIR}, so this is the
-// main checkout once merged. State and the contract are always read from here, never from the agent's cwd.
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+// Main checkout, resolved explicitly (root.mjs: through git's worktree link files, never just "where this file sits"). State and the contract are read and written ONLY here.
+export const ROOT = resolveMainRoot(path.dirname(fileURLToPath(import.meta.url)));
 export const STATE_DIR = path.join(ROOT, '.claude', 'state');
 export const EXEMPT_TYPES = ['Explore', 'Plan', 'claude-code-guide', 'statusline-setup'];
 export const MARKER = 'AGENT-CONTRACT-MARKER: v1';
