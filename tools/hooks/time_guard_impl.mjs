@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { STATE_DIR, log, readStdin, parseJson } from './lib.mjs';
-import { parseCommand, shellInner, WRAPPER_VERBS } from './shell_lex.mjs';
+import { parseCommand, shellInner, WRAPPER_VERBS, skipRunnerArgs } from './shell_lex.mjs';
 
 export const MAX_SECS = 900;
 const PS_CAP = { 'build-editor': 5400, 'run-playtest': 1800, 'run-editorpython': 1800 };
@@ -57,7 +57,8 @@ function walk(words, shell, inheritedTm) {
         while (i < words.length && /^-/.test(words[i].v)) i += /^-[ks]$/.test(words[i].v) ? 2 : 1;
         const s = i < words.length ? secsOf(words[i].v) : null;
         if (s !== null) { i++; tm = tm === null ? s : (s === 0 ? tm : (tm === 0 ? s : Math.min(tm, s))); }
-      } else if (lv === 'nice' || lv === 'ionice') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[nc]$/.test(words[i].v) ? 2 : 1; }
+      } else if (lv === 'taskset' || lv === 'chrt' || lv === 'stdbuf' || lv === 'env' || lv === 'start') { i = skipRunnerArgs(lv, words, i); }   // gates13: prefix runners, by position
+      else if (lv === 'nice' || lv === 'ionice') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[nc]$/.test(words[i].v) ? 2 : 1; }
       else if (lv === 'sudo' || lv === 'doas') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[ugCT]$/.test(words[i].v) ? 2 : 1; }
       else if (lv === 'start-process') {
         startProc = true;
@@ -89,16 +90,32 @@ function classify(verb, args) {
   if (PS_CAP[ps]) return av.some((a) => /^(?:-\?|-help|--help)$/i.test(a)) ? null : { name: ps + '.ps1', kind: 'ps', cap: PS_CAP[ps] };
   if (/^(?:node|nodejs)$/.test(b)) {
     const f = av.find((a) => /\.(?:mjs|js|cjs)$/i.test(a));
+    if (f && /^run_suite\.mjs$/i.test(baseVerbRaw(f))) return runnerJob(av.slice(av.indexOf(f) + 1));   // gates13: tools/run_suite.mjs, the one suite runner: it limits itself (--timeout, default 600, at most 900)
     if (f && /^(?:scene|render)\.mjs$/i.test(baseVerbRaw(f))) return av.some((a) => QUICK.test(a)) ? null : { name: baseVerbRaw(f), kind: 'tool' };
     if (f && /^test_[\w.-]*\.mjs$|^[\w.-]*_tests?\.mjs$/i.test(baseVerbRaw(f))) return av.some((a) => QUICK.test(a)) ? null : { name: baseVerbRaw(f), kind: 'suite' };   // gates12: the repo's node suites (tools/test_gates.mjs, tools/hooks/test_guards12.mjs): limited and recorded like the C++ suite
   }
   return null;
 }
+// tools/run_suite.mjs <worktree> [--filter tc] [--timeout s] [--compiler gcc|msvc] [--script rel] [--round name]: the positional word is the worktree; its own limit stands in for the `timeout` prefix
+const RUNNER_VALUE_FLAGS = /^--(?:filter|timeout|compiler|script|round)$/;
+function runnerJob(rest) {
+  let wtArg = null, tmo = null, script = false;
+  for (let k = 0; k < rest.length; k++) {
+    const a = rest[k];
+    if (/^--timeout$/.test(a)) { tmo = rest[k + 1]; k++; continue; }
+    if (/^--timeout=/.test(a)) { tmo = a.slice(10); continue; }
+    if (/^--script(?:=|$)/.test(a)) { script = true; if (a === '--script') k++; continue; }
+    if (RUNNER_VALUE_FLAGS.test(a)) { k++; continue; }
+    if (/^--/.test(a)) continue;
+    if (wtArg === null) wtArg = a;
+  }
+  return { name: script ? 'run_suite.mjs (node suite)' : 'sim_core_tests', kind: script ? 'suite' : 'test', runner: true, runnerTimeout: tmo, worktree: wtArg };
+}
 const baseVerbRaw = (f) => String(f).toLowerCase().replace(/^.*[\/\\]/, '');
 const PS_FILE_FLAG = /^-(?:f|file)$/i;
 
 // walk a command text; collects jobs [{ name, kind, limit: {ok, why}, shell }]
-export function jobsIn(command, shell = 'bash', inheritedTm = null, depth = 0) {
+export function jobsIn(command, shell = 'bash', inheritedTm = null, depth = 0, ctx = { cwd: null }) {
   const jobs = []; if (depth > 4) return jobs;
   let parsed; try { parsed = parseCommand(command); } catch { return jobs; }
   const segs = parsed.segments || [];
@@ -113,21 +130,23 @@ export function jobsIn(command, shell = 'bash', inheritedTm = null, depth = 0) {
     const { i, tm, startProc } = walk(seg.words, shell, inheritedTm);
     if (i >= seg.words.length) continue;
     const verb = seg.words[i].v; const args = seg.words.slice(i + 1); const b = baseVerb(verb); const av = args.map((a) => a.v);
+    // gates13 (decision 3): the worktree comes from the command, not from the payload cwd (an agent's tool call starts in the MAIN checkout): `cd <path>` moves the working folder for the segments after it
+    if (/^(?:cd|chdir|pushd|set-location|sl)$/.test(b)) { const t = av.find((a) => !/^-/.test(a)); if (t) ctx.cwd = resolveDir(t, ctx.cwd); continue; }
     // nested shells
     if (/^(?:bash|sh|zsh|dash|ksh)$/.test(b) || /^(?:powershell|pwsh|cmd)$/.test(b)) {
       const inner = shellInner(b, av);
       const sh2 = /^(?:powershell|pwsh|cmd)$/.test(b) ? 'ps' : 'bash';
-      if (inner) { jobs.push(...jobsIn(inner, sh2, tm, depth + 1)); continue; }
+      if (inner) { jobs.push(...jobsIn(inner, sh2, tm, depth + 1, ctx)); continue; }
       if (sh2 === 'ps') {   // -File script.ps1 args
         const fi = av.findIndex((a) => PS_FILE_FLAG.test(a));
-        if (fi >= 0 && av[fi + 1]) { const rest = seg.words.slice(i + 1 + fi + 2); const c = classify(av[fi + 1], rest); if (c) jobs.push(finish(c, rest, tm, shell === 'ps' ? 'ps' : 'bash', startProc, waitSecs)); }
+        if (fi >= 0 && av[fi + 1]) { const rest = seg.words.slice(i + 1 + fi + 2); const c = classify(av[fi + 1], rest); if (c) jobs.push(withRoot(finish(c, rest, tm, shell === 'ps' ? 'ps' : 'bash', startProc, waitSecs), av[fi + 1], c, ctx.cwd)); }
         continue;
       }
     }
     const c = classify(verb, args);
-    if (c) { jobs.push(finish(c, args, tm, shell, startProc, waitSecs)); continue; }
+    if (c) { jobs.push(withRoot(finish(c, args, tm, shell, startProc, waitSecs), verb, c, ctx.cwd)); continue; }
     // iex "..." / invoke-expression "...": a command line in a string
-    if (seg.words[i].q && /\s/.test(verb)) jobs.push(...jobsIn(verb, shell, tm, depth + 1));
+    if (seg.words[i].q && /\s/.test(verb)) jobs.push(...jobsIn(verb, shell, tm, depth + 1, ctx));
   }
   return jobs;
 }
@@ -138,6 +157,7 @@ function finish(c, args, tm, shell, startProc, waitSecs) {
     const k = av.findIndex((a) => /^-timeoutsec(?::|=)?/i.test(a));
     if (k >= 0) { const m = av[k].match(/^-timeoutsec[:=](.+)$/i); const s = secsOf(m ? m[1] : av[k + 1]); if (s !== null) { secs = s; how = '-TimeoutSec'; } }
   }
+  if (c.runner) { const sv = c.runnerTimeout === null ? 600 : secsOf(c.runnerTimeout); secs = sv === null ? 0 : sv; how = 'run_suite.mjs --timeout' + (c.runnerTimeout === null ? ' (default 600)' : ''); }
   if (secs === null && tm !== null && shell === 'bash') { secs = tm; how = 'timeout'; }
   if (secs === null && startProc && waitSecs !== null) { secs = waitSecs; how = 'Wait-Process -Timeout'; }
   const cap = (c.kind === 'ps' && how === '-TimeoutSec') || c.capAny ? c.cap : MAX_SECS;
@@ -152,6 +172,18 @@ const advice = (j) => j.shell === 'ps'
   ? 'In PowerShell: run the Unreal scripts with their own limit (`-TimeoutSec 600`; Build-Editor.ps1 may use up to 5400, Run-Playtest.ps1 and Run-EditorPython.ps1 up to 1800), or start the program and bound the wait: `$p = Start-Process -PassThru -NoNewWindow <exe> -ArgumentList ...; Wait-Process -Id $p.Id -Timeout 600` (900 at most for a full suite), or run it from the Bash tool as `timeout 900 <cmd>`. `timeout` typed in PowerShell is Windows timeout.exe, a pause, not a limit.'
   : 'Put GNU timeout in front: `timeout 900 <cmd>` for a full suite (15 minutes at most), `timeout 600 <cmd>` for anything else, e.g. `timeout 900 build/tests/sim_core_tests.exe > suite.log 2>&1`; for the Unreal scripts add `-TimeoutSec 600`.';
 
+// ---- gates13 (decision 3): the worktree of a job, read from the command. An MSYS "/c/x" is "c:/x" on Windows.
+const toNative = (p) => (process.platform === 'win32' ? String(p).replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:') : String(p));
+export function resolveDir(t, cwd) { const base = cwd || process.cwd(); return path.resolve(base, toNative(String(t).replace(/^["']|["']$/g, ''))); }
+// the root a job names: a run_suite worktree argument, else the program's own absolute (or working-folder-relative) path, else the folder the command has cd'd to, else the payload cwd
+function withRoot(job, verb, c, cwd) {
+  let probe = null;
+  if (c.runner && c.worktree) probe = resolveDir(c.worktree, cwd);
+  else if (/[\\/]/.test(String(verb))) probe = resolveDir(String(verb), cwd);
+  job.probe = probe; job.cdCwd = cwd;
+  return job;
+}
+export function rootOfJob(job, payloadCwd) { return findRoot(job.probe || job.cdCwd || payloadCwd || process.cwd()); }
 // ---- second copy of a test program (gates12: per worktree, by executable path)
 export function findRoot(cwd) {
   let d = path.resolve(cwd || process.cwd());
@@ -204,7 +236,7 @@ export function recordRun(root, j, extra = {}) { try { fs.mkdirSync(STATE_DIR, {
 
 export function judge(command, tool, cwd) {
   const shell = /^powershell$/i.test(tool) ? 'ps' : 'bash';
-  const jobs = jobsIn(command, shell);
+  const jobs = jobsIn(command, shell, null, 0, { cwd: cwd ? path.resolve(cwd) : null });
   const reasons = jobs.filter((j) => !j.ok).map((j) => `\`${j.name}\` runs without a time limit (${j.why === 'none' ? 'no limit found' : j.why}). ${advice(j)}`);
   return { jobs, reasons };
 }
@@ -225,13 +257,14 @@ export async function main() {
   if (!input || typeof input !== 'object') { log({ gate: 'time_guard', decision: 'allow', reason: 'FAIL-OPEN: stdin missing or not JSON' }); return 0; }
   if (!/^(Bash|PowerShell)$/.test(input.tool_name || '')) return 0;
   const command = (input.tool_input && input.tool_input.command) || '';
-  if (!command || !/(?:_tests?|test_|t_full|ctest|ninja|msbuild|cmake|\b[ng]?make\b|-make|Build\.bat|Build\.sh|RunUAT|RunUBT|UnrealBuildTool|Run-Playtest|Build-Editor|Run-EditorPython|scene\.mjs|render\.mjs)/i.test(command)) return 0;
+  if (!command || !/(?:_tests?|test_|t_full|ctest|ninja|msbuild|cmake|\b[ng]?make\b|-make|Build\.bat|Build\.sh|RunUAT|RunUBT|UnrealBuildTool|Run-Playtest|Build-Editor|Run-EditorPython|scene\.mjs|render\.mjs|run_suite)/i.test(command)) return 0;
   const { jobs, reasons } = judge(command, input.tool_name, input.cwd);
   const dup = [];
-  const root = findRoot(input.cwd);
   if (!reasons.length) {
-    const tests = [...new Map(jobs.filter((j) => j.kind === 'test').map((j) => [j.name, j])).values()];
+    // gates13 (decision 3): every job has its own root, read from the command (cd <path>, the program's absolute path, the run_suite worktree argument); the payload cwd is the last fallback
+    const tests = [...new Map(jobs.filter((j) => j.kind === 'test').map((j) => [j.name + '|' + normP(rootOfJob(j, input.cwd)), j])).values()];
     for (const j of tests) {
+      const root = rootOfJob(j, input.cwd);
       if (!openRuns(root, j.name).length) continue;       // no unfinished run of this image from this worktree: nothing to compare (a finished run, or one of another worktree, is no reason)
       const up = processRunning(j.name);
       if (up === null) { log({ gate: 'time_guard', decision: 'allow', reason: 'FAIL-OPEN: process lookup for ' + j.name + ' timed out or failed (300 ms bound); second-copy check skipped', cwd: input.cwd }); continue; }
@@ -244,8 +277,8 @@ export async function main() {
   }
   const all = [...reasons, ...dup];
   if (!all.length) {
-    // every run of a suite or test program that passes is recorded (start); the Post hook adds the end, the exit code and the hash of the output file (check_handin --phase build reads them)
-    for (const j of jobs.filter((x) => x.kind === 'test' || x.kind === 'suite')) recordRun(root, j, { id: input.tool_use_id || `${Date.now()}-${process.pid}`, cwd: input.cwd || null, background: !!(input.tool_input && input.tool_input.run_in_background), command: String(command).slice(0, 400), files: outputFiles(command, input.cwd) });
+    // gates13: every test program run that passes is recorded as a start line (the second-copy check reads it). The SUITE record that check_handin --phase build reads is written by tools/run_suite.mjs itself when its run ends.
+    for (const j of jobs.filter((x) => x.kind === 'test')) recordRun(rootOfJob(j, input.cwd), j, { id: input.tool_use_id || `${Date.now()}-${process.pid}`, cwd: input.cwd || null, background: !!(input.tool_input && input.tool_input.run_in_background), command: String(command).slice(0, 400), files: outputFiles(command, input.cwd) });
     return 0;
   }
   log({ gate: 'time_guard', decision: 'deny', reason: dup.length && !reasons.length ? 'second copy of a running test refused' : 'long run without a time limit refused', agent_id: input.agent_id || null, cwd: input.cwd, command: String(command).slice(0, 300), reasons: all });

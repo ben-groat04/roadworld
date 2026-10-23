@@ -55,6 +55,16 @@ export function checkBrief(text) {
   return { missing, handinDir, noVisual: /^HANDIN:[ \t]*no-visual[ \t]*$/m.test(t) };
 }
 
+// gates13: NO-CONTRACT is an allow-list: `NO-CONTRACT: <category>: <reason, 20+ chars>`. form: 'none' (no line) | 'ok' | 'short' (category fine, reason under 20) | 'free' (no category: the old free text)
+export const NO_CONTRACT_CATEGORIES = ['clerk', 'merge', 'research', 'status', 'measure'];
+export function noContractParse(text) {
+  const m = String(text || '').match(/^NO-CONTRACT:[ \t]*(.+?)[ \t]*$/m);
+  if (!m) return { form: 'none' };
+  const c = m[1].match(new RegExp('^(' + NO_CONTRACT_CATEGORIES.join('|') + ')[ \\t]*:[ \\t]*(.*)$', 'i'));
+  if (!c) return { form: 'free', text: m[1] };
+  const reason = c[2].trim();
+  return reason.length >= 20 ? { form: 'ok', category: c[1].toLowerCase(), reason } : { form: 'short', category: c[1].toLowerCase(), text: m[1] };
+}
 export function noContractReason(text) {
   const m = text.match(/^NO-CONTRACT:[ \t]*(.+?)[ \t]*$/m);
   return m && m[1].length >= 20 ? m[1] : null;

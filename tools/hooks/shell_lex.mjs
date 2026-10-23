@@ -137,7 +137,37 @@ export function parseCommand(command) {
   return { segments: segs };
 }
 
-export const WRAPPER_VERBS = new Set(['&', 'call', 'sudo', 'doas', 'command', 'time', 'nohup', 'nice', 'env', 'exec', 'builtin', 'busybox', 'timeout', 'stdbuf', 'setsid', 'ionice', 'start-process', 'invoke-expression', 'iex', 'start-job']);
+export const WRAPPER_VERBS = new Set(['&', 'call', 'sudo', 'doas', 'command', 'time', 'nohup', 'nice', 'env', 'exec', 'builtin', 'busybox', 'timeout', 'stdbuf', 'setsid', 'ionice', 'start-process', 'invoke-expression', 'iex', 'start-job', 'taskset', 'chrt', 'unbuffer', 'start']);   // gates13: taskset, chrt, unbuffer, start (cmd) are prefix runners too
+// gates13 (decision 4): the arguments of a prefix runner that are not the program, skipped by position. Returns the index of the first word after them. The ones that take values:
+// taskset [-c list | mask] prog, chrt [policy flags] priority prog, stdbuf -i/-o/-e MODE prog (also -oL), env [-i] [-u NAME] [-C dir] [-S str] [VAR=x...] prog, start (cmd) [/b /wait /min ...] ["title"] prog.
+export function skipRunnerArgs(lv, words, i) {
+  const f = (k) => (k < words.length ? words[k].v : '');
+  if (lv === 'taskset') {
+    while (i < words.length && /^-/.test(f(i))) { const x = f(i); i++; if (/^(?:-c|--cpu-list)$/.test(x) || /^-[a-z]*c$/.test(x)) { if (i < words.length) i++; } }
+    // no -c: the first word is the hex or list mask
+    if (!words.slice(0, i).some((w) => /^(?:-c|--cpu-list|-[a-z]*c)$/.test(w.v)) && i < words.length && /^(?:0x[0-9a-f]+|[0-9][0-9,-]*)$/i.test(f(i))) i++;
+    return i;
+  }
+  if (lv === 'chrt') {
+    while (i < words.length && /^-/.test(f(i))) { const x = f(i); i++; if (/^(?:-T|-P|-D|--sched-runtime|--sched-period|--sched-deadline)$/.test(x)) i++; }
+    if (i < words.length && /^\d+$/.test(f(i))) i++;
+    return i;
+  }
+  if (lv === 'stdbuf') {
+    while (i < words.length && /^-/.test(f(i))) { const x = f(i); i++; if (/^-[ioe]$/.test(x) && i < words.length) i++; }
+    return i;
+  }
+  if (lv === 'env') {
+    while (i < words.length && /^-/.test(f(i))) { const x = f(i); i++; if (/^-[uCS]$/.test(x) && i < words.length) i++; }
+    return i;
+  }
+  if (lv === 'start') {
+    while (i < words.length && /^\/[a-z]+$/i.test(f(i))) { const x = f(i); i++; if (/^\/d$/i.test(x) && i < words.length) i++; }   // /b /wait /min /d dir
+    if (i + 1 < words.length && words[i].q && (f(i) === '' || /\s/.test(f(i)))) i++;                                          // start "title" prog
+    return i;
+  }
+  return i;
+}
 // the verb of a segment: first word after wrappers and VAR=x prefixes (env FOO=1 rm ..., timeout 5 rm ..., busybox rm ..., \rm), lowercased, no directory, no .exe
 export function verbOf(words) {
   let i = 0;
@@ -149,6 +179,7 @@ export function verbOf(words) {
       if (lv === 'timeout') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[ks]$/.test(words[i].v) ? 2 : 1; if (i < words.length && /^\d+(\.\d+)?[smhd]?$/.test(words[i].v)) i++; }
       else if (lv === 'nice' || lv === 'ionice') { while (i < words.length && /^-/.test(words[i].v)) { i += /^-[nc]$/.test(words[i].v) ? 2 : 1; } }
       else if (lv === 'sudo' || lv === 'doas') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[ugCT]$/.test(words[i].v) ? 2 : 1; }
+      else i = skipRunnerArgs(lv, words, i);
       continue;
     }
     if (/^[A-Za-z_]\w*=/.test(v) && !words[i].q) { i++; continue; }

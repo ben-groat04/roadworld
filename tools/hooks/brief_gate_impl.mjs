@@ -6,7 +6,7 @@
 // changes to agents, so a broken gate that blocked every launch would deadlock the whole session.
 //
 // Allowed: exempt types (Explore, Plan, claude-code-guide, statusline-setup); a prompt that passes checkBrief();
-// a prompt with a "NO-CONTRACT: <reason, >= 20 chars>" line (research, merges, read-only checks);
+// a prompt with a "NO-CONTRACT: <category>: <reason, >= 20 chars>" line, category one of clerk, merge, research, status, measure (gates13: the allow-list; free text is refused);
 // a prompt with "BRIEF-FILE: <absolute path>" whose file passes checkBrief().
 // a prompt (or BRIEF-FILE) with "AUDIT-OF: <absolute progress folder>" is an auditor launch (tools/make_brief.mjs --audit):
 // allowed without NO-CONTRACT, but refused when the folder is not absolute, when it also carries HANDIN_DIR (an auditor is not a builder),
@@ -15,9 +15,9 @@
 // Every decision is one JSON line in .claude/state/gate.log of the main checkout.
 import fs from 'node:fs';
 import path from 'node:path';
-import { log, readStdin, parseJson, checkBrief, noContractReason, briefFileOf, EXEMPT_TYPES } from './lib.mjs';
+import { log, readStdin, parseJson, checkBrief, noContractParse, NO_CONTRACT_CATEGORIES, briefFileOf, EXEMPT_TYPES } from './lib.mjs';
 import { auditOfIn, pastedFaultList } from './audit_lib.mjs';
-import { firstLookOfIn, disguisedJob } from './phase_marks.mjs';
+import { firstLookOfIn } from './phase_marks.mjs';
 
 // True when the text asks an agent to write / create an AUDIT.md (or to be "the auditor" that writes one). Mentions of the file are not enough.
 export function asksToWriteAudit(text) {
@@ -73,20 +73,19 @@ export async function main() {
     process.stderr.write('LAUNCH REFUSED by the brief gate (FIRSTLOOK-OF launch):\n - ' + why.join('\n - ') + '\nBuild the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progress-folder>`.\n');
     return 2;
   }
-  const nc = noContractReason(prompt);
-  // gates10: a NO-CONTRACT launch whose description or reason says it IS an audit or a first look (the 23 Oct launches "Auditor for gates9 hand-in", "Opus first look on grade-r12 images" all passed as
-  // NO-CONTRACT, so no builder record was compared, no AUDIT.md or FIRSTLOOK_OPUS.md was validated and the round stayed owed on paper only). Refused with the way to launch it properly.
-  // Clerks, mergers, researchers and read-only checks are not affected: only the job itself is matched (phase_marks.disguisedJob).
-  if (nc) {
-    const job = disguisedJob(ti.description, nc, prompt);
-    if (job) {
-      log({ ...base, decision: 'deny', reason: 'NO-CONTRACT ' + job + ' launch refused', no_contract_reason: nc });
-      process.stderr.write(`LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an ${job} ("${String(ti.description || '').slice(0, 80)}"). An ${job} agent launched without its marker is not recorded and its file is not validated. ` +
-        (job === 'audit' ? 'Build the auditor brief with `node tools/make_brief.mjs <task-file> --audit <progress-folder>` (marker line AUDIT-OF).' : 'Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progress-folder>` (marker line FIRSTLOOK-OF).') +
-        ' Clerks, merges, research and read-only checks stay allowed with NO-CONTRACT.\n');
-      return 2;
-    }
+  // gates13 (main-session decision 1): launches by ALLOW-LIST, not by word list. A launch carries the contract (or BRIEF-FILE), AUDIT-OF, FIRSTLOOK-OF, or a line
+  // `NO-CONTRACT: <category>: <reason, 20+ characters>` with the category exactly one of clerk, merge, research, status, measure. Anything else is refused whatever its wording (the 23 Oct audits
+  // and first looks all passed as free-text NO-CONTRACT; a vocabulary list was evaded by "Vet", "QA", "Proof-read"...). The old free-text form is refused with the categories named.
+  const ncp = noContractParse(prompt);
+  if (ncp.form === 'free' || ncp.form === 'short') {
+    log({ ...base, decision: 'deny', reason: 'NO-CONTRACT free-text form refused', no_contract_reason: ncp.text });
+    process.stderr.write('LAUNCH REFUSED by the brief gate: ' + (ncp.form === 'short' ? 'the NO-CONTRACT reason is under 20 characters.' : 'the free-text NO-CONTRACT form is not accepted any more.') +
+      ' A launch carries ONE of: the contract (build it with `node tools/make_brief.mjs <task-file> --round <name>`, or a BRIEF-FILE line), `AUDIT-OF: <progress folder>` (`make_brief.mjs --audit`), `FIRSTLOOK-OF: <progress folder>` (`make_brief.mjs --first-look`), or a line `NO-CONTRACT: <category>: <reason, 20+ characters>` with category exactly one of ' +
+      NO_CONTRACT_CATEGORIES.join(', ') + '. An audit or first look is never one of those categories.
+');
+    return 2;
   }
+  const nc = ncp.form === 'ok' ? ncp.reason : null;
   // A NO-CONTRACT launch cannot be asked to WRITE an AUDIT.md: that file only counts when an auditor launched with make_brief --audit (marker AUDIT-OF) writes it and the finish
   // gate records it. Only prompts that ask for the file to be written are refused: mergers, clerks and readers may mention AUDIT.md, audits and progress folders freely
   // (gates3 audit fault 3: the wording rule refused merge and bookkeeping prompts and was evaded by synonyms). A synonym that slips past this wording buys nothing:
@@ -101,7 +100,7 @@ export async function main() {
     }
   }
   if (nc) {
-    log({ ...base, decision: 'allow', reason: 'NO-CONTRACT', no_contract_reason: nc });
+    log({ ...base, decision: 'allow', reason: 'NO-CONTRACT', no_contract_reason: nc, no_contract_category: ncp.category });
     return 0;
   }
   const own = checkBrief(prompt);
@@ -127,7 +126,7 @@ export async function main() {
   process.stderr.write(
     'LAUNCH REFUSED by the brief gate (tools/hooks/brief_gate.mjs). The subagent prompt is missing:\n - ' + missing.join('\n - ') +
     '\nFix: build the brief with `node tools/make_brief.mjs <task-file> --round <name>` and send its output as the prompt. ' +
-    'For work that is not a build/review hand-in (research, merge, read-only check) add a line `NO-CONTRACT: <reason, at least 20 characters>`. ' +
+    'Allowed launch forms: the contract, `AUDIT-OF: <folder>` (make_brief.mjs --audit), `FIRSTLOOK-OF: <folder>` (make_brief.mjs --first-look), or for non-hand-in work a line `NO-CONTRACT: <category>: <reason, at least 20 characters>` with category exactly one of clerk, merge, research, status, measure. ' +
     'To point at a file instead, add `BRIEF-FILE: <absolute path>` (the file must pass the same test).\n');
   return 2;
 }
