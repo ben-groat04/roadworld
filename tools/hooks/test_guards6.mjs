@@ -209,6 +209,23 @@ const B = (command) => ['Bash', { command }], P = (command) => ['PowerShell', { 
   t('state guard: a subagent whose cwd IS the state folder cannot cat ack_secret', sgm.judge(common('Bash', { command: 'cat ack_secret' }, { cwd: path.join(main, '.claude', 'state') }), main).length > 0);
 }
 
+console.log('gates6: the two hooks as processes, with the harness payload shape (common fields + agent_id), exit codes and messages');
+{
+  const { spawnSync } = await import('node:child_process');
+  const runHook = (script, input, cwd) => spawnSync(process.execPath, [path.join(src, 'tools', 'hooks', script)], { input: JSON.stringify(input), cwd, encoding: 'utf8', timeout: 60000, env: { ...process.env, CP_MAIN_ROOT: main } });
+  const pay = (tool, ti, cwd) => ({ session_id: 's1', transcript_path: path.join(tmp, 'tr.jsonl'), cwd, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: ti, tool_use_id: 'toolu_01', agent_id: 'ag6', agent_type: 'general-purpose' });
+  let r = runHook('delete_guard.mjs', pay('Bash', { command: 'rm -rf build # docs/reference' }, wt), wt);
+  t('process: delete_guard allows `rm -rf build # docs/reference` in a clean worktree (exit 0, no message)', r.status === 0 && r.stderr === '', r.stderr);
+  r = runHook('delete_guard.mjs', pay('Bash', { command: `rm -rf ${M}/docs/reference` }, wt), wt);
+  t('process: delete_guard refuses the photos (exit 2, message names the photos folder and the script)', r.status === 2 && /photos/.test(r.stderr) && /remove_agent_worktree/.test(r.stderr), r.stderr);
+  r = runHook('state_guard.mjs', pay('Bash', { command: `ls ${sdir}` }, wt), wt);
+  t('process: state_guard allows `ls .claude/state` by a subagent (exit 0)', r.status === 0, r.stderr);
+  r = runHook('state_guard.mjs', pay('Bash', { command: `grep -r secret ${M}/.claude` }, wt), wt);
+  t('process: state_guard refuses a recursive grep that reaches ack_secret (exit 2)', r.status === 2 && /ack|state/.test(r.stderr), r.stderr);
+  r = runHook('state_guard.mjs', pay('Write', { file_path: M + '/.claude/settings.json', content: '{}' }, wt), wt);
+  t('process: state_guard refuses a subagent Write to the main settings.json (exit 2); the message says the main session changes it', r.status === 2 && /main session/.test(r.stderr), r.stderr);
+}
+
 console.log('test isolation');
 t('no line mentioning this run\'s temp folder reached the real gate.log', isolation.leaks().length === 0, isolation.leaks().slice(0, 3).join('\n'));
 t('the photos behind the junction and in the fixture main survived every case', fs.readFileSync(path.join(photos, 'k.jpg'), 'utf8') === 'k' && fs.readFileSync(path.join(main, 'docs', 'reference', 'aerial', 'p1.jpg'), 'utf8') === 'photo');
