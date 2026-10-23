@@ -22,6 +22,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { log, readStdin, parseJson, launchInfoOfAgent, STATE_DIR } from './lib.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
+import { extraJudge } from './lock_extra.mjs';
 
 export const LOCK_MESSAGE = 'locked test: written by the auditor; make it pass, or write BLOCKED';
 export const PROTECTED_WHY = 'is the lock list or the prior audit (read-only for a builder)';
@@ -174,7 +175,47 @@ const FORMATTERS = {
   black: { on: (av) => !av.includes('--check') && !av.includes('--diff'), folders: true }, isort: { on: (av) => !av.includes('--check') && !av.includes('--check-only') && !av.includes('--diff'), folders: true },
   gofmt: { on: (av) => av.includes('-w'), folders: true }, rustfmt: { on: (av) => !av.includes('--check') }, shfmt: { on: (av) => av.includes('-w'), folders: true },
   autopep8: { on: (av) => av.includes('-i') || av.includes('--in-place'), folders: true }, yapf: { on: (av) => av.includes('-i') || av.includes('--in-place'), folders: true }, 'cmake-format': { on: (av) => av.includes('-i') },
+  // gates10 (gates9 audit fault 2): more in-place tools. astyle rewrites unless --dry-run; uncrustify with --replace / --no-backup; clang-tidy with --fix; ed, ex and the editors run in batch mode write what a script says
+  astyle: { on: (av) => !av.includes('--dry-run') && !av.includes('-h') && !av.includes('--help'), folders: true },
+  uncrustify: { on: (av) => av.includes('--replace') || av.includes('--no-backup') || av.includes('-i') },
+  'clang-tidy': { on: (av) => av.some((a) => /^--fix(?:-errors|-notes)?$/.test(a)) },
+  ed: { on: () => true }, ex: { on: () => true }, red: { on: () => true },
+  vim: { on: (av) => av.some((a) => /^(?:-es?|-E|-s|--headless|-c|-S)$/.test(a) || /^\+/.test(a)) }, vi: { on: (av) => av.some((a) => /^(?:-es?|-E|-s|-c|-S)$/.test(a) || /^\+/.test(a)) },
+  nvim: { on: (av) => av.some((a) => /^(?:-es?|-E|-s|--headless|-c|-S)$/.test(a) || /^\+/.test(a)) }, gvim: { on: (av) => av.some((a) => /^(?:-es?|-E|-s|-c)$/.test(a)) },
 };
+// brace lists a shell would expand: tests/{a.cpp,b.cpp} -> two words (the lexer keeps them glued)
+function braceExpand(s) {
+  const m = String(s).match(/\{([^{}]*,[^{}]*)\}/);
+  if (!m) return [s];
+  return m[1].split(',').flatMap((x) => braceExpand(String(s).replace(m[0], x))).slice(0, 64);
+}
+// paths a PRODUCER command lists, as globs that reach what it would list (gates10): find <dir> [-name N] -> <dir>/**[/N], git ls-files <p> -> <p> and <p>/**, ls / echo / printf <globs>.
+// Used for `$(find tests -name '*.cpp')`, `ls tests/*.cpp | xargs clang-format -i`, `find ... | xargs ...`. Relative names that a bare `ls tests` prints are NOT paths and are skipped.
+export function producerPaths(verb, av) {
+  const out = [];
+  if (verb === 'find') {
+    const stop = av.findIndex((x) => /^[-!(]/.test(x)); const starts = av.slice(0, stop < 0 ? av.length : stop); const names = [];
+    for (let k = 0; k < av.length - 1; k++) if (av[k] === '-name' || av[k] === '-iname') names.push(av[k + 1]);
+    for (const s of (starts.length ? starts : ['.'])) { const b = s.replace(/[\\/]+$/, ''); if (names.length) for (const nm of names) out.push(`${b}/**/${nm}`); else out.push(`${b}/**`); }
+  } else if (verb === 'git') {
+    const i = av.indexOf('ls-files');
+    if (i >= 0) for (const p of av.slice(i + 1).filter((x) => !/^-/.test(x))) { out.push(p); if (!hasGlob(p)) out.push(p.replace(/[\\/]+$/, '') + '/**'); }
+  } else if (verb === 'ls' || verb === 'echo' || verb === 'printf' || verb === 'dir' || verb === 'get-childitem' || verb === 'gci') {
+    for (const p of av.filter((x) => !isFlag(x))) if (hasGlob(p) || /[\\/]/.test(p)) out.push(p);
+  }
+  return out;
+}
+// the file names a unified diff (patch, git apply) changes
+export function diffTargets(text) {
+  const out = new Set();
+  for (const l of String(text).replace(/\r\n/g, '\n').split('\n')) {
+    let m = /^(?:\+\+\+|---)[ \t]+(\S+)/.exec(l); if (m && m[1] !== '/dev/null') { out.add(m[1].replace(/^"|"$/g, '')); continue; }
+    m = /^diff --git[ \t]+(\S+)[ \t]+(\S+)/.exec(l); if (m) { out.add(m[1]); out.add(m[2]); }
+  }
+  return [...out];
+}
+// is this text a diff?
+const looksLikeDiff = (t) => /^(?:diff --git |--- \S+[\s\S]*\n\+\+\+ )/m.test(t) || /^--- .*\n\+\+\+ /m.test(t);
 
 // judge a PATH argument: [] or reasons. `whole`: the operation takes a folder with everything in it (delete, move, formatters)
 function judgeTarget(raw, cur, lc, verbName, whole) {
@@ -212,11 +253,12 @@ function splitArgs(s) {
   if (cur.trim()) out.push(cur.trim());
   return out;
 }
-const FIRST_ARG = /(?:^|[^\w.])(?:fs(?:\.promises)?\.)?(?:writeFileSync|writeFile|appendFileSync|appendFile|unlinkSync|unlink|rmSync|rmdirSync|rmdir|truncateSync|truncate|createWriteStream)\s*\(|(?:^|[^\w.])(?:os\.remove|os\.unlink|os\.rmdir|os\.truncate|shutil\.rmtree|rmtree|File\.write|File\.delete|File\.unlink|FileUtils\.rm\w*|Deno\.writeTextFileSync|Deno\.writeFileSync|Deno\.removeSync|Deno\.remove|Bun\.write)\s*\(/g;
+const FIRST_ARG = /(?:^|[^\w.])(?:fs(?:\.promises)?\.)?(?:writeFileSync|writeFile|appendFileSync|appendFile|unlinkSync|unlink|rmSync|rmdirSync|rmdir|truncateSync|truncate|createWriteStream)\s*\(|(?:^|[^\w.])(?:fs(?:\.promises)?|fsp|fsPromises)\.rm\s*\(|(?:^|[^\w.])(?:os\.remove|os\.unlink|os\.rmdir|os\.truncate|shutil\.rmtree|rmtree|File\.write|File\.delete|File\.unlink|FileUtils\.rm\w*|Deno\.writeTextFileSync|Deno\.writeFileSync|Deno\.removeSync|Deno\.remove|Bun\.write)\s*\(/g;
 const BOTH_ARGS = /(?:^|[^\w.])(?:fs(?:\.promises)?\.renameSync|fs(?:\.promises)?\.rename|renameSync|os\.rename|os\.replace|shutil\.move|File\.rename|FileUtils\.mv|Deno\.renameSync|Deno\.rename)\s*\(/g;
 const DEST_ARG = /(?:^|[^\w.])(?:fs(?:\.promises)?\.)?(?:copyFileSync|copyFile|cpSync|cp)\s*\(|(?:^|[^\w.])(?:shutil\.(?:copy|copy2|copyfile|copytree|copymode)|FileUtils\.cp\w*|Deno\.copyFileSync|Deno\.copyFile)\s*\(/g;
 const OPEN_CALL = /(?:^|[^\w.])(?:io\.|codecs\.|os\.)?open\s*\(/g;
-const PATH_METHOD = /Path\s*\(([^)]*)\)\s*\.\s*(?:write_text|write_bytes|unlink|touch|rename|replace|rmdir)\b/g;
+const FS_OPEN = /(?:^|[^\w.])fs(?:\.promises)?\.open(?:Sync)?\s*\(/g;
+const PATH_METHOD =/Path\s*\(([^)]*)\)\s*\.\s*(?:write_text|write_bytes|unlink|touch|rename|replace|rmdir)\b/g;
 export function inlineWrites(code, lc) {
   const hits = [];
   const lockedIn = (txt) => {
@@ -232,10 +274,12 @@ export function inlineWrites(code, lc) {
   calls(BOTH_ARGS, (a) => a.slice(0, 2));
   calls(DEST_ARG, (a) => a.slice(1, 2));
   calls(OPEN_CALL, (a) => (a.slice(1).some((x) => /^(?:mode\s*=\s*)?['"][^'"]*[wax+]/.test(x)) ? a.slice(0, 1) : []));
+  calls(FS_OPEN, (a) => (a.slice(1).some((x) => /^['"][^'"]*[wa+]/.test(x)) ? a.slice(0, 1) : []));
   PATH_METHOD.lastIndex = 0; let m; while ((m = PATH_METHOD.exec(code))) { const n = lockedIn(m[1]); if (n) hits.push(n); }
   return hits;
 }
 
+const EXTRA_H = { hasGlob, isFlag, absOf, parseCommand, verbOf, producerPaths, braceExpand, diffTargets, looksLikeDiff, judgeTarget, judgeCommand: (...a) => judgeCommand(...a) };
 export function judgeCommand(cmd, cwd, lc, depth = 0) {
   const reasons = [];
   if (depth > 4) return reasons;
@@ -247,7 +291,7 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
     if (hit) reasons.push(`a .NET file call that names a locked test (${hit}) next to a write, delete, move or copy`);
   }
   const stack = [];
-  let prevPaths = [], nextPrev = [];
+  let prevPaths = [], nextPrev = [], prevCmd = null;
   const { segments } = parseCommand(String(cmd || ''));
   for (const seg of segments) {
     for (const rd of seg.redirects) { if (rd.op === '>' || rd.op === '>>' || rd.op === '&>') reasons.push(...judgeTarget(rd.target, cur, lc, 'a redirect into', false)); }
@@ -255,6 +299,7 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
     let { verb, args, index, line } = verbOf(seg.words);
     let av = args.map((a) => a.v);
     prevPaths = nextPrev; nextPrev = av.filter((x) => !isFlag(x));
+    const prevSeg = prevCmd; prevCmd = { verb, av };
     if (line) { reasons.push(...judgeCommand(seg.words.slice(index).map((w) => w.v).join(' '), cur, lc, depth + 1)); continue; }
     if (['cd', 'chdir', 'set-location', 'sl', 'pushd', 'push-location'].includes(verb)) { if (['pushd', 'push-location'].includes(verb)) stack.push(cur); const t = av.filter((x) => !/^-/.test(x) && !/^\/d$/i.test(x))[0]; if (t && !/\$|`|%/.test(t)) cur = absOf(t, cur); continue; }
     if (['popd', 'pop-location'].includes(verb)) { if (stack.length) cur = stack.pop(); continue; }
@@ -264,6 +309,8 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
       if (seg.here) reasons.push(...judgeCommand(seg.here, cur, lc, depth + 1));
       continue;
     }
+    // gates10: bulk and indirect forms (xargs, find -exec, $(ls ..), brace lists, sed -e -i, robocopy filters, patch, git apply); see lock_extra.mjs
+    { const ex = extraJudge({ verb, av, cur, lc, cmd: String(cmd), prev: prevSeg, depth, H: EXTRA_H }); reasons.push(...ex.reasons); if (ex.av) av = ex.av; if (ex.done) continue; }
     if (verb === 'xargs' || verb === 'sudo') { const k = av.findIndex((a) => DEL.has(a) || MOVE.has(a)); if (k >= 0) reasons.push(...judgeCommand(av.slice(k).join(' '), cur, lc, depth + 1)); }
     // npx prettier ..., pnpm exec prettier ..., yarn dlx ...: the program after the runner
     if (RUNNERS.has(verb) || (/^(?:pnpm|yarn|npm)$/.test(verb) && /^(?:exec|dlx|x)$/.test(av[0] || ''))) {
@@ -342,7 +389,7 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
           // perl / ruby: a name next to a write word (their calls are too varied to split)
           const low = slash(code).toLowerCase();
           const names = [...(low.match(/[^\s"'`()]*tests\/+locked[^\s"'`()]*/g) || []), ...lc.list.filter((e) => low.includes(slash(e).toLowerCase())), ...(lc.listFile && /locked_tests\.txt/.test(low) ? ['LOCKED_TESTS.txt'] : [])];
-          if (names.length && /write|append|unlink|\brm(?:dir)?\b|rename|copy|truncate|\bopen\s*\(?[^;]*['"]\s*[>+]/i.test(code)) reasons.push(`inline ${verb} code that names a locked test (${names[0]}) next to a write, delete or rename call`);
+          if (names.length && /write|append|unlink|\brm(?:dir)?\b|rename|copy|truncate|delete|remove|\bmv\b|\bmove\b|\bopen\s*\(?[^;]*['"]\s*[>+]/i.test(code)) reasons.push(`inline ${verb} code that names a locked test (${names[0]}) next to a write, delete or rename call`);
         }
       }
     }
@@ -387,13 +434,15 @@ export async function main() {
   const lc = lockCtx(info);
   const warn = reportBadList(input, lc);
   const reasons = judge(input, lc);
-  if (!reasons.length) { if (warn) process.stdout.write(JSON.stringify({ systemMessage: warn + ' (see .claude/state/gate.log; tell the main session)' })); return 0; }
+  // gates10 (gates9 audit fault 3): the warning goes to the user (systemMessage) AND to the builder (additionalContext)
+  const warnOut = warn ? { systemMessage: warn + ' (see .claude/state/gate.log; tell the main session)', hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: warn + ' (the lock list is unusable or incomplete; say so in the first lines of STATUS.md)' } } : null;
+  if (!reasons.length) { if (warnOut) process.stdout.write(JSON.stringify(warnOut)); return 0; }
   log({ gate: 'lock_guard', decision: 'deny', reason: 'builder touched a locked test', agent_id: input.agent_id, tool: input.tool_name, command: String((input.tool_input && (input.tool_input.command || input.tool_input.file_path)) || '').slice(0, 300), reasons });
   const realTest = reasons.some((r) => !/read-only for a builder/.test(r));
   const head = realTest ? `REFUSED by the lock guard (tools/hooks/lock_guard.mjs): ${LOCK_MESSAGE}` : 'REFUSED by the lock guard (tools/hooks/lock_guard.mjs): the lock list (LOCKED_TESTS.txt) and the prior round\'s AUDIT.md are read-only for a builder';
   const tail = realTest
     ? 'A file listed in LOCKED_TESTS.txt of the prior round\'s hand-in folder (or under tests/locked/) was written by the auditor to judge your work. Do not edit, delete or rename it: fix the code until it passes. If it cannot pass, write a BLOCKED line in STATUS.md (BLOCKED: <item> | tried: | blocked by: | needs:).'
     : 'These files record what the auditor locked and found; they are not yours to change. Read them as much as you like; put your own notes in your own hand-in folder.';
-  process.stderr.write(`${head}\n - ${reasons.join('\n - ')}\n${tail}\n`);
+  process.stderr.write(`${head}\n - ${reasons.join('\n - ')}\n${tail}\n${warn ? warn + '\n' : ''}`);
   return 2;
 }

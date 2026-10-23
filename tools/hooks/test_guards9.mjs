@@ -225,8 +225,9 @@ console.log('gates9 H3: a junction inside a build output folder is found by the 
   const r1 = lb(wC, { buildMs: 0 });
   t('H3 a zero time budget for build folders reports buildBound, finds no link, does not refuse', r1.buildBound === true && r1.length === 0 && !r1.capped, JSON.stringify({ n: r1.length, b: r1.buildBound, c: r1.capped }));
   t('H3 ... and the bound is logged (a gate.log line that says the scan was bounded)', gateLog().slice(before).some((e) => /scan bound/i.test(e.reason || '') && /delete_guard/.test(e.gate || '')), JSON.stringify(gateLog().slice(before)));
+  // gates10 (gates9 audit fault 1): there is no depth bound any more; the link 4 levels down is found with any options (the old test pinned the hole)
   const r2 = lb(wD, { buildDepth: 2 });
-  t('H3 a link deeper than the depth bound is not found, and the depth bound is reported', r2.length === 0 && r2.buildBound === true, JSON.stringify({ n: r2.length, b: r2.buildBound }));
+  t('H3 a link below the old depth bound IS found (no depth bound since gates10)', r2.length === 1, JSON.stringify({ n: r2.length, b: r2.buildBound }));
   const r3 = lb(wD);
   t('H3 within the default depth the same link IS found', r3.length === 1, JSON.stringify(r3));
 }
