@@ -3,12 +3,12 @@
 HANDIN: no-visual
 
 - Nothing skipped or refused in the brief's scope (A to F of the send-back note). Open items: none under reason (a) or (b); the forms the main session accepted as residual are listed in FAULTS.md "Residual" with the decision cited.
-- Item 23 SETTLED from the Claude Code hooks documentation (code.claude.com/docs/en/hooks, Configuration section), no probe hook needed: "When a subagent calls a tool, tool events such as PreToolUse and PostToolUse fire the same configured hooks as in the main conversation, and the input carries the agent_id and agent_type common input fields that identify the subagent." The page does not say the field is absent on the main thread; the guards treat "no agent_id" as the main session. What the state guard can and cannot protect is in the header of `tools/hooks/state_guard_impl.mjs`; the design stays "records are written by the hooks, the guard closes the agent's route to them".
+- Item 23 SETTLED from the Claude Code hooks documentation (code.claude.com/docs/en/hooks, Configuration section), no probe hook needed: "When a subagent calls a tool, tool events such as PreToolUse and PostToolUse fire the same configured hooks as in the main conversation, and the input carries the agent_id and agent_type common input fields that identify the subagent." The guards treat a missing agent_id as the main session. What the state guard can and cannot protect is in the header of `tools/hooks/state_guard_impl.mjs`; the design stays "records are written by the hooks, the guard closes the agent's route to them".
 - Which gates ran for this hand-in: `node tools/check_handin.mjs docs/progress/gates6 --no-visual --gates-version 3 --task docs/tasks/gates6.md` PASSES with "waiver guard: 5 finding(s) against merge base fdab9569, 5 allowed by the task file" (the five findings are the gates2/gates3 changes of `scene.mjs` and four renamed `test_hooks.mjs` ack tests that the merge base still counts as new; each allow line and its reason is in `docs/tasks/gates6.md`). Without `--task` the same run lists exactly those five (gates5 audit item 29). Reference provenance prints FAIL-OPEN (no `ref_seed` run yet, a merge step).
 - Real finding on the way: `node tools/backup_reference.mjs --verify-only` on the real main (374 files) found one photo with a trailing restart marker that my first decoder wrongly refused (fixed, tested against that file), and at one point a zero-length `_compare/tjunction4/c78_b.png` (another round's composite, gone at the second run; it would have made the mirror refuse, correctly).
 - The suites were run one at a time as asked. Nothing pushed or merged. No Unreal, no engine file touched.
 
-References opened: 6 of 6 listed (the gates5 AUDIT.md whole; the gates5 STATUS.md, FAULTS.md, INDEX.md; `tools/hooks/delete_guard_impl.mjs`, `state_guard_impl.mjs`, `shell_lex.mjs`, `root.mjs`, `lib.mjs` whole; `tools/backup_reference.mjs`, `tools/gates_lib.mjs` (BLOCKED part), `tools/check_handin.mjs` (flags and ctx); `.claude/settings.json`; `tools/hooks/test_hooks.mjs` (gates5 block and header); the Claude Code hooks page for item 23). Not read in full: the rest of `check_handin.mjs`, `make_brief.mjs`, `handin_gate_impl.mjs` (untouched).
+References opened: 6 of 6 listed (the gates5 AUDIT.md whole; the gates5 STATUS.md, FAULTS.md, INDEX.md; `tools/hooks/delete_guard_impl.mjs`, `state_guard_impl.mjs`, `shell_lex.mjs`, `root.mjs`, `lib.mjs` whole; `tools/backup_reference.mjs`, `tools/gates_lib.mjs` (BLOCKED part), `tools/check_handin.mjs` (flags and ctx); `.claude/settings.json`; `tools/hooks/test_hooks.mjs` (gates5 block and header); the Claude Code hooks page for item 23). Not read in full: the rest of `check_handin.mjs`, `make_brief.mjs`, `handin_gate_impl.mjs` (not changed).
 
 ## Prior audit items
 
@@ -53,10 +53,9 @@ Previous audit: `docs/progress/gates5/AUDIT.md` (32 numbered items). TG6 = `node
 
 ## Reference files opened
 
-Case: gates5 audit and its hand-in | Opened: docs/progress/gates5/AUDIT.md, STATUS.md, FAULTS.md, INDEX.md (this worktree)
-Case: guards | Opened: tools/hooks/delete_guard_impl.mjs, state_guard_impl.mjs, shell_lex.mjs, root.mjs, lib.mjs, test_hooks.mjs (gates5 block); .claude/settings.json
-Case: backup and BLOCKED | Opened: tools/backup_reference.mjs, tools/test_backup_reference.mjs, tools/gates_lib.mjs, tools/check_handin.mjs (blockedCtx)
-Case: item 23 | Opened: code.claude.com/docs/en/hooks (Configuration and Common input fields)
+Case: gates5 audit and its hand-in | Opened: docs/progress/gates5/AUDIT.md, docs/progress/gates5/STATUS.md, docs/progress/gates5/FAULTS.md, docs/progress/gates5/INDEX.md
+Case: guards | Opened: tools/hooks/delete_guard_impl.mjs, tools/hooks/state_guard_impl.mjs, tools/hooks/shell_lex.mjs, tools/hooks/root.mjs, tools/hooks/lib.mjs, tools/hooks/test_hooks.mjs, .claude/settings.json
+Case: backup and BLOCKED | Opened: tools/backup_reference.mjs, tools/test_backup_reference.mjs, tools/gates_lib.mjs, tools/check_handin.mjs
 
 ## Changes (file:function)
 
@@ -78,7 +77,7 @@ Run one at a time, each green: `node tools/test_gates.mjs` (506), `node tools/ho
 
 ## Proof table
 
-Unchanged from gates5 for the measured gates (round 9 refused with 63 items; roadtool3, tjunction2, roundabout2 refused; a good hand-in passes), see `docs/progress/gates5/STATUS.md`. New in this round: (i) the gates5 audit's own repro payloads are the TG6 tables; (ii) the gated hand-in of this folder passes with the five task-file waivers; (iii) old layouts: briefs without `GATES-VERSION: 3` keep the v2 BLOCKED reader, `blockedCtx.roundStart/ownRoots/repoRoot` are set only for version 3, so the running builder `pvetrees` (v2) and auditors (no HANDIN_DIR) are untouched.
+Unchanged from gates5 for the measured gates (round 9 refused with 63 items; roadtool3, tjunction2, roundabout2 refused; a good hand-in passes), see `docs/progress/gates5/STATUS.md`. New in this round: (i) the gates5 audit's own repro payloads are the TG6 tables; (ii) the gated hand-in of this folder passes with the five task-file waivers; (iii) old layouts: briefs without `GATES-VERSION: 3` keep the v2 BLOCKED reader, `blockedCtx.roundStart/ownRoots/repoRoot` are set only for version 3, so the running builder `pvetrees` (v2) and auditors (no HANDIN_DIR) are unaffected.
 
 ## Merge checklist (updated, in this order)
 
