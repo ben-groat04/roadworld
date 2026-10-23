@@ -102,7 +102,10 @@ try {
     try {
       const st = await page.evaluate('window.statsPass()');
       const c = st.counts, debugBy = { needs: c.needs || 0, rock: c.rock || 0 };
-      writeFileSync(join(resolve(outDir), v.name + '.stats.json'), JSON.stringify({ view: v.name, png_sha1: createHash('sha1').update(readFileSync(file)).digest('hex'), width: st.width, height: st.height, diagnostic: !!v.diagnostic,
+      // the flat-colour class pass as a picture: the hand-in gate counts road and debug-colour pixels from this file itself (tools/gates_lib.mjs pictureProblems)
+      const maskFile = join(resolve(outDir), v.name + '.mask.png');
+      writeFileSync(maskFile, Buffer.from(st.mask.split(',')[1], 'base64'));
+      writeFileSync(join(resolve(outDir), v.name + '.stats.json'), JSON.stringify({ view: v.name, png_sha1: createHash('sha1').update(readFileSync(file)).digest('hex'), mask_png: v.name + '.mask.png', mask_sha1: createHash('sha1').update(readFileSync(maskFile)).digest('hex'), width: st.width, height: st.height, diagnostic: !!v.diagnostic,
         road_px: c.road || 0, marking_px: c.marking || 0, ground_px: c.ground || 0, debug_px: debugBy.needs + debugBy.rock, debug_by_class: debugBy, written_by: 'prototypes/mesh-view/render.mjs' }, null, 1));
     } catch (e) { console.error('stats pass failed for ' + v.name + ': ' + e.message); }
     if (compare && v.photo && existsSync(join(photoDir, v.photo))) {

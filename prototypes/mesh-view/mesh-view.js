@@ -204,7 +204,7 @@ window.statsPass = () => {
   for (const [o, m] of saved) o.material = m;
   sky.visible = skyVis; scene.fog = fog; renderer.toneMapping = tm; scene.background = bg; scene.environment = env;
   renderer.render(scene, camera);
-  return { width: c.width, height: c.height, counts };
+  return { width: c.width, height: c.height, counts, mask: c.toDataURL('image/png') };
 };
 window.snap = () => renderer.domElement.toDataURL('image/png');
 window.__info = { cameras: exportInfo.cameras ?? [], report, bounds: [exportInfo.bounds_min, exportInfo.bounds_max], off };

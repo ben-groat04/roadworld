@@ -397,19 +397,19 @@ export function collectWaiverDiff(wt) {
   return { text, base, mainPath, contents };
 }
 
-// ---------- C: picture sanity ----------
+/// ---------- C: picture sanity ----------
 export function headlineViews(compareText) {
   if (!compareText) return [];
   const rows = compareText.split('\n').filter((l) => l.trim().startsWith('|') && !/^\s*\|[\s:|-]+\|\s*$/.test(l)).slice(1);
   return rows.map((r) => (r.split('|')[2] || '').trim().replace(/`/g, '')).filter(Boolean);
 }
+export const sha1File = (p) => { try { return crypto.createHash('sha1').update(fs.readFileSync(p)).digest('hex'); } catch { return null; } };
 function pngSize(file) {
   try { const b = fs.readFileSync(file); if (b.length < 24 || b.toString('latin1', 1, 4) !== 'PNG') return null; return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) }; } catch { return null; }
 }
-// Decodes an 8-bit, non-interlaced RGB/RGBA PNG far enough to count distinct colours (a flat or near-blank picture is not a render). Anything else
-// (palette, 16-bit, interlaced, truncated, header-only) returns { decoded: false } and the check is skipped, never failed: this is a plausibility check on
-// the pictures our own render tools write (Chromium screenshots are 8-bit RGBA), not a PNG validator.
-export function pngColourCount(file) {
+// Decodes an 8-bit, non-interlaced RGB/RGBA PNG into a W*H*3 RGB buffer. Anything else (palette, 16-bit, interlaced, truncated, header-only) returns { decoded: false }
+// and the checks that need pixels are skipped, never failed: this is a measurement of the pictures our own render tools write (Chromium PNGs are 8-bit RGBA).
+export function decodePng(file) {
   try {
     const b = fs.readFileSync(file);
     if (b.length < 33 || b.toString('latin1', 1, 4) !== 'PNG') return { decoded: false };
@@ -420,7 +420,7 @@ export function pngColourCount(file) {
     if (!idat.length) return { decoded: false };
     const raw = zlib.inflateSync(Buffer.concat(idat)), stride = W * bpp;
     if (raw.length < (stride + 1) * H) return { decoded: false };
-    const prev = Buffer.alloc(stride), cur = Buffer.alloc(stride), seen = new Set();
+    const prev = Buffer.alloc(stride), cur = Buffer.alloc(stride), rgb = Buffer.alloc(W * H * 3);
     for (let y = 0; y < H; y++) {
       const ft = raw[y * (stride + 1)], line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
       for (let i = 0; i < stride; i++) {
@@ -431,12 +431,44 @@ export function pngColourCount(file) {
         else if (ft !== 0) return { decoded: false };
         cur[i] = v & 255;
       }
-      if (y % 7 === 0) for (let x = 0; x < W; x += 3) seen.add((cur[x * bpp] >> 3) << 10 | (cur[x * bpp + 1] >> 3) << 5 | (cur[x * bpp + 2] >> 3));
+      for (let x = 0; x < W; x++) { const o = (y * W + x) * 3; rgb[o] = cur[x * bpp]; rgb[o + 1] = cur[x * bpp + 1]; rgb[o + 2] = cur[x * bpp + 2]; }
       cur.copy(prev);
     }
-    return { decoded: true, colours: seen.size, width: W, height: H };
+    return { decoded: true, width: W, height: H, rgb };
   } catch { return { decoded: false }; }
 }
+// distinct colours (5 bits per channel) on a sparse sample of a decoded picture
+export function colourCountOf(img) {
+  if (!img || !img.decoded) return { decoded: false };
+  const seen = new Set();
+  for (let y = 0; y < img.height; y += 7) for (let x = 0; x < img.width; x += 3) { const o = (y * img.width + x) * 3; seen.add((img.rgb[o] >> 3) << 10 | (img.rgb[o + 1] >> 3) << 5 | (img.rgb[o + 2] >> 3)); }
+  return { decoded: true, colours: seen.size, width: img.width, height: img.height };
+}
+export function pngColourCount(file) { return colourCountOf(decodePng(file)); }
+
+// The flat-colour class palettes of the two render tools. The gate trusts the TOOL NAME in the record only for choosing the palette: it then counts the pixels in the
+// mask picture itself, which must be a flat-colour picture of exactly that palette, the same size as the render, and consistent with the render (see pictureProblems).
+export const RENDER_TOOLS = {
+  'prototypes/mesh-view/render.mjs': { classes: { road: [255, 0, 0], marking: [0, 255, 0], needs: [0, 0, 255], rock: [255, 255, 0], ground: [255, 0, 255], other: [128, 128, 128] }, debug: ['needs', 'rock'] },
+  'prototypes/road-draw/tools/scene.mjs': { classes: { road: [255, 0, 0], structure: [0, 255, 0], other: [255, 0, 255] }, debug: [] },
+};
+// Counts the pixels of every class in a mask picture (tolerance 24 per channel, like the tools). Black is empty/sky. `stray` = share of pixels that are neither black nor a class colour.
+export function measureMask(maskImg, palette, tol = 24) {
+  const { width: W, height: H, rgb } = maskImg, counts = {}, names = Object.keys(palette);
+  let black = 0, stray = 0;
+  const road = [];
+  for (let i = 0, n = W * H; i < n; i++) {
+    const r = rgb[i * 3], g = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
+    if (r < tol && g < tol && b < tol) { black++; continue; }
+    let hit = null;
+    for (const nm of names) { const k = palette[nm]; if (Math.abs(r - k[0]) < tol && Math.abs(g - k[1]) < tol && Math.abs(b - k[2]) < tol) { hit = nm; break; } }
+    if (hit) { counts[hit] = (counts[hit] || 0) + 1; if (hit === 'road') road.push(i); } else stray++;
+  }
+  return { counts, black, stray: stray / (W * H), roadIdx: road };
+}
+const isGrass = (r, g, b) => g > 70 && g > r * 1.12 && g > b * 1.15;
+const isOrange = (r, g, b) => { const mx = Math.max(r, g, b), mn = Math.min(r, g, b); if (mx < 140 || (mx - mn) / mx < 0.5) return false; const d = mx - mn; let h; if (mx === r) h = (((g - b) / d) % 6 + 6) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; return h >= 15 && h <= 32; };
+
 function walkFiles(dir, depth = 0, out = []) {
   if (depth > 4) return out;
   let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
@@ -444,17 +476,19 @@ function walkFiles(dir, depth = 0, out = []) {
   return out;
 }
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-// THRESHOLDS: no photo measurement stands behind these numbers; they are documented defaults sitting in the empty gap between "subject missing" and
-// "subject shown" in the one real data set (round 9, re-rendered): s6 street 0.00 % road, s6 close 0.00 %, s6 along 0.35 % road, s4 aerial 50.53 % debug colour,
-// s4 street 23.51 %, whereas a view of the subject has road on several percent of the frame and no debug colour at all. 1 % road and 0.1 % debug are the
-// least strict values that still refuse every one of those. A legitimate close-up of something else (a wall face, a tunnel interior) declares itself
-// diagnostic with a reason in STATUS.md, or the task file overrides with picture_min_road / picture_max_debug.
+// THRESHOLDS (measured, round 9 + the roadtool and gates3 renders; the table is in docs/progress/gates4/STATUS.md): the road share of the frame is counted in the MASK picture.
+// Round 9 views with no subject: s6 street 0.00 %, s6 side_close 0.00 %, s6 along 0.35 %, s6 toe_profile 0.70 % (a profile close-up). Views of the subject: 1.74 % (s6 end),
+// 2.01 % (s6 aerial), 2.71 %, 3.31 %, 4.19 % (s4 aerial), 23.9 % (cross_slope). Debug colour (needs structure, rock cut): 50.53 % s4 aerial, 42.61 % s4 end, 23.5-27.0 % on the
+// three street/along views, 0 on every other view. 1 % road and 0.1 % debug refuse every view of the no-subject / debug set and pass every subject view. They are the
+// DEFAULTS: a task file overrides them per round with `picture_min_road <f>` / `picture_max_debug <f>` (a close-up round sets a lower floor and says why).
 //
-// Where the records are: next to each render, at any depth below the hand-in folder (renders in after/ and before/ are found there). The views judged:
-// every COMPARE.md render (resolved to its file) and every *_aerial.png / *_street.png below the folder, except pictures under a folder called before/
-// (history). Each judged view needs <name>.stats.json beside <name>.png; the record must match the PNG (sha1, width, height), have counts that fit the
-// frame, show road and no debug colour. A `diagnostic` view may not be named *_aerial/*_street, may not be a COMPARE.md render, and must be explained in
-// STATUS.md (a line with the view name, the word diagnostic and a reason of 20+ characters); at most maxDiagShare of the records may be diagnostic.
+// Where the records are: next to each render, at any depth below the hand-in folder (renders in after/ and before/ are found there). The views judged: every COMPARE.md render
+// (resolved to its file) and every *_aerial.png / *_street.png below the folder, except pictures under a folder called before/ (history). Each judged view needs
+// <name>.stats.json AND <name>.mask.png beside <name>.png, both hash-bound; the road and debug pixels are COUNTED BY THIS FUNCTION in the mask, the typed numbers must agree
+// with them, and the mask must be a flat-colour picture of the tool's palette, the render's size, and consistent with the render (road pixels are not grass, no orange the mask does
+// not account for). A `diagnostic` view may not be named *_aerial/*_street, may not be a COMPARE.md render, and must be explained in STATUS.md (a line with the view name,
+// the word diagnostic and a reason of 20+ characters); at most maxDiagShare of the records may be diagnostic.
+// WHAT IT CANNOT SEE: a render AND a matching mask that were both drawn by hand to fit (it reads pictures, not how they were made); a real render of the wrong subject.
 export function pictureProblems(folder, compareText, opts = {}) {
   const minRoad = opts.minRoad ?? 0.01, maxDebug = opts.maxDebug ?? 0.001, maxDiagShare = opts.maxDiagShare ?? 0.4;
   const statusText = opts.statusText || '';
@@ -479,7 +513,7 @@ export function pictureProblems(folder, compareText, opts = {}) {
   }
   for (const [p, why] of must) {
     const rec = path.resolve(p.replace(/\.(png|jpe?g)$/i, '.stats.json'));
-    if (!records.has(rec)) problems.push(`view "${rel(p)}" (${why}) has no ${path.basename(rec)} next to the render: render it with prototypes/mesh-view/render.mjs or prototypes/road-draw/tools/scene.mjs, which write the record (road pixels, debug-colour pixels)`);
+    if (!records.has(rec)) problems.push(`view "${rel(p)}" (${why}) has no ${path.basename(rec)} next to the render: render it with prototypes/mesh-view/render.mjs or prototypes/road-draw/tools/scene.mjs, which write the record and its mask picture`);
   }
   for (const [file, s] of records) {
     const b = rel(file).replace(/\.stats\.json$/, '');
@@ -497,27 +531,111 @@ export function pictureProblems(folder, compareText, opts = {}) {
     if (!(px > 0) || typeof s.road_px !== 'number') { problems.push(`${b}.stats.json: no pixel counts`); continue; }
     if (typeof s.png_sha1 !== 'string') { problems.push(`${b}.stats.json has no png_sha1: it was not written by the current render tool; render the view again`); continue; }
     if (!fs.existsSync(pngFile)) { problems.push(`${b}.stats.json has no ${path.basename(pngFile)} beside it: a record without its picture proves nothing (a typed hash)`); continue; }
-    const sha = crypto.createHash('sha1').update(fs.readFileSync(pngFile)).digest('hex');
-    if (sha !== s.png_sha1) { problems.push(`${b}.stats.json was not made for ${path.basename(pngFile)} (picture hash differs): the stats must come from rendering exactly this picture; run the render tool again and do not edit the PNG afterwards`); continue; }
+    const renderSha = sha1File(pngFile);
+    if (renderSha !== s.png_sha1) { problems.push(`${b}.stats.json was not made for ${path.basename(pngFile)} (picture hash differs): the stats must come from rendering exactly this picture; run the render tool again and do not edit the PNG afterwards`); continue; }
     const sz = pngSize(pngFile);
     if (!sz) { problems.push(`${path.basename(pngFile)} is not a readable PNG`); continue; }
     if (sz.width !== W || sz.height !== H) { problems.push(`${b}.stats.json says ${W}x${H} but the PNG is ${sz.width}x${sz.height}`); continue; }
-    const counts = [s.road_px, s.marking_px || 0, s.ground_px || 0, s.debug_px || 0];
-    if (counts.some((c) => !(c >= 0) || !Number.isFinite(c)) || s.road_px > px || (s.debug_px || 0) > px || (s.road_px + (s.debug_px || 0)) > px) { problems.push(`${b}.stats.json: pixel counts do not fit the ${W}x${H} frame (road ${s.road_px}, debug ${s.debug_px || 0}, frame ${px})`); continue; }
-    // plausibility of the picture itself: a real render is not tiny and not one flat colour (a typed record with a matching stub PNG would otherwise pass)
     if (W < 320 || H < 180) { problems.push(`${path.basename(pngFile)} is only ${W}x${H}: a render the cold viewer opens is at least 320x180`); continue; }
-    const pc = pngColourCount(pngFile);
-    if (pc.decoded && pc.colours < 16) { problems.push(`${path.basename(pngFile)} has ${pc.colours} distinct colours: a flat or blank picture is not a render of the subject`); continue; }
-    const roadFrac = s.road_px / px, dbg = (s.debug_px || 0) / px;
-    if (roadFrac < minRoad) problems.push(`view "${b}": road surface covers ${(roadFrac * 100).toFixed(2)}% of the frame (need at least ${(minRoad * 100).toFixed(1)}%): the subject is not in the picture. If this is deliberately a close-up of something else, declare it "diagnostic": true in the views json, keep it out of COMPARE.md and explain it in STATUS.md. If you cannot produce a view of the subject, write a BLOCKED line in STATUS.md instead of handing in a picture without it`);
-    if (dbg > maxDebug) problems.push(`view "${b}": ${(dbg * 100).toFixed(2)}% of the frame is in debug colours (${Object.entries(s.debug_by_class || {}).map(([k, v]) => k + ' ' + v + ' px').join(', ')}; allowed ${(maxDebug * 100).toFixed(2)}%): a placeholder "needs structure" or rock-cut surface is on screen where a structure or ground should be`);
-    notes.push(`${b}: road ${(roadFrac * 100).toFixed(1)}%, debug ${(dbg * 100).toFixed(2)}%`);
+    // ---- the mask picture: where the road and debug pixels are counted
+    const tool = RENDER_TOOLS[s.written_by];
+    if (!tool) { problems.push(`${b}.stats.json: written_by "${s.written_by}" is not a known render tool (${Object.keys(RENDER_TOOLS).join(', ')}): the road pixels could not be measured`); continue; }
+    if (typeof s.mask_png !== 'string' || path.basename(s.mask_png) !== s.mask_png || typeof s.mask_sha1 !== 'string') { problems.push(`${b}.stats.json names no mask picture (mask_png, mask_sha1): the gate counts road pixels itself, from <view>.mask.png; render the view again with the current render tool`); continue; }
+    const maskFile = path.join(path.dirname(file), s.mask_png);
+    if (!fs.existsSync(maskFile)) { problems.push(`${b}: the mask picture ${s.mask_png} is missing next to the render`); continue; }
+    const maskSha = sha1File(maskFile);
+    if (maskSha !== s.mask_sha1) { problems.push(`${b}: ${s.mask_png} does not match the record (hash differs): do not edit pictures after the render tool wrote them`); continue; }
+    if (maskSha === renderSha) { problems.push(`${b}: the mask picture is the render itself (identical bytes): it is not a class pass`); continue; }
+    const mask = decodePng(maskFile), render = decodePng(pngFile);
+    if (!mask.decoded) { problems.push(`${b}: ${s.mask_png} is not a plain 8-bit PNG the gate can read`); continue; }
+    if (mask.width !== W || mask.height !== H) { problems.push(`${b}: the mask is ${mask.width}x${mask.height}, the render ${W}x${H}`); continue; }
+    const mm = measureMask(mask, tool.classes);
+    if (mm.stray > 0.05) { problems.push(`${b}: ${(mm.stray * 100).toFixed(1)}% of the mask is neither black nor a class colour of ${s.written_by}: it is not that tool's flat-colour class pass`); continue; }
+    const road = mm.counts.road || 0, debug = tool.debug.reduce((a, c) => a + (mm.counts[c] || 0), 0);
+    const typedDebug = s.debug_px || 0;
+    if (Math.abs(road - s.road_px) > 0.01 * px || Math.abs(debug - typedDebug) > 0.01 * px) { problems.push(`${b}.stats.json says road ${s.road_px} px and debug ${typedDebug} px; the mask picture, counted here, has road ${road} px and debug ${debug} px: the typed numbers are not what decides, and they disagree with the picture`); continue; }
+    // ---- the render must agree with the mask (a fake mask beside a real render, or the other way round)
+    if (render.decoded) {
+      const pc = colourCountOf(render);
+      if (pc.colours < 16) { problems.push(`${path.basename(pngFile)} has ${pc.colours} distinct colours: a flat or blank picture is not a render of the subject`); continue; }
+      let onGrass = 0; for (const i of mm.roadIdx) if (isGrass(render.rgb[i * 3], render.rgb[i * 3 + 1], render.rgb[i * 3 + 2])) onGrass++;
+      if (road >= 500 && onGrass / road > 0.35) { problems.push(`${b}: ${(100 * onGrass / road).toFixed(0)}% of the mask's road pixels are grass-coloured in the render: the mask does not belong to this render`); continue; }
+      let orange = 0; for (let i = 0, n = W * H; i < n; i++) if (isOrange(render.rgb[i * 3], render.rgb[i * 3 + 1], render.rgb[i * 3 + 2])) orange++;
+      if (orange / px > maxDebug + debug / px + 0.002) { problems.push(`${b}: ${(100 * orange / px).toFixed(2)}% of the render is debug-orange ("needs structure" colour) but the mask accounts for only ${(100 * debug / px).toFixed(2)}% debug pixels: placeholder surfaces are on screen`); continue; }
+    }
+    const roadFrac = road / px, dbg = debug / px;
+    if (roadFrac < minRoad) problems.push(`view "${b}": road surface covers ${(roadFrac * 100).toFixed(2)}% of the frame, counted in ${s.mask_png} (need at least ${(minRoad * 100).toFixed(1)}%): the subject is not in the picture. If this is deliberately a close-up of something else, declare it "diagnostic": true in the views json, keep it out of COMPARE.md and explain it in STATUS.md. If you cannot produce a view of the subject, write a BLOCKED line in STATUS.md instead of handing in a picture without it`);
+    if (dbg > maxDebug) problems.push(`view "${b}": ${(dbg * 100).toFixed(2)}% of the frame is in debug colours, counted in ${s.mask_png} (${tool.debug.map((k) => k + ' ' + (mm.counts[k] || 0) + ' px').join(', ')}; allowed ${(maxDebug * 100).toFixed(2)}%): a placeholder "needs structure" or rock-cut surface is on screen where a structure or ground should be`);
+    notes.push(`${b}: road ${(roadFrac * 100).toFixed(1)}%, debug ${(dbg * 100).toFixed(2)}% (counted in the mask)`);
   }
   if (records.size >= 3) {
     const diag = [...records].filter(([, s]) => s.diagnostic);
     if (diag.length / records.size > maxDiagShare) problems.push(`${diag.length} of ${records.size} views are declared diagnostic (more than ${maxDiagShare * 100}%): a diagnostic flag cannot be the way past the picture check`);
   }
   return { problems, notes };
+}
+
+// Rows of COMPARE.md as files: [{ kase, render, reference, composite, before }] where each is an absolute path or null. Every role is a DIFFERENT file by content:
+// a render copied over as the reference, a composite that is the render, a "before" identical to the render (nothing changed), the same render for two cases: refused.
+export function compareIntegrity(rows) {
+  const problems = [];
+  const roles = ['render', 'reference', 'composite', 'before'];
+  const hashes = rows.map((r) => Object.fromEntries(roles.map((k) => [k, r[k] && fs.existsSync(r[k]) ? sha1File(r[k]) : null])));
+  rows.forEach((r, i) => {
+    for (let a = 0; a < roles.length; a++) for (let c = a + 1; c < roles.length; c++) {
+      const ha = hashes[i][roles[a]], hc = hashes[i][roles[c]];
+      if (ha && hc && ha === hc) problems.push(`COMPARE.md row "${r.kase}": the ${roles[a]} and the ${roles[c]} are the same file (identical bytes): ${roles[a] === 'render' && roles[c] === 'before' ? 'the render shows no change from the before picture; a round that changed something moves the picture' : 'a copy is not a ' + roles[c]}`);
+    }
+  });
+  for (const role of ['render', 'composite']) {
+    const seen = new Map();
+    rows.forEach((r, i) => { const h = hashes[i][role]; if (!h) return; if (seen.has(h)) problems.push(`COMPARE.md rows "${seen.get(h)}" and "${r.kase}" use the same ${role} file (identical bytes): each case needs its own ${role}`); else seen.set(h, r.kase); });
+  }
+  return problems;
+}
+
+const IMG_RE = /\.(?:jpe?g|png|webp|gif|bmp|tiff?)$/i;
+// Reference provenance. files: absolute paths of reference IMAGES named by the round (COMPARE.md reference cells, STATUS.md Case lines). ctx: { refRoot, folder, known (Set of sha1 | null) }.
+// Each must be a real file under the main checkout's docs/reference (not _compare), different in content from every picture the round itself wrote, and (when a hash log
+// exists) registered: its sha1 appears in docs/reference/**/INDEX.md or in the hook-written .claude/state/ref_log.jsonl. A reference outside docs/reference passes only when it
+// is not inside the hand-in folder (prototype screenshots and spec images live elsewhere): the gate says so in a note.
+export function referenceProblems(files, ctx) {
+  const problems = [], notes = [];
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const lc = (p) => real(p).split(path.sep).join('/').toLowerCase();
+  const refReal = lc(ctx.refRoot);
+  const own = new Map();
+  for (const p of walkFiles(ctx.folder)) if (IMG_RE.test(p)) { const h = sha1File(p); if (h) own.set(h, path.relative(ctx.folder, p).split(path.sep).join('/')); }
+  const seen = new Set();
+  for (const f of files) {
+    if (!IMG_RE.test(f) || seen.has(f)) continue; seen.add(f);
+    if (!fs.existsSync(f)) continue;   // a missing file is check_handin's own complaint
+    const n = lc(f), h = sha1File(f);
+    const inRef = n.startsWith(refReal + '/') && !n.startsWith(refReal + '/_compare/');
+    if (n.startsWith(refReal + '/_compare/')) problems.push(`reference ${path.basename(f)} is a composite from docs/reference/_compare: a composite is the round's own picture, not a reference photo`);
+    if (h && own.has(h)) problems.push(`reference ${path.basename(f)} is byte-identical to ${own.get(h)} in the hand-in folder: a copy of the round's own picture is not a reference photo`);
+    if (n.startsWith(lc(ctx.folder) + '/')) problems.push(`reference ${path.basename(f)} lies inside the hand-in folder: a reference photo comes from docs/reference of the main checkout`);
+    else if (!inRef) notes.push(`reference ${path.basename(f)} is outside docs/reference (${f}): not checked for provenance`);
+    else if (ctx.known && h && !ctx.known.has(h)) problems.push(`reference ${path.basename(f)} (sha1 ${h.slice(0, 10)}) is not a registered reference photo: its hash is in no docs/reference INDEX.md and not in the reference log (.claude/state/ref_log.jsonl, written by the PostToolUse hook when a file lands in docs/reference); register it with the reference INDEX or download it through a tool call`);
+  }
+  return { problems, notes };
+}
+// Case lines of STATUS.md: each case needs >= 3 reference IMAGES that differ in content (three copies of one picture count once).
+export function distinctReferenceProblems(caseName, files) {
+  const hs = new Set();
+  for (const f of files) { if (!IMG_RE.test(f) || !fs.existsSync(f)) continue; const h = sha1File(f); if (h) hs.add(h); }
+  const imgs = files.filter((f) => IMG_RE.test(f) && fs.existsSync(f)).length;
+  return imgs >= 3 && hs.size < 3 ? [`STATUS.md: case "${caseName}" names ${imgs} reference images but only ${hs.size} different picture(s) by content: copies of one image count once; at least 3 different photos are needed`] : [];
+}
+// known reference hashes: every 40-hex token in docs/reference/**/INDEX.md plus the hook-written log. null = nothing to compare with (the caller says FAIL-OPEN: not checkable).
+export function knownReferenceHashes(main) {
+  const set = new Set(); let any = false;
+  const logFile = path.join(main, '.claude', 'state', 'ref_log.jsonl');
+  try { for (const l of fs.readFileSync(logFile, 'utf8').split('\n')) { if (!l.trim()) continue; try { const o = JSON.parse(l); if (o && /^[0-9a-f]{40}$/.test(o.sha1)) { set.add(o.sha1); any = true; } } catch { /* skip */ } } } catch { /* no log */ }
+  for (const f of walkFiles(path.join(main, 'docs', 'reference'), 0).filter((x) => /(^|[\\/])INDEX\.md$/.test(x))) {
+    try { for (const m of fs.readFileSync(f, 'utf8').matchAll(/\b[0-9a-f]{40}\b/g)) { set.add(m[0]); any = true; } } catch { /* skip */ }
+  }
+  return any ? set : null;
 }
 
 // ---------- D: STATUS reading ----------

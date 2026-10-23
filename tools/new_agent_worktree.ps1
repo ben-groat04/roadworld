@@ -2,7 +2,9 @@
 # Creates ..\roadworld-wt\<name> (all new worktrees live under ..\roadworld-wt\; old ..\roadworld-wt-* folders stay where they are) on a new branch agent/<name> from the CURRENT tip of the base branch
 # (default: the branch checked out in the main checkout) and links the main checkout's docs\reference into it
 # with a directory junction, so agents can open the (gitignored, private) reference photos.
-# To remove a test worktree: delete the junction first with (Get-Item <wt>\docs\reference).Delete(), then git worktree remove. Never Remove-Item -Recurse the junction.
+# To REMOVE a worktree use ONLY: powershell -NoProfile -ExecutionPolicy Bypass -File tools\remove_agent_worktree.ps1 <name> [-DeleteBranch]
+# (it unlinks the docs\reference junction first and checks the photos are still there). NEVER rm -rf, Remove-Item -Recurse or rmdir /s a worktree: that follows
+# the junction and wipes the private reference photos (22 Oct 2026). The PreToolUse hook tools/hooks/delete_guard.mjs refuses such commands.
 param(
   [Parameter(Mandatory = $true)][string]$Name,
   [string]$Base = ''
@@ -20,7 +22,8 @@ if ($LASTEXITCODE -ne 0) { throw "git worktree add failed" }
 $refMain = Join-Path $main 'docs\reference'
 $refWt = Join-Path $wt 'docs\reference'
 if (-not (Test-Path $refMain)) { New-Item -ItemType Directory -Path $refMain | Out-Null }
-if (Test-Path $refWt) { Remove-Item $refWt -Recurse -Force }
+# a fresh checkout has no docs\reference (gitignored); if an EMPTY folder is there, remove it without -Recurse (never recursive-delete anything near the photos)
+if (Test-Path $refWt) { [System.IO.Directory]::Delete($refWt) }
 New-Item -ItemType Junction -Path $refWt -Target $refMain | Out-Null
 $hash = (Get-FileHash (Join-Path $wt 'CLAUDE.md') -Algorithm SHA1).Hash
 $tip = (git -C $wt rev-parse --short HEAD).Trim()
@@ -30,3 +33,5 @@ Write-Host "Reference junction: $refWt -> $refMain"
 Write-Host "CLAUDE.md sha1: $hash"
 Write-Host "Build dir (the only one, gitignored): $(Join-Path $wt 'build')"
 Write-Host "Scratch dir (outside the repo): $(Join-Path (Split-Path $main -Parent) ('roadworld-scratch\' + $Name))"
+Write-Host "To remove this worktree later: powershell -NoProfile -ExecutionPolicy Bypass -File tools\remove_agent_worktree.ps1 $Name"
+Write-Host "NEVER rm -rf / Remove-Item -Recurse / rmdir /s a worktree: the docs\reference junction would take the private photos with it."

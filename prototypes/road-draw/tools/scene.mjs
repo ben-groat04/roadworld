@@ -300,10 +300,14 @@ async function writeStats(name) {
       for (let i = 0; i < d.length; i += 4) for (const n of Object.keys(CLS)) { const k = CLS[n]; if (Math.abs(d[i] - k[0]) < 24 && Math.abs(d[i + 1] - k[1]) < 24 && Math.abs(d[i + 2] - k[2]) < 24) { counts[n] = (counts[n] || 0) + 1; break; } }
       for (const [o, m] of saved) o.material = m;
       scene.fog.near = fogN; scene.fog.far = fogF; scene.background = bg; P.renderNow();
-      return { width: c.width, height: c.height, counts };
+      return { width: c.width, height: c.height, counts, mask: c.toDataURL('image/png') };
     });
     const png = resolve(outDir, name + '.png');
-    writeFileSync(resolve(outDir, name + '.stats.json'), JSON.stringify({ view: name, png_sha1: createHash('sha1').update(readFileSync(png)).digest('hex'), width: st.width, height: st.height, diagnostic: false,
+    // The flat-colour class pass is also written as <name>.mask.png: the hand-in gate (tools/gates_lib.mjs pictureProblems) counts the road pixels FROM THIS FILE itself
+    // and checks it against the render, so a typed number in the record is never what decides.
+    const maskFile = resolve(outDir, name + '.mask.png');
+    writeFileSync(maskFile, Buffer.from(st.mask.split(',')[1], 'base64'));
+    writeFileSync(resolve(outDir, name + '.stats.json'), JSON.stringify({ view: name, png_sha1: createHash('sha1').update(readFileSync(png)).digest('hex'), mask_png: name + '.mask.png', mask_sha1: createHash('sha1').update(readFileSync(maskFile)).digest('hex'), width: st.width, height: st.height, diagnostic: false,
       road_px: st.counts.road || 0, marking_px: 0, ground_px: st.counts.other || 0, structure_px: st.counts.structure || 0, debug_px: 0, debug_by_class: {}, written_by: 'prototypes/road-draw/tools/scene.mjs' }, null, 1));
   } catch (e) { console.error('stats pass failed for ' + name + ': ' + e.message); }
 }
