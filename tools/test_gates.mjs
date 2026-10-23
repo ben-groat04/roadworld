@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GL = await import(pathToFileURL(path.join(src, 'tools/gates_lib.mjs')).href);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gatetest-'));
-import { isolateState } from './test_isolation.mjs';
+import { isolateState, cleanupTmp } from './test_isolation.mjs';
 const isolation = isolateState(tmp, src);   // CP_GATE_STATE_DIR: nothing of this run reaches the real gate.log (checked at the end)
 let pass = 0, fail = 0; const failed = [];
 const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok   ' + name); } else { fail++; failed.push(name); console.log('  FAIL ' + name + (detail ? '\n       ' + String(detail).replace(/\n/g, '\n       ').slice(0, 900) : '')); } };
@@ -887,6 +887,9 @@ console.log('gates6 BLOCKED evidence v4: own, fresh, untracked file; needs names
   t('v4: without roundStart and ownRoots (an old caller) the v3 rules apply unchanged', p(mkLine(path.join(foreign, 'junk.txt')), { version: 3, bases: [foreign] }).ok);
   for (const n of ['owner decision about the roads', 'a decision about the kerbs', 'owner decision about X', 'the owner\'s call on the junction']) t(`v4: needs: "${n}" names no decision: refused`, !p(mkLine(path.join(own, 'build.log'), n)).ok && /needs/.test(p(mkLine(path.join(own, 'build.log'), n)).why.join()), JSON.stringify(p(mkLine(path.join(own, 'build.log'), n)).why));
   for (const n of ['owner decision whether the kerb radius should follow the photo or the standard 6 metres', 'the file `D:/assets/missing_tex.uasset` from the owner', 'run `node tools/foo.mjs --fetch` with network access', 'a decision: choose between the two-lane and the three-lane layout for the slip road']) t(`v4: needs: "${n.slice(0, 50)}..." is concrete: accepted`, p(mkLine(path.join(own, 'build.log'), n)).ok, JSON.stringify(p(mkLine(path.join(own, 'build.log'), n)).why));
+  // gates7 item 5 (gates6 audit section 1 item 5: "needs: a new reference photo of the roundabout please" was refused): a plain request for a named thing is concrete
+  for (const n of ['a new reference photo of the roundabout please', 'a licence file for the bollard model', 'another screenshot of the junction from the north arm', 'the texture for the kerb stone, free licence']) t('v5: needs: "' + n + '" names a thing and a subject: accepted', p(mkLine(path.join(own, 'build.log'), n)).ok, JSON.stringify(p(mkLine(path.join(own, 'build.log'), n)).why));
+  for (const n of ['a photo', 'help with the file', 'more data please', 'owner decision about the model']) t('v5: needs: "' + n + '" is still too vague: refused', !p(mkLine(path.join(own, 'build.log'), n)).ok, JSON.stringify(p(mkLine(path.join(own, 'build.log'), n)).why));
 }
 
 console.log('gates6: an overwritten reference photo is not a reference (gates5 audit item 26)');
@@ -924,6 +927,9 @@ console.log('test isolation: a test run never writes to the real gate.log of the
   t('NO line mentioning this run\'s temp folder reached the real gate.log of the main checkout (' + isolation.realLog + ')', isolation.leaks().length === 0, isolation.leaks().slice(0, 3).join('\n'));
 }
 
-console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
+// gates7 item 13: the temp folder is removed at the end (links unlinked first, never followed); KEEP_HOOKTEST=1 keeps it
+const tmpGone = cleanupTmp(tmp);
+if (!tmpGone && !process.env.KEEP_HOOKTEST) { fail++; failed.push('temp folder not removed'); }
+console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmpGone ? 'removed' : tmp})`);
 if (failed.length) console.log('FAILED TESTS:\n - ' + failed.join('\n - '));
 process.exit(fail ? 1 : 0);

@@ -102,3 +102,28 @@ export function verifyRecord(rec, stateDir = STATE_DIR) {
 }
 
 // Fallback logger for guard.mjs: uses nothing but fs/path so a broken library cannot stop the FAIL-OPEN line being written.
+
+// The transcript file of the subagent that raised a hook event (SubagentStop carries it; a PreToolUse event carries only the main transcript_path: the subagent file sits beside it).
+export function agentTranscript(input) {
+  if (input.agent_transcript_path && fs.existsSync(input.agent_transcript_path)) return input.agent_transcript_path;
+  if (input.transcript_path && input.agent_id) {
+    const tp = input.transcript_path;
+    const guess = path.join(tp.replace(/\.jsonl$/, ''), 'subagents', `agent-${input.agent_id}.jsonl`);
+    if (fs.existsSync(guess)) return guess;
+  }
+  return null;
+}
+
+// The HANDIN_DIR a subagent was launched with (its brief, or the BRIEF-FILE the brief names), or null when it carried none or cannot be read.
+export function handinDirOfAgent(input) {
+  try {
+    const tp = agentTranscript(input);
+    if (!tp) return null;
+    const text = firstUserText(tp);
+    const own = checkBrief(text).handinDir;
+    if (own) return own;
+    const bf = briefFileOf(text);
+    if (bf) return checkBrief(fs.readFileSync(bf, 'utf8')).handinDir || null;
+  } catch { /* unreadable: no HANDIN_DIR known */ }
+  return null;
+}

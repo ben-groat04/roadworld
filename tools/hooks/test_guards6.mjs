@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isolateState } from '../test_isolation.mjs';
+import { isolateState, cleanupTmp } from '../test_isolation.mjs';
 
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guards6-'));
@@ -229,8 +229,8 @@ console.log('gates6: the two hooks as processes, with the harness payload shape 
 console.log('test isolation');
 t('no line mentioning this run\'s temp folder reached the real gate.log', isolation.leaks().length === 0, isolation.leaks().slice(0, 3).join('\n'));
 t('the photos behind the junction and in the fixture main survived every case', fs.readFileSync(path.join(photos, 'k.jpg'), 'utf8') === 'k' && fs.readFileSync(path.join(main, 'docs', 'reference', 'aerial', 'p1.jpg'), 'utf8') === 'photo');
-try { fs.rmdirSync(path.join(wtJ, 'docs', 'reference')); } catch { /* link only */ }
-console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
+const gone = cleanupTmp(tmp);   // gates7 item 13: links unlinked first, then the whole temp folder (state-isolated and tempdir included) is removed
+t('the temp folder is removed at the end (junction unlinked first, nothing left in %TEMP%)', gone || !!process.env.KEEP_HOOKTEST, tmp);
+console.log(`\n${pass} passed, ${fail} failed`);
 if (failedNames.length) console.log('FAILED TESTS:\n - ' + failedNames.join('\n - '));
-if (!process.env.KEEP_HOOKTEST) { for (const d of ['roadworld', 'roadworld-wt', 'photos', 'elsewhere', 'state-isolated']) { try { fs.rmSync(path.join(tmp, d), { recursive: true, force: true }); } catch { /* ignore */ } } try { fs.rmdirSync(tmp); } catch { /* ignore */ } }
 process.exit(fail ? 1 : 0);

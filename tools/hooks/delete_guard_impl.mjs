@@ -196,10 +196,14 @@ const TRUNC_VERBS = new Set(['truncate', 'set-content', 'sc', 'clear-content', '
 const LIST_VERBS = new Set(['get-childitem', 'gci', 'ls', 'dir', 'find', 'get-item', 'gi', 'tree']);
 const SHELL_VERBS = new Set(['bash', 'sh', 'zsh', 'pwsh', 'powershell', 'cmd']);
 const isFlag = (x) => /^-/.test(x) || /^\/{1,2}[a-zA-Z](:\S*)?$/.test(x);
+// an abbreviated PowerShell parameter (gates7 item 8): -Pa, -Lit, -Fi, -Inc, -Exc ... with a minimum length that keeps bash flags (rm -i) out
+const psp = (a, full, min) => { const m = /^-([a-z]+)(?::.*)?$/i.exec(String(a)); return !!m && m[1].length >= min && full.startsWith(m[1].toLowerCase()); };
+const psPathFlag = (a) => psp(a, 'path', 2) || psp(a, 'literalpath', 2);
+const psNameFilterFlag = (a) => psp(a, 'filter', 2) || psp(a, 'include', 3);
 const psRecurse = (f) => /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?(?::\$?true)?$/i.test(f);
 const globRe = (g) => segRe(g);
 const nameMayMatchPic = (pats) => !pats.length || pats.some((p) => ['a.jpg', 'a.png', 'a.jpeg', 'a.webp', 'a.gif'].some((n) => globRe(p).test(n)));
-const DELETEISH = /remove-item|\bri\b|\.delete\s*\(|\[io\.file\]::delete|\bunlink\b|(^|[\s;|&])(?:rm|del|erase)\s/i;
+const DELETEISH = /remove-item|\bri\b|\.delete\s*\(|\[io\.file\]::delete|\bunlink\b|(^|[\s;|&])(?:rm|del|erase|truncate|shred)(?:\s|$)/i;   // gates7 item 7: "| xargs rm" at the end of the line, truncate, shred
 
 // returns [] or an array of refusal reasons
 export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mainRoot = ROOT) {
@@ -217,8 +221,17 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
 
   // PowerShell: Remove-Item with -Recurse and a parenthesised (computed) path, in either order: the parentheses split the statement, so it is read as text
   if (/\b(?:remove-item|ri)\b[^;|\n]*\([^;\n]*\)[^;\n]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b|\b(?:remove-item|ri)\b[^;\n]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b[^;\n]*\(/i.test(cmd) && risky(cwd)) reasons.push('Remove-Item -Recurse with a computed path in parentheses (Join-Path, Resolve-Path, Get-Item ...): its target cannot be read, in the main checkout, a tree with a docs\\reference link, or a command naming the photos');
-  // recursive deletes written as a one-liner in another language near a tree
-  if (/shutil\.rmtree|\brmtree\s*\(|\brm(?:dir)?(?:Sync)?\s*\([^)]*recursive\s*:\s*true|\brimraf\b|Directory\]::Delete\s*\(.*,\s*\$?true\s*\)|Directory\.Delete\s*\(.*,\s*\$?true\s*\)|\.Delete\s*\(\s*\$?true\s*\)|FileUtils\.rm_rf|File\.unlink|rm_rf\(/i.test(cmd) && nearText()) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) in or near the main checkout or a worktree: it follows a docs\\reference junction');
+  // recursive deletes written as a one-liner in another language near a tree (gates7 item 1: a call whose FIRST argument is a string literal is judged like a delete target below,
+  // so python -c "shutil.rmtree('build')" is allowed in a clean worktree; a call with no literal first argument keeps the refusal)
+  const ONE_ALL = /shutil\.rmtree|\brmtree\s*\(|\brm(?:dir)?(?:Sync)?\s*\([^)]*recursive\s*:\s*true|\brimraf\b|Directory\]::Delete\s*\(.*,\s*\$?true\s*\)|Directory\.Delete\s*\(.*,\s*\$?true\s*\)|\.Delete\s*\(\s*\$?true\s*\)|FileUtils\.rm_rf|File\.unlink|rm_rf\(/gi;
+  const ONE_LIT = /(shutil\.rmtree|\brmtree|\brm(?:dir)?Sync|\brimraf(?:Sync)?|Directory\]?::?\.?Delete|FileUtils\.rm_rf|\brm_rf)\s*\(\s*\\*(["'])([^"'\n]*?)\\*\2([^)\n]*)/gi;
+  const oneLits = [];
+  for (const m of cmd.matchAll(ONE_LIT)) {
+    const fn = m[1].toLowerCase(); const rest = m[4] || '';
+    const rec = /rmtree|rimraf|rm_rf/.test(fn) || (/rm(?:dir)?sync/.test(fn) && /recursive\s*:\s*true/i.test(rest)) || (/delete/.test(fn) && /,\s*\$?true/i.test(rest));
+    if (rec) oneLits.push(m[3]);
+  }
+  if ((cmd.match(ONE_ALL) || []).length > oneLits.length && nearText()) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) with a path that is not a string literal, in or near the main checkout or a worktree: it follows a docs\\reference junction');
   // heredocs and here-strings handed to a shell run as commands
   for (const m of cmd.replace(/\r\n/g, '\n').matchAll(/([^\n]*?)<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\2([^\n]*)\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g)) {
     if (/(?:^|[\s|;&])(?:bash|sh|zsh|pwsh|powershell)(?:\s|$)/.test(m[1] + ' ' + m[4])) reasons.push(...sub(m[5], cwd));
@@ -233,8 +246,8 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
     if (verb === 'echo' || verb === 'printf') return av.filter((x) => !isFlag(x));
     if (!LIST_VERBS.has(verb)) return null;
     if (verb === 'find') { const lead = []; for (const a of av) { if (/^[-(!]/.test(a)) break; lead.push(a); } return lead.length ? lead : ['.']; }
-    const out = []; for (let k = 0; k < av.length; k++) { const a = av[k]; if (/^-(?:path|literalpath)$/i.test(a)) { if (av[k + 1]) out.push(av[++k]); continue; } if (/^-(?:filter|include|exclude|depth|attributes)$/i.test(a)) { k++; continue; } if (isFlag(a)) continue; out.push(a); }
-    return out.length ? out : ['.'];
+    const out = []; const names = []; for (let k = 0; k < av.length; k++) { const a = av[k]; if (psPathFlag(a) && !/:/.test(a)) { if (av[k + 1]) out.push(av[++k]); continue; } if (psNameFilterFlag(a) && !/:/.test(a)) { if (av[k + 1]) names.push(av[++k]); continue; } if (psp(a, 'exclude', 3) || /^-(?:depth|attributes)$/i.test(a)) { k++; continue; } if (isFlag(a)) continue; out.push(a); }
+    const res = out.length ? out : ['.']; res.filterNames = names; return res;
   };
   // pre-pass: a listing of docs\reference feeding a delete (Remove-Item, .Delete(), unlink): mass delete of photos
   segments.forEach((seg, idx) => {
@@ -262,6 +275,27 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
         else if (/^rmdir$|^rd$/.test(verbName) && strip(p) === ctx.refRoot) { reasons.push('rmdir of the main checkout\'s docs\\reference'); return; }
       }
       if (recursive && globbed && strip(path.dirname(abs)).endsWith('docs/reference/_compare')) { reasons.push(`a recursive delete of "${raw}": a wildcard directly under docs\reference\_compare could remove other agents' composites; name your own topic folder`); return; }
+    }
+  };
+
+  for (const lit of oneLits) judgeDeleteTarget(lit, 'rmtree', true);   // gates7 item 1
+
+  // gates7 item 10: a generic wrapper look-through. A segment whose verb is not one this guard knows (unbuffer, watch, parallel, flock, taskset, strace, script -c, any "<cmd> <args> -- <verb>")
+  // may still carry a delete: if an unquoted word of it IS a delete or move verb, or the words after a "--" are a command, the rest is judged as a command of its own; for the few
+  // wrappers that take a command as ONE quoted string (script -c, watch, parallel, su -c, ssh) that string is judged too. Text verbs (echo, grep, curl, npm ...) are left alone.
+  const LOOK_VERBS = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'remove-item', 'ri', 'unlink', 'mv', 'move-item', 'rename-item']);
+  const TEXT_VERBS = new Set(['echo', 'printf', 'write-host', 'write-output', 'write-error', 'write-warning', 'cat', 'type', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'findstr', 'select-string', 'sls', 'sed', 'awk', 'gawk', 'less', 'more', 'head', 'tail', 'wc', 'ls', 'dir', 'gci', 'get-childitem', 'get-content', 'gc', 'curl', 'wget', 'gh', 'npm', 'npx', 'yarn', 'pnpm', 'pip', 'pip3', 'jq', 'tee', 'test', '[', '[[', 'mkdir', 'touch', 'stat', 'file', 'du', 'which', 'where', 'man', 'help', 'cmake', 'ninja', 'make', 'msbuild', 'dotnet', 'cargo', 'go', 'tsc', 'code', 'set', 'export', 'true', 'false', 'sleep', 'start-sleep', 'date', 'ctest', 'clang', 'g++', 'gcc', 'cl', 'link', 'sort', 'uniq', 'cut', 'tr', 'diff', 'comm', 'basename', 'dirname', 'realpath', 'readlink', 'id', 'whoami', 'hostname', 'uname', 'ps', 'tasklist', 'git-lfs', 'tar', 'zip', 'unzip', '7z']);
+  const QUOTED_CMD_WRAPPERS = new Set(['script', 'watch', 'parallel', 'su', 'runuser', 'ssh', 'sg', 'pkexec', 'sudoedit', 'flock', 'unbuffer', 'chroot', 'proot', 'dbus-launch', 'xvfb-run', 'wsl']);
+  const requote = (w) => (w.v === '' || /[\s"'*?\[\]{}()&|;<>$`]/.test(w.v) ? (w.v.includes('"') ? "'" + w.v + "'" : '"' + w.v + '"') : w.v);
+  const lookThrough = (words, verb) => {
+    if (TEXT_VERBS.has(verb)) return;
+    const vi = verbOf(words).index;
+    for (let i = vi + 1; i < words.length; i++) {
+      const raw = words[i].v;
+      const base = raw.toLowerCase().replace(/^.*[\\/]/, '').replace(/\.exe$/, '');
+      if (!words[i].q && LOOK_VERBS.has(base)) { reasons.push(...sub(words.slice(i).map(requote).join(' '), cur)); return; }
+      if (raw === '--' && !words[i].q && words[i + 1]) { reasons.push(...sub(words.slice(i + 1).map(requote).join(' '), cur)); return; }
+      if (words[i].q && /\s/.test(raw) && QUOTED_CMD_WRAPPERS.has(verb) && /(^|[\s;&|(])(?:rm|rmdir|rd|del|erase|remove-item|ri|unlink|mv|move-item)\s/i.test(raw)) { reasons.push(...sub(raw, cur)); return; }
     }
   };
 
@@ -328,10 +362,11 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
       if (/^worktree$/i.test(av[i] || '') && /^(?:remove|prune)$/i.test(av[i + 1] || '')) reasons.push('`git worktree remove|prune` outside tools\\remove_agent_worktree.ps1 (run that script: powershell -NoProfile -ExecutionPolicy Bypass -File tools\\remove_agent_worktree.ps1 <name>)');
       if (/^clean$/i.test(av[i] || '')) {
         const rest = av.slice(i + 1);
-        const fl = rest.filter((x) => /^-/.test(x) && x !== '--');
+        const exVal = new Set(); rest.forEach((x, ix) => { if (/^(?:-e|--exclude)$/.test(x) && rest[ix + 1] !== undefined) exVal.add(ix + 1); });   // gates7 item 8: the value of -e / --exclude is not a path
+        const fl = rest.filter((x, ix) => /^-/.test(x) && x !== '--' && !exVal.has(ix));
         const dry = fl.some((f) => /^--dry-run$/.test(f) || /^-[a-zA-Z]*n[a-zA-Z]*$/.test(f));
         const bad = fl.some((f) => /^-[a-zA-Z]*[xXd][a-zA-Z]*$/.test(f));
-        const specs = rest.filter((x) => !/^-/.test(x));
+        const specs = rest.filter((x, ix) => !/^-/.test(x) && !exVal.has(ix));
         if (bad && !dry) {
           if (!specs.length) { if (ctx.near(repo) || uncertain) reasons.push('`git clean` with -x, -X or -d in the main checkout or a worktree removes ignored and untracked folders (the docs\\reference junction of an older worktree among them): name the folder, e.g. git clean -fd build'); }
           else {
@@ -409,31 +444,35 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
     // delete verbs, also behind xargs
     let verbName = verb, targetsRaw = null, pipedFed = false, recursive = false;
     if (verb === 'xargs') {
-      const k = av.findIndex((a) => DEL_VERBS.has(a.toLowerCase().replace(/^.*[\\/]/, '')));
+      const k = av.findIndex((a) => DEL_VERBS.has(a.toLowerCase().replace(/^.*[\\/]/, '')) || /^(?:truncate|shred)$/i.test(a.replace(/^.*[\\/]/, '')));
       if (k < 0) continue;
       verbName = av[k].toLowerCase().replace(/^.*[\\/]/, ''); targetsRaw = av.slice(k + 1); pipedFed = true;
     } else if (DEL_VERBS.has(verb)) targetsRaw = av;
-    else continue;
+    else { lookThrough(words, verb); continue; }
     const flags = targetsRaw.filter(isFlag);
+    // gates7 item 2: `del -Recurse -Force build` (a dash switch) is PowerShell's alias of Remove-Item, not cmd's `del /s`
+    if (['del', 'erase'].includes(verbName) && flags.some((f) => /^-/.test(f)) && !flags.some((f) => /^\/{1,2}s$/i.test(f))) verbName = 'remove-item';
+    // gates7 item 8: `rm -fo` / `del -fo` (the abbreviated PowerShell -Force) marks a Remove-Item style call: a listing piped in is then judged like Remove-Item's
+    const psForce = ['rm', 'del', 'erase'].includes(verb) && !pipedFed && flags.some((f) => /^-fo(?:r(?:c(?:e)?)?)?$/i.test(f));
     if (verbName === 'rm') recursive = flags.some((f) => psRecurse(f) || /^--recursive$/i.test(f) || (/^-[rRfivId]{1,6}$/.test(f) && /[rR]/.test(f)));
     else if (['rmdir', 'rd', 'del', 'erase'].includes(verbName)) recursive = flags.some((f) => /^\/{1,2}s$/i.test(f) || psRecurse(f));
     else if (verbName === 'remove-item' || verbName === 'ri') recursive = flags.some(psRecurse);
     let targets; let findOpts = {};
     if (verbName === 'find') {
       const exec = targetsRaw.findIndex((a) => /^-(?:exec|execdir|ok)$/.test(a));
-      recursive = targetsRaw.includes('-delete') || (exec >= 0 && /^(?:rm|rmdir|unlink)$/.test((targetsRaw[exec + 1] || '').replace(/^.*[\\/]/, '')));
+      recursive = targetsRaw.includes('-delete') || (exec >= 0 && /^(?:rm|rmdir|unlink|truncate|shred|dd)$/.test((targetsRaw[exec + 1] || '').replace(/^.*[\\/]/, '')));   // gates7 item 7: -exec truncate|shred|dd too
       const lead = []; for (const a of targetsRaw) { if (/^[-(!]/.test(a)) break; lead.push(a); }
       targets = lead.length ? lead : ['.'];
       const names = []; targetsRaw.forEach((a, k) => { if (/^-(?:name|iname|path|ipath|regex|iregex)$/.test(a) && targetsRaw[k + 1]) names.push(targetsRaw[k + 1]); });
       const filtered = targetsRaw.some((a) => /^-(?:name|iname|path|ipath|regex|iregex|newer|mtime|mmin|size|empty|user)$/.test(a)) || (targetsRaw.some((a) => a === '-type') && targetsRaw[targetsRaw.indexOf('-type') + 1] === 'f');
       if (filtered) findOpts = { filtered: true, picFilter: nameMayMatchPic(names.filter((n) => !/^-?regex/.test(n))) };
     } else {
-      targets = []; const skipVal = new Set(['-include', '-exclude', '-filter', '-credential', '-stream']);
+      targets = [];
       for (let k = 0; k < targetsRaw.length; k++) {
         const a = targetsRaw[k];
-        if (/^-(?:path|literalpath)$/i.test(a)) { if (targetsRaw[k + 1]) targets.push(targetsRaw[++k]); continue; }
-        const m = a.match(/^-(?:path|literalpath):(.+)$/i); if (m) { targets.push(m[1]); continue; }
-        if (skipVal.has(a.toLowerCase())) { k++; continue; }
+        if (psPathFlag(a) && !/:/.test(a)) { if (targetsRaw[k + 1]) targets.push(targetsRaw[++k]); continue; }
+        const m = a.match(/^(-[a-z]+):(.+)$/i); if (m && psPathFlag(m[1])) { targets.push(m[2]); continue; }
+        if (!/:/.test(a) && (psNameFilterFlag(a) || psp(a, 'exclude', 3) || psp(a, 'credential', 2) || psp(a, 'stream', 2))) { k++; continue; }
         if (isFlag(a)) continue;
         targets.push(a);
       }
@@ -446,20 +485,22 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
       const j = originOf(si);
       if (j >= 0) {
         const lt = listTargets(segments[j]);
-        if (lt) { targets = lt; viaPipe = true; }
+        if (lt) { targets = lt; viaPipe = true; if (lt.filterNames && lt.filterNames.length) findOpts = { filtered: true, picFilter: nameMayMatchPic(lt.filterNames) }; }   // gates7 item 3: a filtered listing (-Filter "build*") is judged by the links it would walk, like find -name
         else if (recursive || verbName === 'remove-item') { if (risky(cur)) reasons.push('a recursive delete fed by a pipeline whose source is not a listing (its targets cannot be checked) in the main checkout, a tree with a docs\\reference link, or a command naming the photos'); continue; }
       }
     }
-    if (viaPipe && ['remove-item', 'ri'].includes(verbName) && !recursive) {
+    if (viaPipe && (['remove-item', 'ri'].includes(verbName) || psForce) && !recursive) {
       // Get-ChildItem x | Remove-Item deletes the listed folders with their content (after a prompt) and the files: judge like a recursive delete
       recursive = true;
     }
     if (!recursive && !targets.length) continue;
-    if (!recursive && !['rm', 'del', 'erase', 'remove-item', 'ri', 'unlink', 'rmdir', 'rd'].includes(verbName)) continue;
+    if (!recursive && !['rm', 'del', 'erase', 'remove-item', 'ri', 'unlink', 'rmdir', 'rd', 'truncate', 'shred'].includes(verbName)) continue;
     if (recursive && !targets.length) {
       if (risky(cur)) reasons.push(`a recursive ${verbName} with a target that cannot be read (a parenthesised or computed path) in the main checkout, a tree with a docs\\reference link, or a command naming the photos`);
       continue;
     }
+    // gates7 item 7: a listing of docs\reference fed to rm / del / truncate / shred (xargs rm with no flags) deletes photos one by one: a mass delete
+    if (viaPipe && !recursive) for (const raw of targets) { const r = resolveWord(raw, cur, vars); for (const p of r.values) if (ctx.inRef(p)) { reasons.push(`a listing of ${p} fed to ${verbName}: a mass delete or truncation of the reference photos`); break; } }
     for (const raw of targets) judgeDeleteTarget(raw, verbName, recursive, findOpts);
   }
   return [...new Set(reasons)];

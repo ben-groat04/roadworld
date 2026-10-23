@@ -103,7 +103,13 @@ function judgePath(raw, { write = false, what = 'path', names = false } = {}) {
   if (r === null) return /(^|[\\/])ack_secret$/i.test(String(raw)) && !write && !names ? [`${what} ${raw}: the ack secret is never read by an agent`] : [];
   if (names && !write) return [];
   if (r === 'handin' || r.startsWith('handin/')) return write ? [`${what} ${raw}: .claude/state/handin is written by the hooks only (reading it is allowed: refusal counts and HANDIN_FAILED.txt)`] : [];
-  if (/[*?]/.test(r)) return [`${what} ${raw}: a wildcard into .claude/state (it could match the secret)`];
+  if (/[*?]/.test(r)) {
+    // gates7 item 4: a READ through a wildcard whose last part cannot match ack_secret (state/*.log) is fine; a write, or a pattern that can match the secret, is not
+    const parts = r.split('/'); const last = parts[parts.length - 1];
+    const safeRead = !write && !names && (parts.length === 1 || parts[0] === 'handin') && !globToRe(last.replace(/\[[^\]]*\]/g, '?')).test('ack_secret');
+    if (!safeRead) return [`${what} ${raw}: a wildcard into .claude/state (it could match the secret)`];
+    return [];
+  }
   if (ALLOWED_ANY.has(r)) return [];
   if (r === 'gate.log') return write ? [`${what} ${raw}: gate.log is written by the hooks only (reading it is allowed)`] : [];
   return [`${what} ${raw}: the gate records under .claude/state are written by the hooks only (allowed: reading gate.log and handin/, names of the folder, using unreal_lane.lock; the main session reads other records)`];
@@ -142,12 +148,19 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
       if (m && m[1]) reasons.push(...judgeCommand(m[1], depth + 1, { mainRoot, cwd: cur }));
       if (seg.here) reasons.push(...judgeCommand(seg.here, depth + 1, { mainRoot, cwd: cur }));
     }
+    let inlineCodeArg = null;
     if (INLINE.has(verb)) {
       const k = av.findIndex((a) => /^(?:-e|--eval|-p|--print|-c)$/.test(a));
       if (k >= 0 && av[k + 1]) {
         const code = av[k + 1];
+        inlineCodeArg = args[k + 1];     // judged here as code; the generic path loop below must not read it as a path
         if (WRITER_WORDS.test(code)) reasons.push(`inline ${verb} code that names the record writers or the secret (${(code.match(WRITER_WORDS) || [''])[0]})`);
-        else { const m = code.match(/[^\s"'`]*\.claude[\\/]+state[^\s"'`]*/gi); for (const x of m || []) reasons.push(...judgePath(x, { write: true, what: 'inline code touching' })); }
+        else {
+          // gates7 item 4: inline code that only READS (no write, append, delete, rename, copy call in it) may name gate.log and handin/; the secret and every other record stay refused
+          const writes = /write|append|unlink|\brm(?:dir|Sync)?\b|rename|copyFile|truncate|createWriteStream|shutil|os\.remove|os\.rename|\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\.dump\s*\(|\bmkdir/i.test(code);
+          const m = code.match(/[^\s"'`]*\.claude[\\/]+state[^\s"'`]*/gi);
+          for (const x of m || []) { if (!writes && stateRemainder(x) === '') continue; reasons.push(...judgePath(x, { write: writes, what: 'inline code touching' })); }
+        }
       }
     }
     const hasExec = verb === 'find' && av.some((a) => /^-(?:exec|execdir|ok|okdir|fprint|fprintf|fls)$/.test(a));
@@ -167,7 +180,8 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
       if ((READERS.has(target) || /^-f(?:print|ls)/.test(av[ei] || '')) && !excludesState(av)) for (const p of (lead.length ? lead : ['.'])) if (reachesState(p, cur, mainRoot)) { reasons.push(`find ${p} -exec ${target}: it reads every file below, the ack secret among them (limit it with -name "*.ext" or exclude state)`); break; }
     }
     // a listing (names) piped into a reader of the files it names
-    const isPipeReader = (verb === 'xargs' && av.some((a) => READERS.has(a.toLowerCase().replace(/^.*[\\/]/, '')))) || PIPE_READERS.has(verb);
+    // gates7 item 9: the body of `... | ForEach-Object { Get-Content $_.FullName }` (the lexer marks it seg.fe) reads the files the listing names, with cat or type as well
+    const isPipeReader = (verb === 'xargs' && av.some((a) => READERS.has(a.toLowerCase().replace(/^.*[\\/]/, '')))) || PIPE_READERS.has(verb) || (!!seg.fe && READERS.has(verb));
     if (seg.piped && isPipeReader) {
       const j = lastOf(si);
       for (let k = j; k < si; k++) {
@@ -189,6 +203,20 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
     }
     let list = args;
     if (TEXT_VERBS.has(verb)) list = [];
+    else if ((verb === 'select-string' || verb === 'sls')) {
+      // gates7 item 9: Select-String [-Pattern] p -Path x : the value of -Path / -LiteralPath is a path to judge, not the pattern; positionals after the pattern are paths
+      const out = []; const patGiven = args.some((a) => /^-patt(?:e(?:r(?:n)?)?)?$/i.test(a.v)); let patternSeen = patGiven;
+      for (let a = 0; a < list.length; a++) {
+        const v = list[a].v;
+        if (/^-patt(?:e(?:r(?:n)?)?)?$/i.test(v)) { a++; continue; }
+        if (/^-(?:path|literalpath|pa|lit\w*)$/i.test(v)) { if (list[a + 1]) out.push(list[++a]); continue; }
+        if (/^-(?:context|encoding|include|exclude|culture|inputobject|input\w*|enc\w*|inc\w*|exc\w*)$/i.test(v)) { a++; continue; }
+        if (/^-/.test(v)) continue;
+        if (!patternSeen) { patternSeen = true; continue; }
+        out.push(list[a]);
+      }
+      list = out;
+    }
     else if (PATTERN_VERBS.has(verb)) {
       const out = []; let patternSeen = false;
       for (let a = 0; a < list.length; a++) {
@@ -201,18 +229,28 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
       list = out;
     }
     const writeVerb = WRITE_VERBS.has(verb) || (verb === 'sed' && args.some((a) => /^-i/.test(a.v)));
+    // gates7 item 4: cp / copy / Copy-Item READ their sources and write only the destination (the last path, or -Destination): copying gate.log out to analyse it is fine
+    const copyOnly = ['cp', 'copy', 'copy-item', 'cpi'].includes(verb);
+    const destArgs = new Set();
+    if (copyOnly) {
+      const posArgs = list.filter((x) => !/^-/.test(x.v) && !/\s/.test(x.v));
+      const di = list.findIndex((x, ix) => /^-dest/i.test(x.v) && list[ix + 1]);
+      if (di >= 0) destArgs.add(list[di + 1]); else if (posArgs.length >= 2) destArgs.add(posArgs[posArgs.length - 1]); else if (posArgs.length === 1) destArgs.add(posArgs[0]);
+    }
     let firstNonFlag = true;
     for (const a of list) {
       const v = a.v;
+      if (a === inlineCodeArg) continue;
+      const wr = copyOnly ? destArgs.has(a) : writeVerb;
       if (/\s/.test(v) && !/^[A-Za-z]:[\\/]\S*$/.test(v)) continue;     // text with spaces: a message, a script body
       if (!/^-/.test(v)) firstNonFlag = false;
       const vv = /^-\w+:/.test(v) ? v.replace(/^-\w+:/, '') : v;   // -Path:x
       if (/^-/.test(vv)) continue;
       for (const piece of vv.split(',')) {
-        reasons.push(...judgePath(piece, { write: writeVerb, names: isList }));
+        reasons.push(...judgePath(piece, { write: wr, names: isList }));
         // relative to a folder entered with cd earlier in the command, or an event cwd inside the state folder
-        if (!/^(?:[A-Za-z]:|[\\/])/.test(piece) && (cur !== (opts.cwd || process.cwd()) || stateRemainder(cur) !== null)) reasons.push(...judgePath(absOf(piece, cur), { write: writeVerb, names: isList }));
-        if (writeVerb && protectedMain(piece, mainRoot, cur)) reasons.push(protectedMsg(piece, verb));
+        if (!/^(?:[A-Za-z]:|[\\/])/.test(piece) && (cur !== (opts.cwd || process.cwd()) || stateRemainder(cur) !== null)) reasons.push(...judgePath(absOf(piece, cur), { write: wr, names: isList }));
+        if (wr && protectedMain(piece, mainRoot, cur)) reasons.push(protectedMsg(piece, verb));
       }
     }
     void firstNonFlag;

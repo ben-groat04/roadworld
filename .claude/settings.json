@@ -37,6 +37,14 @@
               "${CLAUDE_PROJECT_DIR}/tools/hooks/delete_guard.mjs"
             ],
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/tools/hooks/git_guard.mjs"
+            ],
+            "timeout": 15
           }
         ]
       },

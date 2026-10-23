@@ -21,7 +21,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ROOT, STATE_DIR, log, readStdin, parseJson, firstUserText, checkBrief, briefFileOf } from './lib.mjs';
+import { ROOT, STATE_DIR, log, readStdin, parseJson, firstUserText, checkBrief, briefFileOf, agentTranscript } from './lib.mjs';
 import { auditOfIn, readBuilder, recordBuilder, checkAuditFile, AUDIT_FILE, findBuilderInLog, recordAudit, parseAudit } from './audit_lib.mjs';
 
 const MAX_BLOCKS = 3;
@@ -57,17 +57,6 @@ function launchedAgent(id) {
   } catch { return false; }
 }
 
-function transcriptFor(input) {
-  if (input.agent_transcript_path && fs.existsSync(input.agent_transcript_path)) return input.agent_transcript_path;
-  // PreToolUse events carry only the main transcript_path; the subagent file sits beside it.
-  if (input.transcript_path && input.agent_id) {
-    const tp = input.transcript_path;
-    const guess = path.join(tp.replace(/\.jsonl$/, ''), 'subagents', `agent-${input.agent_id}.jsonl`);
-    if (fs.existsSync(guess)) return guess;
-  }
-  return null;
-}
-
 export async function main() {
   const raw = await readStdin();
   const input = raw === null ? undefined : parseJson(raw);
@@ -77,7 +66,7 @@ export async function main() {
   const id = String(input.agent_id || '').replace(/[^\w.-]/g, '_');
   const base = { event: input.hook_event_name, agent_id: id, agent_type: input.agent_type, cwd: input.cwd };
   if (!id) return allow({ ...base, decision: 'allow', reason: 'no agent_id (internal agent or main session)' });
-  const tp = transcriptFor(input);
+  const tp = agentTranscript(input);
   if (!tp) {
     // Claude Code's own helper agents finish through this hook too: empty agent_type, no transcript, never launched through SubagentStart. They are not
     // agents of ours: a separate non-alarm log entry (no FAIL-OPEN word, so no gate notice). A real agent (an agent type, or an id the launch hook saw)

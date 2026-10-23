@@ -16,6 +16,18 @@ export function stripHeredocs(cmd) {
 const SEP_BASH = new Set([';', '&', '|', '\n']);
 
 // returns { segments: [{ words: [{v, q}], redirects: [{op, target}], assigns: {name: value} }] }
+// index of the } that closes the { at i (quotes skipped), or -1
+function matchingBrace(s, i) {
+  let depth = 0;
+  for (let j = i; j < s.length; j++) {
+    const ch = s[j];
+    if (ch === "'" || ch === '"') { const k = s.indexOf(ch, j + 1); if (k < 0) return -1; j = k; continue; }
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return j; }
+  }
+  return -1;
+}
+
 export function parseCommand(command) {
   const s = stripHeredocs(command);
   const segs = []; let cur = { words: [], redirects: [], assigns: {} };
@@ -23,6 +35,9 @@ export function parseCommand(command) {
   let pipeNext = false, curPiped = false, pendingHere = false;   // seg.piped = receives the previous segment's output; seg.here = the word after <<<
   const KEYW = new Set(['then', 'do', 'else', 'elif', 'if', 'while', 'until', '!']);
   let pendingRedirect = null;    // op waiting for its target word
+  const blocks = [];             // open blocks { fe }: fe = the body of a piped ForEach-Object / Where-Object (its statements read what the pipeline fed)
+  let dollarBraces = 0;          // open ${...} inside the word under construction
+  const FE = new Set(['foreach-object', 'foreach', '%', 'where-object', 'where', '?']);
   const endWord = () => {
     if (!w) return;
     if (pendingHere) { cur.here = w.v; pendingHere = false; w = null; return; }
@@ -43,6 +58,7 @@ export function parseCommand(command) {
     while (ws.length > 1 && KEYW.has(ws[0].v) && !ws[0].q) ws = ws.slice(1);
     if (ws.length === 1 && KEYW.has(ws[0].v) && !ws[0].q) ws = [];
     cur.words = ws; cur.piped = curPiped; curPiped = pipeNext; pipeNext = false;
+    if (blocks.length && blocks[blocks.length - 1].fe) { cur.piped = true; cur.fe = true; }
     if (cur.words.length || cur.redirects.length || Object.keys(cur.assigns).length) segs.push(cur);
     cur = { words: [], redirects: [], assigns: {} };
   };
@@ -74,10 +90,27 @@ export function parseCommand(command) {
     }
     if (c === '(' || c === ')') { endSeg(); continue; }
     if (c === '{' || c === '}') {
-      const prevWs = !w; const nextWs = s[i + 1] === undefined || /[\s;)]/.test(s[i + 1]);
-      if ((prevWs && nextWs) || (c === '}' && !w)) { endSeg(); continue; }
-      if (c === '{' && w && w.v === '$') { w.v += c; continue; }
-      w = w || { v: '', q: false }; w.v += c; continue;
+      if (c === '{' && w && w.v.endsWith('$')) { w.v += c; dollarBraces++; continue; }                  // ${name}
+      if (c === '}' && dollarBraces > 0 && w) { dollarBraces--; w.v += c; continue; }
+      if (c === '{') {
+        // a block opener (spaced or glued to the verb: try {Remove-Item x}, if (1){...}, & {...}, ForEach-Object{...}), a brace expansion {a,b} or the find placeholder {}
+        const close = matchingBrace(s, i);
+        const inner = close < 0 ? '' : s.slice(i + 1, close);
+        const lone = !w && (s[i + 1] === undefined || /[\s;)]/.test(s[i + 1]));
+        if (close >= 0 && inner === '') { w = w || { v: '', q: false }; w.v += '{}'; i = close; continue; }
+        if (close >= 0 && /,/.test(inner) && !/\s/.test(inner)) { w = w || { v: '', q: false }; w.v += s.slice(i, close + 1); i = close; continue; }
+        if (lone || (close >= 0 && /[\s;|&(]/.test(inner))) {
+          endSeg();
+          const prev = segs[segs.length - 1];
+          const fe = !!(prev && prev.piped && prev.words.length === 1 && FE.has(String(prev.words[0].v).toLowerCase()));
+          blocks.push({ fe }); continue;
+        }
+        w = w || { v: '', q: false }; w.v += c; continue;
+      }
+      // c === '}'
+      if (blocks.length) { endSeg(); blocks.pop(); continue; }
+      if (!w) { endSeg(); continue; }
+      w.v += c; continue;
     }
     if (c === '>' || c === '<') {
       // 2>&1, >&2: no target

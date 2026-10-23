@@ -12,7 +12,9 @@
 // The top-level folder _damaged (quarantine of files known to be bad) is skipped: not validated, not mirrored.
 // The mirror copies new and changed files (size or mtime) and removes from the backup only files that no longer exist in main (within the 5 % limit). It never uses a
 // recursive delete: single files are unlinked, emptied folders removed with a non-recursive rmdir.
-// Usage: node tools/backup_reference.mjs [--main <dir>] [--backup <dir>] [--verify-only] [--dry-run] [--accept-loss "<reason>"]
+// --verify-only is QUICK once a manifest exists: a file whose size and modification time equal its manifest entry is trusted without being read (the mirror run, which writes the manifest,
+// always hashes every file, so silent corruption is caught there); --verify-only --full reads and hashes every file as well. Files that changed, or are not in the manifest, are validated in full.
+// Usage: node tools/backup_reference.mjs [--main <dir>] [--backup <dir>] [--verify-only [--full]] [--dry-run] [--accept-loss "<reason>"]
 // Exit 0 = validated and mirrored (or verified), 1 = refused (nothing changed in the backup), 2 = internal error.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -90,6 +92,19 @@ export function validateJpeg(buf) {
 // header implies (restart markers where the restart interval says), with only valid Huffman codes and coefficient runs, and must end exactly where the next marker begins. A zero run
 // or flipped bytes in the middle of the scan change the code lengths, so the stream stops decoding to the right count (gates5 audit item 27a). Progressive and arithmetic-coded JPEGs
 // are not decoded: for them only a run of 32 or more zero bytes inside entropy data is refused (honest limit, listed in FAULTS). Returns null when fine, else a reason.
+// gates7 item 11: 32 or more zero bytes in a row inside entropy-coded data (not the 0 of an FF 00 stuffing pair) never occur in a photo and are what a wiped stretch looks like. Applied to
+// baseline scans as well as progressive ones; scans the data from `pos` up to the next real marker. Returns a reason or null.
+function scanZeroRun(buf, pos, kind) {
+  let run = 0;
+  while (pos < buf.length) {
+    const b = buf[pos];
+    if (b === 0xff && buf[pos + 1] !== 0 && !(buf[pos + 1] >= 0xd0 && buf[pos + 1] <= 0xd7) && buf[pos + 1] !== 0xff) break;
+    if (b === 0) { if (++run >= 32 && buf[pos - 1] !== 0xff) return `a run of 32 or more zero bytes inside the scan data (the entropy-coded data of a ${kind} JPEG)`; } else run = 0;
+    pos++;
+  }
+  return null;
+}
+function nextMarker(buf, pos) { while (pos < buf.length) { const b = buf[pos]; if (b === 0xff && buf[pos + 1] !== 0 && !(buf[pos + 1] >= 0xd0 && buf[pos + 1] <= 0xd7) && buf[pos + 1] !== 0xff) break; pos++; } return pos; }
 export function validateJpegScan(buf) {
   const tables = {}; let sof = null, ri = 0, p = 2; let progressive = false;
   const build = (counts, syms) => {
@@ -123,9 +138,10 @@ export function validateJpegScan(buf) {
       let pos = p + 2 + len;
       if (progressive) {
         // heuristic only: scan the entropy data up to the next real marker for a long zero run
-        let run = 0; while (pos < buf.length) { const b = buf[pos]; if (b === 0xff && buf[pos + 1] !== 0 && !(buf[pos + 1] >= 0xd0 && buf[pos + 1] <= 0xd7) && buf[pos + 1] !== 0xff) break; if (b === 0) { if (++run >= 32 && buf[pos - 1] !== 0xff) return 'a run of 32 or more zero bytes inside the entropy-coded data of a progressive JPEG'; } else run = 0; pos++; }
-        p = pos; continue;
+        const zr = scanZeroRun(buf, pos, 'progressive'); if (zr) return zr;
+        pos = nextMarker(buf, pos); p = pos; continue;
       }
+      { const zr = scanZeroRun(buf, pos, 'baseline'); if (zr) return zr; }   // gates7 item 11: before the decode, the same 32-byte zero-run rule the progressive path has
       const hmax = Math.max(...sof.comps.map((c) => c.h)), vmax = Math.max(...sof.comps.map((c) => c.v));
       const mcuW = 8 * hmax, mcuH = 8 * vmax; let mcus, blocksOf;
       const cs = sc.map((s) => { const c = sof.comps.find((x) => x.id === s.id); return c ? { ...s, h: c.h, v: c.v } : null; });
@@ -200,10 +216,16 @@ export function walkFiles(root) {
 
 // Validates every file. With the last manifest: a file whose size and mtime match its entry and whose sha1 matches was valid at the last mirror (not decoded again); one whose size
 // and mtime match but whose sha1 differs changed in place without a normal write (silent corruption: refused); anything else is validated in full. Fills f.size, f.mtime, f.sha1.
-export function validateTree(root, files = walkFiles(root), man = null) {
+export function validateTree(root, files = walkFiles(root), man = null, { trustStat = false, stats = null } = {}) {
   const bad = [];
   const prev = man && man.files ? man.files : {};
   for (const f of files) {
+    // gates7 item 12 (verify-only): a file whose size and modification time equal its manifest entry is not read at all; the manifest's hash stands in (the mirror run and --full still hash it)
+    if (trustStat) {
+      const pe0 = prev[f.rel]; let st0 = null; try { st0 = fs.statSync(f.abs); } catch { /* read below reports it */ }
+      if (pe0 && st0 && pe0[0] === st0.size && Math.abs(pe0[1] - Math.round(st0.mtimeMs)) <= 1) { f.size = st0.size; f.mtime = Math.round(st0.mtimeMs); f.sha1 = pe0[2]; if (stats) stats.trusted++; continue; }
+    }
+    if (stats) stats.read++;
     let buf; try { buf = fs.readFileSync(f.abs); } catch (e) { bad.push({ rel: f.rel, why: 'unreadable: ' + e.message }); continue; }
     const st = fs.statSync(f.abs); f.size = st.size; f.mtime = Math.round(st.mtimeMs); f.sha1 = crypto.createHash('sha1').update(buf).digest('hex');
     const pe = prev[f.rel];
@@ -227,16 +249,17 @@ export function acceptLossAllowed(stateDir) {
 function stateDirOf(main) { return process.env.CP_GATE_STATE_DIR ? path.resolve(process.env.CP_GATE_STATE_DIR) : path.join(main, '.claude', 'state'); }
 
 // Returns { ok, refused: string[], copied, removed, total }. Never throws for a refusal.
-export function backup({ main, backupDir = DEFAULT_BACKUP, dryRun = false, verifyOnly = false, acceptLoss = '', stateDir = stateDirOf(main) }) {
+export function backup({ main, backupDir = DEFAULT_BACKUP, dryRun = false, verifyOnly = false, full = false, acceptLoss = '', stateDir = stateDirOf(main) }) {
   const src = path.join(main, 'docs', 'reference');
-  const res = { ok: false, refused: [], copied: 0, removed: 0, total: 0, skippedUnchanged: 0, keptDamagedCopies: 0 };
+  const res = { ok: false, refused: [], copied: 0, removed: 0, total: 0, skippedUnchanged: 0, keptDamagedCopies: 0, trusted: 0, read: 0 };
   if (!fs.existsSync(src)) { res.refused.push(`${src} does not exist`); return res; }
   const rs = path.resolve(src).toLowerCase(), rb = path.resolve(backupDir).toLowerCase();
   if (rb === rs || rb.startsWith(rs + path.sep) || rs.startsWith(rb + path.sep)) { res.refused.push('the backup folder and docs/reference must be separate folders (neither inside the other)'); return res; }
   const files = walkFiles(src); res.total = files.length;
   if (!files.length) { res.refused.push('docs/reference holds no files: refusing to mirror an empty folder over the backup'); return res; }
   const man = readManifest(backupDir);
-  const bad = validateTree(src, files, man);
+  const vstats = { trusted: 0, read: 0 };
+  const bad = validateTree(src, files, man, { trustStat: verifyOnly && !full, stats: vstats }); res.trusted = vstats.trusted; res.read = vstats.read;
   if (bad.length) { res.refused.push(`${bad.length} file(s) failed validation, NOTHING was mirrored:\n   ` + bad.slice(0, 40).map((b) => `${b.rel}: ${b.why}`).join('\n   ') + (bad.length > 40 ? `\n   ... and ${bad.length - 40} more` : '')); res.bad = bad; return res; }
   const prevCount = man && Number.isInteger(man.count) ? man.count : null;
   const wantsLoss = acceptLoss.trim().length >= 20;
@@ -302,10 +325,10 @@ async function cli() {
   const a = process.argv.slice(2); const get = (n) => { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; };
   let main = get('--main');
   if (!main) { const { resolveMainRoot } = await import('./hooks/root.mjs'); main = resolveMainRoot(path.dirname(fileURLToPath(import.meta.url))); }
-  const r = backup({ main, backupDir: get('--backup') || DEFAULT_BACKUP, dryRun: a.includes('--dry-run'), verifyOnly: a.includes('--verify-only'), acceptLoss: get('--accept-loss') || '' });
+  const r = backup({ main, backupDir: get('--backup') || DEFAULT_BACKUP, dryRun: a.includes('--dry-run'), verifyOnly: a.includes('--verify-only'), full: a.includes('--full'), acceptLoss: get('--accept-loss') || '' });
   if (r.notes) console.log(r.notes.join('\n'));
   if (!r.ok) { console.log('REFUSED (the backup was not changed):\n ' + r.refused.join('\n ')); process.exit(1); }
-  console.log(`${a.includes('--verify-only') ? 'verified' : a.includes('--dry-run') ? 'dry run' : 'mirrored'}: ${r.total} file(s) in docs/reference all valid; copied ${r.copied}, unchanged ${r.skippedUnchanged}, removed from backup ${r.removed}${r.keptDamagedCopies ? `, ${r.keptDamagedCopies} good backup copies kept because main moved the file to _damaged` : ''}.`);
+  console.log(`${a.includes('--verify-only') ? 'verified' : a.includes('--dry-run') ? 'dry run' : 'mirrored'}: ${r.total} file(s) in docs/reference all valid${a.includes('--verify-only') ? ` (${r.trusted} trusted by size+mtime against the manifest, ${r.read} read)` : ''}; copied ${r.copied}, unchanged ${r.skippedUnchanged}, removed from backup ${r.removed}${r.keptDamagedCopies ? `, ${r.keptDamagedCopies} good backup copies kept because main moved the file to _damaged` : ''}.`);
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) cli().catch((e) => { console.error('ERROR: ' + (e && e.stack || e)); process.exit(2); });
 void os;
