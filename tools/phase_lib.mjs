@@ -117,7 +117,7 @@ export function measureProblems(folder, { since = 0, cases = null, refs = null, 
 // newer than the last code commit (BUILD.md "Suite binary: <path>"; a script path is exempt from the mtime test). The round's auditor re-runs the suite itself (audit brief template).
 // gates12 (decision 2): the log is also matched against the suite-run record the time-limit hooks write (tools/hooks/suite_record.mjs: start by time_guard, end + exit + sha256 by time_guard_post):
 // no record of a run in this worktree with exactly these bytes, ended after the last code commit, means a typed or edited log, and the check fails.
-export const SUITE_LOG = 'suite_build.log';
+export const SUITE_LOGS = ['suite_gcc.log', 'suite_node.log', 'suite_msvc.log'];   // written by tools/run_suite.mjs (gates13)
 const SCRIPT_EXT = /\.(?:mjs|cjs|js|ts|py|ps1|sh|bat|cmd)$/i;
 export function parseSuiteLog(text) {
   const t = String(text || '').replace(/\r\n/g, '\n');
@@ -170,41 +170,34 @@ export function buildProblems(folder, wt, { since = 0, GL = null, log = () => {}
   const codeCommits = made.filter((c) => filesOf(c.sha).some(isCode));
   if (made.length && !codeCommits.length) probs.push('no commit since MEASURE.md touches code or tests outside the hand-in folder (docs/ and .md/.txt files do not count): the build phase writes the code and its tests');
   const lastCode = codeCommits.length ? Number(String(git('log', '-1', '--format=%ct', codeCommits[0].sha).stdout || '').trim()) * 1000 : 0;
-  // the suite log written by the agent
-  const logFile = path.join(folder, SUITE_LOG);
-  let logText = null; try { logText = fs.readFileSync(logFile, 'utf8'); } catch { /* reported below */ }
-  if (logText === null) probs.push(`${SUITE_LOG} is missing in the hand-in folder: run the brief's SUITE: command yourself under "timeout 900 <cmd> > ${SUITE_LOG} 2>&1" (the check reads the log; it does not run the suite)`);
-  else {
+  // the suite logs written by tools/run_suite.mjs (gates13, decision 2): suite_gcc.log (or suite_node.log for a node-suite round) is required, suite_msvc.log is checked when present
+  const present = SUITE_LOGS.filter((n) => fs.existsSync(path.join(folder, n)));
+  if (!present.some((n) => n !== 'suite_msvc.log')) probs.push(`no suite log in the hand-in folder (${SUITE_LOGS.filter((n) => n !== 'suite_msvc.log').join(' or ')}): run \`node tools/run_suite.mjs <worktree>\` yourself (it runs the suite of that worktree under a time limit, writes the log and its record); a log made by any other command has no record`);
+  for (const name of present) {
+    const logFile = path.join(folder, name);
+    let logText = null; try { logText = fs.readFileSync(logFile, 'utf8'); } catch { /* reported by findSuiteRun */ }
     let lst = null; try { lst = fs.statSync(logFile).mtimeMs; } catch { /* read above */ }
-    if (lst !== null && lastCode && lst < lastCode) probs.push(`${SUITE_LOG} (written ${new Date(lst).toISOString()}) is older than the last code commit (${new Date(lastCode).toISOString()}): run the suite again on the committed code`);
-    if (lst !== null && since > 0 && lst < since) probs.push(`${SUITE_LOG} is older than this agent's run`);
-    // gates12 (decision 2): the log counts only when a suite run that the time-limit hooks SAW wrote exactly these bytes (hash), in this worktree, after the last code commit
+    if (lst !== null && lastCode && lst < lastCode) probs.push(`${name} (written ${new Date(lst).toISOString()}) is older than the last code commit (${new Date(lastCode).toISOString()}): run the suite again on the committed code`);
+    if (lst !== null && since > 0 && lst < since) probs.push(`${name} is older than this agent's run`);
+    // the log counts only when a run of tools/run_suite.mjs wrote exactly these bytes, in this worktree, with a binary inside it, after the last code commit
     const rec = findSuiteRun(logFile, wt, { after: lastCode });
-    if (!rec.ok) probs.push(`${SUITE_LOG}: ${rec.why}`);
+    if (!rec.ok) probs.push(`${name}: ${rec.why}`);
     const ps = parseSuiteLog(logText);
     if (rec.ok) {
       const ex = rec.run.exit;
-      if (ex === null || ex === undefined) probs.push(`${SUITE_LOG}: the recorded run has no known exit code (the hook saw it end without one): run the suite again`);
-      else if (ex !== 0 && ps.summary && ps.failed === 0 && !ps.timedOut) probs.push(`${SUITE_LOG}: the recorded run exited with code ${ex} but the log shows no failing test: the run died or was killed (124 = time limit); run it again`);
-      else if (ex === 0 && ps.summary && ps.failed > 0 && !allowFail.length) probs.push(`${SUITE_LOG}: the recorded run exited 0 but the log shows ${ps.failed} failing test(s): the log and the record disagree`);
+      if (ex !== 0 && ps.summary && ps.failed === 0 && !ps.timedOut) probs.push(`${name}: the recorded run exited with code ${ex} but the log shows no failing test: the run died or was killed (124 = time limit); run it again`);
+      else if (ex === 0 && ps.summary && ps.failed > 0 && !allowFail.length) probs.push(`${name}: the recorded run exited 0 but the log shows ${ps.failed} failing test(s): the log and the record disagree`);
+      const bin = rec.run.binary; let st = null; try { st = fs.statSync(bin); } catch { /* reported */ }
+      if (!st || !st.isFile()) probs.push(`${name}: the recorded suite binary "${bin}" does not exist`);
+      else if (!SCRIPT_EXT.test(bin) && lastCode && st.mtimeMs < lastCode) probs.push(`${name}: the suite binary "${bin}" (built ${new Date(st.mtimeMs).toISOString()}) is older than the last code commit (${new Date(lastCode).toISOString()}): the log comes from a stale build; rebuild and run the suite again`);
     }
-    if (!ps.summary) probs.push(`${SUITE_LOG} holds no doctest ("[doctest] test cases: ..."), ctest ("N% tests passed, ...") or node-suite ("N passed, M failed") summary: it is not the output of a finished suite run`);
-    else if (ps.timedOut) probs.push(`${SUITE_LOG} shows the run hit its time limit (exit 124): find the slow or hung case (-tc filters, --durations) and fix it, or write it in STATUS`);
+    if (!ps.summary) probs.push(`${name} holds no doctest ("[doctest] test cases: ..."), ctest ("N% tests passed, ...") or node-suite ("N passed, M failed") summary: it is not the output of a finished suite run`);
+    else if (ps.timedOut) probs.push(`${name} shows the run hit its time limit (exit 124): find the slow or hung case (-tc filters, --durations) and fix it, or write it in STATUS`);
     else if (ps.failed > 0) {
       const allow = allowFail.map((x) => String(x).toLowerCase()).filter(Boolean);
-      if (!ps.names.length) probs.push(`${SUITE_LOG} reports ${ps.failed} failed but names no failing test: the check cannot tell which failures are the allowed ones`);
+      if (!ps.names.length) probs.push(`${name} reports ${ps.failed} failed but names no failing test: the check cannot tell which failures are the allowed ones`);
       const bad = ps.names.filter((n) => !allow.some((a) => n.toLowerCase().includes(a)));
-      if (bad.length) probs.push(`${SUITE_LOG}: ${bad.length} failing test(s) are not in the brief's allowed list${allow.length ? ' (' + allowFail.join('; ').slice(0, 120) + ')' : ' (the brief allows none)'}: ${bad.slice(0, 4).join(' | ').slice(0, 300)}`);
-    }
-    const bm = text.match(/^Suite binary:[ \t]*(\S.*?)[ \t]*$/mi);
-    let bin = bm ? bm[1].replace(/^[`"']|[`"']$/g, '') : null;
-    if (!bin && fs.existsSync(path.join(wt, 'sim_core'))) bin = ['build/tests/sim_core_tests.exe', 'build/tests/sim_core_tests', 'build/sim_core_tests.exe', 'build/sim_core_tests'].find((c) => fs.existsSync(path.join(wt, c))) || null;
-    if (!bin) probs.push('no "Suite binary: <path>" line in BUILD.md (the test executable or script the suite ran; it is checked against the last code commit)');
-    else {
-      const abs = path.isAbsolute(bin) ? bin : path.join(wt, bin);
-      let st = null; try { st = fs.statSync(abs); } catch { /* reported below */ }
-      if (!st || !st.isFile()) probs.push(`Suite binary "${bin}" does not exist`);
-      else if (!SCRIPT_EXT.test(bin) && lastCode && st.mtimeMs < lastCode) probs.push(`Suite binary "${bin}" (built ${new Date(st.mtimeMs).toISOString()}) is older than the last code commit (${new Date(lastCode).toISOString()}): the log comes from a stale build; rebuild and run the suite again`);
+      if (bad.length) probs.push(`${name}: ${bad.length} failing test(s) are not in the brief's allowed list${allow.length ? ' (' + allowFail.join('; ').slice(0, 120) + ')' : ' (the brief allows none)'}: ${bad.slice(0, 4).join(' | ').slice(0, 300)}`);
     }
   }
   // fail_first for every test added since the measure phase: added files that are tests by path OR by content, and test registrations added to an existing test file

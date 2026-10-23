@@ -96,19 +96,6 @@
             "timeout": 30
           }
         ]
-      },
-      {
-        "matcher": "Bash|PowerShell",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/tools/hooks/time_guard_post.mjs"
-            ],
-            "timeout": 15
-          }
-        ]
       }
     ],
     "UserPromptSubmit": [
@@ -149,21 +136,6 @@
               "${CLAUDE_PROJECT_DIR}/tools/hooks/handin_gate.mjs"
             ],
             "timeout": 300
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "matcher": "Bash|PowerShell",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PROJECT_DIR}/tools/hooks/time_guard_post.mjs"
-            ],
-            "timeout": 15
           }
         ]
       }
