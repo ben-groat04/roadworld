@@ -20,6 +20,9 @@
 // writers or the state, and a Write/Edit/redirect/sed -i/cp/mv/rm onto the MAIN checkout's .claude/settings*.json or tools/hooks/* (builders edit their own worktree copies; only the
 // main session changes the main checkout's wiring).
 //
+// gates7 (gates6 audit items 4 and 9): a READ through a wildcard whose last part cannot match ack_secret (grep deny state/*.log) is allowed; cp / copy / Copy-Item write only their destination (copying
+// gate.log out to analyse it is fine); inline node/python code that only reads may name gate.log and handin/; Select-String -Path <state>* is a wildcard read of the secret; the body of
+// `| ForEach-Object { Get-Content $_.FullName }` (the lexer marks it fe) reads the files a state listing names, like the piped form.
 // WHAT IT CANNOT SEE: a script file that touches the state indirectly (the command only says `node x.mjs`), a path built from pieces or variables, a state path with a space in it,
 // a tool other than the ones matched, a read loop that cats names from a listing (`find ... | while read f; do cat "$f"; done`), a copy of the hook files made by a tool this hook does not
 // match, a settings change made by a program. It reads tool input text (and the cwd of the event) and nothing else. FAIL OPEN (logged) on any internal error.

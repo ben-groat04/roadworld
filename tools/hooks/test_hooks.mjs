@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync as realSpawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isolateState } from '../test_isolation.mjs';
+import { isolateState, cleanupTmp } from '../test_isolation.mjs';
 // children are COPIES of the hooks in temp mains with their own state folders; only this process (which imports the real lib from src) is redirected by CP_GATE_STATE_DIR
 const spawnSync = (c, a, o = {}) => { const env = { ...(o.env || process.env) }; delete env.CP_GATE_STATE_DIR; return realSpawn(c, a, { ...o, env }); };
 
@@ -19,7 +19,7 @@ const isolation = isolateState(tmp, src);   // CP_GATE_STATE_DIR for this proces
 const root = path.join(tmp, 'main');
 const wt = path.join(tmp, 'wt');
 const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); };
-['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
+['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/git_guard.mjs', 'tools/hooks/git_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
   'tools/check_handin.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
 for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'photo ' + f); }
@@ -1195,5 +1195,6 @@ t('NO line mentioning this run\'s temp folder reached the real gate.log of the m
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failedNames.length) console.log('FAILED TESTS:\n - ' + failedNames.join('\n - '));
-if (!process.env.KEEP_HOOKTEST) fs.rmSync(tmp, { recursive: true, force: true });
+// gates7 item 13: links unlinked first, then the temp folder removed (the old plain rmSync left hooktest-* folders behind)
+cleanupTmp(tmp);
 process.exit(fail ? 1 : 0);

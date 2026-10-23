@@ -27,6 +27,12 @@
 // temp path), $x = "literal" and Join-Path assignments, for/foreach lists, comma lists, brace {a,b} and [class] and * ? wildcards (expanded against the disk), trailing dots and
 // spaces of Windows names, \\?\ prefixes, \ as an escape (second reading of a mixed-slash word), if/then/else/fi/do/done and PowerShell blocks, and nested commands in bash -c, eval,
 // echo ... | bash, bash <<< "...", heredocs to a shell, cmd /c and //c, powershell -Command / -EncodedCommand, Invoke-Expression/iex, Start-Process -ArgumentList, python/node/perl/ruby -c/-e strings.
+// gates7 (23 Oct 2026, gates6 audit items 1-3, 6-8, 10): a one-liner (python -c rmtree / node -e rmSync / Directory.Delete) whose FIRST argument is a plain string literal is judged like a delete target (build is
+// fine in a clean worktree; docs, main, a link tree are not; a non-literal path keeps the refusal); `del -Recurse -Force x` is Remove-Item, not cmd del /s; a name-filtered listing piped into Remove-Item
+// (gci -Filter build* | Remove-Item) is judged by the links it would walk, like find -name; PowerShell blocks with glued braces (try {Remove-Item ..}) are split by the lexer; xargs rm / truncate / shred and
+// find -exec truncate|shred|dd over a listing that reaches the photos (docs/reference, main, main/docs, with a name filter that can match a picture) are mass deletes; abbreviated PowerShell parameters
+// (-Rec -Pa -Fo -Lit -Fi -Inc -Exc) are read; git clean skips the value of -e / --exclude; an unknown verb (unbuffer, watch, parallel, flock, taskset, strace, script -c, any <cmd> <args> -- <verb>) that
+// carries an unquoted delete or move verb as one of its words has the rest judged as a command (text verbs like echo, grep, curl, npm are left alone).
 // WHAT IT CANNOT SEE (accepted: structural protection + validated backup, main session decision 23 Oct 2026): a delete done inside a script file the command only runs (node x.mjs, a
 // .ps1 or .bat), a path assembled from variables over several steps or read from a file, command substitution RESULTS, aliases and functions defined elsewhere, loops whose list or body
 // is computed (while read ... < file with a list in another file), variable indirection (${!x}, eval of a built string), brace expansion with nesting, 8.3 short names, xcopy /E /Y and cp
@@ -229,7 +235,7 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
   for (const m of cmd.matchAll(ONE_LIT)) {
     const fn = m[1].toLowerCase(); const rest = m[4] || '';
     const rec = /rmtree|rimraf|rm_rf/.test(fn) || (/rm(?:dir)?sync/.test(fn) && /recursive\s*:\s*true/i.test(rest)) || (/delete/.test(fn) && /,\s*\$?true/i.test(rest));
-    if (rec) oneLits.push(m[3]);
+    if (rec && /^\s*(?:,|$)/.test(rest)) oneLits.push(m[3]);   // 'build' + x, 'build'.join(..), f"build": not a plain literal, so the call stays unresolved
   }
   if ((cmd.match(ONE_ALL) || []).length > oneLits.length && nearText()) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) with a path that is not a string literal, in or near the main checkout or a worktree: it follows a docs\\reference junction');
   // heredocs and here-strings handed to a shell run as commands
@@ -241,11 +247,12 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
   let cur = cwd; let uncertain = false; const vars = {}; const cdStack = [];
   // listings piped into a delete: the listing is the target
   const originOf = (idx) => { let j = idx; while (j > 0 && segments[j].piped) j--; return j < idx ? j : -1; };
+  const listFilter = (seg) => { try { const lt = seg && listTargets(seg); return (lt && lt.filterNames) || []; } catch { return []; } };
   const listTargets = (seg) => {
     const { verb, args } = verbOf(seg.words); const av = args.map((a) => a.v);
     if (verb === 'echo' || verb === 'printf') return av.filter((x) => !isFlag(x));
     if (!LIST_VERBS.has(verb)) return null;
-    if (verb === 'find') { const lead = []; for (const a of av) { if (/^[-(!]/.test(a)) break; lead.push(a); } return lead.length ? lead : ['.']; }
+    if (verb === 'find') { const lead = []; for (const a of av) { if (/^[-(!]/.test(a)) break; lead.push(a); } const res = lead.length ? lead : ['.']; res.filterNames = []; av.forEach((a, k) => { if (/^-(?:name|iname)$/.test(a) && av[k + 1]) res.filterNames.push(av[k + 1]); }); return res; }
     const out = []; const names = []; for (let k = 0; k < av.length; k++) { const a = av[k]; if (psPathFlag(a) && !/:/.test(a)) { if (av[k + 1]) out.push(av[++k]); continue; } if (psNameFilterFlag(a) && !/:/.test(a)) { if (av[k + 1]) names.push(av[++k]); continue; } if (psp(a, 'exclude', 3) || /^-(?:depth|attributes)$/i.test(a)) { k++; continue; } if (isFlag(a)) continue; out.push(a); }
     const res = out.length ? out : ['.']; res.filterNames = names; return res;
   };
@@ -500,7 +507,7 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
       continue;
     }
     // gates7 item 7: a listing of docs\reference fed to rm / del / truncate / shred (xargs rm with no flags) deletes photos one by one: a mass delete
-    if (viaPipe && !recursive) for (const raw of targets) { const r = resolveWord(raw, cur, vars); for (const p of r.values) if (ctx.inRef(p)) { reasons.push(`a listing of ${p} fed to ${verbName}: a mass delete or truncation of the reference photos`); break; } }
+    if (viaPipe && !recursive) for (const raw of targets) { const r = resolveWord(raw, cur, vars); for (const p of r.values) if (ctx.inRef(p) || ((strip(p) === ctx.main || strip(p) === ctx.main + '/docs' || ctx.refRoot.startsWith(strip(p) + '/')) && nameMayMatchPic(listFilter(segments[originOf(si)])))) { reasons.push(`a listing of ${p} fed to ${verbName}: a mass delete or truncation of the reference photos`); break; } }
     for (const raw of targets) judgeDeleteTarget(raw, verbName, recursive, findOpts);
   }
   return [...new Set(reasons)];

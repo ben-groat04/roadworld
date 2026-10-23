@@ -2,6 +2,8 @@
 // It reads a Bash or PowerShell command line the way a person reads it: quotes removed, adjacent quoted and bare pieces joined (rm -rf docs/ref""erence is
 // rm -rf docs/reference), heredoc bodies dropped (they are text), segments split at ; && || | & newline and at PowerShell blocks ( ) { }, redirects pulled
 // out of the words, leading VAR=x and $x = assignments recorded, `if (...) { ... }`, `try { ... } catch { ... }`, `foreach (...)` wrappers reduced to their statements.
+// gates7: a { or } glued to a word is a block token too (try {Remove-Item x} catch {}, if (1){..}, & {..}); {} (find placeholder), {a,b} brace lists and ${x} stay words, except that {rm,-rf,docs} as the
+// first word of a command is split into its three words (bash expands it). The statements inside the body of a piped ForEach-Object / Where-Object carry piped and fe.
 // WHAT IT CANNOT SEE: variables built in several steps, command substitution results, aliases, script files the command only runs, here-strings other than
 // the heredoc form below. Callers treat what they cannot resolve as unknown and decide per rule.
 
@@ -98,7 +100,12 @@ export function parseCommand(command) {
         const inner = close < 0 ? '' : s.slice(i + 1, close);
         const lone = !w && (s[i + 1] === undefined || /[\s;)]/.test(s[i + 1]));
         if (close >= 0 && inner === '') { w = w || { v: '', q: false }; w.v += '{}'; i = close; continue; }
-        if (close >= 0 && /,/.test(inner) && !/\s/.test(inner)) { w = w || { v: '', q: false }; w.v += s.slice(i, close + 1); i = close; continue; }
+        if (close >= 0 && /,/.test(inner) && !/\s/.test(inner)) {
+          // {rm,-rf,docs} as the FIRST word of a command is a command line in bash (brace expansion makes it three words): split it
+          const after = s[close + 1];
+          if (!w && cur.words.length === 0 && !pendingRedirect && !pendingHere && (after === undefined || /[\s;|&)]/.test(after))) { for (const it of inner.split(',')) cur.words.push({ v: it, q: false }); i = close; continue; }
+          w = w || { v: '', q: false }; w.v += s.slice(i, close + 1); i = close; continue;
+        }
         if (lone || (close >= 0 && /[\s;|&(]/.test(inner))) {
           endSeg();
           const prev = segs[segs.length - 1];

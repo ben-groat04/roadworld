@@ -126,11 +126,12 @@ export async function main() {
   if (!input.agent_id) return 0;     // the main session
   const command = (input.tool_input && input.tool_input.command) || '';
   if (!/\bgit\b/i.test(command)) return 0;
-  // read the agent's launch only when the command could be a git write in main (cheap pre-test first)
-  let reasons = analyse(command, input.cwd || process.cwd(), {});
-  if (!reasons.length && /\bgit\b/i.test(command)) {
+  // G1 needs no transcript. G2 does: it is read only when the command WOULD be refused for a builder (probe with a made-up HANDIN_DIR outside main), so ordinary git calls cost nothing
+  const cwd = input.cwd || process.cwd();
+  let reasons = analyse(command, cwd, {});
+  if (!reasons.length && analyse(command, cwd, { handinDir: 'Z:/__probe_outside_main__/x' }).length) {
     const handin = handinDirOfAgent(input);
-    if (handin) reasons = analyse(command, input.cwd || process.cwd(), { handinDir: handin });
+    if (handin) reasons = analyse(command, cwd, { handinDir: handin });
   }
   if (!reasons.length) return 0;
   log({ gate: 'git_guard', decision: 'deny', reason: 'git write in the main checkout refused', agent_id: input.agent_id, cwd: input.cwd, command: String(command).slice(0, 300), reasons });

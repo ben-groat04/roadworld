@@ -99,6 +99,12 @@ table('item 7 xargs rm and find -exec truncate over the photos', [
   ['find build -type f | xargs rm', 'wt', 0, 'item 7 find build | xargs rm in a clean worktree'], ['find . -name "*.obj" | xargs rm', 'wt', 0, 'item 7 find . -name | xargs rm in a clean worktree'],
   ['find build -exec truncate -s0 {} +', 'wt', 0, 'item 7 find build -exec truncate'],
 ]);
+table('own fault list, pass 1 (found while attacking the fixes above)', [
+  ['{rm,-rf,docs}', 'main', 2, 'F1 a brace list as the whole command line is brace-expanded by bash into rm -rf docs'], ['{rm,-rf,build}', 'wt', 0, 'F1 the same on build in a clean worktree'], ['echo {a,b}', 'main', 0, 'F1 echo {a,b} is text'],
+  [`find ${M}/docs -type f | xargs rm`, 'elsewhere', 2, 'F2 xargs rm over a find of the main docs folder (the photos live below it)'], [`find ${M} -name "*.jpg" | xargs rm`, 'elsewhere', 2, 'F2 find main -name *.jpg | xargs rm'], [`find ${M} -name "*.log" | xargs rm`, 'elsewhere', 0, 'F2 a name filter that cannot match a picture'],
+  ['find . -type f | xargs rm', 'main', 2, 'F2 find . -type f | xargs rm in main'], ['find . -type f | xargs rm', 'wt', 0, 'F2 the same in a clean worktree'],
+  ['python -c "import shutil; shutil.rmtree(\'build\'); shutil.rmtree(\'docs\')"', 'main', 2, 'F3 two literals, the second is docs'], ['python -c "import shutil; shutil.rmtree(\'bu\' + \'ild\')"', 'wt', 2, 'F3 a computed path is not a literal: refused near a tree'],
+]);
 table('item 8 abbreviated PowerShell parameters, dotted globs, git clean -e', [
   ['gci -r | rm -fo', 'wtJ', 2, 'item 8 gci -r | rm -fo'], ['Get-ChildItem -Recurse | Remove-Item -Force', 'wtJ', 2, 'item 8 the spelled-out form stays refused'], ['gci build -r | rm -fo', 'wt', 0, 'item 8 gci build -r | rm -fo in a clean worktree'],
   ['Remove-Item -Rec -Pa docs -Fo', 'wtJ', 2, 'item 8 Remove-Item -Rec -Pa docs -Fo'], ['Remove-Item -Rec -Pa build -Fo', 'wt', 0, 'item 8 -Rec -Pa build'], ['Remove-Item -Recurse -Fo -Lit docs', 'wtJ', 2, 'item 8 -Lit docs'],
