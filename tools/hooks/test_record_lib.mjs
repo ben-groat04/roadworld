@@ -16,6 +16,6 @@ export function logRun(wt, logFile, content, { exit = 0, stateDir = process.env.
   let post = null;
   if (!skipPost) post = spawnSync(process.execPath, [path.join(hookDir, 'time_guard_post.mjs')], {
     input: JSON.stringify(exit === 0 ? { hook_event_name: 'PostToolUse', tool_name: tool, tool_use_id: id, session_id: 's1', cwd: wt, tool_input: { command }, tool_response: { stdout: '', stderr: '', interrupted: false } }
-      : { hook_event_name: 'PostToolUseFailure', tool_name: tool, tool_use_id: id, session_id: 's1', cwd: wt, tool_input: { command }, error: `Exit code ${exit}\n` }), encoding: 'utf8', env, timeout: 60000 });
+      : { hook_event_name: 'PostToolUseFailure', tool_name: tool, tool_use_id: id, session_id: 's1', cwd: wt, tool_input: { command }, error: exit === null ? 'Command was interrupted' : `Exit code ${exit}\n` }), encoding: 'utf8', env, timeout: 60000 });
   return { pre, post, id };
 }

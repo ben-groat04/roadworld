@@ -8,7 +8,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { cleanupTmp } from './test_isolation.mjs';
 
-export const PREFIXES = ['gatetest-', 'hooktest-', 'guards6-', 'guards7-', 'guards8-', 'guards9-', 'guards10-', 'guards11-', 'scenegate-', 'bkref-', 'wttools-'];   // every mkdtemp prefix of the suites (gates10: guards9- and scenegate- were missing)
+export const PREFIXES = ['gatetest-', 'hooktest-', 'guards6-', 'guards7-', 'guards8-', 'guards9-', 'guards10-', 'guards11-', 'guards12-', 'scenegate-', 'bkref-', 'wttools-'];   // every mkdtemp prefix of the suites (gates10: guards9- and scenegate- were missing)
 export function findLeftovers(dir) {
   let ents = []; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
   return ents.filter((e) => e.isDirectory() && !e.isSymbolicLink() && PREFIXES.some((p) => e.name.startsWith(p))).map((e) => path.join(dir, e.name));

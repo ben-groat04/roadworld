@@ -131,8 +131,8 @@ if (auditMode) {
 const round = opt('round');
 // gates12: run from INSIDE a worktree (root = <parent>/roadworld-wt/<x>) the sibling is <parent>/roadworld-wt/<round>, not a second roadworld-wt level
 const wtParent = path.basename(path.dirname(root)).toLowerCase() === 'roadworld-wt' ? path.dirname(root) : path.join(path.dirname(root), 'roadworld-wt');
-const { resolveMainRoot } = await import('./hooks/root.mjs');
-const mainRoot = resolveMainRoot(path.join(root, 'tools', 'hooks'));   // the main checkout owns docs/reference (a worktree only holds a junction to it)
+let mainRoot = root;
+try { mainRoot = (await import('./hooks/root.mjs')).resolveMainRoot(path.join(root, 'tools', 'hooks')); } catch { /* root.mjs missing or broken: the old rule (this checkout) */ }   // the main checkout owns docs/reference (a worktree only holds a junction to it)
 const worktree = opt('worktree', path.join(wtParent, round)); // matches new_agent_worktree.ps1 (new worktrees live under ..\roadworld-wt\<name>)
 const handinDir = path.join(path.resolve(worktree), 'docs', 'progress', round);
 const priorAudit = opt('prior-audit') ? path.resolve(opt('prior-audit')) : '';   // send-back round: the previous AUDIT.md; the hand-in gate then demands the "Prior audit items" table

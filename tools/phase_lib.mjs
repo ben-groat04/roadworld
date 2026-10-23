@@ -115,6 +115,8 @@ export function measureProblems(folder, { since = 0, cases = null, refs = null, 
 // `timeout 900` and leaves the output in <hand-in>/suite_build.log; this check reads the log. It must: be newer than the last code commit; hold a real summary (doctest "test cases:", ctest
 // "tests passed", or the repo's node suites "N passed, M failed"); show failures only for tests the brief allows (ALLOW-FAIL: lines) and name them; not be a timeout (exit=124); and come from a binary
 // newer than the last code commit (BUILD.md "Suite binary: <path>"; a script path is exempt from the mtime test). The round's auditor re-runs the suite itself (audit brief template).
+// gates12 (decision 2): the log is also matched against the suite-run record the time-limit hooks write (tools/hooks/suite_record.mjs: start by time_guard, end + exit + sha256 by time_guard_post):
+// no record of a run in this worktree with exactly these bytes, ended after the last code commit, means a typed or edited log, and the check fails.
 export const SUITE_LOG = 'suite_build.log';
 const SCRIPT_EXT = /\.(?:mjs|cjs|js|ts|py|ps1|sh|bat|cmd)$/i;
 export function parseSuiteLog(text) {
