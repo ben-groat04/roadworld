@@ -29,7 +29,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, log, readStdin, parseJson } from './lib.mjs';
-import { parseCommand, verbOf } from './shell_lex.mjs';
+import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
 const norm = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
 const winPath = (p) => (/^\/([a-zA-Z])(\/|$)/.test(p) ? p[1] + ':' + p.slice(2) : p);
@@ -140,15 +140,16 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
       if (protectedMain(rd.target, mainRoot, cur)) reasons.push(protectedMsg(rd.target, 'a redirect into'));
     }
     if (!seg.words.length) continue;
-    const { verb, index, args } = verbOf(seg.words);
+    const { verb, index, args, line } = verbOf(seg.words);
     const av = args.map((a) => a.v);
+    // gates8 hole 1: iex "Get-Content <state>\ack_secret" (the whole quoted command line is the verb) is judged as a command
+    if (line) { reasons.push(...judgeCommand(seg.words.slice(index).map((w) => w.v).join(' '), depth + 1, { mainRoot, cwd: cur })); continue; }
     // directory changes (relative arguments after a cd are judged against the new folder)
-    if (['cd', 'chdir', 'set-location', 'sl', 'pushd', 'push-location'].includes(verb)) { const tgt = av.filter((x) => !/^-/.test(x))[0]; if (tgt) cur = absOf(tgt, cur); continue; }
+    if (['cd', 'chdir', 'set-location', 'sl', 'pushd', 'push-location'].includes(verb)) { const tgt = av.filter((x) => !/^-/.test(x) && !/^\/d$/i.test(x))[0]; if (tgt) cur = absOf(tgt, cur); continue; }
     // nested shells, eval and inline code
     if (SHELLS.has(verb) || verb === 'eval') {
-      const joined = av.join(' ');
-      const m = verb === 'eval' ? [null, joined] : joined.match(/(?:^|\s)(?:-[a-z]*c|-command|\/{1,2}[ck])\s+([\s\S]*)$/i);
-      if (m && m[1]) reasons.push(...judgeCommand(m[1], depth + 1, { mainRoot, cwd: cur }));
+      const inner = verb === 'eval' ? av.join(' ') : shellInner(verb, av);   // gates8 hole 4: powershell "cmd" without -Command
+      if (inner) reasons.push(...judgeCommand(inner, depth + 1, { mainRoot, cwd: cur }));
       if (seg.here) reasons.push(...judgeCommand(seg.here, depth + 1, { mainRoot, cwd: cur }));
     }
     let inlineCodeArg = null;

@@ -156,5 +156,23 @@ export function verbOf(words) {
     break;
   }
   const raw = words[i] ? words[i].v.replace(/^\\/, '') : '';
-  return { verb: raw.toLowerCase().replace(/^.*[\/\\]/, '').replace(/\.exe$/, ''), index: i, args: words.slice(i + 1) };
+  // gates8 hole 1: iex "rd /s /q docs\reference" leaves the whole quoted command line as the verb; cutting it at its last slash made it look like a one-word verb. A quoted word with a space
+  // whose first token holds no slash is a command LINE: it keeps its text (callers judge it as a command).
+  const line = !!(words[i] && words[i].q && /\s/.test(raw) && !/^[^\s]*[\\/]/.test(raw));
+  return { verb: line ? raw.toLowerCase() : raw.toLowerCase().replace(/^.*[\/\\]/, '').replace(/\.exe$/, ''), index: i, args: words.slice(i + 1), line };
+}
+
+// gates8 hole 4: the command a nested shell runs: -c / -Command / /c / /k <text>; powershell and pwsh also take the command as the first positional argument (-Command is the default
+// parameter), unless -File or -EncodedCommand is given. Returns the text, or null.
+const PS_VALUE_FLAGS = new Set(['-executionpolicy', '-ep', '-windowstyle', '-w', '-workingdirectory', '-wd', '-inputformat', '-outputformat', '-version', '-configurationname', '-settingsfile', '-psconsolefile', '-custompipename']);
+export function shellInner(verb, av) {
+  const joined = av.join(' ');
+  const m = joined.match(/(?:^|\s)(?:-[a-z]*c|-command|\/{1,2}[ck])\s+([\s\S]*)$/i);
+  if (m && m[1]) return m[1];
+  if ((verb === 'powershell' || verb === 'pwsh') && !/(?:^|\s)-(?:f|file|e|ec|enc|encodedcommand)(?:\s|$)/i.test(joined)) {
+    const pos = [];
+    for (let k = 0; k < av.length; k++) { const a = av[k]; if (/^-/.test(a)) { if (PS_VALUE_FLAGS.has(a.toLowerCase())) k++; continue; } pos.push(a); }
+    if (pos.length) return pos.join(' ');
+  }
+  return null;
 }

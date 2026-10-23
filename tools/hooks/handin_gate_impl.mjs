@@ -39,6 +39,7 @@ export function gatesIn(text) {
 // Files the gates judge must have been written after it (minus slack), so a stale passing folder from an earlier round
 // cannot satisfy a new agent (audit fault 1).
 export const SLACK_MS = 2000;
+export const CHECKPOINT_WINDOW_MS = 120000;   // the finish hook runs twice at one finish; a second call this soon, for the unchanged CHECKPOINT.md, is the same finish
 function runStartMs(tp) {
   try {
     const first = fs.readFileSync(tp, 'utf8').split('\n').find((l) => l.trim());
@@ -114,6 +115,32 @@ export async function main() {
   }
   if (!handinDir) return allow({ ...base, decision: 'allow', reason: 'no HANDIN_DIR in brief' });
 
+  // gates8 CHECKPOINT hand-back: a builder may stop early with <HANDIN_DIR>/CHECKPOINT.md (first line "CHECKPOINT: <what is done> | images: <paths>", one existing image at least). The stop is let
+  // through ONCE per agent, logged as decision=checkpoint, and is NOT a hand-in: no builder record, no audit owed, no counter. The hook runs twice at one finish (PreToolUse on
+  // SubagentHandback, then Stop): the second call within CHECKPOINT_WINDOW_MS of the first, for the same unchanged file, is the same finish. Any later stop is a hand-in and gets the full check.
+  let checkpointNote = '';
+  try {
+    const cpFile = path.join(handinDir, 'CHECKPOINT.md');
+    if (fs.existsSync(cpFile)) {
+      const mf = path.join(STATE_DIR, 'handin', id + '.checkpoint.json');
+      let prevRec = null; try { prevRec = parseJson(fs.readFileSync(mf, 'utf8')) || null; } catch { /* none yet */ }
+      const cpMtime = fs.statSync(cpFile).mtimeMs;
+      if (prevRec && cpMtime <= prevRec.at && Date.now() - prevRec.at < CHECKPOINT_WINDOW_MS) {
+        return allow({ ...base, decision: 'allow', reason: 'checkpoint hand-back (second hook call of the same finish)', handin_dir: handinDir });
+      }
+      if (!prevRec) {
+        const cr = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'check_handin.mjs'), handinDir, '--checkpoint', '--main', ROOT, '--since', String(Math.round(runStart - SLACK_MS))], { cwd: ROOT, encoding: 'utf8', timeout: 30000, env: { ...process.env, CP_FROM_HOOK: '1' } });
+        if (cr.status === 0 && /CHECKPOINT PASSED/.test(cr.stdout || '')) {
+          fs.mkdirSync(path.dirname(mf), { recursive: true });
+          fs.writeFileSync(mf, JSON.stringify({ at: Date.now(), handin_dir: handinDir }));
+          return allow({ ...base, decision: 'checkpoint', reason: 'checkpoint hand-back: stop allowed once, NOT a hand-in (no audit owed); the final hand-in still needs the full check', handin_dir: handinDir });
+        }
+        // an invalid CHECKPOINT.md is not a reason to stop: the full check follows, and the message says why the checkpoint did not count
+        checkpointNote = 'CHECKPOINT.md did not count: ' + String(cr.stderr || cr.stdout || '').trim().replace(/\s+/g, ' ').slice(0, 500);
+      } else checkpointNote = 'a checkpoint hand-back was already used by this agent (once per agent): this stop is a hand-in and gets the full check';
+    }
+  } catch (e) { log({ gate: 'handin', ...base, decision: 'allow', reason: 'FAIL-OPEN: the checkpoint check crashed (the full check follows)', error: String((e && e.message) || e).slice(0, 300) }); }
+
   const args = [path.join(ROOT, 'tools', 'check_handin.mjs'), handinDir, '--main', ROOT];
   if (noVisual) args.push('--no-visual');
   // Gates v2: only a brief that carries `GATES-VERSION: 2` (make_brief.mjs) gets the measured checks; its `GATE:` lines are passed on.
@@ -150,7 +177,7 @@ export async function main() {
     return allow({ ...base, decision: 'allow', reason: 'hand-in check passed', handin_dir: handinDir });
   }
 
-  const failures = (r.stderr || r.stdout || '').trim();
+  const failures = ((checkpointNote ? checkpointNote + String.fromCharCode(10) : '') + (r.stderr || r.stdout || '')).trim();
   return blockOrRelease({ isPre, base, id, dir: handinDir, failures, kind: 'handin',
     intro: 'HAND-IN GATE: you may not finish yet',
     fix: `run \`node tools/check_handin.mjs ${handinDir}${noVisual ? ' --no-visual' : ''}\` until it passes`, failedFile: 'HANDIN_FAILED.txt' });

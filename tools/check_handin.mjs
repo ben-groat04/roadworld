@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Hand-in check. Usage: node tools/check_handin.mjs <progress-folder> [--main <main-checkout>] [--no-visual] [--accept [--builder <agent-id>] [--legacy "<reason>"]]
+// Hand-in check. Usage: node tools/check_handin.mjs <progress-folder> [--main <main-checkout>] [--no-visual] [--accept [--builder <agent-id>] [--legacy "<reason>"]] | node tools/check_handin.mjs <progress-folder> --checkpoint
+// --checkpoint (gates8): validates <folder>/CHECKPOINT.md instead of a hand-in (first line `CHECKPOINT: <what is done> | images: <path>[, <path>...]`, at least one existing image). The finish hook lets a valid one through once per agent and does not count it as a hand-in.
 // --accept (the main session, before accepting a round): ALSO fails unless a valid AUDIT.md by an agent other than the recorded builder exists AND
 // the finish gate's signed audit record backs it (tools/hooks/audit_lib.mjs). Every path needs the record: --builder only names the builder, it
 // never replaces the record; a hand-in that predates the audit gate needs --legacy "<reason, 20+ chars>" (logged to gate.log). Builders never pass it.
@@ -113,6 +114,32 @@ if (gatesV2 && !GL) failOpen('gates_lib', new Error('gates_lib.mjs did not load'
 if (since > 0) {
   const stale = ['STATUS.md', ...(noVisual && !gatesV2 ? [] : ['FAULTS.md']), ...(noVisual ? [] : ['COMPARE.md'])].filter((f) => { try { return fs.statSync(path.join(folder, f)).mtimeMs < since; } catch { return false; } });
   if (stale.length) fails.push('older than this agent\'s run (written before ' + new Date(since).toISOString() + '; a hand-in must be written by the agent that hands it in): ' + stale.join(', '));
+}
+
+// --checkpoint (gates8): validate a CHECKPOINT.md instead of a hand-in. A builder may stop early with <folder>/CHECKPOINT.md whose first line is
+// `CHECKPOINT: <what is done> | images: <path>[, <path>...]` and at least one of the named paths is an existing image. The finish hook lets such a stop through once per agent and does NOT
+// count it as a hand-in (no audit owed); the final hand-in is still checked in full.
+if (args.includes('--checkpoint')) {
+  const cp = read('CHECKPOINT.md');
+  const why = [];
+  if (cp === null) why.push('no CHECKPOINT.md in ' + folder);
+  else {
+    const first = cp.split('\n').find((l) => l.trim()) || '';
+    const m = first.trim().match(/^CHECKPOINT:\s*(.+?)\s*\|\s*images:\s*(.+)$/i);
+    if (!m) why.push('the first line must be: CHECKPOINT: <what is done> | images: <path>[, <path>...] (got "' + first.trim().slice(0, 120) + '")');
+    else {
+      if (m[1].replace(/[^A-Za-z0-9]/g, '').length < 8) why.push('"what is done" is empty or a placeholder: say what is finished');
+      const paths = m[2].split(/\s*[,;]\s*|\s{2,}/).map((x) => x.trim().replace(/^`|`$/g, '').replace(/^["']|["']$/g, '')).filter(Boolean);
+      const imgs = paths.filter((p) => /\.(?:png|jpe?g|webp|gif|bmp)$/i.test(p));
+      const found = imgs.filter((p) => resolveFile(p, [path.resolve(folder), wtRoot, main, refRoot]));
+      if (!imgs.length) why.push('"images:" names no image path (.png .jpg .jpeg .webp .gif .bmp)');
+      else if (!found.length) why.push('none of the named images exists: ' + imgs.join(', '));
+    }
+    if (since > 0) { try { if (fs.statSync(path.join(folder, 'CHECKPOINT.md')).mtimeMs < since) why.push('CHECKPOINT.md is older than this agent\'s run (written before ' + new Date(since).toISOString() + ')'); } catch { /* checked above */ } }
+  }
+  if (why.length) { console.error('CHECKPOINT FAILED\n - ' + why.join('\n - ')); process.exit(1); }
+  console.log('CHECKPOINT PASSED (' + path.join(folder, 'CHECKPOINT.md') + '): this is not a hand-in; the final hand-in still needs the full check');
+  process.exit(0);
 }
 
 // STATUS.md

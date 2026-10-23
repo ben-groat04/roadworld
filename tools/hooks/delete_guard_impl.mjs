@@ -43,7 +43,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ROOT, log, readStdin, parseJson } from './lib.mjs';
 import { worktreeRoots } from './root.mjs';
-import { parseCommand, verbOf } from './shell_lex.mjs';
+import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
 export const SCRIPT_HINT = 'Remove a worktree only with: powershell -NoProfile -ExecutionPolicy Bypass -File tools\\remove_agent_worktree.ps1 <name> (it unlinks any docs\\reference junction first and checks the photos are still there). Older worktrees still hold a junction (docs\\reference) to the private reference photos: a recursive delete follows it and wipes them (22 Oct 2026). Deleting build\\, node_modules, a temp folder or your own composites under docs\\reference\\_compare\\<topic> is allowed.';
 
@@ -62,6 +62,10 @@ const fixDots = (p) => { const r = path.parse(p).root; return r + p.slice(r.leng
 
 // every reparse point (junction / symlink) at or below `p`, found without descending into links, only directory entries are read (a Dirent says symlink for a junction too).
 // Returns an array with .capped (true when the time cap ended the walk) and .seen. [] when p does not exist.
+// gates8 (gates7 audit F6): known BUILD OUTPUT folders are not walked (no agent keeps a junction to the photos inside Unreal's Intermediate / Binaries / DerivedDataCache / Saved, a cmake build
+// folder or an object folder, and one built Unreal worktree holds hundreds of thousands of entries there). The entry itself is still checked (a link NAMED build is found); a delete whose START
+// folder is one of them is not walked at all, so a worktree's own build output is never refused for its size.
+export const BUILD_OUTPUT_DIRS = /^(?:intermediate|binaries|deriveddatacache|saved|build|build-[\w.-]+|\.vs|obj|_deps)$/i;
 export function linksBelow(p, { ms = 5000, limit = 5000000 } = {}) {
   const found = []; found.seen = 0; found.capped = false;
   const t0 = Date.now();
@@ -73,13 +77,13 @@ export function linksBelow(p, { ms = 5000, limit = 5000000 } = {}) {
       if (found.seen > limit) { found.capped = true; return; }
       const f = d + path.sep + e.name;
       if (e.isSymbolicLink()) { found.push(f); continue; }
-      if (e.isDirectory()) walk(f);
+      if (e.isDirectory() && !BUILD_OUTPUT_DIRS.test(e.name)) walk(f);
       if (found.capped) return;
     }
   };
   let st; try { st = fs.lstatSync(p); } catch { return found; }
   if (st.isSymbolicLink()) { found.push(p); return found; }
-  if (st.isDirectory()) walk(p);
+  if (st.isDirectory() && !BUILD_OUTPUT_DIRS.test(path.basename(p))) walk(p);
   return found;
 }
 
@@ -208,7 +212,9 @@ const psPathFlag = (a) => psp(a, 'path', 2) || psp(a, 'literalpath', 2);
 const psNameFilterFlag = (a) => psp(a, 'filter', 2) || psp(a, 'include', 3);
 const psRecurse = (f) => /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?(?::\$?true)?$/i.test(f);
 const globRe = (g) => segRe(g);
-const nameMayMatchPic = (pats) => !pats.length || pats.some((p) => ['a.jpg', 'a.png', 'a.jpeg', 'a.webp', 'a.gif'].some((n) => globRe(p).test(n)));
+// gates8 hole 2: a name filter may match a picture OR a folder on the way to the photos (docs, reference, aerial, street, gsv, _compare): find . -name "d*" -exec rm -rf {} + deletes docs from main
+const PHOTO_PATH_NAMES = ['docs', 'reference', 'aerial', 'street', 'gsv', '_compare'];
+const nameMayMatchPic = (pats) => !pats.length || pats.some((p) => ['a.jpg', 'a.png', 'a.jpeg', 'a.webp', 'a.gif', ...PHOTO_PATH_NAMES].some((n) => globRe(p).test(n)));
 const DELETEISH = /remove-item|\bri\b|\.delete\s*\(|\[io\.file\]::delete|\bunlink\b|(^|[\s;|&])(?:rm|del|erase|truncate|shred)(?:\s|$)/i;   // gates7 item 7: "| xargs rm" at the end of the line, truncate, shred
 
 // returns [] or an array of refusal reasons
@@ -272,6 +278,13 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
     for (const abs of r.values) {
       const globbed = hasGlob(abs);
       const list = globbed ? expandGlob(abs) : [abs];
+      // gates8 hole 3: `del /s <dir>*.jpg` walks every subfolder of the part before the wildcard, whether or not the wildcard matches anything in the top folder itself
+      if (recursive && globbed && ['del', 'erase'].includes(verbName)) {
+        const root0 = path.parse(abs).root; const keep = []; for (const sg of abs.slice(root0.length).split(/[\\/]/).filter(Boolean)) { if (hasGlob(sg)) break; keep.push(sg); }
+        const pre = path.join(root0, ...keep); const why0 = ctx.classify(pre, opts);
+        if (why0) { reasons.push(`\`${verbName} /s\` with a wildcard ("${raw}") walks every subfolder of ${pre}: it ${why0}`); return; }
+        if (ctx.underWt(pre)) { reasons.push(`\`${verbName} /s\` on "${raw}" in a worktree (it walks into any junction)`); return; }
+      }
       if (globbed && !list.length) continue;
       for (const p of (recursive ? [abs, ...list] : list)) {
         if (recursive) {
@@ -349,8 +362,8 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
       const joined = av.join(' ');
       const em = joined.match(/(?:^|\s)-e(?:nc(?:odedcommand)?)?\s+([A-Za-z0-9+/=]{8,})/i);
       if (em) { try { reasons.push(...sub(Buffer.from(em[1], 'base64').toString('utf16le'), cur)); } catch { /* not base64 */ } }
-      const m = joined.match(/(?:^|\s)(?:-[a-z]*c|-command|\/{1,2}[ck])\s+([\s\S]*)$/i);
-      if (m) reasons.push(...sub(m[1], cur));
+      const inner = shellInner(verb, av);   // gates8 hole 4: powershell "cmd" without -Command is a command too
+      if (inner) reasons.push(...sub(inner, cur));
       else if (seg.here) reasons.push(...sub(seg.here, cur));
       else if (seg.piped) { const j = originOf(si); for (let k = si - 1; k >= Math.max(j, 0) && j >= 0; k--) { const pv = verbOf(segments[k].words); if (pv.verb === 'echo' || pv.verb === 'printf') reasons.push(...sub(pv.args.map((a) => a.v).join(' '), cur)); } }
       continue;
@@ -381,7 +394,14 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
         const bad = fl.some((f) => /^-[a-zA-Z]*[xXd][a-zA-Z]*$/.test(f));
         const specs = rest.filter((x, ix) => !/^-/.test(x) && !exVal.has(ix));
         if (bad && !dry) {
-          if (!specs.length) { if (ctx.near(repo) || uncertain) reasons.push('`git clean` with -x, -X or -d in the main checkout or a worktree removes ignored and untracked folders (the docs\\reference junction of an older worktree among them): name the folder, e.g. git clean -fd build'); }
+          if (!specs.length) {
+            // gates8 (gates7 audit F2): a path-less clean in a worktree that holds no junction or symlink on disk (the test `rm -rf` uses) removes nothing the photos hang on: allowed.
+            // The main checkout, a tree with a link (the walk skips build output folders) and an unreadable directory keep the refusal.
+            const inWt = ctx.underWt(repo);
+            let linkWhy = '';
+            if (inWt && !uncertain) { const lk = linksBelow(repo); if (lk.length) linkWhy = ` (it holds ${lk.length} junction/symlink(s): ${lk.slice(0, 2).join(', ')})`; else if (lk.capped) linkWhy = ' (too large to check for junctions in time)'; }
+            if (uncertain || ctx.near(repo) && (!inWt || linkWhy)) reasons.push('`git clean` with -x, -X or -d and NO PATH in the main checkout or in a worktree that holds a junction removes ignored and untracked folders' + linkWhy + ': name the folder, e.g. `git clean -fd build` (a path-less clean is allowed only in a worktree with no junction or symlink in it)');
+          }
           else {
             const saved = cur; cur = repo;
             for (const sp of specs) { const r = resolveWord(sp, repo, vars); if (r.unknown || !r.values.length) { if (risky(repo)) reasons.push(`git clean of "${sp}" (cannot be resolved)`); continue; } for (const p of r.values.flatMap((x) => expandGlob(x))) { const why = ctx.classify(p, {}); if (why) { reasons.push(`git clean of "${sp}" (${p}): the path ${why}`); break; } if (ctx.underMain(p) && !ctx.underWt(p) && strip(p) === ctx.main) { reasons.push('git clean of the main checkout root'); break; } } }
@@ -409,7 +429,9 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
         else if (opts.some((f) => /^\/mov(?:e)?$/i.test(f))) reasons.push('robocopy /MIR /MOV into the backup would delete the photos after copying');
         continue;
       }
-      const why = ctx.classify(d) || (ctx.underWt(d) ? 'is inside a worktree' : null);
+      // gates8 (gates7 audit F3): judged like `rm -rf <dest>`: refused for the photos, main, a worktree root, the backup, or a folder holding a junction (classify walks it, skipping build output
+      // folders); a mirror into a clean worktree's build folder is allowed
+      const why = ctx.classify(d);
       if (why) reasons.push(`robocopy /MIR or /PURGE into "${pos[1]}" (the destination ${why}): /MIR deletes in the destination`);
       continue;
     }

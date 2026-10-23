@@ -60,6 +60,19 @@
             "timeout": 15
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/tools/hooks/lock_guard.mjs"
+            ],
+            "timeout": 15
+          }
+        ]
       }
     ],
     "PostToolUse": [
