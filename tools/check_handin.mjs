@@ -119,6 +119,31 @@ if (since > 0) {
 // --checkpoint (gates8): validate a CHECKPOINT.md instead of a hand-in. A builder may stop early with <folder>/CHECKPOINT.md whose first line is
 // `CHECKPOINT: <what is done> | images: <path>[, <path>...]` and at least one of the named paths is an existing image. The finish hook lets such a stop through once per agent and does NOT
 // count it as a hand-in (no audit owed); the final hand-in is still checked in full.
+// the frame size from the first bytes of an image file, or null when the header is not valid
+function imageDims(b) {
+  const sane = (w, h) => (w > 0 && h > 0 && w <= 100000 && h <= 100000 ? { w, h } : null);
+  if (b.length >= 33 && b.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && b.readUInt32BE(8) === 13 && b.subarray(12, 16).toString('latin1') === 'IHDR') return sane(b.readUInt32BE(16), b.readUInt32BE(20));
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) { i++; continue; }
+      const m = b[i + 1];
+      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7) || m === 0xff) { i += m === 0xff ? 1 : 2; continue; }
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return sane(b.readUInt16BE(i + 7), b.readUInt16BE(i + 5));
+      i += 2 + b.readUInt16BE(i + 2);
+    }
+    return null;
+  }
+  if (b.length >= 10 && /^GIF8[79]a/.test(b.subarray(0, 6).toString('latin1'))) return sane(b.readUInt16LE(6), b.readUInt16LE(8));
+  if (b.length >= 26 && b[0] === 0x42 && b[1] === 0x4d && b.readUInt32LE(14) >= 12) return sane(Math.abs(b.readInt32LE(18)), Math.abs(b.readInt32LE(22)));
+  if (b.length >= 30 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') {
+    const k = b.subarray(12, 16).toString('latin1');
+    if (k === 'VP8X') return sane(1 + b.readUIntLE(24, 3), 1 + b.readUIntLE(27, 3));
+    if (k === 'VP8L') { const v = b.readUInt32LE(21); return sane((v & 0x3fff) + 1, ((v >> 14) & 0x3fff) + 1); }
+    if (k === 'VP8 ') return sane(b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff);
+  }
+  return null;
+}
 if (args.includes('--checkpoint')) {
   const cp = read('CHECKPOINT.md');
   const why = [];
@@ -131,9 +156,31 @@ if (args.includes('--checkpoint')) {
       if (m[1].replace(/[^A-Za-z0-9]/g, '').length < 8) why.push('"what is done" is empty or a placeholder: say what is finished');
       const paths = m[2].split(/\s*[,;]\s*|\s{2,}/).map((x) => x.trim().replace(/^`|`$/g, '').replace(/^["']|["']$/g, '')).filter(Boolean);
       const imgs = paths.filter((p) => /\.(?:png|jpe?g|webp|gif|bmp)$/i.test(p));
-      const found = imgs.filter((p) => resolveFile(p, [path.resolve(folder), wtRoot, main, refRoot]));
+      // gates9 (gates8 audit H4): the image must be this round's own picture: inside the hand-in folder or docs/reference/_compare/<round> (the round = the hand-in folder name), written during
+      // this run (--since), at least 10 KB, and carry a valid PNG / JPEG / GIF / BMP / WEBP header with a frame size. A reference photo, a system icon or an old render does not count.
+      const round = path.basename(path.resolve(folder));
+      const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+      const nrm = (p) => realOf(p).replace(/\\/g, '/').toLowerCase();
+      const okDirs = [path.resolve(folder), path.join(refRoot, '_compare', round), path.join(wtRoot, 'docs', 'reference', '_compare', round)].flatMap((d) => [d, realOf(d)]).map((d) => d.replace(/\\/g, '/').toLowerCase().replace(/\/$/, ''));
+      const problemsOf = (p) => {
+        const r = resolveFile(p, [path.resolve(folder), wtRoot, main, refRoot]);
+        if (!r) return 'does not exist';
+        const n = nrm(r);
+        if (!okDirs.some((d) => n.startsWith(d + '/'))) return 'is not inside the hand-in folder (' + path.resolve(folder) + ') or docs\\reference\\_compare\\' + round + ' (a checkpoint image is a picture this round made)';
+        let st; try { st = fs.statSync(r); } catch { return 'cannot be read'; }
+        if (since > 0 && st.mtimeMs < since) return 'is older than this agent\'s run (written before ' + new Date(since).toISOString() + '): a picture from an earlier round is not a checkpoint';
+        if (st.size < 10240) return 'is only ' + st.size + ' bytes: under 10 KB, not a real render';
+        let head; try { const fd = fs.openSync(r, 'r'); head = Buffer.alloc(Math.min(st.size, 65536)); fs.readSync(fd, head, 0, head.length, 0); fs.closeSync(fd); } catch { return 'cannot be read'; }
+        const dims = imageDims(head);
+        if (!dims) return 'has no valid PNG / JPEG / GIF / BMP / WEBP header (a real picture is needed)';
+        return null;
+      };
+      const results = imgs.map((p) => [p, problemsOf(p)]);
       if (!imgs.length) why.push('"images:" names no image path (.png .jpg .jpeg .webp .gif .bmp)');
-      else if (!found.length) why.push('none of the named images exists: ' + imgs.join(', '));
+      else if (!results.some((x) => !x[1])) {
+        if (results.every((x) => x[1] === 'does not exist')) why.push('none of the named images exists: ' + imgs.join(', '));
+        else for (const [p, pr] of results) why.push('image ' + p + ' ' + pr);
+      }
     }
     if (since > 0) { try { if (fs.statSync(path.join(folder, 'CHECKPOINT.md')).mtimeMs < since) why.push('CHECKPOINT.md is older than this agent\'s run (written before ' + new Date(since).toISOString() + ')'); } catch { /* checked above */ } }
   }

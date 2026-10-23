@@ -1,65 +1,160 @@
 // PreToolUse hook (matcher Write|Edit|NotebookEdit|Bash|PowerShell): LOCKED TESTS (main session decision, 23 Oct 2026). A test written by the auditor may not be weakened by the builder
 // whose work it judges.
 //
-// LOCKED = any file under a folder `tests/locked/` (in any repository or worktree), and any file listed (one path per line, `#` comments; relative to the repository root or absolute) in a
-// `LOCKED_TESTS.txt` in the hand-in folder of the PRIOR round (the folder of the brief's `PRIOR-AUDIT:` file).
+// LOCKED = every file listed in `LOCKED_TESTS.txt` in the hand-in folder of the PRIOR round (the folder of the brief's `PRIOR-AUDIT:` file), and every file under a folder
+// `tests/locked/` of the builder's worktree that exists on disk. The list: one path or glob per line (`*`, `?`, `**`), `#` comments, relative to the worktree root or absolute; UTF-8 or UTF-16 (BOM).
+// PROTECTED the same way (gates9, audit H1): the list file itself and the prior round's AUDIT.md: a builder may not write, delete, move or truncate them, nor delete or move their folder.
+// A list that cannot be used (an entry that matches no file, a list with no entry, a missing list that the audit speaks of, text that cannot be decoded) is logged ONCE per agent as
+// `LOCK-LIST-BAD ... FAIL-OPEN` (gate notice for the main session) and shown to the builder as a warning: it never fails silently.
+// NO LIST AND NO tests/locked FOLDER MEANS NOTHING IS PROTECTED (gates9, audit F1): a glob, a folder delete, a find or a move is refused only when it can really reach a locked file (a glob that
+// matches one, a folder whose tree holds one, a destination that IS one); a move is judged by its SOURCE (the destination only when it is itself a locked file).
 // WHO IS LIMITED: a BUILDER subagent, i.e. an agent whose launch carried a HANDIN_DIR (read from its own transcript or the BRIEF-FILE it names; an `AUDIT-OF:` launch is an auditor). Auditors
 // (NO-CONTRACT launches), agents with no HANDIN_DIR and the main session (no agent_id) may write locked tests: that is how they get there.
 // WHAT IS REFUSED: Write / Edit / NotebookEdit of a locked file, and in Bash / PowerShell any write, delete or rename of one: redirects (> >>), rm / del / Remove-Item / unlink, mv / move /
-// Move-Item / ren / Rename-Item (source and destination), cp / Copy-Item / robocopy-free copies ONTO it, tee, touch, truncate, Set-Content / Add-Content / Clear-Content / Out-File,
-// sed -i / perl -i, git rm, git mv, git checkout -- <file>, git restore <file>, a delete or move of a folder that holds locked files (`rm -rf tests`), and inline python / node code that names a
-// locked path next to a write, delete or rename call.
-// WHAT IT CANNOT SEE: a path built from variables or pieces, a script file that edits the test (`node x.mjs`), an editor or build tool that rewrites it, a copy of the test made elsewhere and
-// swapped in by a rename of its folder (judged: a rename of any folder above it is refused), a test deleted by `git reset --hard` / `git clean` (those only undo the builder's own edits), and
-// anything outside Bash, PowerShell, Write, Edit, NotebookEdit. A builder with no readable transcript is treated as not a builder (nothing to judge by). FAIL OPEN (logged) on any internal error.
+// Move-Item / ren / Rename-Item (source), cp / Copy-Item / mv onto it, tee, touch, truncate, Set-Content / Add-Content / Clear-Content / Out-File, in-place editors and formatters (sed -i, perl -i, ruby -i,
+// awk -i inplace, clang-format -i, prettier --write, dos2unix, black, gofmt -w ...), git rm, git mv, git checkout -- <file>, git restore <file>, a delete or move of a folder that holds locked files, and
+// inline python / node code whose WRITE call (write, append, unlink, rename, copy onto, open for write) takes a locked path as the argument it writes to; reading one is free.
+// WHAT IT CANNOT SEE: a path built from variables or pieces, a script file that edits the test (`node x.mjs`), an editor or build tool that rewrites it, `patch` / `git apply`, a test deleted by
+// `git reset --hard` / `git clean` (those only undo the builder's own edits), and anything outside Bash, PowerShell, Write, Edit, NotebookEdit. A builder with no readable transcript is treated as
+// not a builder (nothing to judge by). FAIL OPEN (logged) on any internal error.
 import fs from 'node:fs';
 import path from 'node:path';
-import { log, readStdin, parseJson, launchInfoOfAgent } from './lib.mjs';
+import crypto from 'node:crypto';
+import { log, readStdin, parseJson, launchInfoOfAgent, STATE_DIR } from './lib.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
 export const LOCK_MESSAGE = 'locked test: written by the auditor; make it pass, or write BLOCKED';
+export const PROTECTED_WHY = 'is the lock list or the prior audit (read-only for a builder)';
 const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '').toLowerCase();
 const winPath = (p) => (/^\/([a-zA-Z])(\/|$)/.test(p) ? p[1] + ':' + p.slice(2) : p);
 const absOf = (p, cwd) => { const w = winPath(String(p).replace(/\\/g, '/')); return path.resolve(/^[A-Za-z]:|^\//.test(w) ? w : path.join(cwd || process.cwd(), w)); };
 const hasGlob = (s) => /[*?]|\[[^\]]+\]/.test(s);
+const slash = (p) => String(p).replace(/\\/g, '/');
 
-// the entries of <prior round hand-in folder>/LOCKED_TESTS.txt
-export function lockedList(priorAudit) {
-  if (!priorAudit) return [];
-  try {
-    let dir = path.resolve(String(priorAudit));
-    try { if (fs.statSync(dir).isFile()) dir = path.dirname(dir); } catch { if (/\.\w{1,5}$/.test(dir)) dir = path.dirname(dir); }
-    const txt = fs.readFileSync(path.join(dir, 'LOCKED_TESTS.txt'), 'utf8');
-    return txt.split(/\r?\n/).map((l) => l.replace(/#.*$/, '').trim().replace(/^`|`$/g, '')).filter(Boolean);
-  } catch { return []; }
+// a glob (on a lowercased, forward-slash path) as a RegExp: ** crosses folders, * and ? do not
+export function globToRe(g) {
+  let re = '';
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === '*') { if (g[i + 1] === '*') { i++; if (g[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*'; } else re += '[^/]*'; }
+    else if (c === '?') re += '[^/]';
+    else if (c === '[') { const k = g.indexOf(']', i + 1); if (k > i + 1) { re += '[' + g.slice(i + 1, k).replace(/\\/g, '\\\\') + ']'; i = k; } else re += '\\['; }
+    else re += c.replace(/[.+^${}()|\\]/g, '\\$&');
+  }
+  return new RegExp('^' + re + '$');
 }
 
-// a lock context for one builder: matches an absolute path, or a folder above locked files
+// every file below a folder (bounded: depth, count); links are not followed
+function walkFiles(dir, { max = 20000, depth = 10 } = {}) {
+  const out = []; const SKIP = new Set(['.git', 'node_modules']);
+  const go = (d, lvl) => {
+    if (out.length >= max || lvl > depth) return;
+    let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of ents) {
+      if (out.length >= max) return;
+      const f = path.join(d, e.name);
+      if (e.isSymbolicLink()) continue;
+      if (e.isDirectory()) { if (!SKIP.has(e.name)) go(f, lvl + 1); } else out.push(f);
+    }
+  };
+  go(dir, 0);
+  return out;
+}
+
+// the text of a list file: UTF-8 (BOM stripped), UTF-16 LE / BE with a BOM, or UTF-16 without a BOM (a NUL in every second byte)
+const swap16 = (b) => { const sw = Buffer.from(b); for (let i = 0; i + 1 < sw.length; i += 2) { const a = sw[i]; sw[i] = sw[i + 1]; sw[i + 1] = a; } return sw; };
+export function decodeList(buf) {
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return { text: buf.subarray(2).toString('utf16le'), enc: 'utf-16le' };
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return { text: swap16(buf.subarray(2)).toString('utf16le'), enc: 'utf-16be' };
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return { text: buf.subarray(3).toString('utf8'), enc: 'utf-8' };
+  if (buf.length >= 4) {
+    let nulOdd = 0, nulEven = 0; const n = Math.min(buf.length, 400);
+    for (let i = 0; i < n; i++) if (buf[i] === 0) { if (i % 2) nulOdd++; else nulEven++; }
+    if (nulOdd > n / 4 && nulEven === 0) return { text: buf.toString('utf16le'), enc: 'utf-16le' };
+    if (nulEven > n / 4 && nulOdd === 0) return { text: swap16(buf).toString('utf16le'), enc: 'utf-16be' };
+  }
+  return { text: buf.toString('utf8'), enc: 'utf-8' };
+}
+
+// the prior round's folder, the list in it, the audit, and what is wrong with the list
+export function lockedListInfo(priorAudit) {
+  const res = { entries: [], file: null, audit: null, problems: [] };
+  if (!priorAudit) return res;
+  try {
+    const given = path.resolve(String(priorAudit));
+    let dir = given; let isFile = false;
+    try { isFile = fs.statSync(given).isFile(); } catch { isFile = /\.\w{1,5}$/.test(given); }
+    if (isFile) dir = path.dirname(given);
+    res.file = path.join(dir, 'LOCKED_TESTS.txt'); res.audit = isFile ? given : path.join(dir, 'AUDIT.md');
+    let auditText = ''; try { auditText = fs.readFileSync(res.audit, 'utf8').slice(0, 400000); } catch { /* no audit text */ }
+    let buf = null;
+    try { buf = fs.readFileSync(res.file); } catch (e) { if (e && e.code === 'ENOENT') { if (/LOCKED_TESTS|tests[\\/]locked/i.test(auditText)) res.problems.push(`the audit (${res.audit}) speaks of locked tests but ${res.file} does not exist: nothing is locked`); } else res.problems.push(`${res.file} cannot be read (${(e && e.code) || e})`); }
+    if (buf) {
+      const { text, enc } = decodeList(buf);
+      if (/\u0000/.test(text) || /�/.test(text)) res.problems.push(`${res.file} could not be decoded as text (read as ${enc}); write it as UTF-8, one path per line`);
+      res.entries = text.split(/\r?\n/).map((l) => l.replace(/\u0000/g, '').replace(/#.*$/, '').trim().replace(/^`|`$/g, '').replace(/^["']|["']$/g, '')).filter(Boolean);
+      if (!res.entries.length) res.problems.push(`${res.file} has no entry: nothing is locked`);
+    }
+  } catch (e) { res.problems.push(`the lock list could not be read: ${(e && e.message) || e}`); }
+  return res;
+}
+export function lockedList(priorAudit) { return lockedListInfo(priorAudit).entries; }
+
+// a lock context for one builder
 export function lockCtx({ handinDir, priorAudit }) {
-  const list = lockedList(priorAudit);
+  const info = lockedListInfo(priorAudit);
+  const problems = [...info.problems];
   const wtRoot = (() => { const n = String(handinDir || '').replace(/\\/g, '/'); const k = n.toLowerCase().indexOf('/docs/progress/'); return k >= 0 ? n.slice(0, k) : null; })();
-  const entries = list.map((e) => { const abs = /^[A-Za-z]:|^[\\/]/.test(e); return { raw: e, abs, n: norm(abs ? winPath(e.replace(/\\/g, '/')) : e), res: !abs && wtRoot ? norm(path.resolve(wtRoot, e)) : null }; });
-  const lockedAbs = [...entries.map((e) => (e.abs ? e.n : e.res)).filter(Boolean)];
-  if (wtRoot) lockedAbs.push(norm(path.join(wtRoot, 'tests', 'locked')));
+  const relOf = (abs) => { try { return wtRoot ? slash(path.relative(wtRoot, abs)) : slash(abs); } catch { return slash(abs); } };
+  const files = [];             // existing locked / protected files: { n, rel, kind, why }
+  const seen = new Set();
+  const addFile = (abs, kind, why) => { const n = norm(abs); if (seen.has(n)) return; seen.add(n); files.push({ n, rel: relOf(abs), kind, why }); };
+  const directs = [];           // paths that are locked whether or not they exist yet: { n, rel, prefix, kind, why, loose }
+  // the tests/locked folder of the builder's worktree, if it exists
+  if (wtRoot) { const ld = path.join(wtRoot, 'tests', 'locked'); try { if (fs.statSync(ld).isDirectory()) for (const f of walkFiles(ld)) addFile(f, 'test', 'is under tests/locked'); } catch { /* no such folder: nothing protected there */ } }
+  for (const e of info.entries) {
+    const isAbs = /^[A-Za-z]:|^[\\/]/.test(e);
+    const abs = isAbs ? path.resolve(winPath(slash(e))) : (wtRoot ? path.resolve(wtRoot, e) : null);
+    const why = `is listed in LOCKED_TESTS.txt (${e})`;
+    if (hasGlob(e)) {
+      if (!abs) { problems.push(`entry "${e}" is a glob and the worktree root is unknown: it cannot be expanded`); continue; }
+      const parts = slash(abs).split('/'); const keep = []; for (const s of parts) { if (hasGlob(s)) break; keep.push(s); }
+      const startDir = keep.join('/') || '/'; const re = globToRe(norm(abs)); let n = 0;
+      for (const f of walkFiles(startDir)) if (re.test(norm(f))) { addFile(f, 'test', why); directs.push({ n: norm(f), rel: e, prefix: false, kind: 'test', why }); n++; }
+      if (!n) problems.push(`entry "${e}" (a glob) matches no file`);
+      continue;
+    }
+    directs.push({ n: abs ? norm(abs) : norm(e), rel: e, prefix: true, kind: 'test', why, loose: !abs });
+    let st = null; if (abs) { try { st = fs.statSync(abs); } catch { /* missing */ } }
+    if (!st) problems.push(`entry "${e}" names no existing file`);
+    else if (st.isDirectory()) for (const f of walkFiles(abs)) addFile(f, 'test', why);
+    else addFile(abs, 'test', why);
+  }
+  for (const p of [info.file, info.audit]) {
+    if (!p) continue;
+    directs.push({ n: norm(p), rel: relOf(p), prefix: false, kind: 'protected', why: PROTECTED_WHY });
+    try { if (fs.statSync(p).isFile()) addFile(p, 'protected', PROTECTED_WHY); } catch { /* not there */ }
+  }
   const direct = (p) => {
     const n = norm(p);
-    if (/(^|\/)tests\/locked(\/|$)/.test(n)) return 'is under tests/locked';
-    for (const e of entries) {
-      const t = e.abs ? e.n : null;
-      if (t && (n === t || n.startsWith(t + '/'))) return `is listed in LOCKED_TESTS.txt (${e.raw})`;
-      if (!e.abs) { if ((e.res && (n === e.res || n.startsWith(e.res + '/'))) || n.endsWith('/' + e.n) || n.includes('/' + e.n + '/')) return `is listed in LOCKED_TESTS.txt (${e.raw})`; }
+    if (/(^|\/)tests\/locked(\/|$)/.test(n)) return { why: 'is under tests/locked', rel: 'tests/locked', kind: 'test' };
+    for (const e of directs) {
+      if (n === e.n || (e.prefix && n.startsWith(e.n + '/')) || (e.loose && (n.endsWith('/' + e.n) || n.includes('/' + e.n + '/')))) return e;
     }
     return null;
   };
-  // a folder above locked files (rm -rf tests, mv tests tests2): a delete or move of it takes them along
-  const above = (p) => {
-    const n = norm(p);
-    if (!n) return null;
-    for (const l of lockedAbs) if (l.startsWith(n + '/')) return 'holds locked tests';
-    try { if (path.basename(n) === 'tests' && fs.existsSync(path.join(p, 'locked'))) return 'holds tests/locked'; if (fs.existsSync(path.join(p, 'tests', 'locked'))) return 'holds tests/locked'; } catch { /* none */ }
+  // a folder whose tree really holds a locked file (rm -rf tests, mv tests tests2)
+  const above = (p) => { const n = norm(p); if (!n) return null; for (const f of files) if (f.n.startsWith(n + '/')) return f; return null; };
+  // a glob that reaches a locked file; whole: or a folder holding one (rm tests/* takes tests/locked along)
+  const globHit = (patternAbs, whole) => {
+    let re; try { re = globToRe(norm(patternAbs)); } catch { return null; }
+    for (const f of files) {
+      if (re.test(f.n)) return f;
+      if (whole) { let a = f.n; for (let i = a.lastIndexOf('/'); i > 0; i = a.lastIndexOf('/')) { a = a.slice(0, i); if (re.test(a)) return f; } }
+    }
     return null;
   };
-  return { list, entries, direct, above };
+  return { list: info.entries, entries: info.entries.map((raw) => ({ raw })), files, problems, listFile: info.file, direct, above, globHit };
 }
 
 const DEL = new Set(['rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri', 'unlink', 'shred', 'truncate']);
@@ -68,20 +163,77 @@ const COPY = new Set(['cp', 'copy', 'copy-item', 'cpi', 'install']);
 const WRITE = new Set(['tee', 'tee-object', 'touch', 'set-content', 'sc', 'add-content', 'ac', 'clear-content', 'clc', 'out-file', 'new-item', 'ni', 'set-itemproperty', 'dd']);
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'pwsh', 'powershell', 'cmd']);
 const INLINE = new Set(['python', 'python3', 'py', 'node', 'nodejs', 'perl', 'ruby', 'bun', 'deno']);
+const RUNNERS = new Set(['npx', 'pnpx', 'bunx']);
 const isFlag = (x) => /^-/.test(x) || /^\/{1,2}[a-zA-Z](:\S*)?$/.test(x);
+// programs that rewrite their file arguments (gates9, audit H7); folders: the argument may be a folder that is processed with everything in it
+const FORMATTERS = {
+  'clang-format': { on: (av) => av.includes('-i') || av.includes('--in-place') },
+  prettier: { on: (av) => av.includes('--write') || av.includes('-w'), folders: true },
+  eslint: { on: (av) => av.includes('--fix'), folders: true },
+  dos2unix: { on: () => true }, unix2dos: { on: () => true }, mac2unix: { on: () => true },
+  black: { on: (av) => !av.includes('--check') && !av.includes('--diff'), folders: true }, isort: { on: (av) => !av.includes('--check') && !av.includes('--check-only') && !av.includes('--diff'), folders: true },
+  gofmt: { on: (av) => av.includes('-w'), folders: true }, rustfmt: { on: (av) => !av.includes('--check') }, shfmt: { on: (av) => av.includes('-w'), folders: true },
+  autopep8: { on: (av) => av.includes('-i') || av.includes('--in-place'), folders: true }, yapf: { on: (av) => av.includes('-i') || av.includes('--in-place'), folders: true }, 'cmake-format': { on: (av) => av.includes('-i') },
+};
 
-// judge a PATH argument: [] or a reason. `whole`: the operation takes a folder with everything in it (delete, move, rename)
+// judge a PATH argument: [] or reasons. `whole`: the operation takes a folder with everything in it (delete, move, formatters)
 function judgeTarget(raw, cur, lc, verbName, whole) {
   const out = [];
   const piece = String(raw).replace(/^-\w+:/, '');
   if (!piece || /\s/.test(piece) && !/^[A-Za-z]:[\\/]/.test(piece) && !/[\\/]/.test(piece)) return out;   // prose with spaces, not a path
-  const globbed = hasGlob(piece);
   const abs = absOf(piece, cur);
-  const base = globbed ? (() => { const root = path.parse(abs).root; const keep = []; for (const s of abs.slice(root.length).split(/[\\/]/).filter(Boolean)) { if (hasGlob(s)) break; keep.push(s); } return path.join(root, ...keep); })() : abs;
-  const d = lc.direct(abs) || (globbed ? lc.direct(base) : null);
-  if (d) { out.push(`${verbName} ${raw}: the path ${d}`); return out; }
-  if (whole || globbed) { const a = lc.above(base); if (a) out.push(`${verbName} ${raw}: the folder ${a}`); }
+  if (hasGlob(piece)) { const h = lc.globHit(abs, whole); if (h) out.push(`${verbName} ${raw}: the glob reaches the locked file ${h.rel} (${h.why})`); return out; }
+  const d = lc.direct(abs);
+  if (d) { out.push(`${verbName} ${raw}: the path ${d.why}`); return out; }
+  if (whole) { const a = lc.above(abs); if (a) out.push(`${verbName} ${raw}: the folder holds ${a.kind === 'protected' ? 'the lock list or the prior audit (read-only for a builder)' : 'the locked file ' + a.rel}`); }
   return out;
+}
+// the destination of mv / cp: refused only when it IS a locked file (a folder destination counts through <folder>/<name of the source>)
+function judgeDest(raw, cur, lc, verbName, srcs) {
+  const out = judgeTarget(raw, cur, lc, verbName, false);
+  if (out.length || hasGlob(String(raw))) return out;
+  try {
+    const abs = absOf(String(raw).replace(/^-\w+:/, ''), cur);
+    if (fs.statSync(abs).isDirectory()) for (const s of srcs) { const b = path.basename(String(s).replace(/[\\/]+$/, '')); if (!b || hasGlob(b)) continue; const d = lc.direct(path.join(abs, b)); if (d) { out.push(`${verbName} ${raw}: the file it would write there ${d.why}`); break; } }
+  } catch { /* the destination is not an existing folder */ }
+  return out;
+}
+
+// ---- inline python / node: only a WRITE call whose written-to argument names a locked path is a write; a read (or a copy FROM it) is free
+function matchParen(s, i) { let d = 0; for (let j = i; j < s.length; j++) { const ch = s[j]; if (ch === '"' || ch === "'" || ch === '`') { const k = s.indexOf(ch, j + 1); if (k < 0) return -1; j = k; continue; } if (ch === '(') d++; else if (ch === ')') { d--; if (d === 0) return j; } } return -1; }
+function splitArgs(s) {
+  const out = []; let d = 0, cur = '';
+  for (let j = 0; j < s.length; j++) {
+    const ch = s[j];
+    if (ch === '"' || ch === "'" || ch === '`') { const k = s.indexOf(ch, j + 1); const e = k < 0 ? s.length - 1 : k; cur += s.slice(j, e + 1); j = e; continue; }
+    if ('([{'.includes(ch)) d++; else if (')]}'.includes(ch)) d--;
+    if (ch === ',' && d === 0) { out.push(cur.trim()); cur = ''; } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+const FIRST_ARG = /(?:^|[^\w.])(?:fs(?:\.promises)?\.)?(?:writeFileSync|writeFile|appendFileSync|appendFile|unlinkSync|unlink|rmSync|rmdirSync|rmdir|truncateSync|truncate|createWriteStream)\s*\(|(?:^|[^\w.])(?:os\.remove|os\.unlink|os\.rmdir|os\.truncate|shutil\.rmtree|rmtree|File\.write|File\.delete|File\.unlink|FileUtils\.rm\w*|Deno\.writeTextFileSync|Deno\.writeFileSync|Deno\.removeSync|Deno\.remove|Bun\.write)\s*\(/g;
+const BOTH_ARGS = /(?:^|[^\w.])(?:fs(?:\.promises)?\.renameSync|fs(?:\.promises)?\.rename|renameSync|os\.rename|os\.replace|shutil\.move|File\.rename|FileUtils\.mv|Deno\.renameSync|Deno\.rename)\s*\(/g;
+const DEST_ARG = /(?:^|[^\w.])(?:fs(?:\.promises)?\.)?(?:copyFileSync|copyFile|cpSync|cp)\s*\(|(?:^|[^\w.])(?:shutil\.(?:copy|copy2|copyfile|copytree|copymode)|FileUtils\.cp\w*|Deno\.copyFileSync|Deno\.copyFile)\s*\(/g;
+const OPEN_CALL = /(?:^|[^\w.])(?:io\.|codecs\.|os\.)?open\s*\(/g;
+const PATH_METHOD = /Path\s*\(([^)]*)\)\s*\.\s*(?:write_text|write_bytes|unlink|touch|rename|replace|rmdir)\b/g;
+export function inlineWrites(code, lc) {
+  const hits = [];
+  const lockedIn = (txt) => {
+    const low = slash(txt).replace(/\/+/g, '/').toLowerCase();
+    const m = low.match(/[^\s"'`()]*tests\/locked[^\s"'`()]*/); if (m) return m[0];
+    for (const f of lc.files) if (low.includes(f.rel.toLowerCase())) return f.rel;
+    for (const e of lc.list) if (low.includes(slash(e).toLowerCase())) return e;
+    if (lc.listFile && /locked_tests\.txt/.test(low)) return 'LOCKED_TESTS.txt';
+    return null;
+  };
+  const calls = (re, pick) => { re.lastIndex = 0; let m; while ((m = re.exec(code))) { const open = m.index + m[0].length - 1; const close = matchParen(code, open); const args = splitArgs(code.slice(open + 1, close < 0 ? code.length : close)); for (const a of pick(args)) { const n = lockedIn(a); if (n) hits.push(n); } } };
+  calls(FIRST_ARG, (a) => a.slice(0, 1));
+  calls(BOTH_ARGS, (a) => a.slice(0, 2));
+  calls(DEST_ARG, (a) => a.slice(1, 2));
+  calls(OPEN_CALL, (a) => (a.slice(1).some((x) => /^(?:mode\s*=\s*)?['"][^'"]*[wax+]/.test(x)) ? a.slice(0, 1) : []));
+  PATH_METHOD.lastIndex = 0; let m; while ((m = PATH_METHOD.exec(code))) { const n = lockedIn(m[1]); if (n) hits.push(n); }
+  return hits;
 }
 
 export function judgeCommand(cmd, cwd, lc, depth = 0) {
@@ -91,7 +243,7 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
   // PowerShell's own .NET calls: [IO.File]::WriteAllText('tests\locked\a.mjs', ...), [System.IO.Directory]::Delete(...)
   if (/\[(?:System\.)?IO\.(?:File|Directory|Path)\]::\w*(?:Write|Append|Delete|Move|Copy|Replace|Create)/i.test(String(cmd))) {
     const low = String(cmd).toLowerCase().replace(/\\/g, '/');
-    const hit = /tests\/locked/.test(low) ? 'tests/locked' : (lc.entries.find((e) => low.includes(e.raw.replace(/\\/g, '/').toLowerCase())) || {}).raw;
+    const hit = /tests\/locked/.test(low) ? 'tests/locked' : ((lc.files.find((f) => low.includes(f.rel.toLowerCase())) || {}).rel || (lc.list.find((e) => low.includes(slash(e).toLowerCase())) || null) || (lc.listFile && /locked_tests\.txt/.test(low) ? 'LOCKED_TESTS.txt' : null));
     if (hit) reasons.push(`a .NET file call that names a locked test (${hit}) next to a write, delete, move or copy`);
   }
   const stack = [];
@@ -100,8 +252,8 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
   for (const seg of segments) {
     for (const rd of seg.redirects) { if (rd.op === '>' || rd.op === '>>' || rd.op === '&>') reasons.push(...judgeTarget(rd.target, cur, lc, 'a redirect into', false)); }
     if (!seg.words.length) continue;
-    const { verb, args, index, line } = verbOf(seg.words);
-    const av = args.map((a) => a.v);
+    let { verb, args, index, line } = verbOf(seg.words);
+    let av = args.map((a) => a.v);
     prevPaths = nextPrev; nextPrev = av.filter((x) => !isFlag(x));
     if (line) { reasons.push(...judgeCommand(seg.words.slice(index).map((w) => w.v).join(' '), cur, lc, depth + 1)); continue; }
     if (['cd', 'chdir', 'set-location', 'sl', 'pushd', 'push-location'].includes(verb)) { if (['pushd', 'push-location'].includes(verb)) stack.push(cur); const t = av.filter((x) => !/^-/.test(x) && !/^\/d$/i.test(x))[0]; if (t && !/\$|`|%/.test(t)) cur = absOf(t, cur); continue; }
@@ -113,12 +265,17 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
       continue;
     }
     if (verb === 'xargs' || verb === 'sudo') { const k = av.findIndex((a) => DEL.has(a) || MOVE.has(a)); if (k >= 0) reasons.push(...judgeCommand(av.slice(k).join(' '), cur, lc, depth + 1)); }
+    // npx prettier ..., pnpm exec prettier ..., yarn dlx ...: the program after the runner
+    if (RUNNERS.has(verb) || (/^(?:pnpm|yarn|npm)$/.test(verb) && /^(?:exec|dlx|x)$/.test(av[0] || ''))) {
+      const rest = RUNNERS.has(verb) ? av : av.slice(1); const k = rest.findIndex((x) => !/^-/.test(x));
+      if (k >= 0) { verb = rest[k].toLowerCase().replace(/^.*[\/\\]/, '').replace(/\.(?:cmd|exe|ps1)$/, ''); av = rest.slice(k + 1); }
+    }
     // positional (non-flag) arguments, with -Path / -LiteralPath / -Destination / -Value-less handling
     const pos = []; let named = null;
     for (let k = 0; k < av.length; k++) {
       const a = av[k];
       const m = /^-(path|literalpath|destination|newname|pa|lit\w*)(?::(.*))?$/i.exec(a);
-      if (m) { const v = m[2] !== undefined ? m[2] : av[++k]; if (/^dest/i.test(m[1])) named = v; else if (v !== undefined) pos.push(v); continue; }
+      if (m) { const v = m[2] !== undefined ? m[2] : av[++k]; if (/^dest/i.test(m[1])) named = v; else if (/^newname$/i.test(m[1])) { /* a new name, not a path */ } else if (v !== undefined) pos.push(v); continue; }
       if (/^-(?:value|include|exclude|filter|encoding|stream|credential|inputobject)$/i.test(a)) { k++; continue; }
       if (isFlag(a)) continue;
       pos.push(a);
@@ -126,36 +283,67 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
     // a Remove-Item / Move-Item / Set-Content with no path of its own, fed by the segment before it (`Get-ChildItem tests\locked | Remove-Item`): the listed folder is what it acts on
     if ((DEL.has(verb) || MOVE.has(verb) || WRITE.has(verb) || verb === 'clear-content') && seg.piped && !pos.length && prevPaths.length) { for (const p of prevPaths) reasons.push(...judgeTarget(p, cur, lc, verb + ' (fed by a listing of it)', true)); continue; }
     if (DEL.has(verb)) { for (const p of pos) reasons.push(...judgeTarget(p, cur, lc, verb, true)); continue; }
-    if (MOVE.has(verb)) { for (const p of pos) reasons.push(...judgeTarget(p, cur, lc, verb, true)); if (named) reasons.push(...judgeTarget(named, cur, lc, verb, false)); continue; }
-    if (COPY.has(verb)) { const dest = named || (pos.length >= 2 ? pos[pos.length - 1] : null); if (dest) reasons.push(...judgeTarget(dest, cur, lc, verb, false)); continue; }
-    // gates8 self-audit pass 1: other programs that write a destination: robocopy / xcopy (destination = second positional), rsync / ln / scp (last positional)
+    if (MOVE.has(verb)) {
+      // judged by the SOURCE; the destination only when it is itself a locked file (gates9, audit F1)
+      const srcs = named ? pos : pos.slice(0, Math.max(1, pos.length - 1)); const dest = named || (pos.length >= 2 ? pos[pos.length - 1] : null);
+      for (const p of srcs) reasons.push(...judgeTarget(p, cur, lc, verb, true));
+      if (dest) reasons.push(...judgeDest(dest, cur, lc, verb, srcs));
+      continue;
+    }
+    if (COPY.has(verb)) { const dest = named || (pos.length >= 2 ? pos[pos.length - 1] : null); if (dest) reasons.push(...judgeDest(dest, cur, lc, verb, named ? pos : pos.slice(0, -1))); continue; }
+    // other programs that write a destination: robocopy / xcopy (destination = second positional), rsync / ln / scp (last positional)
     if (verb === 'robocopy' || verb === 'xcopy') { const p2 = av.filter((x) => !/^\/[a-zA-Z]+(?::\S*)?$/.test(x) && !/^-/.test(x)); if (p2.length >= 2) reasons.push(...judgeTarget(p2[1], cur, lc, verb, verb === 'robocopy' && av.some((x) => /^\/(?:mir|purge|mov|move)$/i.test(x)))); continue; }
     if (verb === 'rsync' || verb === 'ln' || verb === 'scp') { if (pos.length >= 2) reasons.push(...judgeTarget(pos[pos.length - 1], cur, lc, verb, false)); continue; }
-    // find <start> ... -delete / -exec rm|mv|truncate|shred: the start folder is deleted from; git clean <path>: the path is
-    if (verb === 'find' && av.some((a) => a === '-delete' || ((a === '-exec' || a === '-execdir' || a === '-ok') && av.some((b) => /^(?:rm|mv|unlink|truncate|shred|sed|tee)$/.test(b))))) { for (const p of av.slice(0, av.findIndex((x) => /^[-!(]/.test(x)) < 0 ? av.length : av.findIndex((x) => /^[-!(]/.test(x)))) reasons.push(...judgeTarget(p, cur, lc, 'find ... -delete/-exec', true)); continue; }
+    // find <start> ... -delete / -exec rm|mv|truncate|shred: judged by what really lies below the start folder (with -name/-iname: by the names it can match)
+    if (verb === 'find' && av.some((a) => a === '-delete' || ((a === '-exec' || a === '-execdir' || a === '-ok') && av.some((b) => /^(?:rm|mv|unlink|truncate|shred|sed|tee)$/.test(b))))) {
+      const stop = av.findIndex((x) => /^[-!(]/.test(x)); const starts = av.slice(0, stop < 0 ? av.length : stop);
+      const names = []; for (let k = 0; k < av.length - 1; k++) if (av[k] === '-name' || av[k] === '-iname') names.push(av[k + 1].toLowerCase());
+      const complex = av.some((x) => x === '-path' || x === '-ipath' || x === '-regex' || x === '-iregex' || x === '-o' || x === '-not' || x === '!');
+      for (const p of starts) {
+        if (!names.length || complex || hasGlob(p)) { reasons.push(...judgeTarget(p, cur, lc, 'find ... -delete/-exec', true)); continue; }
+        const abs = absOf(p, cur); const nb = norm(abs);
+        const d = lc.direct(abs);
+        const hit = d ? { rel: d.rel, why: d.why } : lc.files.find((f) => (f.n === nb || f.n.startsWith(nb + '/')) && names.some((nm) => globToRe(nm).test(f.n.slice(f.n.lastIndexOf('/') + 1))));
+        if (hit) reasons.push(`find ${p} ... -delete/-exec: it can reach the locked file ${hit.rel}`);
+      }
+      continue;
+    }
     if (WRITE.has(verb)) { for (const p of pos) reasons.push(...judgeTarget(p, cur, lc, verb, false)); if (verb === 'dd') for (const a of av) { const m = /^of=(.*)$/.exec(a); if (m) reasons.push(...judgeTarget(m[1], cur, lc, verb, false)); } continue; }
-    if ((verb === 'sed' || verb === 'perl') && av.some((a) => /^-[a-zA-Z]*i/.test(a) || /^--in-place/.test(a))) { for (const p of pos.slice(1)) reasons.push(...judgeTarget(p, cur, lc, verb + ' -i', false)); continue; }
+    // in-place editors: sed -i, perl -i, ruby -i (the first positional is the script), awk -i inplace (same, unless -f)
+    if (((verb === 'sed' || verb === 'perl' || verb === 'ruby') && av.some((a) => /^-[a-zA-Z]*i/.test(a) || /^--in-place/.test(a)))) { for (const p of pos.slice(1)) reasons.push(...judgeTarget(p, cur, lc, verb + ' -i', false)); continue; }
+    if (verb === 'awk' || verb === 'gawk') {
+      const ix = av.findIndex((a, k) => (a === '-i' && /^inplace$/i.test(av[k + 1] || '')) || /^-i\s*inplace$/i.test(a) || /^--inplace$/i.test(a));
+      if (ix >= 0) { const hasF = av.includes('-f') || av.includes('--file'); const fl = pos.filter((p) => !/^inplace$/i.test(p)); for (const p of (hasF ? fl : fl.slice(1))) reasons.push(...judgeTarget(p, cur, lc, verb + ' -i inplace', false)); }
+      continue;
+    }
+    if (FORMATTERS[verb] && FORMATTERS[verb].on(av)) { for (const p of pos) reasons.push(...judgeTarget(p, cur, lc, verb + ' (rewrites its files in place)', !!FORMATTERS[verb].folders)); continue; }
     if (verb === 'git') {
       let repo = cur; let i = 0;
       while (i < av.length && /^-/.test(av[i])) { if (av[i] === '-C' && av[i + 1] !== undefined) { repo = absOf(av[i + 1], repo); i += 2; continue; } if (av[i] === '-c' || av[i] === '--namespace' || av[i] === '--exec-path') { i += 2; continue; } i++; }
       const sub = String(av[i] || '').toLowerCase(); const rest = av.slice(i + 1);
       const dd = rest.indexOf('--');
-      if (sub === 'rm') for (const p of rest.filter((x) => !/^-/.test(x))) reasons.push(...judgeTarget(p, repo, lc, 'git rm', true));
-      else if (sub === 'mv') for (const p of rest.filter((x) => !/^-/.test(x))) reasons.push(...judgeTarget(p, repo, lc, 'git mv', true));
+      const nonFlag = rest.filter((x) => !/^-/.test(x));
+      if (sub === 'rm') for (const p of nonFlag) reasons.push(...judgeTarget(p, repo, lc, 'git rm', true));
+      else if (sub === 'mv') { for (const p of nonFlag.slice(0, Math.max(1, nonFlag.length - 1))) reasons.push(...judgeTarget(p, repo, lc, 'git mv', true)); if (nonFlag.length >= 2) reasons.push(...judgeDest(nonFlag[nonFlag.length - 1], repo, lc, 'git mv', nonFlag.slice(0, -1))); }
       else if (sub === 'checkout' && dd >= 0) for (const p of rest.slice(dd + 1)) { if (p !== '.') reasons.push(...judgeTarget(p, repo, lc, 'git checkout --', false)); }
-      else if (sub === 'restore') for (const p of rest.filter((x) => !/^-/.test(x))) { if (p !== '.') reasons.push(...judgeTarget(p, repo, lc, 'git restore', false)); }
-      else if (sub === 'clean') for (const p of rest.filter((x) => !/^-/.test(x))) reasons.push(...judgeTarget(p, repo, lc, 'git clean', true));
-      else if (sub === 'checkout' && dd < 0) { /* branch switch or `checkout <ref> <file>`: the file form is judged below */ const nf = rest.filter((x) => !/^-/.test(x)); for (const p of nf) reasons.push(...judgeTarget(p, repo, lc, 'git checkout', false)); }
+      else if (sub === 'restore') for (const p of nonFlag) { if (p !== '.') reasons.push(...judgeTarget(p, repo, lc, 'git restore', false)); }
+      else if (sub === 'clean') { if (!rest.some((x) => (/^-[a-zA-Z]*n/.test(x) && !/^--/.test(x)) || x === '--dry-run')) for (const p of nonFlag) reasons.push(...judgeTarget(p, repo, lc, 'git clean', true)); }
+      else if (sub === 'checkout' && dd < 0) { /* branch switch or `checkout <ref> <file>`: the file form is judged here */ for (const p of nonFlag) reasons.push(...judgeTarget(p, repo, lc, 'git checkout', false)); }
       continue;
     }
     if (INLINE.has(verb)) {
       const k = av.findIndex((a) => /^(?:-e|-c|--eval|-p|-pe|-r)$/.test(a));
       if (k >= 0 && av[k + 1]) {
         const code = av[k + 1];
-        const names = (code.match(/[^\s"'`()]*(?:tests[\\/]+locked)[^\s"'`()]*/gi) || []);
-        for (const e of lc.entries) if (code.toLowerCase().includes(e.raw.replace(/\\/g, '/').toLowerCase()) || code.toLowerCase().includes(e.raw.replace(/\//g, '\\\\').toLowerCase())) names.push(e.raw);
-        const writes = /write|append|unlink|\brm(?:dir|Sync)?\b|rename|copyFile|truncate|createWriteStream|shutil|os\.remove|os\.rename|\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\.dump\s*\(|move|replace/i.test(code);
-        if (names.length && writes) reasons.push(`inline ${verb} code that names a locked test (${names[0]}) next to a write, delete or rename call`);
+        if (/^(?:python|python3|py|node|nodejs|bun|deno)$/.test(verb)) {
+          const hits = inlineWrites(code, lc);
+          if (hits.length) reasons.push(`inline ${verb} code writes, deletes, renames or copies onto a locked path (${hits[0]})`);
+        } else {
+          // perl / ruby: a name next to a write word (their calls are too varied to split)
+          const low = slash(code).toLowerCase();
+          const names = [...(low.match(/[^\s"'`()]*tests\/+locked[^\s"'`()]*/g) || []), ...lc.list.filter((e) => low.includes(slash(e).toLowerCase())), ...(lc.listFile && /locked_tests\.txt/.test(low) ? ['LOCKED_TESTS.txt'] : [])];
+          if (names.length && /write|append|unlink|\brm(?:dir)?\b|rename|copy|truncate|\bopen\s*\(?[^;]*['"]\s*[>+]/i.test(code)) reasons.push(`inline ${verb} code that names a locked test (${names[0]}) next to a write, delete or rename call`);
+        }
       }
     }
   }
@@ -169,10 +357,23 @@ export function judge(input, lc) {
     if (!p) return [];
     const abs = absOf(p, input.cwd);
     const d = lc.direct(abs);
-    return d ? [`${tool} ${p}: the path ${d}`] : [];
+    return d ? [`${tool} ${p}: the path ${d.why}`] : [];
   }
   if (/^(Bash|PowerShell)$/.test(tool)) return judgeCommand(String(ti.command || ''), input.cwd, lc);
   return [];
+}
+
+// LOCK-LIST-BAD: logged (and shown to the builder) once per agent and distinct set of problems
+function reportBadList(input, lc) {
+  if (!lc.problems.length) return null;
+  const id = String(input.agent_id || '').replace(/[^\w.-]/g, '_');
+  const key = crypto.createHash('sha1').update(JSON.stringify(lc.problems)).digest('hex').slice(0, 16);
+  const mf = path.join(STATE_DIR, 'lock_bad', id + '.json');
+  try { if (JSON.parse(fs.readFileSync(mf, 'utf8')).key === key) return null; } catch { /* first time */ }
+  const text = `LOCK-LIST-BAD: ${lc.problems.slice(0, 5).join(' | ')}`;
+  log({ gate: 'lock_guard', decision: 'allow', reason: `${text} (FAIL-OPEN: the locked-test list is unusable or incomplete, so the lock does not hold as the auditor meant; the main session should fix the list)`, agent_id: id, list: lc.listFile || null, problems: lc.problems.slice(0, 10) });
+  try { fs.mkdirSync(path.dirname(mf), { recursive: true }); fs.writeFileSync(mf, JSON.stringify({ key })); } catch { /* the line is logged; the marker only avoids repeats */ }
+  return text;
 }
 
 export async function main() {
@@ -184,9 +385,15 @@ export async function main() {
   const info = launchInfoOfAgent(input);
   if (!info || !info.handinDir || info.auditor) return 0;     // an auditor, a clerk or an agent whose launch cannot be read: not a builder
   const lc = lockCtx(info);
+  const warn = reportBadList(input, lc);
   const reasons = judge(input, lc);
-  if (!reasons.length) return 0;
+  if (!reasons.length) { if (warn) process.stdout.write(JSON.stringify({ systemMessage: warn + ' (see .claude/state/gate.log; tell the main session)' })); return 0; }
   log({ gate: 'lock_guard', decision: 'deny', reason: 'builder touched a locked test', agent_id: input.agent_id, tool: input.tool_name, command: String((input.tool_input && (input.tool_input.command || input.tool_input.file_path)) || '').slice(0, 300), reasons });
-  process.stderr.write(`REFUSED by the lock guard (tools/hooks/lock_guard.mjs): ${LOCK_MESSAGE}\n - ${reasons.join('\n - ')}\nA test under tests/locked/, or listed in LOCKED_TESTS.txt of the prior round's hand-in folder, was written by the auditor to judge your work. Do not edit, delete or rename it: fix the code until it passes. If it cannot pass, write a BLOCKED line in STATUS.md (BLOCKED: <item> | tried: | blocked by: | needs:).\n`);
+  const realTest = reasons.some((r) => !/read-only for a builder/.test(r));
+  const head = realTest ? `REFUSED by the lock guard (tools/hooks/lock_guard.mjs): ${LOCK_MESSAGE}` : 'REFUSED by the lock guard (tools/hooks/lock_guard.mjs): the lock list (LOCKED_TESTS.txt) and the prior round\'s AUDIT.md are read-only for a builder';
+  const tail = realTest
+    ? 'A file listed in LOCKED_TESTS.txt of the prior round\'s hand-in folder (or under tests/locked/) was written by the auditor to judge your work. Do not edit, delete or rename it: fix the code until it passes. If it cannot pass, write a BLOCKED line in STATUS.md (BLOCKED: <item> | tried: | blocked by: | needs:).'
+    : 'These files record what the auditor locked and found; they are not yours to change. Read them as much as you like; put your own notes in your own hand-in folder.';
+  process.stderr.write(`${head}\n - ${reasons.join('\n - ')}\n${tail}\n`);
   return 2;
 }

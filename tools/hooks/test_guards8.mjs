@@ -13,6 +13,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolateState, cleanupTmp } from '../test_isolation.mjs';
 
@@ -113,10 +115,10 @@ console.log('gates8 A6 the junction walk skips build output folders; real Unreal
   // a link buried in a build output folder is not walked; one at the top level of the worktree is
   mk(path.join(wtU, 'unreal', 'CityPainter', 'Intermediate', 'Build', 'deep')); fs.symlinkSync(photos, path.join(wtU, 'unreal', 'CityPainter', 'Intermediate', 'Build', 'deep', 'lnk'), 'junction');
   const t0 = Date.now(); const r = lb(wtU); const dt = Date.now() - t0;
-  t('A6 linksBelow(Unreal-style worktree with 400 build files and a link inside Intermediate) does not walk Intermediate (no link found, not capped)', r.length === 0 && !r.capped, JSON.stringify({ n: r.length, capped: r.capped, seen: r.seen }));
+  t('A6 linksBelow(Unreal-style worktree with 400 build files and a link inside Intermediate) is walked (H3, gates9): the buried link IS found, not capped', r.length === 1 && !r.capped, JSON.stringify({ n: r.length, capped: r.capped, seen: r.seen }));
   t('A6 ... and a link outside the build folders is found (docs\\reference in the link tree)', lb(wtJ).length === 1);
   t('A6 ... and a link NAMED like a build folder is still found as an entry', (() => { const w = addWt('b1'); fs.rmSync(path.join(w, 'build'), { recursive: true }); fs.symlinkSync(photos, path.join(w, 'build'), 'junction'); const x = lb(w); try { fs.rmdirSync(path.join(w, 'build')); } catch { /* left */ } return x.length === 1; })());
-  t('A6 git clean -fd in the Unreal-style worktree (link buried in Intermediate) is allowed, the walk costs < 2 s', dg('git clean -fd', wtU).length === 0 && Date.now() - t0 < 2000);
+  t('A6 git clean -fd in the Unreal-style worktree (link buried in Intermediate) is refused (H3, gates9), the walk costs < 3 s', dg('git clean -fd', wtU).length > 0 && Date.now() - t0 < 3000);
   t('A6 the cap still refuses: a 1 ms budget on a walkable tree reports capped', (() => { const x = lb(wt, { ms: 0, limit: 1 }); return x.capped === true; })());
 }
 
@@ -282,7 +284,12 @@ console.log('gates8 E2 checkpoint hand-back (handin_gate.mjs and check_handin.mj
     return { code: r.status, out: r.stdout, err: r.stderr };
   };
   const J = (s) => { try { return JSON.parse(s); } catch { return {}; } };
-  const img = path.join(hd, 'shot.png'); fs.writeFileSync(img, Buffer.from('89504e470d0a1a0a', 'hex'));
+  const crcT = (() => { const tb = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; tb[n] = c >>> 0; } return tb; })();
+  const crc32 = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcT[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td)); return Buffer.concat([len, td, crc]); };
+  const makePng = (w = 90, h = 90) => { const rows = []; for (let y = 0; y < h; y++) rows.push(Buffer.concat([Buffer.from([0]), crypto.randomBytes(w * 3)])); const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+    return Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows), { level: 0 })), chunk('IEND', Buffer.alloc(0))]); };
+  const img = path.join(hd, 'shot.png'); fs.writeFileSync(img, makePng());
   const cpFile = path.join(hd, 'CHECKPOINT.md');
   const check = (...a) => spawnSync(process.execPath, [path.join(root, 'tools', 'check_handin.mjs'), hd, '--main', root, ...a], { cwd: elsewhere, encoding: 'utf8', env });
 
@@ -309,23 +316,23 @@ console.log('gates8 E2 checkpoint hand-back (handin_gate.mjs and check_handin.mj
   t('E2 ... no refusal counter file for the agent', !fs.existsSync(path.join(state, 'handin', 'cpB.json')) && !fs.existsSync(path.join(hd, 'HANDIN_FAILED.txt')));
   r = stopHook('cpB', mkTr('tpB', hd), 'SubagentStop'); t('E2 hook, second call of the SAME finish (SubagentStop, within the window, same file): allowed again, logged as the same finish', r.code === 0 && r.out === '' && /second hook call of the same finish/.test(lastHandin().reason || ''), r.out + r.err + JSON.stringify(lastHandin()));
   // once per agent: a later stop, after the window or with a newer file, is a hand-in and gets the full check
-  const recFile = path.join(state, 'handin', 'cpB.checkpoint.json'); const rec = J(fs.readFileSync(recFile, 'utf8'));
+  const recFile = path.join(state, 'handin', fs.readdirSync(path.join(state, 'handin')).find((n) => /^checkpoint_.*[.]json$/.test(n))); const rec = J(fs.readFileSync(recFile, 'utf8'));
   fs.writeFileSync(recFile, JSON.stringify({ ...rec, at: Date.now() - 10 * 60000 }));
   r = stopHook('cpB', mkTr('tpB', hd), 'SubagentStop'); t('E2 hook, a LATER stop of the same agent (outside the window): the checkpoint is used up, the full check runs: blocked, and the message says why', J(r.out).decision === 'block' && /already used|once per agent/.test(J(r.out).reason) && /STATUS\.md is missing/.test(J(r.out).reason), r.out + r.err);
   // a different agent with an INVALID checkpoint: not let through, and told why
-  fs.writeFileSync(cpFile, 'CHECKPOINT: lane widths measured | images: ' + path.join(hd, 'ghost.png') + '\n');
-  r = stopHook('cpC', mkTr('tpC', hd), 'SubagentStop'); t('E2 hook, invalid CHECKPOINT.md (the image does not exist): not let through, the reason names the checkpoint', J(r.out).decision === 'block' && /CHECKPOINT\.md did not count/.test(J(r.out).reason) && /ghost\.png/.test(J(r.out).reason), r.out + r.err);
+  const hdC = path.join(wtE, 'docs', 'progress', 'cpc'); mk(hdC); fs.writeFileSync(path.join(hdC, 'CHECKPOINT.md'), 'CHECKPOINT: lane widths measured | images: ' + path.join(hdC, 'ghost.png') + '\n');
+  r = stopHook('cpC', mkTr('tpC', hdC), 'SubagentStop'); t('E2 hook, invalid CHECKPOINT.md (the image does not exist): not let through, the reason names the checkpoint', J(r.out).decision === 'block' && /CHECKPOINT\.md did not count/.test(J(r.out).reason) && /ghost\.png/.test(J(r.out).reason), r.out + r.err);
   // a stale CHECKPOINT.md from an earlier agent run (written before this agent started) does not count
-  fs.writeFileSync(cpFile, 'CHECKPOINT: lane widths measured | images: ' + img + '\n'); const old = new Date(Date.now() - 3600000); fs.utimesSync(cpFile, old, old);
-  r = stopHook('cpD', mkTr('tpD', hd, 60000), 'SubagentStop'); t('E2 hook, a stale CHECKPOINT.md (older than this agent\'s run): does not count', J(r.out).decision === 'block' && /older than this agent/.test(J(r.out).reason), r.out + r.err);
+  const hdD = path.join(wtE, 'docs', 'progress', 'cpd'); mk(hdD); fs.copyFileSync(img, path.join(hdD, 'shot.png')); const cpD = path.join(hdD, 'CHECKPOINT.md'); fs.writeFileSync(cpD, 'CHECKPOINT: lane widths measured | images: ' + path.join(hdD, 'shot.png') + '\n'); const old = new Date(Date.now() - 3600000); fs.utimesSync(cpD, old, old);
+  r = stopHook('cpD', mkTr('tpD', hdD, 60000), 'SubagentStop'); t('E2 hook, a stale CHECKPOINT.md (older than this agent\'s run): does not count', J(r.out).decision === 'block' && /older than this agent/.test(J(r.out).reason), r.out + r.err);
   // the final hand-in is still checked in full: a passing hand-in in the same folder is allowed and recorded as a hand-in
   fs.writeFileSync(path.join(hd, 'STATUS.md'), '## Skipped, refused or failed\n\nNothing skipped; did not verify the live editor.\n\nReferences opened: 3 of 3 listed\n\n## Reference files opened\n\nCase: A | Opened: aerial/a.jpg, street/b.jpg, gsv/c.jpg\n');
   for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs', 'reference', f); mk(path.dirname(p)); fs.writeFileSync(p, 'photo ' + f); }
   fs.rmSync(cpFile, { force: true });
   r = stopHook('cpE', mkTr('tpE', hd), 'SubagentStop'); t('E2 hook, the final hand-in (no CHECKPOINT.md) with a passing STATUS.md: allowed as a hand-in ("hand-in check passed")', r.code === 0 && /hand-in check passed/.test(lastHandin().reason || ''), r.out + r.err + JSON.stringify(lastHandin()));
   // a checkpoint file does not shortcut a hand-in that is complete either: the first stop of a new agent with BOTH is a checkpoint (logged so), not a hand-in
-  fs.writeFileSync(cpFile, 'CHECKPOINT: lane widths measured | images: ' + img + '\n');
-  r = stopHook('cpF', mkTr('tpF', hd), 'SubagentStop'); t('E2 hook, CHECKPOINT.md present and a complete STATUS.md: the stop is logged as a checkpoint, not as a passed hand-in', r.code === 0 && lastHandin().decision === 'checkpoint', JSON.stringify(lastHandin()));
+  const hdFull = path.join(wtE, 'docs', 'progress', 'cpfull'); mk(hdFull); fs.copyFileSync(img, path.join(hdFull, 'shot.png')); fs.copyFileSync(path.join(hd, 'STATUS.md'), path.join(hdFull, 'STATUS.md')); fs.writeFileSync(path.join(hdFull, 'CHECKPOINT.md'), 'CHECKPOINT: lane widths measured | images: ' + path.join(hdFull, 'shot.png') + '\n');
+  r = stopHook('cpF', mkTr('tpF', hdFull), 'SubagentStop'); t('E2 hook, CHECKPOINT.md present and a complete STATUS.md: the stop is logged as a checkpoint, not as a passed hand-in', r.code === 0 && lastHandin().decision === 'checkpoint', JSON.stringify(lastHandin()));
   // fail-open stays: check_handin.mjs gone mid-checkpoint
   const wtF = path.join(tmp, 'wt-e2f'); const hdF = path.join(wtF, 'docs', 'progress', 'cpf'); mk(hdF); fs.writeFileSync(path.join(hdF, 'CHECKPOINT.md'), 'CHECKPOINT: lane widths measured | images: ' + img + '\n');
   fs.renameSync(path.join(root, 'tools', 'check_handin.mjs'), path.join(root, 'tools', 'check_handin.bak'));

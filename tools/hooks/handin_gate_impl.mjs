@@ -20,6 +20,7 @@
 // trap agents (and the session that waits on them) in a loop it cannot leave.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { ROOT, STATE_DIR, log, readStdin, parseJson, firstUserText, checkBrief, briefFileOf, agentTranscript } from './lib.mjs';
 import { auditOfIn, readBuilder, recordBuilder, checkAuditFile, AUDIT_FILE, findBuilderInLog, recordAudit, parseAudit } from './audit_lib.mjs';
@@ -39,7 +40,22 @@ export function gatesIn(text) {
 // Files the gates judge must have been written after it (minus slack), so a stale passing folder from an earlier round
 // cannot satisfy a new agent (audit fault 1).
 export const SLACK_MS = 2000;
-export const CHECKPOINT_WINDOW_MS = 120000;   // the finish hook runs twice at one finish; a second call this soon, for the unchanged CHECKPOINT.md, is the same finish
+export const CHECKPOINT_WINDOW_MS = 30000;   // the finish hook runs twice at one finish, seconds apart; a second call this soon, by the same agent, for the unchanged CHECKPOINT.md, is the same finish
+// Time of the latest commit of the worktree that holds the hand-in folder, ignoring commits that only touch the hand-in folder itself (committing the checkpoint and its picture must not void it); null when git cannot say.
+export function latestWorkCommitMs(handinDir) {
+  try {
+    const n = String(handinDir).replace(/\\/g, '/'); const k = n.toLowerCase().indexOf('/docs/progress/');
+    if (k < 0) return null;
+    const wt = n.slice(0, k);
+    const run = (extra) => spawnSync('git', ['-C', wt, 'log', '-1', '--format=%ct', '--', ...extra], { encoding: 'utf8', timeout: 5000 });
+    const rel = n.slice(k + 1).replace(/\/+$/, '');
+    let r = run(['.', ':(exclude)' + rel]);
+    if (r.status !== 0) r = run([]);
+    if (r.status !== 0) return null;
+    const v = Number(String(r.stdout).trim());
+    return Number.isFinite(v) && v > 0 ? v * 1000 : null;
+  } catch { return null; }
+}
 function runStartMs(tp) {
   try {
     const first = fs.readFileSync(tp, 'utf8').split('\n').find((l) => l.trim());
@@ -121,23 +137,30 @@ export async function main() {
   let checkpointNote = '';
   try {
     const cpFile = path.join(handinDir, 'CHECKPOINT.md');
-    if (fs.existsSync(cpFile)) {
-      const mf = path.join(STATE_DIR, 'handin', id + '.checkpoint.json');
+    // gates9 (gates8 audit H5): a CHECKPOINT.md older than the latest commit of the worktree is a leftover (the builder worked on after it): ignored and logged, the stop is a hand-in.
+    const cpMtime0 = fs.existsSync(cpFile) ? fs.statSync(cpFile).mtimeMs : 0;
+    const lastCommit = cpMtime0 ? latestWorkCommitMs(handinDir) : null;
+    if (cpMtime0 && lastCommit !== null && Math.floor(cpMtime0 / 1000) < Math.floor(lastCommit / 1000)) {
+      checkpointNote = 'CHECKPOINT.md ignored: it is older than the latest commit of this worktree (' + new Date(lastCommit).toISOString() + '; the file was written ' + new Date(cpMtime0).toISOString() + '), so it is a leftover and this stop is a hand-in with the full check. Delete CHECKPOINT.md before the final hand-in.';
+      log({ gate: 'checkpoint', ...base, decision: 'ignored', reason: 'CHECKPOINT.md ignored: older than the latest commit of the worktree (final hand-in)', handin_dir: handinDir });
+    } else if (cpMtime0) {
+      // one checkpoint per ROUND (the hand-in folder), whichever agent takes it
+      const mf = path.join(STATE_DIR, 'handin', 'checkpoint_' + crypto.createHash('sha1').update(String(handinDir).replace(/\\/g, '/').toLowerCase()).digest('hex').slice(0, 12) + '.json');
       let prevRec = null; try { prevRec = parseJson(fs.readFileSync(mf, 'utf8')) || null; } catch { /* none yet */ }
-      const cpMtime = fs.statSync(cpFile).mtimeMs;
-      if (prevRec && cpMtime <= prevRec.at && Date.now() - prevRec.at < CHECKPOINT_WINDOW_MS) {
+      const cpMtime = cpMtime0;
+      if (prevRec && prevRec.agent_id === id && cpMtime <= prevRec.at && Date.now() - prevRec.at < CHECKPOINT_WINDOW_MS) {
         return allow({ ...base, decision: 'allow', reason: 'checkpoint hand-back (second hook call of the same finish)', handin_dir: handinDir });
       }
       if (!prevRec) {
         const cr = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'check_handin.mjs'), handinDir, '--checkpoint', '--main', ROOT, '--since', String(Math.round(runStart - SLACK_MS))], { cwd: ROOT, encoding: 'utf8', timeout: 30000, env: { ...process.env, CP_FROM_HOOK: '1' } });
         if (cr.status === 0 && /CHECKPOINT PASSED/.test(cr.stdout || '')) {
           fs.mkdirSync(path.dirname(mf), { recursive: true });
-          fs.writeFileSync(mf, JSON.stringify({ at: Date.now(), handin_dir: handinDir }));
+          fs.writeFileSync(mf, JSON.stringify({ at: Date.now(), agent_id: id, handin_dir: handinDir }));
           return allow({ ...base, decision: 'checkpoint', reason: 'checkpoint hand-back: stop allowed once, NOT a hand-in (no audit owed); the final hand-in still needs the full check', handin_dir: handinDir });
         }
         // an invalid CHECKPOINT.md is not a reason to stop: the full check follows, and the message says why the checkpoint did not count
         checkpointNote = 'CHECKPOINT.md did not count: ' + String(cr.stderr || cr.stdout || '').trim().replace(/\s+/g, ' ').slice(0, 500);
-      } else checkpointNote = 'a checkpoint hand-back was already used by this agent (once per agent): this stop is a hand-in and gets the full check';
+      } else checkpointNote = 'a checkpoint hand-back was already used for this round (once per round, by agent ' + (prevRec.agent_id || 'unknown') + ' at ' + new Date(prevRec.at).toISOString() + '): this stop is a hand-in and gets the full check. Delete CHECKPOINT.md before the final hand-in.';
     }
   } catch (e) { log({ gate: 'handin', ...base, decision: 'allow', reason: 'FAIL-OPEN: the checkpoint check crashed (the full check follows)', error: String((e && e.message) || e).slice(0, 300) }); }
 

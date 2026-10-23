@@ -62,14 +62,16 @@ const fixDots = (p) => { const r = path.parse(p).root; return r + p.slice(r.leng
 
 // every reparse point (junction / symlink) at or below `p`, found without descending into links, only directory entries are read (a Dirent says symlink for a junction too).
 // Returns an array with .capped (true when the time cap ended the walk) and .seen. [] when p does not exist.
-// gates8 (gates7 audit F6): known BUILD OUTPUT folders are not walked (no agent keeps a junction to the photos inside Unreal's Intermediate / Binaries / DerivedDataCache / Saved, a cmake build
-// folder or an object folder, and one built Unreal worktree holds hundreds of thousands of entries there). The entry itself is still checked (a link NAMED build is found); a delete whose START
-// folder is one of them is not walked at all, so a worktree's own build output is never refused for its size.
+// gates9 (gates8 audit H3): a junction INSIDE a build output folder (cmake build, Unreal Intermediate / Binaries / DerivedDataCache / Saved, obj, _deps) is found too: `rm -rf build` is the routine
+// clean build and a link in it (contract item 1 says "link the folder" without saying where) would be followed into the photos. Build output folders are walked links-only with their OWN bounds, because
+// one built Unreal worktree holds hundreds of thousands of entries there: buildDepth levels below the build folder (default 6) and buildMs (default 1500 ms) for all build folders together. Hitting
+// either bound does NOT refuse (a clean build of a folder with no link must pass, fast): it sets .buildBound and writes a "scan bound" line to gate.log. Outside build folders the old rule holds
+// (ms = 5000 / limit entries, a cap hit refuses).
 export const BUILD_OUTPUT_DIRS = /^(?:intermediate|binaries|deriveddatacache|saved|build|build-[\w.-]+|\.vs|obj|_deps)$/i;
-export function linksBelow(p, { ms = 5000, limit = 5000000 } = {}) {
-  const found = []; found.seen = 0; found.capped = false;
-  const t0 = Date.now();
-  const walk = (d) => {
+export function linksBelow(p, { ms = 5000, limit = 5000000, buildMs = 1500, buildDepth = 6 } = {}) {
+  const found = []; found.seen = 0; found.capped = false; found.buildBound = false;
+  const t0 = Date.now(); let tBuild = 0;       // tBuild: time spent inside build output folders
+  const walk = (d, bd) => {      // bd: -1 outside a build folder, else the level below the build folder root
     if (found.capped) return;
     let ents; try { ents = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
     for (const e of ents) {
@@ -77,13 +79,20 @@ export function linksBelow(p, { ms = 5000, limit = 5000000 } = {}) {
       if (found.seen > limit) { found.capped = true; return; }
       const f = d + path.sep + e.name;
       if (e.isSymbolicLink()) { found.push(f); continue; }
-      if (e.isDirectory() && !BUILD_OUTPUT_DIRS.test(e.name)) walk(f);
+      if (!e.isDirectory()) continue;
+      const inBuild = bd >= 0 || BUILD_OUTPUT_DIRS.test(e.name);
+      if (!inBuild) { walk(f, -1); if (found.capped) return; continue; }
+      const nbd = bd >= 0 ? bd + 1 : 0;
+      if (nbd > buildDepth) { found.buildBound = true; found.boundWhy = 'depth'; continue; }
+      if (tBuild >= buildMs) { found.buildBound = true; found.boundWhy = 'time'; continue; }
+      const tb = Date.now(); walk(f, nbd); tBuild += Date.now() - tb;
       if (found.capped) return;
     }
   };
   let st; try { st = fs.lstatSync(p); } catch { return found; }
   if (st.isSymbolicLink()) { found.push(p); return found; }
-  if (st.isDirectory() && !BUILD_OUTPUT_DIRS.test(path.basename(p))) walk(p);
+  if (st.isDirectory()) { const startBuild = BUILD_OUTPUT_DIRS.test(path.basename(p)); const tb = Date.now(); walk(p, startBuild ? 0 : -1); if (startBuild) tBuild += Date.now() - tb; }
+  if (found.buildBound) { try { log({ gate: 'delete_guard', decision: 'allow', reason: `scan bound: the junction walk of ${p} stopped inside a build output folder (${found.boundWhy} bound: depth ${buildDepth}, ${buildMs} ms); no link was found before it, so the delete is not refused for it`, path: p, entries_seen: found.seen }); } catch { /* log only */ } }
   return found;
 }
 
