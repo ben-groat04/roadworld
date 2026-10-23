@@ -11,7 +11,8 @@ HANDIN: no-visual
 - Limits that stay (FAULTS.md Residual 1 to 6): a hand-drawn render plus matching mask, a made-up photo registered as a reference, a script that touches the state indirectly, thresholds with no photo behind them.
 
 References opened: 11 of 12 listed
-not opened: C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\test_hooks.mjs (the 12th entry is the folder `tools\hooks`; the 20 other files in it and the new ones were read whole, `test_hooks.mjs` was read in parts: the first 70 lines, the audit and notice sections, and the blocks edited this round)
+not opened: C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\test_hooks.mjs (the 12th entry is the folder `tools\hooks` of the main checkout: its 7 other files were read whole; `test_hooks.mjs` was read with every line cut at 200 characters, so the tails of its long lines were not seen)
+- scene_check measured 20/21 against the target 21/21: the one failing check is no_bare_steps, the baseline of the main branch (earthworks, outside this round's files).
 
 ## Prior audit items
 
@@ -69,7 +70,7 @@ The 9 re-opened items of the gates3 audit table (1 --accept, 2 picture gate, 6 w
 ## Reference files opened
 
 Case: Evidence of the failed round 9 and the audit gate faults | Opened: C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\AUDIT.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\STATUS.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\FAULTS.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-auditgate\docs\progress\2026-10-11-auditgate\AUDIT.md
-Case: Gate code and rules | Opened: C:\Users\bgbg0\Documents\Programming\roadworld\tools\check_handin.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\make_brief.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\.claude\settings.json, C:\Users\bgbg0\Documents\Programming\roadworld\docs\AGENT_CONTRACT.md, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\audit_lib.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\lib.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\brief_gate_impl.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\handin_gate_impl.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\notice_lib.mjs
+Case: Gate code and rules | Opened: C:\Users\bgbg0\Documents\Programming\roadworld\tools\check_handin.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\make_brief.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\.claude\settings.json, C:\Users\bgbg0\Documents\Programming\roadworld\docs\AGENT_CONTRACT.md, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\brief_gate.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\contract_inject.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\gate_ack.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\gate_notice.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\handin_gate.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\lib.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\tools\hooks\notice_lib.mjs
 Case: Templates, the scene check and the working rules | Opened: C:\Users\bgbg0\Documents\Programming\roadworld\docs\templates\BRIEF.md, C:\Users\bgbg0\Documents\Programming\roadworld\docs\templates\STATUS.md, C:\Users\bgbg0\Documents\Programming\roadworld\prototypes\road-draw\tools\scene.mjs, C:\Users\bgbg0\Documents\Programming\roadworld\CLAUDE.md
 
 ## Numbers behind the picture thresholds
