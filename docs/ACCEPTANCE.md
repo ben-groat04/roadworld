@@ -86,3 +86,24 @@ Verdict: send back (faults in QUEUE.md, 23 Oct 11:30Z state).
 
 ## 23 Oct 2026: gates7 - SENT BACK for one final round
 Verdict: send back for one final round (gates8).
+
+## 23 Oct 2026: tjunction5 - SENT BACK, NOT ACCEPTED (15 faults)
+Main session first look, before reading AUDIT.md: case 90 mouth too narrow, wrong lower corner, dashed edge missing; case 94 side-road angle wrong and throat narrow; RMS 1.3 / 1.6 m on cases 78 and 90.
+Owner remark afterwards: "huge tarmac strip on one side"; the no-overtaking line is "a specific pic thing, not a hard rule".
+Verdict: send back.
+
+## 23 Oct 2026: m2fix5a - SENT BACK, NOT ACCEPTED (11 faults)
+Main session first look: no visible cutting against photo 38 (owned by 4b); world_cover excluded from the 100 ms limit, which is a goalpost move; orbit hitch.
+Verdict: send back.
+
+## 23 Oct 2026: gates8 - SENT BACK
+Verdict: send back.
+
+## 23 Oct 2026: gates9 - SENT BACK, merged anyway (core sound)
+Verdict: send back; merged to main (2b010fe) because the core is sound, faults queued as gates10.
+
+## 23 Oct 2026: grade-r12 - SENT BACK, NOT ACCEPTED (12 faults)
+Main session first look: case 1 wall taller and longer than photo 46, with no grass strip at the foot; case 3 face too tall and uniform, no channel, straight road.
+Opus first look: constant-height bands, hooded rock-cut ends, case 1 mostly a texture swap. The main session missed that last point.
+The auditor opened 18 of 44 references.
+Verdict: send back (grade-r13 owed).
