@@ -71,7 +71,7 @@ for (const f of hookFiles) fs.readFileSync(path.join(src, 'tools', 'hooks', f), 
 });
 t('H no hook builds a RegExp from other text without reEsc/safeRe', offenders.length === 0, offenders.join(' '));
 const lib = await import(new URL('./lib.mjs', import.meta.url).href);
-t('H reEsc makes any text match itself literally; safeRe never throws', ['a[', ']', 'x{1', '\\"q\\"', '*?', '[z-a]', '(', '-'].every((s) => new RegExp('^' + lib.reEsc(s) + '$').test(s)) && lib.safeRe('a[').test('zzz') === false, '');
+t('H reEsc makes any text match itself literally; safeRe never throws', typeof lib.reEsc === 'function' && typeof lib.safeRe === 'function' && ['a[', ']', 'x{1', '\\"q\\"', '*?', '[z-a]', '(', '-'].every((s) => new RegExp('^' + lib.reEsc(s) + '$').test(s)) && lib.safeRe('a[').test('zzz') === false, '');
 
 // ================================================================ shared helpers for the sections below
 const readJson = (f) => JSON.parse(fs.readFileSync(f, 'utf8'));
