@@ -107,3 +107,11 @@ Main session first look: case 1 wall taller and longer than photo 46, with no gr
 Opus first look: constant-height bands, hooded rock-cut ends, case 1 mostly a texture swap. The main session missed that last point.
 The auditor opened 18 of 44 references.
 Verdict: send back (grade-r13 owed).
+
+## 23 Oct 2026: roundabout5 - SENT BACK, NOT ACCEPTED
+Main session first look 20:48, before the audit. Opened C1_whole, E_S_27m, P1 (aerial 64), P4 (street 91). Top 3: (1) arm mouths flare into wide tarmac fans vs photo 64's narrow arms; (2) island, verges and splitters one flat olive/tan, with no grass island, verge, crossing slabs, bollards or signs; (3) composites two-thirds empty canvas, and E_S_27m is not at photo 91's camera. Never built: Y-forked marking at a splitter nose; stray hook near the W give-way.
+Verdict: send back (roundabout6 owed).
+
+## 23 Oct 2026: m3ui-r2 - SENT BACK, NOT ACCEPTED
+Main session first look 21:30, before the audit. Opened composites 04, 23, 37. Top 3: (1) not the same state as the prototype (04 straight 88 m vs curved 224 m; 23 straight vs curved); (2) ground still checker noise, not the ported prototype terrain; (3) 37 shows "Residential street" vs "A road / dual c'way". Improved: slider tracks present. 37 picture-record lines waived (Unreal frames).
+Verdict: send back (m3ui-r3).
