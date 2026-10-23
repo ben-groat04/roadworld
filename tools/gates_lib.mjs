@@ -788,6 +788,15 @@ export function blockedEvidence(blockedBy, seeRaw, ctx) {
   const cands = path.isAbsolute(see) ? [see] : (ctx.bases || []).map((b) => path.resolve(b, see));
   for (const c of cands) { try { if (fs.statSync(c).isFile()) { file = c; break; } } catch { /* next */ } }
   if (!file) return [`"see: ${see}" is not an existing file (looked in ${cands.length ? cands.join(', ') : 'no folder'}): the quoted error must be in a log or output file that is there`];
+  // gates6 (audit item 24): the file must be THIS round's own output: inside the agent's own worktree or scratch folder (ctx.ownRoots), written after the round began (ctx.roundStart),
+  // and not a tracked file of the repository. A quote planted in an older or foreign file is refused.
+  if (ctx.roundStart || (ctx.ownRoots && ctx.ownRoots.length)) {
+    let real = file; try { real = fs.realpathSync(file); } catch { /* keep */ }
+    const low = (x) => path.resolve(x).toLowerCase().split(path.sep).join('/');
+    if (ctx.ownRoots && ctx.ownRoots.length && !ctx.ownRoots.some((r) => { const a = low(real), b = low(r); return a === b || a.startsWith(b + '/'); })) return [`"see: ${see}" is not inside this round's own worktree or scratch folder (${ctx.ownRoots.join(', ')}): evidence from a foreign file is not accepted`];
+    if (ctx.roundStart) { let mt = 0; try { mt = fs.statSync(file).mtimeMs; } catch { /* none */ } if (mt < ctx.roundStart) return [`"see: ${see}" was last written ${new Date(mt).toISOString()}, before this round began (${new Date(ctx.roundStart).toISOString()}): an older file cannot show a block of this round`]; }
+    if (ctx.repoRoot) { const r = spawnSync('git', ['-C', ctx.repoRoot, 'ls-files', '--error-unmatch', '--', file], { encoding: 'utf8', timeout: 8000 }); if (r.status === 0) return [`"see: ${see}" is a tracked file of the repository, not the output of a run: point at the log you captured (build.log, a .out file in your scratch folder)`]; }
+  }
   let body = ''; try { body = fs.readFileSync(file, 'utf8'); } catch (e) { return [`"see: ${see}" cannot be read: ${e.message}`]; }
   const flat = (x) => String(x).replace(/\s+/g, ' ').trim().toLowerCase();
   const hay = flat(body);
@@ -801,6 +810,15 @@ export function blockedEvidence(blockedBy, seeRaw, ctx) {
   return why;
 }
 const NEEDS_GENERIC = /^(?:(?:a|an|the|some|more|any|your|owner'?s?)\s+)*(?:fix|decision|help|input|guidance|clarification|info|information|approach|different approach|review|answer|answers|advice|permission|access|resources?|support|direction|feedback|solution|workaround|change|changes)\W*$/i;
+// gates6 (audit item 24): in strict mode (ctx.roundStart set) "needs:" must also be CONCRETE: a file, command, path or error in it, or a question that says WHICH decision (whether / which of /
+// choose between / either ... or) in 6+ content words. "owner decision about the roads" names no decision and is refused.
+export function needsIsConcrete(needs) {
+  const n = String(needs || '');
+  if (anchorsOf(n).length || /`[^`]{3,}`|"[^"]{6,}"/.test(n)) return true;
+  if (!/(?:whether|which of|which one|choose between|either|between)/i.test(n)) return false;
+  const stop = /^(?:a|an|the|to|of|on|in|for|and|or|with|from|by|is|are|be|should|would|could|can|it|that|this|owner|owners|decision|about|whether|which|between|either|please)$/i;
+  return n.replace(/[^\w\s]/g, ' ').split(/\s+/).filter((w) => w && !stop.test(w)).length >= 6;
+}
 export function needsNamesAThing(needs) {
   const n = String(needs || '').trim();
   if (FILLER_RE.test(n) || NEEDS_GENERIC.test(n)) return false;
@@ -834,6 +852,7 @@ export function parseBlocked(text, ctx) {
     else if (VAGUE_RE.test(blankAnchors(blockedBy))) why.push('"blocked by:" is a judgement ("complexity", "difficult", "the geometry", "a larger rewrite"...), not a block: quote the failing thing');
     if (needs && (USAGE_RE.test(needs) || TIME_RE.test(needs))) why.push('"needs:" asks for more time, tokens or usage, which is not something that unblocks work');
     if (ctx && ctx.version >= 3) {
+      if (needsNamesAThing(needs) && ctx.roundStart && !needsIsConcrete(needs)) why.push('"needs:" names no concrete thing: say WHICH decision ("whether X or Y"), or name the file, command or path that would unblock it, not "owner decision about <topic>"');
       if (!needsNamesAThing(needs)) why.push('"needs:" must name a thing that would unblock the work (a file, a command, a named decision with its subject), not "help", "a decision", "nothing" or time');
       // the evidence check runs once the line is otherwise concrete (one clear message at a time)
       if (!why.some((w) => /blocked by/.test(w))) why.push(...blockedEvidence(blockedBy, see, ctx));

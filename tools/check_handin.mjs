@@ -65,7 +65,12 @@ function worktreeRoot() {
   try { return execSync("git rev-parse --show-toplevel", { cwd: fs.existsSync(abs) ? abs : process.cwd(), stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return main; }
 }
 const wtRoot = worktreeArg ? path.resolve(worktreeArg) : worktreeRoot();
-const blockedCtx = { version: gatesV3 ? 3 : 2, bases: [path.resolve(folder), wtRoot, path.dirname(wtRoot), path.join(path.dirname(main), 'roadworld-scratch'), main] };
+// gates6 (audit item 24): the BLOCKED evidence file must be this round's own output: inside this worktree or its scratch folder, newer than the round's start (--since, else
+// CP_ROUND_START, else the creation time of the worktree's .git file), and not a tracked file. Only for gates v3.
+const scratchBase = path.join(path.dirname(main), 'roadworld-scratch');
+const roundStart = (() => { if (since > 0) return since; if (Number(process.env.CP_ROUND_START) > 0) return Number(process.env.CP_ROUND_START); try { const st = fs.statSync(path.join(wtRoot, '.git')); return st.birthtimeMs || 0; } catch { return 0; } })();
+const ownRoots = (() => { const names = new Set([path.basename(wtRoot), path.basename(path.resolve(folder))].filter(Boolean)); const out = [wtRoot]; try { for (const e of fs.readdirSync(scratchBase, { withFileTypes: true })) if (e.isDirectory() && [...names].some((n) => e.name === n || e.name.startsWith(n + '-') || e.name.startsWith(n + '_'))) out.push(path.join(scratchBase, e.name)); } catch { /* no scratch folder */ } return out; })();
+const blockedCtx = { version: gatesV3 ? 3 : 2, bases: [path.resolve(folder), wtRoot, path.dirname(wtRoot), scratchBase, main], ...(gatesV3 ? { roundStart, ownRoots, repoRoot: wtRoot } : {}) };
 // An opened reference resolves if it is (a) an absolute path that exists, (b) relative to the main checkout or the hand-in's worktree, or (c) a name under docs/reference.
 const refBases = [refRoot, main, wtRoot];
 const fails = [];
