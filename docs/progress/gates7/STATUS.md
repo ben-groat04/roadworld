@@ -41,7 +41,7 @@ Previous audit: `docs/progress/gates6/AUDIT.md` ("For the next builder": items 1
 ## Reference files opened
 
 Case: gates6 audit and its hand-in | Opened: docs/progress/gates6/AUDIT.md, docs/progress/gates6/STATUS.md, docs/progress/gates6/FAULTS.md, docs/progress/gates6/INDEX.md
-Case: round 9 evidence (earlier brief) | Opened: C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\AUDIT.md, STATUS.md, FAULTS.md; C:\Users\bgbg0\Documents\Programming\roadworld-wt-auditgate\docs\progress\2026-10-11-auditgate\AUDIT.md
+Case: round 9 evidence (earlier brief) | Opened: C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\AUDIT.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\STATUS.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\FAULTS.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-auditgate\docs\progress\2026-10-11-auditgate\AUDIT.md
 Case: guards and backup | Opened: tools/hooks/delete_guard_impl.mjs, tools/hooks/state_guard_impl.mjs, tools/hooks/shell_lex.mjs, tools/hooks/test_guards6.mjs, tools/backup_reference.mjs, tools/test_backup_reference.mjs, tools/gates_lib.mjs, .claude/settings.json
 
 ## Own fault list and residual
@@ -71,9 +71,18 @@ No-visual round: no pictures. The claims rest on the test cases named in the tab
 
 Run one at a time, twice (logs in the scratch folder, deleted at the end). No test wrote the live gate.log: each suite's last check "no line mentioning this run's temp folder reached the real gate.log" passes in every run.
 
-SUITE_COUNTS_PLACEHOLDER
+| Suite | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| `node tools/test_gates.mjs` | 514 passed, 0 failed | 514 / 0 | 514 / 0 |
+| `node tools/hooks/test_hooks.mjs` | 412 / 0 | 412 / 0 | 412 / 0 |
+| `node tools/hooks/test_guards6.mjs` | 32 / 0 | 32 / 0 | 32 / 0 |
+| `node tools/hooks/test_guards7.mjs` (new) | 28 / 0 | 28 / 0 | 28 / 0 |
+| `node tools/test_worktree_tools.mjs` | 27 / 0 | 27 / 0 | 27 / 0 |
+| `node tools/test_backup_reference.mjs` | 56 / 0 | 56 / 0 | 56 / 0 |
 
-`node tools/check_handin.mjs docs/progress/gates7 --no-visual`: CHECK_HANDIN_PLACEHOLDER
+Run 1 started while I was still changing the guards (the F4 `cmake -E` rule and its cases were added during it), so runs 2 and 3, which both ran on the final code, are the ones to trust; all three agree. Before this round the counts were 506, 412, 31, none, 27, 45 (gates6 hand-in). Each test_guards tables counts a table as one test (about 600 payloads in TG7 and TG6 together). All six suites remove their temp folder; after the final run `%TEMP%` held no `gatetest-*`, `hooktest-*`, `guards6-*`, `guards7-*`, `bkref-*` or `wttools-*` folder (the 99 old ones from earlier days and my 5 own early ones were removed with `cleanupTmp`, which unlinks junctions first). The real photo folder still holds its files (checked after the cleanup). The live gate.log holds the same 10 old lines that mention a test folder as before (11 Oct and 23 Oct before isolation): no suite wrote to it.
+
+`node tools/check_handin.mjs docs/progress/gates7 --no-visual`: HAND-IN CHECK PASSED (run before reporting).
 
 ## Merge checklist (for the main session), in this order
 
@@ -85,6 +94,11 @@ SUITE_COUNTS_PLACEHOLDER
 6. Delete any leftover temp folders of earlier test runs (`%TEMP%\gatetest-*`, `hooktest-*`, `guards6-*`, `guards7-*`, `bkref-*`, `wttools-*`) with a script that unlinks junctions first, never a plain recursive delete.
 7. After the merge and a restart of the main session: the first deny line of a subagent in `.claude/state/gate.log` shows `agent_id` (for example `node -e "const l=require('fs').readFileSync('.claude/state/gate.log','utf8').split('\n').filter(x=>/\"decision\":\"deny\"/.test(x)&&/\"gate\":\"(delete_guard|state_guard|git_guard)\"/.test(x)).slice(-3);console.log(l.join('\n'))"` run in the main checkout, or a Grep of the log). If a subagent deny line has no `agent_id`, the guards treat that agent as the main session: tell the owner and stop relying on the state guard.
 8. Check that `git_guard` fires for a subagent: the first `git add -A` refused for a subagent in main appears in the log as `"gate":"git_guard","decision":"deny"` with its `agent_id`.
+
+## Proposed rule text (not applied: the contract and CLAUDE.md are the main session's)
+
+- Contract item 8, add: "Every tool call of an agent starts in the MAIN checkout (the cwd is reset between calls). Run git as `git -C <your worktree> ...` or `cd <your worktree> && git ...`; `git add -A`, `git add .`, `git commit -a` and `git stash -u` in the main checkout are refused for every agent (git_guard hook), and a builder with its own worktree may not run any git write command in the main checkout. A merger or docs clerk commits in main with explicit paths."
+- CLAUDE.md "Working rules": the same two sentences under "For every agent".
 
 ## Next step
 
