@@ -36,17 +36,31 @@ export function readBuilder(handinDir, stateDir = STATE_DIR) {
 // must invalidate the audit of the old work). changed = a new record, another agent id, or an audit was recorded after the previous pass
 // (the hand-in hook runs twice back to back at one finish: the second pass is not a new hand-in, so it logs nothing). v:2 marks records made by this
 // code: only those need an audit record (see recordAudit) so that audits made under the older gate are not owed again.
-// gates13 (decision 6): `released` marks a record written when the hand-in gate let the builder go after 3 refusals (the check still failed): the auditor's independence check needs a builder record
-// either way, and `check_handin --accept` still fails (the full check fails) until the hand-in passes. A later passing hand-in replaces the record without the flag.
-export function recordBuilder(handinDir, agentId, agentType, stateDir = STATE_DIR, now = Date.now(), { released = false } = {}) {
+export function recordBuilder(handinDir, agentId, agentType, stateDir = STATE_DIR, now = Date.now()) {
   const prev = readBuilder(handinDir, stateDir);
   const ar = prev && readAudit(handinDir, stateDir);
   const changed = !prev || prev.agent_id !== agentId || !!(ar && Date.parse(ar.recorded_at) >= Date.parse(prev.passed_at));
-  const rec = signRecord({ v: 3, handin_dir: path.resolve(handinDir), agent_id: agentId, agent_type: agentType || '', passed_at: new Date(now).toISOString(), ...(released ? { released: true } : {}) }, stateDir);
+  const rec = signRecord({ v: 3, handin_dir: path.resolve(handinDir), agent_id: agentId, agent_type: agentType || '', passed_at: new Date(now).toISOString() }, stateDir);
   fs.mkdirSync(buildersDir(stateDir), { recursive: true });
   fs.writeFileSync(path.join(buildersDir(stateDir), builderKey(handinDir) + '.json'), JSON.stringify(rec));
   return { changed, rec };
 }
+
+// gates13 (main-session decision 6): when the hand-in gate lets a builder go after 3 refusals (the check still failed) it writes a RELEASED builder record, signed, flagged released:true, in its own
+// folder (<state>/released/<key>.json). It is not a passed hand-in (no "audit owed" notice, the builders/ record stays absent), but the auditor's finish gate and `check_handin --accept` read it
+// through readBuilderOrReleased(), so the auditor's independence is checked (before this, 4 rounds ended with "no record of who built this folder" and an AUDIT.md that was never recorded).
+// `--accept` still fails until the hand-in itself passes: the full check runs first.
+const releasedDir = (stateDir) => path.join(stateDir, 'released');
+export function recordReleased(handinDir, agentId, agentType, stateDir = STATE_DIR, now = Date.now()) {
+  const rec = signRecord({ v: 3, released: true, handin_dir: path.resolve(handinDir), agent_id: agentId, agent_type: agentType || '', passed_at: new Date(now).toISOString() }, stateDir);
+  fs.mkdirSync(releasedDir(stateDir), { recursive: true });
+  fs.writeFileSync(path.join(releasedDir(stateDir), builderKey(handinDir) + '.json'), JSON.stringify(rec));
+  return rec;
+}
+export function readReleased(handinDir, stateDir = STATE_DIR) {
+  try { const r = parseJson(fs.readFileSync(path.join(releasedDir(stateDir), builderKey(handinDir) + '.json'), 'utf8')); return r && r.released === true && verifyRecord(r, stateDir) ? r : null; } catch { return null; }
+}
+export const readBuilderOrReleased = (handinDir, stateDir = STATE_DIR) => readBuilder(handinDir, stateDir) || readReleased(handinDir, stateDir);
 
 // Audit records (audit faults 1, 2, 4): written by the finish gate (handin_gate) when a real agent id passes as auditor of a folder.
 // .claude/state/audits/<key>.json = { v:2, handin_dir, auditor_id, builder_id, verdict, sha1 (of AUDIT.md, line endings normalised), recorded_at }.

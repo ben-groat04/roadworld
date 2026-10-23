@@ -390,7 +390,7 @@ if (accept) {
   try {
     const al = await import('./hooks/audit_lib.mjs');
     const stateDir = path.join(main, '.claude', 'state');
-    const rec = al.readBuilder(folder, stateDir) || al.findBuilderInLog(folder, stateDir);
+    const rec = al.readBuilder(folder, stateDir) || al.readReleased(folder, stateDir) || al.findBuilderInLog(folder, stateDir);
     const ar = al.readAudit(folder, stateDir);
     const builderId = rec ? rec.agent_id : builderArg;
     const legacy = legacyArg && legacyArg.trim().length >= 20 ? legacyArg.trim() : null;

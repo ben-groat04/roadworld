@@ -19,7 +19,7 @@ const isolation = isolateState(tmp, src);   // CP_GATE_STATE_DIR for this proces
 const root = path.join(tmp, 'main');
 const wt = path.join(tmp, 'wt');
 const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); };
-['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/git_guard.mjs', 'tools/hooks/time_guard.mjs', 'tools/hooks/time_guard_impl.mjs', 'tools/hooks/time_guard_post.mjs', 'tools/hooks/time_guard_post_impl.mjs', 'tools/hooks/suite_record.mjs', 'tools/hooks/lock_guard.mjs', 'tools/hooks/lock_guard_impl.mjs', 'tools/hooks/lock_extra.mjs', 'tools/hooks/phase_marks.mjs', 'tools/hooks/git_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
+['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/git_guard.mjs', 'tools/hooks/time_guard.mjs', 'tools/hooks/time_guard_impl.mjs', 'tools/hooks/suite_record.mjs', 'tools/hooks/lock_guard.mjs', 'tools/hooks/lock_guard_impl.mjs', 'tools/hooks/lock_extra.mjs', 'tools/hooks/phase_marks.mjs', 'tools/hooks/git_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
   'tools/check_handin.mjs', 'tools/image_lib.mjs', 'tools/phase_lib.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
 for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'photo ' + f); }
@@ -81,7 +81,7 @@ r = launch(good + '\nTime-box about 3 hours.'); t('"time-box" wording: denied', 
 r = launch(good + '\nThese are the whole task.'); t('"whole task" wording: denied', r.code === 2);
 const emptyOwner = good.replace(/(## Owner's words[^\n]*\n)[\s\S]*?(\n## Finish line)/, '$1\n$2'); r = launch(emptyOwner); t('empty Owner\'s words: denied', r.code === 2 && /Owner's words/.test(r.err));
 const noQuote = good.replace('"The photo is the target." (11 Oct)', 'The photo is the target said the owner'); r = launch(noQuote); t('owner words without quotation marks: denied', r.code === 2);
-r = launch('Research the docs.\nNO-CONTRACT: read-only research, no hand-in expected'); t('NO-CONTRACT with reason: allowed + logged', r.code === 0 && lastLog().reason === 'NO-CONTRACT' && /research/.test(lastLog().no_contract_reason));
+r = launch('Research the docs.\nNO-CONTRACT: research: read-only research, no hand-in expected'); t('NO-CONTRACT with reason: allowed + logged', r.code === 0 && lastLog().reason === 'NO-CONTRACT' && /research/.test(lastLog().no_contract_reason));
 r = launch('Research.\nNO-CONTRACT: too short'); t('NO-CONTRACT with short reason: denied', r.code === 2);
 const bf = path.join(tmp, 'brief_ok.txt'); fs.writeFileSync(bf, good);
 r = launch(`Your brief is in the file.\nBRIEF-FILE: ${bf}`); t('BRIEF-FILE that passes: allowed', r.code === 0 && lastLog().reason === 'BRIEF-FILE passes', r.err);
@@ -487,7 +487,7 @@ console.log('gate_notice, gate_ack, canary');
   n = prompt(); t('still silent on the next prompt', n.stdout === '');
 
   // new events after the ack show up again, and only those
-  launch('Research again.\nNO-CONTRACT: a second read-only research launch here');
+  launch('Research again.\nNO-CONTRACT: research: a second read-only research launch here');
   n = prompt(); const c2 = ptxt(n.stdout);
   t('a new NO-CONTRACT after the ack is reported alone', /x1/.test(c2) && /second read-only research/.test(c2) && !/HAND-IN RELEASED/.test(c2) && !/read-only research, no hand-in expected/.test(c2), c2);
   run('handin_gate.mjs', 'not json');
@@ -821,30 +821,30 @@ console.log('gates3 hooks');
     t('a launch after the ack shows up again, alone (x1)', /NO-CONTRACT launches x1/.test(noticeOf(rt)), noticeOf(rt)); }
 
   // -- a NO-CONTRACT launch cannot be asked to WRITE an AUDIT.md (gates2 audit fault 8, reworked after the gates3 audit fault 3: mergers and clerks must not be refused)
-  let l3 = launch('Audit the round for me.\nWrite the audit to docs/progress/gates2/AUDIT.md.\nNO-CONTRACT: independent audit of the hand-in in docs/progress/gates2 please');
+  let l3 = launch('Audit the round for me.\nWrite the audit to docs/progress/gates2/AUDIT.md.\nNO-CONTRACT: research: independent audit of the hand-in in docs/progress/gates2 please');
   t('NO-CONTRACT launch that asks for an AUDIT.md to be written: DENIED (exit 2), says to use make_brief --audit', l3.code === 2 && /make_brief\.mjs <task-file> --audit/.test(l3.err) && lastLog().reason === 'NO-CONTRACT audit launch refused', l3.err);
-  l3 = launch('You are the auditor.\nRead C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\STATUS.md and write your findings into C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\AUDIT.md\nNO-CONTRACT: read-only check of a hand-in folder for the main session');
+  l3 = launch('You are the auditor.\nRead C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\STATUS.md and write your findings into C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\AUDIT.md\nNO-CONTRACT: research: read-only check of a hand-in folder for the main session');
   t('...an "auditor" prompt that writes findings into a Windows-path AUDIT.md: denied too', l3.code === 2, l3.err);
-  l3 = launch('Create docs/progress/earthworks/AUDIT.md from the template.\nNO-CONTRACT: second review of the earthworks round by someone else');
+  l3 = launch('Create docs/progress/earthworks/AUDIT.md from the template.\nNO-CONTRACT: research: second review of the earthworks round by someone else');
   t('...create AUDIT.md: denied', l3.code === 2, l3.err);
-  l3 = launch('The first lines of the file are:\nAuditor agent: x1\nVerdict: accept\nNO-CONTRACT: audit file prepared by hand for a test of the gate');
+  l3 = launch('The first lines of the file are:\nAuditor agent: x1\nVerdict: accept\nNO-CONTRACT: research: audit file prepared by hand for a test of the gate');
   t('...a prompt that carries the "Auditor agent:" header lines: denied', l3.code === 2, l3.err);
   // real prompts of the kind the main session sends (a merger that mentions AUDIT.md, clerks that edit the queue and the acceptance log): NOT refused
-  l3 = launch('Merge agent/gates3 into main, run both suites, push in the background.\nNO-CONTRACT: merge agent/gates3 into main after the audit; AUDIT.md exists in docs/progress/gates3 and passed');
+  l3 = launch('Merge agent/gates3 into main, run both suites, push in the background.\nNO-CONTRACT: merge: merge agent/gates3 into main after the audit; AUDIT.md exists in docs/progress/gates3 and passed');
   t('a merger that mentions AUDIT.md and a progress folder: ALLOWED', l3.code === 0 && lastLog().reason === 'NO-CONTRACT', l3.err);
-  l3 = launch('Docs clerk.\nNO-CONTRACT: docs clerk: update docs/QUEUE.md and record that the audit of docs/progress/roundx was accepted');
+  l3 = launch('Docs clerk.\nNO-CONTRACT: clerk: docs clerk: update docs/QUEUE.md and record that the audit of docs/progress/roundx was accepted');
   t('a clerk that edits the queue and records an accepted audit: ALLOWED', l3.code === 0, l3.err);
-  l3 = launch('Bookkeeping.\nNO-CONTRACT: bookkeeping clerk writes docs/ACCEPTANCE.md entry for docs/progress/gates3 (auditor said accept; AUDIT.md says accept)');
+  l3 = launch('Bookkeeping.\nNO-CONTRACT: clerk: bookkeeping clerk writes docs/ACCEPTANCE.md entry for docs/progress/gates3 (auditor said accept; AUDIT.md says accept)');
   t('a clerk that writes an ACCEPTANCE.md entry quoting the auditor and AUDIT.md: ALLOWED', l3.code === 0, l3.err);
-  l3 = launch('Summarise.\nNO-CONTRACT: read docs/progress/gates3/AUDIT.md and summarise its faults for the main session');
+  l3 = launch('Summarise.\nNO-CONTRACT: research: read docs/progress/gates3/AUDIT.md and summarise its faults for the main session');
   t('a reader of AUDIT.md: ALLOWED', l3.code === 0, l3.err);
   l3 = launch('Second look.\nNO-CONTRACT: read-only review of the work in docs/progress/earthworks r9 by someone else');
   t('a read-only "review of docs/progress" by someone else is a review of the work of another agent: REFUSED by meaning (gates12 decision 3; it used to pass and its audit stayed owed)', l3.code === 2 && /LAUNCH REFUSED/.test(l3.err), l3.err);
   l3 = launch('Review the code.\nNO-CONTRACT: read-only review of the hook scripts, no hand-in expected');
   t('a review of the hook scripts (a reason that opens with the review job) is REFUSED by meaning (gates12 decision 3)', l3.code === 2 && /LAUNCH REFUSED/.test(l3.err), l3.err);
-  l3 = launch('Diagnose the hook scripts.\nNO-CONTRACT: read-only research and diagnosis of how the hook scripts parse a command, writes one markdown report');
+  l3 = launch('Diagnose the hook scripts.\nNO-CONTRACT: research: read-only research and diagnosis of how the hook scripts parse a command, writes one markdown report');
   t('read-only research and diagnosis that names no review job: allowed', l3.code === 0 && lastLog().reason === 'NO-CONTRACT', l3.err);
-  l3 = launch('Format check.\nNO-CONTRACT: read the docs/progress/README naming rules and report them');
+  l3 = launch('Format check.\nNO-CONTRACT: research: read the docs/progress/README naming rules and report them');
   t('a read of docs/progress without audit wording: allowed', l3.code === 0, l3.err);
   const withAof = launch(mkAuditBrief());
   t('a proper AUDIT-OF launch is unaffected', withAof.code === 0 && lastLog().reason === 'AUDIT-OF', withAof.err);
@@ -1092,10 +1092,10 @@ console.log('gates5: state guard and delete guard against the real payload shape
   const B = (command) => ['Bash', { command, description: 'x' }], P = (command) => ['PowerShell', { command }];
   const sgCases = [
     // [tool, input, expect (0 allow / 2 deny), label]
-    [...B(`touch ${lock}`), 0, 'touch the Unreal lane lock'], [...B(`rm -f ${lock}`), 0, 'rm -f the lane lock'], [...B(`test -f ${lock} && cat ${lock}`), 0, 'test -f && cat the lane lock'],
-    [...P(`New-Item -ItemType File -Path ${lock.replace(/\//g, '\\')} -Force`), 0, 'New-Item the lane lock (PowerShell)'], [...P(`Remove-Item ${lock.replace(/\//g, '\\')} -Force`), 0, 'Remove-Item the lane lock (PowerShell)'],
-    [...B(`echo 4242 > ${lock}`), 0, 'redirect into the lane lock'],
-    ['Write', { file_path: lock, content: '4242' }, 0, 'Write tool on the lane lock'], ['Read', { file_path: lock }, 0, 'Read tool on the lane lock'],
+    [...B(`touch ${lock}`), 2, 'touch the Unreal lane lock (a FILE lock: refused since gates13, the lock is a directory)'], [...B(`rm -f ${lock}`), 0, 'rm -f the lane lock'], [...B(`test -f ${lock} && cat ${lock}`), 0, 'test -f && cat the lane lock'],
+    [...P(`New-Item -ItemType Directory -Path ${lock.replace(/\//g, '\\')} -Force`), 0, 'New-Item -ItemType Directory the lane lock (PowerShell)'], [...P(`Remove-Item ${lock.replace(/\//g, '\\')} -Force`), 0, 'Remove-Item the lane lock (PowerShell)'],
+    [...B(`echo 4242 > ${lock}`), 2, 'redirect into the lane lock itself (a FILE lock: refused since gates13)'],
+    ['Write', { file_path: lock + '/owner.txt', content: 'agent: ag5 round: x' }, 0, 'Write tool on owner.txt inside the lane lock'], ['Read', { file_path: lock }, 0, 'Read tool on the lane lock'],
     ['Read', { file_path: glog }, 0, 'Read tool on gate.log'], ['Grep', { pattern: 'FAIL-OPEN', path: glog, output_mode: 'content' }, 0, 'Grep tool on gate.log (gates4 fault 4)'],
     ['Grep', { pattern: 'FAIL-OPEN', path: sdir, glob: 'gate.log' }, 0, 'Grep over the state folder limited to gate.log by glob'], ['Glob', { pattern: '*', path: sdir }, 0, 'Glob lists the state folder (names only)'],
     [...B(`cat ${glog} | tail -20`), 0, 'cat gate.log | tail (piped read, gates4 fault 4)'], [...P(`Get-Content ${glog.replace(/\//g, '\\')} -Tail 20 | Select-String error`), 0, 'Get-Content gate.log | Select-String'],

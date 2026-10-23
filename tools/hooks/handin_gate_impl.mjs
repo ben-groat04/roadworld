@@ -24,7 +24,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { ROOT, STATE_DIR, log, readStdin, parseJson, firstUserText, checkBrief, briefFileOf, agentTranscript } from './lib.mjs';
 import { phaseIn, firstLookOfIn, checkFirstLookFile, readOrderProblem, FIRSTLOOK_FILE } from './phase_marks.mjs';
-import { auditOfIn, readBuilder, recordBuilder, checkAuditFile, AUDIT_FILE, findBuilderInLog, recordAudit, parseAudit } from './audit_lib.mjs';
+import { auditOfIn, readBuilder, readReleased, recordReleased, recordBuilder, checkAuditFile, AUDIT_FILE, findBuilderInLog, recordAudit, parseAudit } from './audit_lib.mjs';
 
 const MAX_BLOCKS = 3;
 // Measured gates build and run the scene check: allow minutes (settings.json hook timeout must be larger; a timeout fails open and is logged).
@@ -106,7 +106,7 @@ export async function main() {
   }
   if (aof) {
     // Audit fault 4: no builder record is no longer "nothing to compare": recover it from the gate log, else refuse (fail closed).
-    const rec = readBuilder(aof, STATE_DIR) || findBuilderInLog(aof, STATE_DIR);
+    const rec = readBuilder(aof, STATE_DIR) || readReleased(aof, STATE_DIR) || findBuilderInLog(aof, STATE_DIR);
     const auditPath = path.join(aof, AUDIT_FILE);
     const probs = checkAuditFile(auditPath, { builderId: rec && rec.agent_id, actualId: id, notBefore: runStart - SLACK_MS });
     if (!rec) probs.push('no record of who built this folder (no .claude/state/builders entry and no "hand-in check passed" line in gate.log for it): the independence of the auditor cannot be shown. Check the AUDIT-OF path is exactly the HANDIN_DIR of the builder; if the folder was never handed in through the gate, tell the main session in your report and stop');
@@ -249,8 +249,8 @@ function blockOrRelease({ isPre, base, id, dir, failures, kind, intro, fix, fail
     // gates13 (decision 6): a released BUILDER (full hand-in, not a phase) still gets a builder record, flagged released, so the auditor's finish gate can compare ids
     if (kind === 'handin' && !phased) {
       try {
-        const { rec } = recordBuilder(dir, id, base.agent_type, STATE_DIR, Date.now(), { released: true });
-        log({ gate: 'audit', decision: 'owed', reason: 'audit owed: hand-in RELEASED after ' + MAX_BLOCKS + ' refusals (check still failing); builder recorded as released', handin_dir: dir, builder_id: id, builder_type: rec.agent_type, released: true });
+        const rec = recordReleased(dir, id, base.agent_type, STATE_DIR);
+        log({ gate: 'audit', decision: 'released_builder', reason: 'hand-in RELEASED after ' + MAX_BLOCKS + ' refusals (check still failing): builder recorded as released so an auditor can be compared with it (not a passed hand-in: no audit-owed notice)', handin_dir: dir, builder_id: id, builder_type: rec.agent_type, released: true });
       } catch (e) { log({ gate: 'audit', decision: 'skip', reason: 'FAIL-OPEN: could not record the released builder', error: String((e && e.message) || e).slice(0, 300) }); }
     }
     log({ gate: kind, ...base, decision: 'allow',

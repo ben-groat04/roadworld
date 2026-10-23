@@ -10,7 +10,10 @@
 //
 // WHAT IT JUDGES (main session decision 23 Oct 2026): ACTUAL TARGETS, never words. A word in a commit message, an echo, a grep pattern or a heredoc body is text and is ignored.
 // Always allowed for every agent:
-//   - .claude/state/unreal_lane.lock: create, write, read, remove (the single Unreal lane), by any tool;
+//   - .claude/state/unreal_lane.lock (the single Unreal lane; gates13, main-session decision 7): ONE lock form, a DIRECTORY made with mkdir (it fails when held) holding owner.txt (agent id, round, time, purpose).
+//     Allowed for every agent: mkdir of the lock; writing owner.txt inside it (the Write tool's content must name the writer's agent id; only the owner overwrites an existing owner.txt); reading both;
+//     removing the lock or owner.txt only by the agent named in owner.txt (a lock with no readable owner, and the legacy file form, can be removed by anyone). The lock as a FILE (touch, redirect, Write onto it) is refused.
+//     The main session is not limited;
 //   - .claude/state/gate.log and .claude/state/handin/**: read by any tool (gate.log is never written; handin/ holds refusal counts and HANDIN_FAILED.txt, written by hooks only);
 //   - NAMES of the state folder: ls, dir, Get-ChildItem, tree, find without -exec, test -f (names only, nothing of the content).
 // Refused: any other path under .claude/state (records, ref_log, ack_secret), a wildcard into it, a bare ack_secret argument, a redirect into it, a recursive read (grep -r, rg
@@ -33,7 +36,36 @@ import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
 const norm = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
 const winPath = (p) => (/^\/([a-zA-Z])(\/|$)/.test(p) ? p[1] + ':' + p.slice(2) : p);
-const ALLOWED_ANY = new Set(['unreal_lane.lock']);
+const ALLOWED_ANY = new Set([]);   // gates13: the lane lock has its own rules (judgeLock)
+const LOCK = 'unreal_lane.lock';
+const CTX = { agent: '', cwd: '' };   // the agent id and cwd of the event being judged (set by judge() and judgeCommand())
+const REMOVE_VERBS = new Set(['rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri']);
+// the lock folder's absolute path for a raw path that names it (or something inside it); null when it cannot be resolved
+function lockAbs(raw) {
+  const n = String(raw).replace(/\\/g, '/'); const i = n.toLowerCase().indexOf('.claude/state');
+  if (i < 0) return null;
+  const head = winPath(n.slice(0, i + '.claude/state'.length));
+  return path.join(path.resolve(CTX.cwd || process.cwd(), head), LOCK);
+}
+// who holds the lock: the id after "agent:" (or "agent id:") in owner.txt; null when the lock has no readable owner
+export function lockOwner(lockDir) {
+  try { const m = fs.readFileSync(path.join(lockDir, 'owner.txt'), 'utf8').match(/^[ \t]*agent(?:[ _-]?id)?[ \t]*[:=][ \t]*([\w.-]+)/im); return m ? m[1] : null; } catch { return null; }
+}
+// the lane lock (gates13, decision 7). sub = '' for the lock itself, 'owner.txt' for the owner file; anything else inside is refused. op: read | create (mkdir) | write | remove
+function judgeLock(raw, sub, { op, what, content }) {
+  const me = CTX.agent; const abs = lockAbs(raw);
+  if (sub !== '' && sub !== 'owner.txt') return [`${what} ${raw}: only owner.txt may live inside the Unreal lane lock`];
+  if (op === 'read') return [];
+  const owner = abs ? lockOwner(abs) : null;
+  const held = (verb) => `${what} ${raw}: the Unreal lane lock is held by agent ${owner} (see owner.txt); only that agent ${verb} it (the main session can too). Wait and retry the mkdir every 60 s.`;
+  if (op === 'remove') return owner && owner !== me ? [held('releases')] : [];
+  if (sub === '') return op === 'create' ? [] : [`${what} ${raw}: the Unreal lane lock is a DIRECTORY: take it with mkdir ${raw} (it fails while held), then write owner.txt inside it (agent id, round, time, purpose); a file cannot be an owned lock`];
+  if (op === 'create') return [`${what} ${raw}: owner.txt is a file, not a folder`];
+  // writing owner.txt: only the owner changes an existing one; the Write tool's content must name the writer
+  if (owner && owner !== me) return [held('rewrites the owner file of')];
+  if (content !== undefined && me && !new RegExp('^[ \\t]*agent(?:[ _-]?id)?[ \\t]*[:=][ \\t]*' + me.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'im').test(String(content))) return [`${what} ${raw}: owner.txt must hold a line "agent: ${me}" (your own agent id), plus round, time and purpose`];
+  return [];
+}
 const WRITE_VERBS = new Set(['rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri', 'mv', 'move', 'move-item', 'mi', 'cp', 'copy', 'copy-item', 'cpi', 'tee', 'tee-object', 'set-content', 'add-content', 'out-file', 'new-item', 'ni', 'touch', 'mkdir', 'md', 'sc', 'ac', 'clear-content', 'rename-item', 'rni', 'ren', 'truncate', 'dd', 'install', 'ln', 'set-itemproperty']);
 const TEXT_VERBS = new Set(['echo', 'printf', 'write-host', 'write-output', 'write-error', 'write-warning', 'write-verbose', 'git', 'gh', 'cmd', 'set', 'export']);
 const PATTERN_VERBS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'select-string', 'sls', 'sed', 'awk', 'gawk', 'findstr']);
@@ -101,11 +133,12 @@ function excludesState(args) {
 }
 
 // one path of a tool or command: [] when fine, else a reason. `write` = the path is written, moved or removed.
-function judgePath(raw, { write = false, what = 'path', names = false } = {}) {
+function judgePath(raw, { write = false, what = 'path', names = false, op = null, content } = {}) {
   const r = stateRemainder(raw);
   if (r === null) return /(^|[\\/])ack_secret$/i.test(String(raw)) && !write && !names ? [`${what} ${raw}: the ack secret is never read by an agent`] : [];
   if (names && !write) return [];
   if (r === 'handin' || r.startsWith('handin/')) return write ? [`${what} ${raw}: .claude/state/handin is written by the hooks only (reading it is allowed: refusal counts and HANDIN_FAILED.txt)`] : [];
+  if (r === LOCK || r.startsWith(LOCK + '/')) return judgeLock(raw, r === LOCK ? '' : r.slice(LOCK.length + 1), { op: write ? (op || 'write') : 'read', what, content });
   if (/[*?]/.test(r)) {
     // gates7 item 4: a READ through a wildcard whose last part cannot match ack_secret (state/*.log) is fine; a write, or a pattern that can match the secret, is not
     const parts = r.split('/'); const last = parts[parts.length - 1];
@@ -129,6 +162,8 @@ const protectedMsg = (p, what) => `${what} ${p}: the main checkout's hook wiring
 export function judgeCommand(cmd, depth = 0, opts = {}) {
   const mainRoot = opts.mainRoot || ROOT;
   let cur = opts.cwd || process.cwd();
+  if (opts.agent !== undefined) CTX.agent = String(opts.agent);
+  if (opts.cwd) CTX.cwd = opts.cwd;
   const reasons = [];
   if (depth > 4) return reasons;
   const { segments } = parseCommand(cmd);
@@ -136,7 +171,7 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
   for (let si = 0; si < segments.length; si++) {
     const seg = segments[si];
     for (const rd of seg.redirects) {
-      reasons.push(...judgePath(rd.target, { write: true, what: 'a redirect into' }));
+      reasons.push(...judgePath(rd.target, { write: true, what: 'a redirect into', op: 'write' }));
       if (protectedMain(rd.target, mainRoot, cur)) reasons.push(protectedMsg(rd.target, 'a redirect into'));
     }
     if (!seg.words.length) continue;
@@ -251,9 +286,10 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
       const vv = /^-\w+:/.test(v) ? v.replace(/^-\w+:/, '') : v;   // -Path:x
       if (/^-/.test(vv)) continue;
       for (const piece of vv.split(',')) {
-        reasons.push(...judgePath(piece, { write: wr, names: isList }));
+        const lockOp = REMOVE_VERBS.has(verb) ? 'remove' : (verb === 'mkdir' || verb === 'md' || ((verb === 'new-item' || verb === 'ni') && av.some((x) => /^directory$/i.test(x) || /^-itemtype[:=]?directory$/i.test(x)))) ? 'create' : 'write';
+        reasons.push(...judgePath(piece, { write: wr, names: isList, op: lockOp }));
         // relative to a folder entered with cd earlier in the command, or an event cwd inside the state folder
-        if (!/^(?:[A-Za-z]:|[\\/])/.test(piece) && (cur !== (opts.cwd || process.cwd()) || stateRemainder(cur) !== null)) reasons.push(...judgePath(absOf(piece, cur), { write: wr, names: isList }));
+        if (!/^(?:[A-Za-z]:|[\\/])/.test(piece) && (cur !== (opts.cwd || process.cwd()) || stateRemainder(cur) !== null)) reasons.push(...judgePath(absOf(piece, cur), { write: wr, names: isList, op: lockOp }));
         if (wr && protectedMain(piece, mainRoot, cur)) reasons.push(protectedMsg(piece, verb));
       }
     }
@@ -270,10 +306,11 @@ export function judge(input, mainRoot = ROOT) {
   const tool = input.tool_name || '';
   const ti = input.tool_input || {};
   if (!input.agent_id) return [];   // the main session
+  CTX.agent = String(input.agent_id); CTX.cwd = input.cwd || '';
   if (tool === 'Read') return judgePath(ti.file_path || ti.path || '', { what: 'Read of' });
   if (tool === 'Write' || tool === 'Edit' || tool === 'NotebookEdit') {
     const p = ti.file_path || ti.notebook_path || ti.path || '';
-    const rs = judgePath(p, { write: true, what: tool + ' on' });
+    const rs = judgePath(p, { write: true, what: tool + ' on', op: 'write', content: tool === 'Write' ? String(ti.content ?? '') : undefined });
     if (protectedMain(p, mainRoot, input.cwd)) rs.push(protectedMsg(p, tool + ' on'));
     return rs;
   }
@@ -284,7 +321,7 @@ export function judge(input, mainRoot = ROOT) {
     const r = p ? stateRemainder(p) : null;
     if (r !== null) {
       const g = String(ti.glob || '');
-      const ok = ALLOWED_ANY.has(r) || r === 'gate.log' || r === 'handin' || r.startsWith('handin/') || (r === '' && /^(?:\*\*\/)?(?:gate\.log|unreal_lane\.lock)$/.test(g));
+      const ok = r === LOCK || r.startsWith(LOCK + '/') || r === 'gate.log' || r === 'handin' || r.startsWith('handin/') || (r === '' && /^(?:\*\*\/)?(?:gate\.log|unreal_lane\.lock)$/.test(g));
       if (!ok) reasons.push(`Grep over ${p}: the state folder holds the ack secret (a Grep of gate.log, handin/ or unreal_lane.lock is allowed)`);
     }
     if (ti.glob && /ack_secret/i.test(String(ti.glob))) reasons.push('Grep with a glob that selects the ack secret');
