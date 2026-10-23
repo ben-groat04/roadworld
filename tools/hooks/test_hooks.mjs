@@ -851,7 +851,7 @@ console.log('gates3 hooks');
 
   // -- BLOCKED through the finish hook
   const faults3 = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Pass 3\nthe hatching bars cross the kerb line at the island nose\n## Residual\nnone, all fixed\n';
-  const blkLine = 'BLOCKED: wall curl at the road ends | tried: `node tools/scene.mjs --check` after a ramp, a fillet and a longer fade | blocked by: `FAIL ground_under_road` stays at worst 2.1 m (src/earthworks.js:412) | see: scene_check.log | needs: a decision on the crossing level';
+  const blkLine = 'BLOCKED: wall curl at the road ends | tried: `node tools/scene.mjs --check` after a ramp, a fillet and a longer fade | blocked by: `FAIL ground_under_road` stays at worst 2.1 m (src/earthworks.js:412) | see: scene_check.log | needs: a decision whether the crossing is at grade or bridged over the wall curl';
   const blkTp = transcript('blk', mk('blk', ['--no-visual', '--v2']));
   fs.mkdirSync(hd('blk'), { recursive: true }); fs.writeFileSync(path.join(hd('blk'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', blkLine)); fs.writeFileSync(path.join(hd('blk'), 'FAULTS.md'), faults3); fs.writeFileSync(path.join(hd('blk'), 'scene_check.log'), 'scene check 17/21\nPASS median_flat\nFAIL ground_under_road stays at worst 2.1 m (src/earthworks.js:412)\nFAIL no_bare_steps\n');
   let bl = stop('blk1', blkTp);
