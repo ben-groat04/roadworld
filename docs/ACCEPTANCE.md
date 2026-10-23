@@ -62,3 +62,27 @@ Main session first look before the audit: opened `c77_b.png` (the strip beyond t
 
 ## 23 Oct, about 02:03 UTC: grade-r10 (agent/grade-r10, hand-in b72caf9, audit f0da40f) - SENT BACK, NOT ACCEPTED
 Opus first look `docs/progress/grade-r10/FIRST_LOOK.md` (9d6abad): road ends stop mid-air; a solid wall where a viaduct would stand; wallpaper rock face; garden-wall look (brick panels with posts). Audit: verdict SEND BACK (long fork at free road ends, exclusion zones in tests, free-end volume report missing). Photos were partly damaged by the 22 Oct wipe (street 04, 05, 06, 51, 53, aerial 28 zero-filled at audit time); the auditor's reference count was 23 of 34. A grade-r11 brief was generated at 02:04 UTC.
+
+## 23 Oct 2026: grade-r11 (audit commit 5ab6c2b) - SENT BACK, NOT ACCEPTED
+grade-r11 main-session first look, 23 Oct 2026, before reading AUDIT.md.
+Opened: docs/reference/_compare/grade-r11/case2_aerial_vs98.png, case1_end_vs03.png, case3_end_vs55.png (photos 98, 03, 55 inside them).
+Top 3:
+1. Case 2 (aerial vs 98): the whole road is now a long viaduct on a hillside, with the rock cut far uphill behind a wide grass band. Photo 98 shows the rock face hard against an at-grade road. Nobody would build a 400 m viaduct along a slope that a cut-and-wall could carry.
+2. Case 3 (end vs 55): the rock face is a flat tan band floating well above the upper road, not reaching it, and both roads stop dead in a sharp notch cut into the hill. Photo 55 shows a continuous stone wall at road level.
+3. Case 1 (end vs 03): the walls are barely visible thin dark strips, and the road ends in a square box notch in the hillside. Photo 03 has a tall, obvious stone wall right beside the road. Also, all terrain is flat untextured olive in every render.
+Verdict: send back; the audit and the Opus first look agree with the main look.
+
+## 23 Oct 2026: m2fix4a (audit commit 39dafcb) - SENT BACK, NOT ACCEPTED
+m2fix4a main-session first look, 23 Oct 2026, before reading AUDIT.md. This is a mechanics round; its look belongs to m2fix4b, so there is no Opus pass.
+Opened: docs/reference/_compare/m2fix4a/20_st_n3_road_on_scarp_before_after.jpg and 20_st_s31b_relief_drivers_eye_before_after.jpg.
+Top 3:
+1. n3: a road across a 22 degree scarp shows no cut or fill at all. It looks pasted on the slope; before and after are identical.
+2. s31b: the dark scar at the far road end is unchanged.
+3. Regrade still misses the 100 ms target (12 of 32 edits, max 140 ms), and the playtest guard was loosened to 250 ms.
+Verdict: send back.
+
+## 23 Oct 2026: tjunction4 (audit commit 580b2b3) - SENT BACK, NOT ACCEPTED
+Verdict: send back (faults in QUEUE.md, 23 Oct 11:30Z state).
+
+## 23 Oct 2026: gates7 - SENT BACK for one final round
+Verdict: send back for one final round (gates8).
