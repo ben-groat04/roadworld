@@ -17,6 +17,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolateState, cleanupTmp } from '../test_isolation.mjs';
+import { logRun } from './test_record_lib.mjs';
 
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guards10-'));
@@ -101,7 +102,8 @@ function buildHandin(name, { testFile = false, failFirst = false, list = true, d
   if (extraUnlisted) { wr(path.join(x.w, 'src2.mjs'), 'more'); commit(x.w, 'unlisted step'); }
   if (failFirst) wr(path.join(x.hd, 'fail_first_new_thing.txt'), 'test_new_thing.mjs run against the old code:\nFAIL new thing joins up\nFAIL new thing mirrors\n10 passed, 2 failed\n');
   wr(path.join(x.hd, 'BUILD.md'), `# BUILD\nCommits: ${list ? shas.map((s) => s.slice(0, 10)).join(' ') : 'none'}\nSuite binary: src.mjs\n`);
-  if (log === 'ok') wr(path.join(x.hd, 'suite_build.log'), '12 passed, 0 failed\n'); else if (log === 'bad') wr(path.join(x.hd, 'suite_build.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n');
+  // gates12: the log is made through the real hooks (a typed log has no run record and is refused)
+  if (log === 'ok') logRun(x.w, path.join(x.hd, 'suite_build.log'), '12 passed, 0 failed\n', { stateDir: state }); else if (log === 'bad') logRun(x.w, path.join(x.hd, 'suite_build.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n', { stateDir: state, exit: 1 });
   commit(x.w, 'BUILD.md'); // the hand-in files are committed too: BUILD.md lists the commits before it
   if (dirty) wr(path.join(x.w, 'stray.txt'), 'untracked');
   return x;
@@ -173,7 +175,7 @@ const briefOf = (hd, extra) => `AGENT-CONTRACT-MARKER: v1\nHANDIN_DIR: ${hd}\nHA
   // build phase through the hook: SUITE: lines of the brief are run by the check
   const bg = buildHandin('h_build'); const allSha = git(bg.w, 'log', '--format=%H', `${git(bg.w, 'log', '-1', '--format=%H', '--', 'docs/progress/rr/MEASURE.md').stdout.trim()}..HEAD`).stdout.trim().split('\n').filter(Boolean);
   wr(path.join(bg.hd, 'BUILD.md'), `# BUILD\nCommits: ${allSha.map((s) => s.slice(0, 10)).join(' ')}\nSuite binary: src.mjs\n`); commit(bg.w, 'final BUILD.md');
-  wr(path.join(bg.hd, 'suite_build.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n'); commit(bg.w, 'bad suite log');
+  logRun(bg.w, path.join(bg.hd, 'suite_build.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n', { stateDir: state, exit: 1 }); commit(bg.w, 'bad suite log');
   const rb = stopHook('ph_build', mkTr('tr_ph_build', briefOf(bg.hd, `PHASE: build\nSUITE: ${suiteBad}`)), 'PreToolUse');
   t('A hook: a build-phase agent whose suite_build.log shows a failure the brief does not allow is refused (the hook reads the log and never runs the suite)', rb.code === 2 && /not in the brief's allowed list/.test(rb.err), rb.err.slice(0, 400));
 }

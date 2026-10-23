@@ -26,15 +26,24 @@ const secsOf = (txt) => {
   const m = String(txt).match(/^(\d+(?:\.\d+)?)([smhd]?)$/i); if (!m) return null;
   return Number(m[1]) * ({ '': 1, s: 1, m: 60, h: 3600, d: 86400 })[m[2].toLowerCase()];
 };
-const baseVerb = (v) => String(v).replace(/^\\/, '').toLowerCase().replace(/^.*[\/\\]/, '').replace(/\.exe$/, '');
+const baseVerb = (v) => String(v).replace(/^\\/, '').toLowerCase().replace(/^.*[\/\\]/, '').replace(/\.(?:exe|bat|cmd)$/, '');
 const isTestName = (b) => /_tests$/.test(b) || /^t_full/.test(b) || b === 'ctest';
-const QUICK = /^(?:--help|-h|-\?|--version|-v|--list-test-cases|-ltc|--list-test-suites|-lts|--list-reporters|-lr)$/i;
+const UBT_NAMES = /^(?:runuat|runubt|unrealbuildtool|ubt)$/;   // gates12: Build.bat / RunUAT / UnrealBuildTool: an Unreal build may run longer than a suite
+const UBT_CAP = 5400;
+const QUICK =/^(?:--help|-h|-\?|--version|-v|--list-test-cases|-ltc|--list-test-suites|-lts|--list-reporters|-lr)$/i;
 
 // the walk over wrappers: returns { i (index of the program word), tm (seconds of the tightest timeout wrapper, null if none, 0 = unlimited), startProc, psTimeout }
 function walk(words, shell, inheritedTm) {
   let i = 0, tm = inheritedTm, startProc = false;
   while (i < words.length) {
     const v = words[i].v.replace(/^\\/, ''); const lv = baseVerb(v);
+    if (lv === 'xargs') {   // gates12: `... | xargs ninja`, `xargs -n1 timeout 900 ctest`: the program is the first word after xargs' own flags
+      i++;
+      while (i < words.length && /^-/.test(words[i].v) && words[i].v !== '--') i += /^-(?:[nIPLdsEaR]|-max-args|-max-procs|-replace|-delimiter|-arg-file)$/.test(words[i].v) ? 2 : 1;
+      if (i < words.length && words[i].v === '--') i++;
+      continue;
+    }
+    if (v === '--' && i > 0) { i++; continue; }   // gates12: `timeout 900 -- ninja`
     if (WRAPPER_VERBS.has(lv) || WRAPPER_VERBS.has(v.toLowerCase())) {
       i++;
       if (lv === 'timeout') {
@@ -66,6 +75,8 @@ function classify(verb, args) {
   const b = baseVerb(verb);
   const av = args.map((a) => a.v);
   if (isTestName(b)) return av.some((a) => QUICK.test(a)) || (b === 'ctest' && av.some((a) => /^(?:-N|--show-only(?:=.*)?|--help|--version)$/.test(a))) ? null : { name: b, kind: 'test' };
+  if (/^(?:make|gmake|mingw32-make|nmake)$/.test(b)) return av.some((a) => QUICK.test(a) || /^(?:-n|--dry-run|--just-print|--recon|-q|--question|-p|--print-data-base)$/.test(a)) ? null : { name: b, kind: 'build' };   // gates12
+  if (UBT_NAMES.test(b) || (b === 'build' && /\/engine\/build\/batchfiles\/build\.(?:bat|sh)$/i.test(String(verb).replace(/\\/g, '/')))) return av.some((a) => QUICK.test(a)) ? null : { name: b === 'build' ? 'Build.bat (UnrealBuildTool)' : b, kind: 'build', cap: UBT_CAP, capAny: true };   // gates12
   if (b === 'ninja' || b === 'msbuild') return av.some((a) => QUICK.test(a)) || av.includes('-t') ? null : { name: b, kind: 'build' };
   if (b === 'cmake') return av.includes('--build') && !av.some((a) => /^(?:--help|-h)$/.test(a)) ? { name: 'cmake --build', kind: 'build' } : null;
   const ps = b.replace(/\.ps1$/, '');
@@ -73,6 +84,7 @@ function classify(verb, args) {
   if (/^(?:node|nodejs)$/.test(b)) {
     const f = av.find((a) => /\.(?:mjs|js|cjs)$/i.test(a));
     if (f && /^(?:scene|render)\.mjs$/i.test(baseVerbRaw(f))) return av.some((a) => QUICK.test(a)) ? null : { name: baseVerbRaw(f), kind: 'tool' };
+    if (f && /^test_[\w.-]*\.mjs$|^[\w.-]*_tests?\.mjs$/i.test(baseVerbRaw(f))) return av.some((a) => QUICK.test(a)) ? null : { name: baseVerbRaw(f), kind: 'suite' };   // gates12: the repo's node suites (tools/test_gates.mjs, tools/hooks/test_guards12.mjs): limited and recorded like the C++ suite
   }
   return null;
 }
@@ -122,7 +134,7 @@ function finish(c, args, tm, shell, startProc, waitSecs) {
   }
   if (secs === null && tm !== null && shell === 'bash') { secs = tm; how = 'timeout'; }
   if (secs === null && startProc && waitSecs !== null) { secs = waitSecs; how = 'Wait-Process -Timeout'; }
-  const cap = c.kind === 'ps' && how === '-TimeoutSec' ? c.cap : MAX_SECS;
+  const cap = (c.kind === 'ps' && how === '-TimeoutSec') || c.capAny ? c.cap : MAX_SECS;
   let why = null;
   if (secs === null) why = 'none';
   else if (secs <= 0) why = `zero (${how} 0 means no limit)`;
@@ -134,32 +146,55 @@ const advice = (j) => j.shell === 'ps'
   ? 'In PowerShell: run the Unreal scripts with their own limit (`-TimeoutSec 600`; Build-Editor.ps1 may use up to 5400, Run-Playtest.ps1 and Run-EditorPython.ps1 up to 1800), or start the program and bound the wait: `$p = Start-Process -PassThru -NoNewWindow <exe> -ArgumentList ...; Wait-Process -Id $p.Id -Timeout 600` (900 at most for a full suite), or run it from the Bash tool as `timeout 900 <cmd>`. `timeout` typed in PowerShell is Windows timeout.exe, a pause, not a limit.'
   : 'Put GNU timeout in front: `timeout 900 <cmd>` for a full suite (15 minutes at most), `timeout 600 <cmd>` for anything else, e.g. `timeout 900 build/tests/sim_core_tests.exe > suite.log 2>&1`; for the Unreal scripts add `-TimeoutSec 600`.';
 
-// ---- second copy of a test program
+// ---- second copy of a test program (gates12: per worktree, by executable path)
 export function findRoot(cwd) {
   let d = path.resolve(cwd || process.cwd());
   for (let k = 0; k < 40; k++) { if (fs.existsSync(path.join(d, '.git'))) return d; const p = path.dirname(d); if (p === d) break; d = p; }
   return path.resolve(cwd || process.cwd());
 }
-const normP = (p) => String(p).replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
+// one spelling for a path: forward slashes, lower case, no trailing slash, an MSYS "/c/x" read as "c:/x"
+export const normP = (p) => String(p).replace(/\\/g, '/').replace(/^\/([a-zA-Z])\//, '$1:/').replace(/\/+/g, '/').toLowerCase().replace(/\/+$/, '');
+const LOOKUP_MS = 300;       // the image-name lookup (tasklist), run whenever an unfinished run of this worktree is on record
+const PATH_LOOKUP_MS = 4000; // the executable-path lookup, run only when that image IS running: PowerShell needs 0.6 to 1.3 s to start on this machine, so it cannot fit 300 ms
 export function processRunning(name) {
   // returns true / false / null (null = could not tell within 300 ms)
   const forced = process.env.CP_TIME_GUARD_PROCS;
   if (forced !== undefined) return forced.split(',').map((x) => x.trim().toLowerCase().replace(/\.exe$/, '')).includes(name);
   let cmd;
   try { cmd = process.env.CP_TIME_GUARD_PROC_CMD ? JSON.parse(process.env.CP_TIME_GUARD_PROC_CMD) : (process.platform === 'win32' ? ['tasklist', '/FI', `IMAGENAME eq ${name}.exe`, '/FO', 'CSV', '/NH'] : ['pgrep', '-x', name]); } catch { return null; }
-  const r = spawnSync(cmd[0], cmd.slice(1), { timeout: 300, encoding: 'utf8', windowsHide: true });
+  const r = spawnSync(cmd[0], cmd.slice(1), { timeout: LOOKUP_MS, encoding: 'utf8', windowsHide: true });
   if (r.error || r.signal) return null;
   if (process.platform === 'win32' || process.env.CP_TIME_GUARD_PROC_CMD) return String(r.stdout).toLowerCase().includes(name);
   return r.status === 0;
 }
-function runsFile() { return path.join(STATE_DIR, 'runs.jsonl'); }
-export function recentRuns(root, name, now = Date.now()) {
-  let lines = []; try { lines = fs.readFileSync(runsFile(), 'utf8').split('\n').filter(Boolean); } catch { return []; }
-  const out = [];
-  for (const l of lines.slice(-200)) { try { const o = JSON.parse(l); if (o.name === name && normP(o.root) === normP(root) && now - o.ts < (o.secs || MAX_SECS) * 1000) out.push(o); } catch { /* skip */ } }
-  return out;
+// the executable path and command line of every running copy of the image: [{ exe, cmdline }] or null (could not tell). CP_TIME_GUARD_PATHS="p1;p2" replaces the lookup, CP_TIME_GUARD_PATH_CMD='["cmd","arg"]'
+// replaces the command (its stdout: one "<exe>|<command line>" per line), both for tests.
+export function processPaths(name) {
+  const forced = process.env.CP_TIME_GUARD_PATHS;
+  if (forced !== undefined) return forced.split(';').map((x) => x.trim()).filter(Boolean).map((p) => ({ exe: p, cmdline: p }));
+  let cmd;
+  try {
+    cmd = process.env.CP_TIME_GUARD_PATH_CMD ? JSON.parse(process.env.CP_TIME_GUARD_PATH_CMD)
+      : process.platform === 'win32' ? ['powershell', '-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process -Filter "Name='${name}.exe'" | ForEach-Object { $_.ExecutablePath + '|' + $_.CommandLine }`]
+      : ['pgrep', '-a', '-x', name];
+  } catch { return null; }
+  const r = spawnSync(cmd[0], cmd.slice(1), { timeout: PATH_LOOKUP_MS, encoding: 'utf8', windowsHide: true });
+  if (r.error || r.signal) return null;
+  const lines = String(r.stdout).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (process.platform === 'win32' || process.env.CP_TIME_GUARD_PATH_CMD) return lines.map((l) => { const k = l.indexOf('|'); return { exe: k >= 0 ? l.slice(0, k) : l, cmdline: k >= 0 ? l.slice(k + 1) : l }; });
+  return lines.map((l) => ({ exe: l.replace(/^\d+\s+/, '').split(/\s+/)[0], cmdline: l.replace(/^\d+\s+/, '') }));
 }
-function recordRun(root, j) { try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.appendFileSync(runsFile(), JSON.stringify({ ts: Date.now(), name: j.name, root, secs: j.secs || MAX_SECS }) + '\n'); } catch { /* never break a command */ } }
+// a copy of this worktree's own image: its executable path or its command line lies under the worktree root
+export function underRoot(procs, root) { const r = normP(root) + '/'; return procs.filter((p) => normP(p.exe).startsWith(r) || normP(p.cmdline).includes(r)); }
+export const runsFile = () => path.join(STATE_DIR, 'runs.jsonl');
+function readRuns(n = 400) { try { return fs.readFileSync(runsFile(), 'utf8').split('\n').filter(Boolean).slice(-n).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } }
+// start records of THIS worktree and image that are inside their time limit and have not ended (a Post hook "end" record with the same id); a background run counts until its limit is over
+export function openRuns(root, name, now = Date.now()) {
+  const all = readRuns(); const ended = new Set(all.filter((o) => o.ev === 'end').map((o) => o.id));
+  return all.filter((o) => o.ev !== 'end' && o.name === name && normP(o.root) === normP(root) && now - o.ts < (o.secs || MAX_SECS) * 1000 && (o.background || !ended.has(o.id)));
+}
+export const recentRuns = openRuns;
+export function recordRun(root, j, extra = {}) { try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.appendFileSync(runsFile(), JSON.stringify({ ev: 'start', ts: Date.now(), name: j.name, kind: j.kind, root, secs: j.secs || MAX_SECS, ...extra }) + '\n'); } catch { /* never break a command */ } }
 
 export function judge(command, tool, cwd) {
   const shell = /^powershell$/i.test(tool) ? 'ps' : 'bash';
@@ -168,29 +203,45 @@ export function judge(command, tool, cwd) {
   return { jobs, reasons };
 }
 
+// the files a command writes its output to: `> f`, `>> f`, `&> f`, `2> f`, `| tee [-a] f`, Out-File / Set-Content / Add-Content (resolved against cwd)
+export function outputFiles(command, cwd) {
+  const out = new Set(); const c = String(command);
+  const add = (w) => { const p = String(w).replace(/^["']|["']$/g, ''); if (!p || /^(?:\/dev\/null|nul|&\d|\$null)$/i.test(p) || /[$`*?]/.test(p)) return; out.add(path.resolve(cwd || process.cwd(), p)); };
+  for (const m of c.matchAll(/(?:^|[\s;&|(])(?:\d|&)?>{1,2}\s*("[^"]+"|'[^']+'|[^\s;&|<>()]+)/g)) add(m[1]);
+  for (const m of c.matchAll(/\btee\s+(?:-[a-z]+\s+)*("[^"]+"|'[^']+'|[^\s;&|<>()]+)/g)) add(m[1]);
+  for (const m of c.matchAll(/\b(?:Out-File|Set-Content|Add-Content)\s+(?:-(?:FilePath|Path)\s+)?("[^"]+"|'[^']+'|[^\s;&|<>()]+)/gi)) add(m[1]);
+  return [...out];
+}
+
 export async function main() {
   const raw = await readStdin();
   const input = raw === null ? undefined : parseJson(raw);
   if (!input || typeof input !== 'object') { log({ gate: 'time_guard', decision: 'allow', reason: 'FAIL-OPEN: stdin missing or not JSON' }); return 0; }
   if (!/^(Bash|PowerShell)$/.test(input.tool_name || '')) return 0;
   const command = (input.tool_input && input.tool_input.command) || '';
-  if (!command || !/(?:_tests|t_full|ctest|ninja|msbuild|cmake|Run-Playtest|Build-Editor|Run-EditorPython|scene\.mjs|render\.mjs)/i.test(command)) return 0;
+  if (!command || !/(?:_tests?|test_|t_full|ctest|ninja|msbuild|cmake|\bn?make\b|-make|Build\.bat|Build\.sh|RunUAT|RunUBT|UnrealBuildTool|Run-Playtest|Build-Editor|Run-EditorPython|scene\.mjs|render\.mjs)/i.test(command)) return 0;
   const { jobs, reasons } = judge(command, input.tool_name, input.cwd);
   const dup = [];
+  const root = findRoot(input.cwd);
   if (!reasons.length) {
-    const root = findRoot(input.cwd);
     const tests = [...new Map(jobs.filter((j) => j.kind === 'test').map((j) => [j.name, j])).values()];
     for (const j of tests) {
-      const rec = recentRuns(root, j.name);
-      if (!rec.length) continue;
+      if (!openRuns(root, j.name).length) continue;       // no unfinished run of this image from this worktree: nothing to compare (a finished run, or one of another worktree, is no reason)
       const up = processRunning(j.name);
       if (up === null) { log({ gate: 'time_guard', decision: 'allow', reason: 'FAIL-OPEN: process lookup for ' + j.name + ' timed out or failed (300 ms bound); second-copy check skipped', cwd: input.cwd }); continue; }
-      if (up) dup.push(`a copy of \`${j.name}\` started ${Math.round((Date.now() - rec[rec.length - 1].ts) / 1000)} s ago from this worktree (${root}) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations).`);
+      if (!up) continue;
+      const procs = processPaths(j.name);
+      if (procs === null) { log({ gate: 'time_guard', decision: 'allow', reason: 'FAIL-OPEN: executable-path lookup for ' + j.name + ' timed out or failed (' + PATH_LOOKUP_MS + ' ms bound); second-copy check skipped', cwd: input.cwd }); continue; }
+      const mine = underRoot(procs, root);
+      if (mine.length) { const rec = openRuns(root, j.name).slice(-1)[0]; dup.push(`a copy of \`${j.name}\` from this worktree is still running: ${mine[0].exe || mine[0].cmdline} (matched under ${root}; its record started ${Math.round((Date.now() - rec.ts) / 1000)} s ago). Never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations). Copies running from other worktrees are not counted.`); }
     }
-    if (!dup.length) for (const j of tests) recordRun(findRoot(input.cwd), j);
   }
   const all = [...reasons, ...dup];
-  if (!all.length) return 0;
+  if (!all.length) {
+    // every run of a suite or test program that passes is recorded (start); the Post hook adds the end, the exit code and the hash of the output file (check_handin --phase build reads them)
+    for (const j of jobs.filter((x) => x.kind === 'test' || x.kind === 'suite')) recordRun(root, j, { id: input.tool_use_id || `${Date.now()}-${process.pid}`, cwd: input.cwd || null, background: !!(input.tool_input && input.tool_input.run_in_background), command: String(command).slice(0, 400), files: outputFiles(command, input.cwd) });
+    return 0;
+  }
   log({ gate: 'time_guard', decision: 'deny', reason: dup.length && !reasons.length ? 'second copy of a running test refused' : 'long run without a time limit refused', agent_id: input.agent_id || null, cwd: input.cwd, command: String(command).slice(0, 300), reasons: all });
   process.stderr.write('REFUSED by the time-limit guard (tools/hooks/time_guard.mjs; contract item 26):\n - ' + all.join('\n - ') + '\n');
   return 2;

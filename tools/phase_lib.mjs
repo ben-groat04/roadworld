@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { imageDecodable, imageDims } from './image_lib.mjs';
+import { findSuiteRun } from './hooks/suite_record.mjs';
 
 const sh = (cmd, args, cwd, timeout = 60000) => spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout, maxBuffer: 64 * 1024 * 1024 });
 const stripComments = (s) => s.replace(/<!--[\s\S]*?-->/g, '');
@@ -175,7 +176,16 @@ export function buildProblems(folder, wt, { since = 0, GL = null, log = () => {}
     let lst = null; try { lst = fs.statSync(logFile).mtimeMs; } catch { /* read above */ }
     if (lst !== null && lastCode && lst < lastCode) probs.push(`${SUITE_LOG} (written ${new Date(lst).toISOString()}) is older than the last code commit (${new Date(lastCode).toISOString()}): run the suite again on the committed code`);
     if (lst !== null && since > 0 && lst < since) probs.push(`${SUITE_LOG} is older than this agent's run`);
+    // gates12 (decision 2): the log counts only when a suite run that the time-limit hooks SAW wrote exactly these bytes (hash), in this worktree, after the last code commit
+    const rec = findSuiteRun(logFile, wt, { after: lastCode });
+    if (!rec.ok) probs.push(`${SUITE_LOG}: ${rec.why}`);
     const ps = parseSuiteLog(logText);
+    if (rec.ok) {
+      const ex = rec.run.exit;
+      if (ex === null || ex === undefined) probs.push(`${SUITE_LOG}: the recorded run has no known exit code (the hook saw it end without one): run the suite again`);
+      else if (ex !== 0 && ps.summary && ps.failed === 0 && !ps.timedOut) probs.push(`${SUITE_LOG}: the recorded run exited with code ${ex} but the log shows no failing test: the run died or was killed (124 = time limit); run it again`);
+      else if (ex === 0 && ps.summary && ps.failed > 0 && !allowFail.length) probs.push(`${SUITE_LOG}: the recorded run exited 0 but the log shows ${ps.failed} failing test(s): the log and the record disagree`);
+    }
     if (!ps.summary) probs.push(`${SUITE_LOG} holds no doctest ("[doctest] test cases: ..."), ctest ("N% tests passed, ...") or node-suite ("N passed, M failed") summary: it is not the output of a finished suite run`);
     else if (ps.timedOut) probs.push(`${SUITE_LOG} shows the run hit its time limit (exit 124): find the slow or hung case (-tc filters, --durations) and fix it, or write it in STATUS`);
     else if (ps.failed > 0) {

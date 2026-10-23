@@ -21,6 +21,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolateState, cleanupTmp } from '../test_isolation.mjs';
+import { logRun } from './test_record_lib.mjs';   // gates12: a suite_build.log is made through the real hooks (a typed log has no run record)
 
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'guards11-'));
@@ -107,12 +108,12 @@ console.log('gates11 A: a second copy of a running test, and the 300 ms process 
 {
   const ds = path.join(tmp, 'state-tg-dup'); mk(ds);
   const cmd = 'timeout 900 build/tests/sim_core_tests.exe > suite.log 2>&1';
-  const procs = { CP_TIME_GUARD_PROCS: 'sim_core_tests' };
+  const procs = { CP_TIME_GUARD_PROCS: 'sim_core_tests', CP_TIME_GUARD_PATHS: path.join(tgRepo, 'build', 'tests', 'sim_core_tests.exe') };   // gates12: the second-copy check matches the executable path under the worktree
   let r = tg(cmd, 'Bash', { stateDir: ds, e: procs });
   t('A dup: the first limited run is allowed (and recorded)', tgAllow(r) && fs.existsSync(path.join(ds, 'runs.jsonl')), `status ${r.status} ${r.stderr}`);
   r = tg(cmd, 'Bash', { stateDir: ds, e: procs });
   t('A dup: a second copy of the same test from the same worktree while the process is still running is refused', tgRefuse(r) && /second copy/.test(r.stderr), `status ${r.status} ${r.stderr.slice(0, 300)}`);
-  r = tg('timeout 600 ctest', 'Bash', { stateDir: ds, e: { CP_TIME_GUARD_PROCS: 'ctest' } }); const r2 = tg('timeout 600 ctest', 'Bash', { stateDir: ds, e: { CP_TIME_GUARD_PROCS: 'ctest' } });
+  r = tg('timeout 600 ctest', 'Bash', { stateDir: ds, e: { CP_TIME_GUARD_PROCS: 'ctest', CP_TIME_GUARD_PATHS: path.join(tgRepo, 'build', 'ctest.exe') } }); const r2 = tg('timeout 600 ctest', 'Bash', { stateDir: ds, e: { CP_TIME_GUARD_PROCS: 'ctest', CP_TIME_GUARD_PATHS: path.join(tgRepo, 'build', 'ctest.exe') } });
   t('A dup: the same holds for ctest (first allowed, second refused)', tgAllow(r) && tgRefuse(r2), `${r.status} ${r2.status} ${r2.stderr.slice(0, 200)}`);
   r = tg(cmd, 'Bash', { stateDir: ds, e: { CP_TIME_GUARD_PROCS: 'something_else' } });
   t('A dup: the same command is allowed once the process is gone (the earlier run ended)', tgAllow(r), `status ${r.status} ${r.stderr}`);
@@ -147,13 +148,13 @@ console.log('gates11 B: the launch gate refuses a NO-CONTRACT launch by its DESC
   const launch = (description, prompt, type = 'general-purpose') => spawnSync(process.execPath, [path.join(root, 'tools', 'hooks', 'brief_gate.mjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', cwd: elsewhere, tool_input: { description, prompt, subagent_type: type } }), cwd: elsewhere, encoding: 'utf8', timeout: 120000, env });
   const nc = (reason) => `NO-CONTRACT: ${reason}\nDo the job.`;
   // descriptions refused by the decision-1 pattern: auditor | audit(ing) of/for | opus first look | first look, plus "Audit <x> independently|round|hand-in" (all real descriptions in the log)
-  const refuse = ['Audit gate-notice hooks independently', 'Audit earthworks round 9', 'Audit T-junction round', 'Audit road tool round 3', 'Auditor for gates9 hand-in', 'Auditor for m2fix5a hand-in', 'Audit of the earthworks hand-in', 'Auditing for the roundabout round',
+  const refuse = ['Audit gate-notice hooks independently', 'Audit earthworks round 9', 'Audit T-junction round', 'Audit road tool round 3', 'Auditor for gates9 hand-in', 'Auditor for m2fix5a hand-in', 'Audit of the earthworks hand-in', 'Auditing for the roundabout round', 'Audit the audit-gate tooling', 'Audit repo organisation, read-only', 'Audit gradelayer WorldCache layers',   /* gates12 decision 3: audits of agents' work that are not named hand-in or round are still audits */
     'Opus first look on grade-r12 images', 'Opus first look: tjunction5 images', 'First look at the m2fix hand-in', 'Fresh auditor for the junction round', 'AUDITOR for x'];
   for (const d of refuse) { const r = launch(d, nc('clerk work with no audit in it, 20+ characters')); t(`B REFUSE "${d}" (a reason that says nothing about audits does not save it)`, r.status === 2 && /is an? (?:audit|first look)/.test(r.stderr) && /make_brief\.mjs/.test(r.stderr), r.stderr.slice(0, 300)); }
   // a prompt that opens a line with the audit order and names a progress folder
   const pf = path.join(tmp, 'x', 'docs', 'progress', 'gates9');
   for (const [d, p] of [['Check the round', `Audit ${pf} and write AUDIT.md\nNO-CONTRACT: just a quick look for the main session today`], ['Quick job', `You are the auditor of ${pf}.\nNO-CONTRACT: nothing special at all about this one`]]) { const r = launch(d, p); t(`B REFUSE a prompt line that orders an audit of a progress folder (${d})`, r.status === 2 && /audit/.test(r.stderr), r.stderr.slice(0, 300)); }
-  const allow = ['Write audit first-look rule into docs', 'Audit the audit-gate tooling', 'Audit repo organisation, read-only', 'Audit gradelayer WorldCache layers', 'Earthworks method review (read-only)', 'Clerk: photos-outrank-tests rule, commit review', 'Add every-audit-item-fixed rule to docs',
+  const allow = ['Write audit first-look rule into docs', 'Earthworks method review (read-only)', 'Clerk: photos-outrank-tests rule, commit review', 'Add every-audit-item-fixed rule to docs',
     'Clerk: contract speed rules, queue, acceptance', 'Merge gates7 then gates9 into main', 'Research: Unreal plugin facts', 'Re-fetch 18 truncated photos and back up', 'Queue catch-up for 22-23 Oct events'];
   for (const d of allow) { const r = launch(d, nc('clerk or merge or research job; mentions the audit and first look rules only in passing')); t(`B ALLOW "${d}"`, r.status === 0, r.stderr.slice(0, 300)); }
   let r = launch('Docs clerk', `Docs clerk.\nNO-CONTRACT: docs clerk: update docs/QUEUE.md and record that the audit of ${pf} was accepted`);
@@ -195,7 +196,7 @@ function buildHandin(name, o = {}) {
   const bin = o.bin || 'src.mjs'; if (o.bin) { wr(path.join(x.w, o.bin), 'binary'); if (o.binOld) { const old = new Date(Date.now() - 3600 * 1000); fs.utimesSync(path.join(x.w, o.bin), old, old); } }
   if (o.ff !== undefined) wr(path.join(x.hd, 'fail_first_new_thing.txt'), o.ff);
   wr(path.join(x.hd, 'BUILD.md'), `# BUILD\nCommits: ${shas.map((s) => s.slice(0, 10)).join(' ')}\nSuite binary: ${bin}\n`);
-  if (o.log !== null) { wr(path.join(x.hd, 'suite_build.log'), o.log === undefined ? '12 passed, 0 failed\n' : o.log); if (o.logOld) { const old = new Date(Date.now() - 7200 * 1000); fs.utimesSync(path.join(x.hd, 'suite_build.log'), old, old); } }
+  if (o.log !== null) { const lg = o.log === undefined ? '12 passed, 0 failed\n' : o.log; logRun(x.w, path.join(x.hd, 'suite_build.log'), lg, { stateDir: state, exit: /[1-9]\d* failed|\bFAIL\b|ERROR:|Failed/.test(lg) ? 1 : 0 }); if (o.logOld) { const old = new Date(Date.now() - 7200 * 1000); fs.utimesSync(path.join(x.hd, 'suite_build.log'), old, old); } }
   commit(x.w, 'BUILD.md and log'); return x;
 }
 {
