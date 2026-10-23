@@ -866,6 +866,29 @@ console.log('gates v3: BLOCKED carries see: <log file>; the quoted error must be
   fs.rmSync(path.join(folder, 'build.log')); w(path.join(folder, 'STATUS.md'), statusBase());
 }
 
+console.log('gates6 BLOCKED evidence v4: own, fresh, untracked file; needs names which decision (gates5 audit item 24)');
+{
+  // expected values: the gates5 AUDIT.md item 24 repro (a junk.txt with the quote planted passed; "needs: owner decision about the roads" passed) and the main session's send-back note E (23 Oct 2026)
+  const ld = path.join(tmp, 'v4blk'); const own = path.join(ld, 'own'); const foreign = path.join(ld, 'foreign'); fs.mkdirSync(own, { recursive: true }); fs.mkdirSync(foreign, { recursive: true });
+  const quote = 'C:/x/y.cpp(3): error C2065: foo undeclared identifier';
+  const logTxt = 'cmake --build build\n' + quote + '\nLINK : fatal error LNK1181: cannot open input file x.lib\nbuild failed with 2 errors\n';
+  w(path.join(own, 'build.log'), logTxt); w(path.join(foreign, 'junk.txt'), logTxt);
+  const q = '`' + quote + '`';
+  const mkLine = (see, needs = 'the header `x.h` with the declaration of foo from the owner') => `BLOCKED: wall curl at the road ends | tried: \`node tools/scene.mjs --check\` after a ramp and a fade | blocked by: ${q} | see: ${see} | needs: ${needs}`;
+  const now = Date.now(); const strict = { version: 3, bases: [own], roundStart: now - 3600e3, ownRoots: [own] };
+  const p = (l, c = strict) => GL.parseBlocked(l, c)[0];
+  t('v4: a log inside the own folder, written after the round start, holding the quote: accepted', p(mkLine(path.join(own, 'build.log'))).ok, JSON.stringify(p(mkLine(path.join(own, 'build.log'))).why));
+  t('v4: the audit repro: the same text planted in a file OUTSIDE the own worktree/scratch folder: refused as foreign', !p(mkLine(path.join(foreign, 'junk.txt'))).ok && /not inside this round's own/.test(p(mkLine(path.join(foreign, 'junk.txt'))).why.join()), JSON.stringify(p(mkLine(path.join(foreign, 'junk.txt'))).why));
+  const old = path.join(own, 'old.log'); w(old, logTxt); const t0 = new Date(now - 7200e3); fs.utimesSync(old, t0, t0);
+  t('v4: a log in the own folder that is OLDER than the round start: refused with both times', !p(mkLine(old)).ok && /before this round began/.test(p(mkLine(old)).why.join()), JSON.stringify(p(mkLine(old)).why));
+  const srcRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const trackedFile = path.join(srcRoot, 'tools', 'gates_lib.mjs');
+  t('v4: a TRACKED file of the repository (a planted quote in the source) is refused', !p(mkLine(trackedFile), { version: 3, bases: [srcRoot], roundStart: 1, ownRoots: [srcRoot], repoRoot: srcRoot }).ok && /tracked file/.test(p(mkLine(trackedFile), { version: 3, bases: [srcRoot], roundStart: 1, ownRoots: [srcRoot], repoRoot: srcRoot }).why.join()), JSON.stringify(p(mkLine(trackedFile), { version: 3, bases: [srcRoot], roundStart: 1, ownRoots: [srcRoot], repoRoot: srcRoot }).why));
+  t('v4: without roundStart and ownRoots (an old caller) the v3 rules apply unchanged', p(mkLine(path.join(foreign, 'junk.txt')), { version: 3, bases: [foreign] }).ok);
+  for (const n of ['owner decision about the roads', 'a decision about the kerbs', 'owner decision about X', 'the owner\'s call on the junction']) t(`v4: needs: "${n}" names no decision: refused`, !p(mkLine(path.join(own, 'build.log'), n)).ok && /needs/.test(p(mkLine(path.join(own, 'build.log'), n)).why.join()), JSON.stringify(p(mkLine(path.join(own, 'build.log'), n)).why));
+  for (const n of ['owner decision whether the kerb radius should follow the photo or the standard 6 metres', 'the file `D:/assets/missing_tex.uasset` from the owner', 'run `node tools/foo.mjs --fetch` with network access', 'a decision: choose between the two-lane and the three-lane layout for the slip road']) t(`v4: needs: "${n.slice(0, 50)}..." is concrete: accepted`, p(mkLine(path.join(own, 'build.log'), n)).ok, JSON.stringify(p(mkLine(path.join(own, 'build.log'), n)).why));
+}
+
 console.log('gates v3: ref_seed is a merge step, and its absence is said loudly');
 {
   const rp = GL.referenceProblems([path.join(tmp, 'x', 'a.jpg')], { refRoot: path.join(tmp, 'x'), folder: path.join(tmp, 'f'), known: null });

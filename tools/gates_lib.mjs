@@ -815,7 +815,7 @@ const NEEDS_GENERIC = /^(?:(?:a|an|the|some|more|any|your|owner'?s?)\s+)*(?:fix|
 export function needsIsConcrete(needs) {
   const n = String(needs || '');
   if (anchorsOf(n).length || /`[^`]{3,}`|"[^"]{6,}"/.test(n)) return true;
-  if (!/(?:whether|which of|which one|choose between|either|between)/i.test(n)) return false;
+  if (!/\b(?:whether|which of|which one|choose between|either|between)\b/i.test(n)) return false;
   const stop = /^(?:a|an|the|to|of|on|in|for|and|or|with|from|by|is|are|be|should|would|could|can|it|that|this|owner|owners|decision|about|whether|which|between|either|please)$/i;
   return n.replace(/[^\w\s]/g, ' ').split(/\s+/).filter((w) => w && !stop.test(w)).length >= 6;
 }
