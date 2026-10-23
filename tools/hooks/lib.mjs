@@ -127,3 +127,25 @@ export function handinDirOfAgent(input) {
   } catch { /* unreadable: no HANDIN_DIR known */ }
   return null;
 }
+
+// gates8: everything the launch of a subagent says that the lock guard needs: its HANDIN_DIR (a builder has one), the PRIOR-AUDIT path of a send-back round, and whether it is an auditor
+// (AUDIT-OF). Read from the agent's own transcript (first user message) and the BRIEF-FILE it names. Cached per agent id under STATE_DIR/launch_cache (the transcript of a long run can be big
+// and a hook runs on every tool call). Returns null when nothing can be read.
+export function launchInfoOfAgent(input) {
+  try {
+    const id = String(input.agent_id || '').replace(/[^\w.-]/g, '_');
+    if (!id) return null;
+    const cf = path.join(STATE_DIR, 'launch_cache', id + '.json');
+    try { const c = parseJson(fs.readFileSync(cf, 'utf8')); if (c && c.v === 1) return c.info; } catch { /* not cached yet */ }
+    const tp = agentTranscript(input);
+    if (!tp) return null;
+    const text = firstUserText(tp);
+    let all = text;
+    const bf = briefFileOf(text);
+    if (bf) { try { all += '\n' + fs.readFileSync(bf, 'utf8'); } catch { /* the brief file is unreadable: judge by the prompt */ } }
+    const m = all.match(/^PRIOR-AUDIT:[ \t]*(.+?)[ \t]*$/m);
+    const info = { handinDir: checkBrief(all).handinDir || null, priorAudit: m ? m[1].replace(/^`|`$/g, '') : null, auditor: /^AUDIT-OF:[ \t]*\S/m.test(all) };
+    try { fs.mkdirSync(path.dirname(cf), { recursive: true }); fs.writeFileSync(cf, JSON.stringify({ v: 1, info })); } catch { /* cache only */ }
+    return info;
+  } catch { return null; }
+}

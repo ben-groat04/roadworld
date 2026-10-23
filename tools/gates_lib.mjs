@@ -816,11 +816,11 @@ export function needsIsConcrete(needs) {
   const n = String(needs || '');
   if (anchorsOf(n).length || /`[^`]{3,}`|"[^"]{6,}"/.test(n)) return true;
   // gates7 item 5: a plain request for a NAMED THING is concrete: an object word (photo, file, licence, texture, model ...) plus a subject (3+ content words in all, one of them not an object word) ("a new reference photo of the roundabout")
-  const objRe = /\b(?:photos?|photographs?|images?|files?|licen[cs]es?|textures?|models?|assets?|screenshots?|drawings?|specs?|specifications?|documents?|datasets?|logs?|libraries|library|plugins?|fonts?|meshes|mesh|tools?|sources?)\b/i;
+  const objRe = /\b(?:photos?|photographs?|images?|files?|licen[cs]es?|textures?|models?|assets?|screenshots?|drawings?|specs?|specifications?|documents?|datasets?|logs?|libraries|library|plugins?|fonts?|meshes|mesh|tools?|sources?|sessions?|editors?|builds?|recordings?|renders?|samples?|captures?)\b/i;
   if (objRe.test(n)) {
     const stopW = /^(?:a|an|the|to|of|on|in|for|and|or|with|from|by|is|are|be|should|would|could|can|it|that|this|owner|owners|please|some|any|more|new|another|one|need|needs|needed|help|get|have|has|about|decision|decisions|call|input|approval|guidance)$/i;
     const content = n.replace(/[^\w\s]/g, " ").split(/\s+/).filter((w) => w && !stopW.test(w));
-    if (content.length >= 3 && content.some((w) => !objRe.test(w))) return true;
+    if (content.length >= 2 && content.some((w) => !objRe.test(w))) return true;   // gates8 (audit F4): "a screenshot of the junction", "texture for the kerb", "the roundabout photo" name a thing and a subject
   }
   if (!/\b(?:whether|which of|which one|choose between|either|between)\b/i.test(n)) return false;
   const stop = /^(?:a|an|the|to|of|on|in|for|and|or|with|from|by|is|are|be|should|would|could|can|it|that|this|owner|owners|decision|about|whether|which|between|either|please)$/i;
