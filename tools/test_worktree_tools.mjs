@@ -22,7 +22,7 @@ const count = (d) => { let n = 0; const walk = (p) => { for (const e of fs.readd
 const main = path.join(tmp, 'roadworld'), wtRoot = path.join(tmp, 'roadworld-wt');
 fs.mkdirSync(main); fs.mkdirSync(wtRoot);
 git(main, 'init', '-q', '-b', 'trunk'); git(main, 'config', 'user.email', 't@t'); git(main, 'config', 'user.name', 't');
-fs.writeFileSync(path.join(main, '.gitignore'), 'docs/reference/\n'); fs.writeFileSync(path.join(main, 'a.txt'), 'a\n');
+fs.writeFileSync(path.join(main, '.gitignore'), 'docs/reference/\n'); fs.writeFileSync(path.join(main, 'a.txt'), 'a\n'); fs.writeFileSync(path.join(main, 'CLAUDE.md'), 'rules\n');
 git(main, 'add', '-A'); git(main, 'commit', '-qm', 'init');
 const photos = path.join(main, 'docs', 'reference'); fs.mkdirSync(path.join(photos, 'aerial'), { recursive: true }); fs.mkdirSync(path.join(photos, 'street'), { recursive: true });
 for (const f of ['aerial/a.jpg', 'aerial/b.jpg', 'street/c.jpg']) fs.writeFileSync(path.join(photos, f), 'photo ' + f);
@@ -67,8 +67,33 @@ t('after every case above the photos are still 3 files', count(photos) === 3);
 const ps = fs.readFileSync(script, 'utf8');
 t('the script never uses a recursive delete itself (no Remove-Item -Recurse, rm -r, rmdir /s)', !/Remove-Item[^\n]*-Recurse|\brm\s+-r|rmdir\s+\/s/i.test(ps.replace(/^#.*$/gm, '')));
 const nw = fs.readFileSync(path.join(src, 'tools', 'new_agent_worktree.ps1'), 'utf8');
-t('new_agent_worktree.ps1 tells the agent how to remove the worktree (the script, never a recursive delete)', /remove_agent_worktree\.ps1/.test(nw) && /NEVER rm -rf/.test(nw));
+t('new_agent_worktree.ps1 tells the agent how to remove the worktree (the script, never a recursive delete)', /remove_agent_worktree\.ps1/.test(nw) && /Never recursive-delete/.test(nw));
 t('new_agent_worktree.ps1 no longer recursive-deletes anything', !/Remove-Item[^\n]*-Recurse/.test(nw.replace(/^#.*$/gm, '').replace(/"[^"]*"/g, '')));
+
+console.log('new_agent_worktree.ps1 (no junction) and unlink_reference_junctions.ps1');
+{
+  const nwPath = path.join(src, 'tools', 'new_agent_worktree.ps1');
+  const nr = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', nwPath, 'fresh'], { cwd: main, encoding: 'utf8', timeout: 120000 });
+  const fw = path.join(wtRoot, 'fresh');
+  t('new_agent_worktree.ps1 in the scratch repo: worktree created (exit 0)', nr.status === 0 && fs.existsSync(path.join(fw, 'a.txt')), nr.stdout + nr.stderr);
+  t('...it has NO docs\\reference link or folder (main session decision: nothing in a worktree leads to the photos)', !fs.existsSync(path.join(fw, 'docs', 'reference')), nr.stdout);
+  t('...and the output names the photos by absolute path in the main checkout', nr.stdout.includes(photos), nr.stdout);
+  const un = path.join(src, 'tools', 'unlink_reference_junctions.ps1');
+  const ul = (args) => spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', un, '-Main', main, ...args], { cwd: tmp, encoding: 'utf8', timeout: 120000 });
+  const w1 = mkWt('old1'), w2 = mkWt('old2'); const keep = path.join(tmp, 'keepme'); fs.mkdirSync(keep); fs.writeFileSync(path.join(keep, 'k.txt'), 'k');
+  fs.mkdirSync(path.join(w2, 'build'), { recursive: true }); fs.symlinkSync(keep, path.join(w2, 'build', 'other'), 'junction');
+  let u = ul(['-WhatIfOnly', '-All']);
+  t('unlink script -WhatIfOnly -All: lists the two reference links and removes nothing', u.status === 0 && /would unlink/.test(u.stdout) && fs.existsSync(path.join(w1, 'docs', 'reference')) && fs.existsSync(path.join(w2, 'docs', 'reference')), u.stdout + u.stderr);
+  u = ul(['-Name', 'old1']);
+  t('-Name old1: its docs\\reference link is removed (link only), the other worktree is untouched, the photos are all there', u.status === 0 && !fs.existsSync(path.join(w1, 'docs', 'reference')) && fs.existsSync(path.join(w2, 'docs', 'reference')) && count(photos) === 3 && /still has 3 file/.test(u.stdout), u.stdout + u.stderr);
+  u = ul(['-All']);
+  t('-All: the second reference link goes, a link to somewhere else (build\\other) is LEFT ALONE and its target survives', u.status === 0 && !fs.existsSync(path.join(w2, 'docs', 'reference')) && fs.existsSync(path.join(w2, 'build', 'other', 'k.txt')) && /left alone/.test(u.stdout) && count(photos) === 3, u.stdout + u.stderr);
+  u = ul([]); t('no -Name and no -All: refused', u.status === 1 && /REFUSED/.test(u.stdout), u.stdout);
+  u = ul(['-Name', 'nosuch']); t('an unknown worktree name: refused', u.status === 1 && /no registered worktree/.test(u.stdout), u.stdout);
+  const us = fs.readFileSync(un, 'utf8').replace(/^#.*$/gm, '');
+  t('the script never uses a recursive delete (link-only cmd /c rmdir)', !/Remove-Item[^\n]*-Recurse|\brm\s+-r|rmdir\s+\/s/i.test(us) && /cmd\.exe \/c rmdir/.test(us));
+  fs.rmdirSync(path.join(w2, 'build', 'other'));
+}
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failed.length) console.log('FAILED TESTS:\n - ' + failed.join('\n - '));

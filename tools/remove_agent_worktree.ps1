@@ -1,5 +1,5 @@
 # Usage: powershell -NoProfile -ExecutionPolicy Bypass -File tools\remove_agent_worktree.ps1 <name-or-path> [-DeleteBranch] [-Force] [-Main <main checkout>]
-# The ONLY supported way to remove an agent worktree. Why: every worktree has docs\reference, a directory junction to the private reference photos in the
+# The ONLY supported way to remove an agent worktree. Why: worktrees made before 23 Oct 2026 have docs\reference (new ones have none; this script handles both), a directory junction to the private reference photos in the
 # main checkout. A recursive delete (rm -rf, Remove-Item -Recurse, rmdir /s) follows that junction and wipes the photos (22 Oct 2026: every reference photo was lost
 # this way). This script (1) counts the files in the main checkout's docs\reference, (2) finds every junction / symlink inside the worktree WITHOUT descending into
 # it and removes the LINK ONLY with `cmd /c rmdir` (no /s), (3) counts again and stops if the number changed, (4) only then runs `git worktree remove`

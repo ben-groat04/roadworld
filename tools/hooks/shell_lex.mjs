@@ -40,7 +40,7 @@ export function parseCommand(command) {
     if (cur.words.length || cur.redirects.length || Object.keys(cur.assigns).length) segs.push(cur);
     cur = { words: [], redirects: [], assigns: {} };
   };
-  const n = s.length;
+  const n = s.length; const subs = [];
   for (let i = 0; i < n; i++) {
     const c = s[i];
     if (c === "'" || c === '"') {
@@ -58,7 +58,11 @@ export function parseCommand(command) {
       if (c === '&' && w === null && cur.words.length === 0) { /* PowerShell call operator: keep as a word */ w = { v: '&', q: false }; endWord(); continue; }
       endSeg(); if (s[i + 1] === c) i++; continue;
     }
-    if (c === '(' || c === ')') { if (c === '(' && w && w.v === '$') { w = null; } endSeg(); continue; }
+    if (c === '(' && w && w.v.endsWith('$')) {   // command substitution: the word stays (its value is unknown), its inside is also judged as commands
+      let depth = 1, j = i + 1; while (j < n && depth) { if (s[j] === '(') depth++; else if (s[j] === ')') depth--; j++; }
+      const inner = s.slice(i + 1, depth ? n : j - 1); w.v += '(' + inner + ')'; subs.push(inner); i = j - 1; continue;
+    }
+    if (c === '(' || c === ')') { endSeg(); continue; }
     if (c === '{' || c === '}') {
       const prevWs = !w; const nextWs = s[i + 1] === undefined || /[\s;)]/.test(s[i + 1]);
       if ((prevWs && nextWs) || (c === '}' && !w)) { endSeg(); continue; }
@@ -78,6 +82,7 @@ export function parseCommand(command) {
     w = w || { v: '', q: false }; w.v += c;
   }
   endSeg();
+  for (const inner of subs) segs.push(...parseCommand(inner).segments);
   return { segments: segs };
 }
 
