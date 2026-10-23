@@ -1,6 +1,12 @@
 // Builder / auditor split, made mechanical. Shared by brief_gate (launch), handin_gate (finish), notice_lib (audit-owed
 // notice) and check_handin --accept. Rule (owner, 11 Oct): the agent that builds a round never audits it.
 //
+// WHO WRITES THE RECORDS (gates3 audit faults 2 and 4): only hooks. handin_gate runs outside the agent, on SubagentStop / SubagentHandback, with the agent_id the HARNESS
+// reports; it is the only writer of builder and audit records. An agent's own route to the state folder is closed by tools/hooks/state_guard.mjs (PreToolUse: no write
+// under .claude/state, no read of ack_secret, no command that names the record writers or gate_ack). The HMAC (lib.mjs signRecord) is KEPT AS TAMPER EVIDENCE ONLY: a record
+// edited by hand does not verify. It is not the trust: an agent that could read the secret could sign, which is why the guard exists. An audit record also carries
+// launch_seen: the auditor's agent id must have a SubagentStart ("inject") line in gate.log, which only the launch hook writes, so a made-up id ("fake9") never clears a debt.
+//
 // State: .claude/state/builders/<key>.json = { handin_dir, agent_id, agent_type, passed_at }, written by handin_gate when a
 // builder's hand-in passes check_handin. An audit is OWED for every record that has no valid AUDIT.md (by a different
 // agent, written after the hand-in passed). Nothing but that file clears it.
@@ -46,8 +52,15 @@ export function recordBuilder(handinDir, agentId, agentType, stateDir = STATE_DI
 // matches the file now and whose recorded_at is after the builder's latest passed hand-in. Typing an AUDIT.md by hand records nothing.
 const auditsDir = (stateDir) => path.join(stateDir, 'audits');
 export const auditSha = (text) => crypto.createHash('sha1').update(String(text).split(String.fromCharCode(13) + String.fromCharCode(10)).join(String.fromCharCode(10))).digest('hex');
+// Did the SubagentStart hook (contract_inject) log a launch for this agent id? Only that hook writes "inject" lines.
+export function launchSeen(id, stateDir = STATE_DIR) {
+  try {
+    const want = '"agent_id":"' + sanitizeId(id) + '"';
+    return fs.readFileSync(path.join(stateDir, 'gate.log'), 'utf8').split(String.fromCharCode(10)).some((l) => l.includes('"gate":"inject"') && l.includes('"decision":"inject"') && l.includes(want));
+  } catch { return false; }
+}
 export function recordAudit(handinDir, { auditorId, builderId, verdict, text }, stateDir = STATE_DIR, now = Date.now()) {
-  const rec = signRecord({ v: 3, handin_dir: path.resolve(handinDir), auditor_id: sanitizeId(auditorId), builder_id: builderId ? sanitizeId(builderId) : null, verdict, sha1: auditSha(text), recorded_at: new Date(now).toISOString() }, stateDir);
+  const rec = signRecord({ v: 3, launch_seen: launchSeen(auditorId, stateDir), handin_dir: path.resolve(handinDir), auditor_id: sanitizeId(auditorId), builder_id: builderId ? sanitizeId(builderId) : null, verdict, sha1: auditSha(text), recorded_at: new Date(now).toISOString() }, stateDir);
   fs.mkdirSync(auditsDir(stateDir), { recursive: true });
   fs.writeFileSync(path.join(auditsDir(stateDir), builderKey(handinDir) + '.json'), JSON.stringify(rec));
   return rec;
@@ -140,6 +153,7 @@ export function auditProblems(handinDir, rec, root = ROOT, actualId = null, opts
         if (!ar) q.push('no audit record: this AUDIT.md was not written by an auditor that passed the finish gate (a typed file does not count); start a real auditor with make_brief --audit');
         else {
           if (ar.auditor_id !== parsed.auditor) q.push(`the audit record says auditor "${ar.auditor_id}", the file says "${parsed.auditor}"`);
+          if (ar.launch_seen !== true) q.push(`the auditor id "${ar.auditor_id}" was never seen launching (no SubagentStart line for it in gate.log): an id that no launch hook saw does not clear an audit`);
           if (ar.sha1 !== auditSha(text)) q.push('AUDIT.md was edited after the auditor finished (its hash differs from the audit record)');
           if (rec && rec.passed_at && Date.parse(ar.recorded_at) < Date.parse(rec.passed_at)) q.push('the audit record is older than the builder\'s latest passed hand-in (a fresh audit is owed)');
           if (rec && ar.auditor_id === sanitizeId(rec.agent_id)) q.push('the recorded auditor is the builder');

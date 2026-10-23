@@ -35,6 +35,18 @@ export function readGateLog(stateDir = STATE_DIR) { // n = 1-based number of the
 
 const clip = (s, k = 160) => { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > k ? s.slice(0, k - 1) + '...' : s; };
 
+// Launch gap (gates3 audit fault 9: a real agent whose SubagentStart hook did not run is later filed as an internal helper and raises nothing). Every allowed non-exempt
+// launch (gate "brief") should be followed by one SubagentStart line (gate "inject"). Over the last 24 h, launches older than 10 minutes that exceed the starts by 3 or more
+// mean the start hook is not seeing agents (or logging them), so the finish gate cannot tell them from helpers. Returns a message or null. Not acknowledgeable: it goes
+// away when the counts balance again.
+export function launchGapProblem(entries, now = Date.now()) {
+  const t = (e) => Date.parse(e.ts) || 0, day = now - 24 * 3600 * 1000;
+  const launches = entries.filter((e) => e.gate === 'brief' && e.decision === 'allow' && e.reason !== 'exempt type' && t(e) > day && now - t(e) > 10 * 60 * 1000);
+  const starts = entries.filter((e) => e.gate === 'inject' && e.decision === 'inject' && t(e) > day);
+  const gap = launches.length - starts.length;
+  return gap >= 3 ? `LAUNCH GAP: ${launches.length} allowed agent launches in the last 24 h (older than 10 min) but only ${starts.length} SubagentStart lines: the start hook is not seeing (or not logging) ${gap} agent(s), so the finish gate files them as internal helpers and checks nothing. Check .claude/settings.json (SubagentStart wiring) and gate.log for FAIL-OPEN lines of gate "inject".` : null;
+}
+
 // Unacknowledged items = log lines not covered by an ack (per item: { gate: 'ack', items: [n...] }; legacy blanket: through_line).
 export function pendingItems(entries, opts = {}) {
   let through = 0;                  // legacy blanket acks (through_line) still honoured for old logs
@@ -61,7 +73,8 @@ export function pendingItems(entries, opts = {}) {
   // agent. Computed from builder records + the files themselves, NOT from the log, so no ack can clear it.
   let owed = [];
   try { owed = auditOwed(opts.stateDir || STATE_DIR, opts.root || ROOT); } catch { /* fail open: logged by the caller if it matters */ }
-  return { failOpen, handinFailed, noContract, blocked, ncAudit, auditOwed: owed, total: failOpen.length + handinFailed.length + noContract.length + blocked.length + ncAudit.length + owed.length };
+  const launchGap = launchGapProblem(entries, opts.now || Date.now());
+  return { failOpen, handinFailed, noContract, blocked, ncAudit, auditOwed: owed, launchGap, total: failOpen.length + handinFailed.length + noContract.length + blocked.length + ncAudit.length + owed.length + (launchGap ? 1 : 0) };
 }
 
 // ---- per-item acknowledgement. An item is acked by its log line number n AND a code only the notice shows: sha1(secret:n).
@@ -89,6 +102,7 @@ export function formatNotice(p, secret = null) {
     for (const e of p.auditOwed.slice(0, 10)) L.push(`    ${e.handin_dir} (builder ${e.builder_type || '?'}/${e.builder_id}, hand-in passed ${e.passed_at}) - ${clip(e.problems[0], 110)}`);
     L.push('    start one with: node tools/make_brief.mjs <task-file> --audit <that folder>');
   }
+  if (p.launchGap) L.push('- ' + p.launchGap);
   const more = (arr, k) => (arr.length > k ? `    (+${arr.length - k} older not shown)` : null);
   if (p.failOpen.length) {
     L.push(`- FAIL-OPEN x${p.failOpen.length}: a gate did NOT run or did not decide (gates fail open so the session cannot deadlock). Newest first:`);
@@ -112,7 +126,7 @@ export function formatNotice(p, secret = null) {
     const g = p.noContract[0];
     L.push(`- NO-CONTRACT launches x${g.count} since the last ack (no contract, no hand-in gate); ${g.reasons.length} distinct reason(s), newest: ${g.reasons.slice(-3).reverse().map((r) => '"' + clip(r, 80) + '"').join('; ')} (acks as one item ${id(g)}, last launch ${g.ts})`);
   }
-  if (p.total - p.auditOwed.length > 0) {
+  if (p.total - p.auditOwed.length - (p.launchGap ? 1 : 0) > 0) {
     L.push(`${p.auditOwed.length ? 'The log items (all except AUDIT OWED) repeat' : 'This notice is repeated'} on every prompt until each is acknowledged BY ITS OWN #n[code]. The only thing that clears an item: ${ACK_CMD} (text of at least ${MIN_ACK_CHARS} characters, 4 words, saying what was done; recorded in the log with a timestamp).`);
   }
   const s = L.join('\n');

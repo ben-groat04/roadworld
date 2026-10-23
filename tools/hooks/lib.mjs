@@ -78,9 +78,9 @@ export function firstUserText(transcriptPath) {
   return '';
 }
 
-// ---- secret + signed records. The secret (.claude/state/ack_secret) is created by the notice hook and read by nothing a subagent is
-// told about; builder and audit records are HMAC-signed with it so a hand-typed JSON file does not verify. LIMIT: an agent that reads
-// the secret file (or writes gate.log, which findBuilderInLog reads) has gone out of its way; this stops accidents and shortcuts, not sabotage.
+// ---- secret + signed records: TAMPER EVIDENCE ONLY. Builder and audit records are HMAC-signed with .claude/state/ack_secret so that a hand-edited record does not verify.
+// The trust in a record comes from WHO writes it (only the hooks, with the harness's agent_id; see audit_lib.mjs) and from tools/hooks/state_guard.mjs keeping subagents away from
+// the state folder and the secret. LIMIT: an agent that bypasses the guard (a script file that touches the state) could sign; that is not claimed to be impossible.
 export function readSecret(stateDir = STATE_DIR) { try { return fs.readFileSync(path.join(stateDir, 'ack_secret'), 'utf8').trim() || null; } catch { return null; } }
 export function ensureSecret(stateDir = STATE_DIR) {
   const have = readSecret(stateDir);

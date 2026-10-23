@@ -18,6 +18,16 @@ import path from 'node:path';
 import { log, readStdin, parseJson, checkBrief, noContractReason, briefFileOf, EXEMPT_TYPES } from './lib.mjs';
 import { auditOfIn, pastedFaultList } from './audit_lib.mjs';
 
+// True when the text asks an agent to write / create an AUDIT.md (or to be "the auditor" that writes one). Mentions of the file are not enough.
+export function asksToWriteAudit(text) {
+  const t = String(text || '');
+  const file = String.raw`(?:[\w./\\:-]*[\\/])?AUDIT\.md\b`;
+  return new RegExp(String.raw`\b(?:write|create|produce|author|draft|save|compose|fill\s+in)\s+(?:out\s+)?(?:an?\s+|the\s+|your\s+|its\s+|a\s+new\s+|a\s+fresh\s+)?${file}`, 'i').test(t)
+    || new RegExp(String.raw`\b(?:write|save|put|record|put\s+down)\b[^\n.]{0,60}\b(?:in|into|to|as)\s+(?:an?\s+|the\s+|your\s+)?${file}`, 'i').test(t)
+    || new RegExp(String.raw`${file}[^\n.]{0,40}\b(?:must|should|needs?\s+to|has\s+to|is\s+to)\s+be\s+(?:written|created|produced)`, 'i').test(t)
+    || /^Auditor agent:/m.test(t) || /docs[\\/]templates[\\/]AUDIT\.md/i.test(t) || /\byou\s+are\s+the\s+(?:fresh\s+)?auditor\b/i.test(t);
+}
+
 export async function main() {
   const raw = await readStdin();
   const input = raw === null ? undefined : parseJson(raw);
@@ -50,15 +60,16 @@ export async function main() {
     return 2;
   }
   const nc = noContractReason(prompt);
-  // A NO-CONTRACT launch cannot carry an auditor: it would skip AUDIT-OF, the finish gate, the recorded auditor id and the owed-audit clearing
-  // (gates2 audit fault 8; the gates2 auditor itself was launched that way). Audit/auditor wording plus a progress folder path, or "review of ... docs/progress", is refused.
+  // A NO-CONTRACT launch cannot be asked to WRITE an AUDIT.md: that file only counts when an auditor launched with make_brief --audit (marker AUDIT-OF) writes it and the finish
+  // gate records it. Only prompts that ask for the file to be written are refused: mergers, clerks and readers may mention AUDIT.md, audits and progress folders freely
+  // (gates3 audit fault 3: the wording rule refused merge and bookkeeping prompts and was evaded by synonyms). A synonym that slips past this wording buys nothing:
+  // an audit clears the owed-audit item only through the hook-written audit record, which a NO-CONTRACT agent never produces (it stays owed and on the notice).
   if (nc) {
     const hay = prompt + ' ' + String(ti.description || '');
-    const progress = /docs[\\/]progress[\\/]/i.test(hay);
-    if (progress && (/\bauditors?\b|\baudit\s+of\b|\baudits?\s+the\b|\bAUDIT\.md\b/i.test(hay) || /\breview\w*\s+(?:of\s+)?(?:the\s+)?[^\n]{0,60}docs[\\/]progress/i.test(hay))) {
-      const why = 'a NO-CONTRACT launch that names an audit/auditor/review of a docs/progress folder: it would skip AUDIT-OF, the finish gate and the recorded auditor id';
+    if (asksToWriteAudit(hay)) {
+      const why = 'the prompt asks for an AUDIT.md to be written, but a NO-CONTRACT launch has no AUDIT-OF marker: the audit would not be recorded and the round would stay owed';
       log({ ...base, decision: 'deny', reason: 'NO-CONTRACT audit launch refused', no_contract_reason: nc });
-      process.stderr.write('LAUNCH REFUSED by the brief gate: ' + why + '.\nBuild the auditor brief with `node tools/make_brief.mjs <task-file> --audit <progress-folder>` (marker line AUDIT-OF), or, if this is not an audit, do not name a progress folder together with the words audit/auditor/review.\n');
+      process.stderr.write('LAUNCH REFUSED by the brief gate: ' + why + '.\nBuild the auditor brief with `node tools/make_brief.mjs <task-file> --audit <progress-folder>` (marker line AUDIT-OF). Prompts that only mention AUDIT.md (merge, bookkeeping, reading it) are not refused.\n');
       return 2;
     }
   }

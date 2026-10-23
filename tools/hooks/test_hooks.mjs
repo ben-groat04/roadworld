@@ -15,7 +15,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hooktest-'));
 const root = path.join(tmp, 'main');
 const wt = path.join(tmp, 'wt');
 const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); };
-['tools/hooks/guard.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
+['tools/hooks/guard.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
   'tools/check_handin.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
 for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'photo ' + f); }
@@ -31,6 +31,8 @@ const run = (script, stdin) => {
 let pass = 0, fail = 0; const failedNames = [];
 const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok   ' + name); } else { fail++; failedNames.push(name); console.log('  FAIL ' + name + (detail ? '\n       ' + String(detail).replace(/\n/g, '\n       ') : '')); } };
 const J = (s) => { try { return JSON.parse(s); } catch { return {}; } };
+// an audit record is only valid for an auditor id the launch hook saw: log the SubagentStart line that the real hook would have written, then record
+const recAud = (al, folder, o, stateDir, at) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gate.log'), JSON.stringify({ ts: new Date().toISOString(), gate: 'inject', agent_type: 'general-purpose', agent_id: o.auditorId, decision: 'inject', chars: 1 }) + String.fromCharCode(10)); return al.recordAudit(folder, o, stateDir, at); };
 // a real render PNG + flat-colour class mask + record (the picture gate counts the road pixels in the mask itself)
 const crc32 = (buf) => { let c, crc = -1; for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 255; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; crc = (crc >>> 8) ^ c; } return ~crc; };
 const realPng = (wd, ht, fn) => {
@@ -103,7 +105,9 @@ fs.renameSync(path.join(root, 'docs/AGENT_CONTRACT.bak'), path.join(root, 'docs/
 // ---- handin_gate
 console.log('handin_gate');
 const transcript = (name, firstText) => { const p = path.join(tmp, name + '.jsonl'); fs.writeFileSync(p, JSON.stringify({ type: 'user', isSidechain: true, message: { role: 'user', content: firstText } }) + '\n' + JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] } }) + '\n'); return p; };
-const stop = (id, tp, extra = {}) => run('handin_gate.mjs', { hook_event_name: 'SubagentStop', session_id: 's1', cwd: elsewhere, agent_id: id, agent_type: 'general-purpose', agent_transcript_path: tp, stop_hook_active: false, last_assistant_message: 'done', ...extra });
+// a real agent was launched through SubagentStart first: log the line the launch hook writes (not for the helper-agent tests, which pass an empty agent_type)
+const stop = (id, tp, extra = {}) => { if (extra.agent_type === undefined && !fs.existsSync(logPath) === false) { try { if (!fs.readFileSync(logPath, 'utf8').includes('"gate":"inject","agent_type":"general-purpose","agent_id":"' + id + '"')) fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), gate: 'inject', agent_type: 'general-purpose', agent_id: id, decision: 'inject', chars: 1 }) + String.fromCharCode(10)); } catch { /* no log yet */ } } return stop0(id, tp, extra); };
+const stop0 = (id, tp, extra = {}) => run('handin_gate.mjs', { hook_event_name: 'SubagentStop', session_id: 's1', cwd: elsewhere, agent_id: id, agent_type: 'general-purpose', agent_transcript_path: tp, stop_hook_active: false, last_assistant_message: 'done', ...extra });
 const goodStatus = '## Skipped, refused or failed\n\nNothing skipped; did not verify the live editor.\n\nReferences opened: 3 of 3 listed\n\n## Reference files opened\n\nCase: A | Opened: aerial/a.jpg, street/b.jpg, gsv/c.jpg\n';
 const hd = (round) => path.join(wt, round, 'docs', 'progress', round);
 
@@ -282,7 +286,7 @@ console.log('audit gate');
   // (builder passed at B, files given explicit mtimes, audit records given explicit recorded_at); nothing here reads the wall clock.
   const B = Date.UTC(2026, 0, 1, 12, 0, 0);
   const setM = (f, ms) => fs.utimesSync(f, new Date(ms), new Date(ms));
-  const signAudit = (folder, auditor, builder, text, at = B + 120000) => al.recordAudit(folder, { auditorId: auditor, builderId: builder, verdict: 'accept', text }, stateDir, at);
+  const signAudit = (folder, auditor, builder, text, at = B + 120000) => recAud(al, folder, { auditorId: auditor, builderId: builder, verdict: 'accept', text }, stateDir, at);
   legacyRec(folderP, 'p1', 'general-purpose', stateDir);   // re-record the builder at the fixed time B
   const recFile = path.join(stateDir, 'audits', al.builderKey(folderP) + '.json');
   fs.rmSync(recFile, { force: true });   // the signed record the real finish gate wrote for auditor b1 above: gone, so the typed-file tests start clean
@@ -350,7 +354,7 @@ console.log('audit gate');
   t('after the ack the audit is STILL on the notice, on every prompt', /AUDIT OWED x1/.test(noticeCtx(rootA)) && /AUDIT OWED x1/.test(noticeCtx(rootA)));
   t('the notice with only an owed audit does not offer gate_ack as the way out', !/gate_ack\.mjs/.test(noticeCtx(rootA)));
   fs.writeFileSync(path.join(folderA, 'AUDIT.md'), auditText('y1')); fs.utimesSync(path.join(folderA, 'AUDIT.md'), new Date(B0 + 60000), new Date(B0 + 60000));
-  al.recordAudit(folderA, { auditorId: 'y1', builderId: 'x1', verdict: 'accept', text: auditText('y1') }, path.join(rootA, '.claude/state'), B0 + 120000);
+  recAud(al, folderA, { auditorId: 'y1', builderId: 'x1', verdict: 'accept', text: auditText('y1') }, path.join(rootA, '.claude/state'), B0 + 120000);
   t('only the file WITH its signed record clears it', noticeCtx(rootA) === '');
   // gate_notice with a broken builders dir fails open
   fs.rmSync(path.join(rootA, '.claude/state/builders'), { recursive: true }); fs.writeFileSync(path.join(rootA, '.claude/state/builders'), 'i am a file, not a directory');
@@ -365,13 +369,13 @@ console.log('audit gate');
   // the pass round stays covered by a signed audit record for the tests that follow (explicit times: B0 builder, B0+60s file, B0+120s record)
   fs.writeFileSync(af, auditText('b1')); fs.utimesSync(af, new Date(B0 + 60000), new Date(B0 + 60000));
   legacyRec(folderP, 'p1', 'general-purpose', stateDir);
-  al.recordAudit(folderP, { auditorId: 'b1', builderId: 'p1', verdict: 'accept', text: auditText('b1') }, stateDir, B0 + 120000);
+  recAud(al, folderP, { auditorId: 'b1', builderId: 'p1', verdict: 'accept', text: auditText('b1') }, stateDir, B0 + 120000);
   t('after the recorder test the "pass" round is restored and its AUDIT.md (with its signed record) still clears the notice', !/AUDIT OWED/.test(noticeCtx()));
 
   // -- check_handin --accept. Every path needs the signed record; --builder only names the builder; --legacy "<reason>" is the logged escape for pre-audit-gate folders.
   const acc = (folder, extra = [], rt = root) => spawnSync(process.execPath, [path.join(rt, 'tools/check_handin.mjs'), folder, '--main', rt, '--no-visual', ...extra], { cwd: elsewhere, encoding: 'utf8' });
   const fileAt = (f, text, ms) => { fs.writeFileSync(f, text); fs.utimesSync(f, new Date(ms), new Date(ms)); };
-  const audRec = (folder, auditor, builder, text, verdict = 'accept') => al.recordAudit(folder, { auditorId: auditor, builderId: builder, verdict, text }, stateDir, B0 + 120000);
+  const audRec = (folder, auditor, builder, text, verdict = 'accept') => recAud(al, folder, { auditorId: auditor, builderId: builder, verdict, text }, stateDir, B0 + 120000);
   fs.rmSync(af);
   let c = acc(folderP); t('check_handin without --accept: unchanged, passes with no AUDIT.md', c.status === 0 && /HAND-IN CHECK PASSED/.test(c.stdout), c.stderr);
   legacyRec(folderP, 'p1', 'general-purpose', stateDir);
@@ -812,17 +816,30 @@ console.log('gates3 hooks');
     fs.appendFileSync(path.join(rt, '.claude/state/gate.log'), JSON.stringify({ ts: '2026-01-02T00:00:00Z', gate: 'brief', description: 'later', decision: 'allow', reason: 'NO-CONTRACT', no_contract_reason: 'another research job started later' }) + '\n');
     t('a launch after the ack shows up again, alone (x1)', /NO-CONTRACT launches x1/.test(noticeOf(rt)), noticeOf(rt)); }
 
-  // -- a NO-CONTRACT launch cannot carry an auditor (gates2 audit fault 8)
-  let l3 = launch('Audit the round for me.\nNO-CONTRACT: independent audit of the hand-in in docs/progress/gates2 please');
-  t('NO-CONTRACT launch naming an audit of docs/progress/...: DENIED (exit 2), says to use make_brief --audit', l3.code === 2 && /make_brief\.mjs <task-file> --audit/.test(l3.err) && lastLog().reason === 'NO-CONTRACT audit launch refused', l3.err);
-  l3 = launch('You are the auditor.\nRead C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\STATUS.md\nNO-CONTRACT: read-only check of a hand-in folder for the main session');
-  t('...an "auditor" prompt with a Windows docs\\progress path: denied too', l3.code === 2, l3.err);
+  // -- a NO-CONTRACT launch cannot be asked to WRITE an AUDIT.md (gates2 audit fault 8, reworked after the gates3 audit fault 3: mergers and clerks must not be refused)
+  let l3 = launch('Audit the round for me.\nWrite the audit to docs/progress/gates2/AUDIT.md.\nNO-CONTRACT: independent audit of the hand-in in docs/progress/gates2 please');
+  t('NO-CONTRACT launch that asks for an AUDIT.md to be written: DENIED (exit 2), says to use make_brief --audit', l3.code === 2 && /make_brief\.mjs <task-file> --audit/.test(l3.err) && lastLog().reason === 'NO-CONTRACT audit launch refused', l3.err);
+  l3 = launch('You are the auditor.\nRead C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\STATUS.md and write your findings into C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\AUDIT.md\nNO-CONTRACT: read-only check of a hand-in folder for the main session');
+  t('...an "auditor" prompt that writes findings into a Windows-path AUDIT.md: denied too', l3.code === 2, l3.err);
+  l3 = launch('Create docs/progress/earthworks/AUDIT.md from the template.\nNO-CONTRACT: second review of the earthworks round by someone else');
+  t('...create AUDIT.md: denied', l3.code === 2, l3.err);
+  l3 = launch('The first lines of the file are:\nAuditor agent: x1\nVerdict: accept\nNO-CONTRACT: audit file prepared by hand for a test of the gate');
+  t('...a prompt that carries the "Auditor agent:" header lines: denied', l3.code === 2, l3.err);
+  // real prompts of the kind the main session sends (a merger that mentions AUDIT.md, clerks that edit the queue and the acceptance log): NOT refused
+  l3 = launch('Merge agent/gates3 into main, run both suites, push in the background.\nNO-CONTRACT: merge agent/gates3 into main after the audit; AUDIT.md exists in docs/progress/gates3 and passed');
+  t('a merger that mentions AUDIT.md and a progress folder: ALLOWED', l3.code === 0 && lastLog().reason === 'NO-CONTRACT', l3.err);
+  l3 = launch('Docs clerk.\nNO-CONTRACT: docs clerk: update docs/QUEUE.md and record that the audit of docs/progress/roundx was accepted');
+  t('a clerk that edits the queue and records an accepted audit: ALLOWED', l3.code === 0, l3.err);
+  l3 = launch('Bookkeeping.\nNO-CONTRACT: bookkeeping clerk writes docs/ACCEPTANCE.md entry for docs/progress/gates3 (auditor said accept; AUDIT.md says accept)');
+  t('a clerk that writes an ACCEPTANCE.md entry quoting the auditor and AUDIT.md: ALLOWED', l3.code === 0, l3.err);
+  l3 = launch('Summarise.\nNO-CONTRACT: read docs/progress/gates3/AUDIT.md and summarise its faults for the main session');
+  t('a reader of AUDIT.md: ALLOWED', l3.code === 0, l3.err);
   l3 = launch('Second look.\nNO-CONTRACT: read-only review of the work in docs/progress/earthworks r9 by someone else');
-  t('...a "review of ... docs/progress" prompt: denied', l3.code === 2, l3.err);
+  t('a read-only "review of docs/progress": allowed (the wording rule no longer judges it; its audit would not be recorded and stays owed)', l3.code === 0, l3.err);
   l3 = launch('Review the code.\nNO-CONTRACT: read-only review of the hook scripts, no hand-in expected');
   t('a review that names no progress folder: allowed', l3.code === 0 && lastLog().reason === 'NO-CONTRACT', l3.err);
   l3 = launch('Format check.\nNO-CONTRACT: read the docs/progress/README naming rules and report them');
-  t('a read of docs/progress without audit/review wording: allowed', l3.code === 0, l3.err);
+  t('a read of docs/progress without audit wording: allowed', l3.code === 0, l3.err);
   const withAof = launch(mkAuditBrief());
   t('a proper AUDIT-OF launch is unaffected', withAof.code === 0 && lastLog().reason === 'AUDIT-OF', withAof.err);
   t('the refused audit launch is on the notice (news to the main session)', /NO-CONTRACT AUDIT LAUNCH REFUSED x\d/.test(noticeOf()), noticeOf());
@@ -900,11 +917,140 @@ console.log('gates3 hooks, part 3: a deleted builder record does not cancel the 
   const text = 'Auditor agent: da1\nVerdict: accept\nReferences opened: 1 of 1\n\n## Faults, ranked\n\nthe kerb line in render r3 misses the photo by one lane width at the junction\n';
   fs.writeFileSync(path.join(folder, 'AUDIT.md'), text); fs.utimesSync(path.join(folder, 'AUDIT.md'), new Date(B + 60000), new Date(B + 60000));
   t('a typed AUDIT.md does not clear it', al.auditOwed(sd, rt).length === 1);
-  al.recordAudit(folder, { auditorId: 'da1', builderId: 'db1', verdict: 'accept', text }, sd, B + 120000);
+  recAud(al, folder, { auditorId: 'da1', builderId: 'db1', verdict: 'accept', text }, sd, B + 120000);
   t('the signed audit record clears it', al.auditOwed(sd, rt).length === 0, JSON.stringify(al.auditOwed(sd, rt)));
   fs.rmSync(folder, { recursive: true, force: true });
   fs.rmSync(path.join(sd, 'audits', al.builderKey(folder) + '.json'), { force: true });
   t('a progress folder that no longer exists anywhere is not listed (nothing left to audit; documented limit)', al.auditOwed(sd, rt).length === 0);
+}
+
+console.log('gates4 hooks: state guard, delete guard, reference register, made-up auditor id, launch gap, inject hint');
+{
+  const guardRun = (script, input) => run(script, input);
+  const sg = (tool, tool_input, agent = 'ag1') => guardRun('state_guard.mjs', { hook_event_name: 'PreToolUse', tool_name: tool, tool_input, agent_id: agent, cwd: elsewhere });
+  const sd4 = path.join(root, '.claude/state');
+  // ---- state guard: a subagent may not write the records or read the secret
+  let g = sg('Write', { file_path: path.join(sd4, 'builders', 'x.json'), content: '{}' });
+  t('state guard: a subagent writing a builder record under .claude/state: DENIED (exit 2), logged', g.code === 2 && /written by the hooks only/.test(g.err) && lastLog().gate === 'state_guard' && lastLog().decision === 'deny', g.err);
+  g = sg('Edit', { file_path: path.join(sd4, 'audits', 'y.json').replace(/\\/g, '/'), old_string: 'a', new_string: 'b' }); t('...Edit with forward slashes: denied', g.code === 2);
+  g = sg('Read', { file_path: path.join(sd4, 'ack_secret') }); t('state guard: a subagent reading ack_secret: denied', g.code === 2);
+  g = sg('Read', { file_path: path.join(sd4, 'gate.log') }); t('state guard: reading gate.log is allowed (diagnosis)', g.code === 0, g.err);
+  g = sg('Grep', { pattern: 'x', path: sd4 }); t('state guard: a Grep over the state folder: denied', g.code === 2);
+  g = sg('Bash', { command: 'cat C:/x/roadworld/.claude/state/gate.log' }); t('state guard: `cat .../gate.log` (a plain read) allowed', g.code === 0, g.err);
+  g = sg('Bash', { command: 'echo {} > C:/x/roadworld/.claude/state/builders/z.json' }); t('state guard: a redirect into the state folder: denied', g.code === 2);
+  g = sg('Bash', { command: 'cat C:/x/roadworld/.claude/state/ack_secret' }); t('state guard: cat of the secret: denied', g.code === 2);
+  g = sg('PowerShell', { command: 'Get-Content C:\\x\\roadworld\\.claude\\state\\ack_secret' }); t('state guard: Get-Content of the secret (PowerShell, backslashes): denied', g.code === 2);
+  g = sg('Bash', { command: 'node tools/hooks/gate_ack.mjs "3:abcdef" "looked at it and fixed the cause"' }); t('state guard: a subagent running gate_ack: denied', g.code === 2);
+  g = sg('Bash', { command: 'node -e "import(\'./tools/hooks/audit_lib.mjs\').then(m => m.recordAudit())"' }); t('state guard: a command that names recordAudit: denied', g.code === 2);
+  g = sg('Bash', { command: 'node tools/ref_seed.mjs --force' }); t('state guard: a subagent running ref_seed (it would register a picture it made up): denied', g.code === 2);
+  g = sg('Bash', { command: 'git status && node tools/check_handin.mjs docs/progress/x' }); t('state guard: ordinary commands (git, check_handin) allowed', g.code === 0, g.err);
+  g = sg('Write', { file_path: 'C:/x/roadworld-wt/gates4/tools/x.mjs', content: 'recordAudit' }); t('state guard: writing a normal file is allowed even when its text names the writers (the guard reads paths and commands, not file bodies: a documented limit)', g.code === 0);
+  g = sg('Write', { file_path: path.join(sd4, 'builders', 'x.json'), content: '{}' }, ''); t('state guard: the MAIN session (no agent_id) is not limited', g.code === 0, g.err);
+  g = guardRun('state_guard.mjs', '{not json'); t('state guard: bad JSON: fail open, logged', g.code === 0 && /FAIL-OPEN/.test(lastLog().reason));
+  // ---- delete guard
+  const dgRun = (command, cwd = elsewhere, tool = 'Bash') => guardRun('delete_guard.mjs', { hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { command }, cwd });
+  const fakeWt = path.join(tmp, 'dg', 'roadworld-wt'), wtA = path.join(fakeWt, 'foo'), photos = path.join(tmp, 'dg', 'roadworld', 'docs', 'reference');
+  fs.mkdirSync(path.join(wtA, 'docs'), { recursive: true }); fs.mkdirSync(photos, { recursive: true }); fs.writeFileSync(path.join(photos, 'p1.jpg'), 'photo'); fs.mkdirSync(path.join(wtA, 'build', 'x'), { recursive: true });
+  fs.symlinkSync(photos, path.join(wtA, 'docs', 'reference'), 'junction');
+  let d = dgRun(`rm -rf ${wtA.replace(/\\/g, '/')}`); t('delete guard: rm -rf of a worktree that holds the docs/reference junction: DENIED (exit 2), names the script', d.code === 2 && /remove_agent_worktree\.ps1/.test(d.err) && /junction/.test(d.err), d.err);
+  d = dgRun(`Remove-Item -Recurse -Force "${wtA}"`, elsewhere, 'PowerShell'); t('delete guard: Remove-Item -Recurse -Force of it (PowerShell): denied', d.code === 2, d.err);
+  d = dgRun(`rmdir /s /q "${wtA}"`); t('delete guard: rmdir /s /q: denied', d.code === 2, d.err);
+  d = dgRun(`rm -rf ${path.join(wtA, 'docs').replace(/\\/g, '/')}`); t('delete guard: rm -rf of the docs folder that holds the junction: denied', d.code === 2, d.err);
+  d = dgRun('rm -r docs/reference', wtA); t('delete guard: rm -r docs/reference run from inside the worktree: denied', d.code === 2, d.err);
+  d = dgRun('rm -rf *', wtA); t('delete guard: rm -rf * in a worktree root (expands to docs with the junction): denied', d.code === 2, d.err);
+  d = dgRun(`rm -rf ${fakeWt.replace(/\\/g, '/')}`); t('delete guard: the roadworld-wt folder itself: denied', d.code === 2, d.err);
+  d = dgRun('rm -rf build', wtA); t('delete guard: rm -rf build inside a worktree (no link below it): ALLOWED, agents do clean builds', d.code === 0, d.err);
+  d = dgRun('Remove-Item -Recurse -Force .\\build', wtA, 'PowerShell'); t('delete guard: Remove-Item -Recurse of build: allowed', d.code === 0, d.err);
+  d = dgRun('rm -f notes.txt', wtA); t('delete guard: rm -f of one file: allowed', d.code === 0, d.err);
+  d = dgRun('git worktree remove C:/x/roadworld-wt/foo'); t('delete guard: git worktree remove without the script: denied', d.code === 2, d.err);
+  d = dgRun('powershell -NoProfile -ExecutionPolicy Bypass -File tools\\remove_agent_worktree.ps1 foo'); t('delete guard: the removal script itself: allowed', d.code === 0, d.err);
+  d = dgRun('robocopy C:\\backup C:\\x\\roadworld\\docs\\reference /MIR'); t('delete guard: robocopy /MIR into docs\\reference: denied', d.code === 2, d.err);
+  d = dgRun('robocopy C:\\backup C:\\scratch\\copy /E'); t('delete guard: an ordinary robocopy: allowed', d.code === 0, d.err);
+  d = dgRun('bash -c "rm -rf ' + wtA.replace(/\\/g, '/') + '"'); t('delete guard: the same delete inside bash -c "...": denied', d.code === 2, d.err);
+  d = dgRun('git clean -fdx', wtA); t('delete guard: git clean -fdx (removes ignored files such as the junction): denied', d.code === 2, d.err);
+  d = dgRun('rm -rf $wt', wtA); t('delete guard: rm -rf of a shell variable near a worktree: denied (cannot be checked)', d.code === 2, d.err);
+  d = dgRun('ls -la && git status'); t('delete guard: harmless commands: allowed', d.code === 0, d.err);
+  d = dgRun('rm -rf /tmp/scratch-run', elsewhere); t('delete guard: rm -rf of a plain scratch path outside any worktree: allowed', d.code === 0, d.err);
+  d = guardRun('delete_guard.mjs', '{not json'); t('delete guard: bad JSON: fail open, logged', d.code === 0 && /FAIL-OPEN/.test(lastLog().reason));
+  t('the photos survived every test above (the guard only reads)', fs.readFileSync(path.join(photos, 'p1.jpg'), 'utf8') === 'photo');
+  fs.rmdirSync(path.join(wtA, 'docs', 'reference'));   // the link only (non-recursive)
+  t('...and removing the junction non-recursively leaves the target', fs.existsSync(path.join(photos, 'p1.jpg')));
+  // ---- reference register
+  const refDir = path.join(root, 'docs/reference');
+  const pr = (script, input) => run(script, input);
+  fs.rmSync(path.join(sd4, 'ref_log.jsonl'), { force: true }); fs.rmSync(path.join(sd4, 'ref_cache.json'), { force: true });
+  let rs = spawnSync(process.execPath, [path.join(root, 'tools/ref_seed.mjs')], { cwd: elsewhere, encoding: 'utf8' });
+  t('ref_seed registers the existing photos (3) with their sha1, by "seed"', rs.status === 0 && /3 picture\(s\) newly registered/.test(rs.stdout) && fs.readFileSync(path.join(sd4, 'ref_log.jsonl'), 'utf8').includes(crypto.createHash('sha1').update('photo aerial/a.jpg').digest('hex')), rs.stdout + rs.stderr);
+  rs = spawnSync(process.execPath, [path.join(root, 'tools/ref_seed.mjs')], { cwd: elsewhere, encoding: 'utf8' }); t('...a second run registers nothing new', /0 picture\(s\) newly registered/.test(rs.stdout), rs.stdout);
+  fs.writeFileSync(path.join(refDir, 'street', 'new1.jpg'), 'a freshly downloaded photo');
+  let pt = pr('ref_log.mjs', { hook_event_name: 'PostToolUse', tool_name: 'Bash', agent_id: 'ag7', tool_input: { command: 'curl -o docs/reference/street/new1.jpg https://example.org/a.jpg' }, cwd: elsewhere });
+  const refLines = fs.readFileSync(path.join(sd4, 'ref_log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  t('PostToolUse hook: a photo that landed in docs/reference during an agent\'s call is registered with that agent id', pt.code === 0 && refLines.some((e) => e.path === 'street/new1.jpg' && e.by === 'agent:ag7' && e.sha1 === crypto.createHash('sha1').update('a freshly downloaded photo').digest('hex')), JSON.stringify(refLines.slice(-2)));
+  fs.mkdirSync(path.join(refDir, '_compare'), { recursive: true }); fs.writeFileSync(path.join(refDir, '_compare', 'c.png'), 'a composite');
+  pt = pr('ref_log.mjs', { hook_event_name: 'PostToolUse', tool_name: 'Write', agent_id: 'ag7', tool_input: {}, cwd: elsewhere });
+  t('...composites under _compare are never registered as references', !fs.readFileSync(path.join(sd4, 'ref_log.jsonl'), 'utf8').includes('_compare'));
+  pt = pr('ref_log.mjs', '{bad'); t('ref_log hook: bad JSON: fail open, logged', pt.code === 0 && /FAIL-OPEN/.test(lastLog().reason));
+  // ---- made-up auditor id (gates3 audit fault 2): a record for an id no launch hook saw never clears the debt
+  {
+    const alx = await import(pathToFileURL(path.join(src, 'tools/hooks/audit_lib.mjs')).href);
+    const sdx = path.join(tmp, 'fakeaud', '.claude', 'state'), rx = path.join(tmp, 'fakeaud'); fs.mkdirSync(sdx, { recursive: true });
+    const fold = path.join(rx, 'docs', 'progress', 'fa'); fs.mkdirSync(fold, { recursive: true });
+    const T0 = Date.UTC(2026, 5, 1, 12, 0, 0); const legacyRec = (d, id, ty, sd) => alx.recordBuilder(d, id, ty, sd);
+    legacyRec(fold, 'bx1', 'general-purpose', sdx);
+    const text = 'Auditor agent: fake9\nVerdict: accept\nReferences opened: 1 of 1\n\n## Faults found, ranked\n\n1. nothing at all was wrong with this round, honestly, I checked everything twice\n';
+    fs.writeFileSync(path.join(fold, 'AUDIT.md'), text);
+    const nowFuture = Date.now() + 120000; fs.utimesSync(path.join(fold, 'AUDIT.md'), new Date(nowFuture), new Date(nowFuture));
+    alx.recordAudit(fold, { auditorId: 'fake9', builderId: 'bx1', verdict: 'accept', text }, sdx, nowFuture);
+    const owed1 = alx.auditOwed(sdx, rx);
+    t('a correctly signed audit record for an auditor id no SubagentStart line saw ("fake9"): the audit stays OWED, says it was never seen launching', owed1.length === 1 && /never seen launching/.test(owed1[0].problems.join()), JSON.stringify(owed1));
+    fs.appendFileSync(path.join(sdx, 'gate.log'), JSON.stringify({ ts: new Date().toISOString(), gate: 'inject', agent_type: 'general-purpose', agent_id: 'real7', decision: 'inject', chars: 1 }) + '\n');
+    const text2 = text.replace('fake9', 'real7'); fs.writeFileSync(path.join(fold, 'AUDIT.md'), text2); fs.utimesSync(path.join(fold, 'AUDIT.md'), new Date(nowFuture + 1000), new Date(nowFuture + 1000));
+    alx.recordAudit(fold, { auditorId: 'real7', builderId: 'bx1', verdict: 'accept', text: text2 }, sdx, nowFuture + 2000);
+    t('the same audit by an id whose launch the hook logged ("real7"): clears the debt', alx.auditOwed(sdx, rx).length === 0, JSON.stringify(alx.auditOwed(sdx, rx)));
+    void T0;
+  }
+  // ---- launch gap (gates3 audit fault 9)
+  {
+    const nl = await import(pathToFileURL(path.join(src, 'tools/hooks/notice_lib.mjs')).href);
+    const NOW = Date.UTC(2026, 5, 2, 12, 0, 0), iso = (ms) => new Date(ms).toISOString();
+    const brief = (i) => ({ ts: iso(NOW - 3600e3 - i * 1000), gate: 'brief', decision: 'allow', reason: 'contract present' });
+    const inj = (i) => ({ ts: iso(NOW - 3600e3 - i * 1000), gate: 'inject', decision: 'inject', agent_id: 'a' + i });
+    t('launch gap: 5 allowed launches an hour ago, 1 SubagentStart line: reported (the start hook is not seeing agents)', /LAUNCH GAP: 5 allowed/.test(nl.launchGapProblem([0, 1, 2, 3, 4].map(brief).concat([inj(0)]), NOW) || ''));
+    t('launch gap: launches and starts balanced: nothing', nl.launchGapProblem([0, 1, 2, 3, 4].map(brief).concat([0, 1, 2, 3, 4].map(inj)), NOW) === null);
+    t('launch gap: a gap of 2 is not reported (agents killed before they started)', nl.launchGapProblem([0, 1, 2].map(brief).concat([inj(0)]), NOW) === null);
+    t('launch gap: launches in the last 10 minutes are not counted (the agent may not have started yet)', nl.launchGapProblem([0, 1, 2, 3, 4].map((i) => ({ ts: iso(NOW - 60e3 - i), gate: 'brief', decision: 'allow', reason: 'contract present' })), NOW) === null);
+    t('launch gap: exempt-type launches (Explore, Plan) are not counted', nl.launchGapProblem([0, 1, 2, 3, 4].map((i) => ({ ts: iso(NOW - 3600e3 - i), gate: 'brief', decision: 'allow', reason: 'exempt type' })), NOW) === null);
+    const pi = nl.pendingItems([0, 1, 2, 3, 4].map(brief), { stateDir: path.join(tmp, 'nostate'), root: path.join(tmp, 'noroot'), now: NOW });
+    t('the gap is a notice item (counted in the total and printed)', pi.launchGap && pi.total === 1 && /LAUNCH GAP/.test(nl.formatNotice(pi, null)));
+  }
+  // ---- the auditor hint in the injected context
+  const inj = run('contract_inject.mjs', { hook_event_name: 'SubagentStart', agent_type: 'general-purpose', agent_id: 'hintA', cwd: elsewhere });
+  t('SubagentStart context tells an agent asked to audit without AUDIT-OF to say so in the first line of its report', /LAUNCHED WITHOUT AUDIT-OF/.test(J(inj.out).hookSpecificOutput.additionalContext), inj.out.slice(0, 200));
+  // ---- settings.json wires the new hooks
+  const st4 = JSON.parse(fs.readFileSync(path.join(src, '.claude/settings.json'), 'utf8'));
+  const wired = (ev, re) => (st4.hooks[ev] || []).some((m) => m.hooks.some((h) => re.test((h.args || []).join(' '))));
+  t('settings.json wires delete_guard and state_guard (PreToolUse) and ref_log (PostToolUse)', wired('PreToolUse', /delete_guard\.mjs/) && wired('PreToolUse', /state_guard\.mjs/) && wired('PostToolUse', /ref_log\.mjs/));
+  t('the finish hook timeout (300 s) stays above the 270 s the gates may spend', st4.hooks.SubagentStop[0].hooks[0].timeout >= 300);
+}
+
+console.log('gates4: ITEM lines from the task file reach the finish hook; omission is caught without a phrase list');
+{
+  const tf = path.join(tmp, 'items_task.md');
+  fs.writeFileSync(tf, task() + '## Items\nA. measured gates in check_handin\nB. waiver guard evasions\nG. scope line in the brief template\n');
+  const mb = spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tf, '--round', 'items1', '--worktree', path.join(wt, 'items1'), '--no-visual'], { encoding: 'utf8' });
+  t('make_brief turns the "## Items" section into ITEM: lines (id | text)', mb.status === 0 && /^ITEM: A \| measured gates in check_handin$/m.test(mb.stdout) && /^ITEM: G \| scope line/m.test(mb.stdout), mb.stderr + mb.stdout.slice(0, 300));
+  const hdI = hd('items1'); fs.mkdirSync(hdI, { recursive: true });
+  const faultsI = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Pass 3\nthe hatching bars cross the kerb line at the island nose\n## Residual\nnone, all fixed\n';
+  fs.writeFileSync(path.join(hdI, 'FAULTS.md'), faultsI);
+  const tpI = transcript('items1', mb.stdout);
+  fs.writeFileSync(path.join(hdI, 'STATUS.md'), goodStatus + '\n## Items\n\n| Item | Status | Proof |\n|---|---|---|\n| A | done | test "measured gates" in tools/test_gates.mjs |\n| B | done | test "waiver guard" in tools/test_gates.mjs |\n');
+  let bi = stop('items1a', tpI);
+  t('item G has no row in STATUS: the finish hook refuses and names item G (nothing was said about it, no excuse phrase to match)', J(bi.out).decision === 'block' && /item G/.test(J(bi.out).reason) && /GATE items/.test(J(bi.out).reason), bi.out);
+  fs.writeFileSync(path.join(hdI, 'STATUS.md'), goodStatus + '\n## Items\n\n| Item | Status | Proof |\n|---|---|---|\n| A | done | test "measured gates" in tools/test_gates.mjs |\n| B | done | test "waiver guard" in tools/test_gates.mjs |\n| G | done | docs/templates/BRIEF.md line 13 |\n');
+  bi = stop('items1b', tpI);
+  t('with a row per item, each done with a proof: the stop is allowed', bi.code === 0 && bi.out === '', bi.out + bi.err);
+  const mbOld = spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tf, '--round', 'items2', '--worktree', path.join(wt, 'items2'), '--no-visual'], { encoding: 'utf8' });
+  t('a task file WITHOUT an Items section emits no ITEM lines (older task files are unaffected)', !/^ITEM:/m.test(spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), path.join(tmp, 'ownerq.md'), '--round', 'items3', '--no-visual'], { encoding: 'utf8' }).stdout) && mbOld.status === 0);
 }
 
 console.log('gates3 hooks, part 4: HANDIN_DIR in the prompt, HANDIN: no-visual only in the BRIEF-FILE (this round\'s own hand-in was refused for it)');
