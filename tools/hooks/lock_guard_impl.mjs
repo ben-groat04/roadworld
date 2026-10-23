@@ -14,7 +14,7 @@
 // Move-Item / ren / Rename-Item (source), cp / Copy-Item / mv onto it, tee, touch, truncate, Set-Content / Add-Content / Clear-Content / Out-File, in-place editors and formatters (sed -i, perl -i, ruby -i,
 // awk -i inplace, clang-format -i, prettier --write, dos2unix, black, gofmt -w ...), git rm, git mv, git checkout -- <file>, git restore <file>, a delete or move of a folder that holds locked files, and
 // inline python / node code whose WRITE call (write, append, unlink, rename, copy onto, open for write) takes a locked path as the argument it writes to; reading one is free.
-// WHAT IT CANNOT SEE: a path built from variables or pieces, a script file that edits the test (`node x.mjs`), an editor or build tool that rewrites it, `patch` / `git apply`, a test deleted by
+// WHAT IT CANNOT SEE: a path built from variables or pieces, a script file that edits the test (`node x.mjs`), an editor or build tool that rewrites it, a diff piped into patch / git apply (a diff FILE or heredoc is read: tools/hooks/lock_extra.mjs), `$(...)` forms other than ls, find, git ls-files, echo, printf, a test deleted by
 // `git reset --hard` / `git clean` (those only undo the builder's own edits), and anything outside Bash, PowerShell, Write, Edit, NotebookEdit. A builder with no readable transcript is treated as
 // not a builder (nothing to judge by). FAIL OPEN (logged) on any internal error.
 import fs from 'node:fs';
