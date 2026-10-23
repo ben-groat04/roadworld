@@ -165,7 +165,6 @@ console.log('gates11 B: the launch gate refuses a NO-CONTRACT launch by its DESC
   t('B ALLOW an "Auditor for ..." description that carries AUDIT-OF (the real audit launch)', r.status === 0, r.stderr.slice(0, 300));
   r = launch('Opus first look on x images', `FIRSTLOOK-OF: ${hdA}\nAGENT-CONTRACT-MARKER: v1\n## Owner's words\n"x" (1 Oct)\n`);
   t('B ALLOW an "Opus first look ..." description that carries FIRSTLOOK-OF (the real first-look launch)', r.status === 0, r.stderr.slice(0, 300));
-  await tt('B disguisedJob(description, reason, prompt): the reason text is not read any more', async () => { const m = await imp('tools/hooks/phase_marks.mjs'); return m.disguisedJob('Clerk: docs', 'this is an audit of the hand-in, first look too', '') === null && m.disguisedJob('Auditor for x', 'docs only', '') === 'audit'; });
 }
 
 // ================================================================ C  phase checks

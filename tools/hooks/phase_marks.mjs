@@ -18,47 +18,6 @@ export function firstLookOfIn(text) {
   const m = String(text || '').match(/^FIRSTLOOK-OF:[ \t]*(.+?)[ \t]*$/m);
   return m ? m[1].replace(/^`|`$/g, '') : null;
 }
-// A NO-CONTRACT launch that is really a review of another agent's work. Clerks, mergers, researchers and read-only status checks mention audits in passing ("Write audit first-look rule into
-// docs", "Clerk: ... commit review", "Merger: verify playtest, merge integ to main"): only the JOB itself is matched.
-// gates12 (main-session decision 3, after the gates11 audit passed "Auditing gates9", "Second-opinion reviewer of gates11", "Opus look at grade-r12 images" and "Independent verification of gates9"
-// as NO-CONTRACT): refused BY MEANING, not by the exact wording of the 23 Oct launches. A NO-CONTRACT launch is refused when
-//  1. the DESCRIPTION opens (after fresh / independent / opus / cold / second / strict / short ...) with a review word: audit, auditor, auditing, review, reviewer, reviewing, second opinion, cold read,
-//     first look, verification, "look at|over", or "verify ..." that goes on to name a round, hand-in, images or a round id;
-//  2. or the DESCRIPTION holds a review word anywhere (audit*, review*, verif*, first look, second opinion, cold read, look at|over) AND names the thing reviewed: a hand-in, round, progress folder,
-//     renders, images, composites, frames, screenshots or a round id such as gates9, grade-r12, m2fix5a (a letter-led word ending in digits). "Write audit first-look rule into docs", "Add
-//     every-audit-item-fixed rule to docs" and "Clerk: ... commit review" name no such thing and pass;
-//  3. or the stated REASON itself opens with the review job ("independent cold-read audit of ...", "fresh auditor for ...", "short first-look image check ..."); a clerk's reason that only says
-//     "no build or review hand-in" does not open that way;
-//  4. or a LINE of the PROMPT opens with the order (audit, auditor, reviewer, review, verify, first look, second opinion) and names a docs/progress/<round> folder.
-// Allowed by this rule: clerks, mergers (merge, "verify playtest"), research and fetch jobs, measure agents, and read-only status checks that review nothing.
-// The reason text is NOT searched for the words anywhere: clerk reasons say "no build or review hand-in" (gates11 decision 1).
-const LEAD = String.raw`^\s*(?:(?:fresh|independent|opus|cold|cold-read|second|another|strict|final|short|quick|read-only|new|separate)[ -]+)*`;
-const VERB = String.raw`(?:audit(?:or|ors|ing|ed)?|review(?:er|ers|ing|ed)?|re-review|second[- ]opinion|cold[- ]read(?:er|ing)?|first[- ]look|verification|look\s+(?:at|over))`;
-const WORD = String.raw`(?:audit(?:or|ors|ing|ed)?|review(?:er|ers|ing|ed)?|re-review|second[- ]opinion|cold[- ]read(?:er|ing)?|first[- ]look|verif(?:y|ies|ied|ication|ying|ier)|look\s+(?:at|over))`;
-const THING = String.raw`(?:hand-?ins?|rounds?|progress|renders?|images?|composites?|frames?|screenshots?|[a-z][a-z-]*\d+[a-z]?)`;
-const RE_HEAD = new RegExp(LEAD + VERB + String.raw`\b`, 'i');
-const RE_HEAD_VERIFY = new RegExp(LEAD + String.raw`verif(?:y|ying|ier)\b[^\n]*\b` + THING + String.raw`\b`, 'i');
-const RE_WORD = new RegExp(String.raw`\b` + WORD + String.raw`\b`, 'i');
-const RE_THING = new RegExp(String.raw`\b` + THING + String.raw`\b`, 'i');
-const RE_REASON = new RegExp(LEAD + String.raw`(?:audit(?:or|ors|ing)?|review(?:er|ers|ing)?|second[- ]opinion|cold[- ]read|first[- ]look|verification)\b`, 'i');
-const RE_LOOKISH = /first[- ]look/i;
-const PROG = String.raw`[\`"']?\S*docs[\\/]+progress[\\/]+[\w.-]+`;
-const ORDER = String.raw`(?:audit(?:or|ing)?|review(?:er|ing)?|second[- ]opinion|verif(?:y|ier|ication))`;
-// the PROMPT names a folder to review only when a LINE of it opens with the order ("Audit <folder>", "Auditor: ...", "You are the reviewer of <folder>"); a clerk line that merely says that an
-// audit of a folder was accepted does not.
-const RE_AUDIT_PROMPT = new RegExp(String.raw`^[ \t>*-]*(?:you are (?:the |an? )?(?:fresh |independent )?)?` + ORDER + String.raw`\b[^\n]{0,60}?` + PROG, 'im');
-const RE_LOOK_PROMPT = new RegExp(String.raw`^[ \t>*-]*(?:you are (?:the |an? )?(?:opus )?)?first[- ]look\b[^\n]{0,60}?` + PROG, 'im');
-export function disguisedJob(description, reason, prompt = '') {
-  const d = String(description || '').trim(); const p = String(prompt || ''); const r = String(reason || '').trim();
-  const kind = (s) => (RE_LOOKISH.test(s) ? 'first look' : 'audit');
-  if (RE_LOOK_PROMPT.test(p)) return 'first look';
-  if (RE_HEAD.test(d) || RE_HEAD_VERIFY.test(d)) return kind(d);
-  if (RE_WORD.test(d) && RE_THING.test(d)) return kind(d);
-  if (r && RE_REASON.test(r)) return kind(r);
-  if (RE_AUDIT_PROMPT.test(p)) return 'audit';
-  return null;
-}
-
 // ---- the first-look file
 const IMG = /\.(?:png|jpe?g|webp|gif|bmp)$/i;
 const clean = (p) => p.trim().replace(/^[`"'(\[]+|[`"')\].,;]+$/g, '');

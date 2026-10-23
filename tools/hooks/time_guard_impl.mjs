@@ -9,8 +9,8 @@
 //       (N up to 900). `timeout` typed in the PowerShell tool is Windows timeout.exe (a pause, not a limit) and does not count.
 //       `timeout 0` (no limit) and a limit over the cap are refused too. Quick read-only forms are not runs: `--help`, `--version`, `--list-test-cases`, `ctest -N`, `cmake --build --help`.
 //   T2  (gates12) a second copy of a TEST program (sim_core_tests, ctest, *_tests, t_full*) is refused only when it would be a second copy FROM THIS WORKTREE. The guard writes a "start" line to
-//       state/runs.jsonl for every test or suite run it lets through (id, image, worktree root, time, limit, background flag, output files); the post hook (time_guard_post.mjs) adds an "end" line when the
-//       call returns. A start line is OPEN while it is inside its limit and has no end line (a background run stays open, its Post fires at once). With an open line of this worktree and this image:
+//       state/runs.jsonl for every test or suite run it lets through (id, image, worktree root, time, limit, background flag, output files); no end line is written any more (gates13: the runner records the end);
+//       a start line is OPEN while it is inside its limit and has no end line (a background run stays open, its Post fires at once). With an open line of this worktree and this image:
 //       1. the image-name lookup (tasklist, pgrep off Windows) runs, bounded to 300 ms; not running -> allowed; could not tell -> allowed with a FAIL-OPEN line in gate.log;
 //       2. the image IS running: its executable path and command line are read (PowerShell Get-CimInstance, pgrep -a), bounded to 4 s because PowerShell alone needs 0.6 to 1.3 s to start here
 //          (measured 23 Oct 2026); a copy whose path or command line lies under this worktree's root refuses and the refusal names that path; copies under another worktree are ignored; a lookup

@@ -1,5 +1,5 @@
 // Phase checks (gates10, gates11): `check_handin --phase measure|build`. A builder round may run as up to three short fresh agents in sequence; each hands over through a file in the hand-in folder.
-//   measure -> MEASURE.md   build -> BUILD.md (+ suite_build.log)   render -> the ordinary full hand-in (STATUS, FAULTS, COMPARE, INDEX), checked as before.
+//   measure -> MEASURE.md   build -> BUILD.md (+ suite_*.log)   render -> the ordinary full hand-in (STATUS, FAULTS, COMPARE, INDEX), checked as before.
 // Every function returns a list of problems (empty = passes). Nothing here quotes an agent: files are opened, images decoded, git read, the suite LOG parsed (the suite itself is run by the agent
 // under its own time limit: a hook that ran it would be killed at its own limit and fail open).
 import fs from 'node:fs';
@@ -112,10 +112,10 @@ export function measureProblems(folder, { since = 0, cases = null, refs = null, 
 
 // ---- build (gates11)
 // The suite is NOT run by this check (a hook is killed at its time limit and then fails open: the gate was off exactly when the suite was real). The build agent runs the suite under its own
-// `timeout 900` and leaves the output in <hand-in>/suite_build.log; this check reads the log. It must: be newer than the last code commit; hold a real summary (doctest "test cases:", ctest
+// `timeout 900` and leaves the output in <hand-in>/suite_*.log (made by node tools/run_suite.mjs); this check reads the log. It must: be newer than the last code commit; hold a real summary (doctest "test cases:", ctest
 // "tests passed", or the repo's node suites "N passed, M failed"); show failures only for tests the brief allows (ALLOW-FAIL: lines) and name them; not be a timeout (exit=124); and come from a binary
 // newer than the last code commit (BUILD.md "Suite binary: <path>"; a script path is exempt from the mtime test). The round's auditor re-runs the suite itself (audit brief template).
-// gates12 (decision 2): the log is also matched against the suite-run record the time-limit hooks write (tools/hooks/suite_record.mjs: start by time_guard, end + exit + sha256 by time_guard_post):
+// gates13 (decision 2): the log is also matched against the signed suite-run record that tools/run_suite.mjs writes at the end of the run (tools/hooks/suite_record.mjs):
 // no record of a run in this worktree with exactly these bytes, ended after the last code commit, means a typed or edited log, and the check fails.
 export const SUITE_LOGS = ['suite_gcc.log', 'suite_node.log', 'suite_msvc.log'];   // written by tools/run_suite.mjs (gates13)
 const SCRIPT_EXT = /\.(?:mjs|cjs|js|ts|py|ps1|sh|bat|cmd)$/i;
