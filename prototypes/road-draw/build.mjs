@@ -9,5 +9,8 @@ let html = rd('shell.html');
 html = html.replace('<!--GEOM-->', () => body(rd('geom.js')).trimEnd());
 html = html.replace('<!--APP-->', () => APP.map(f => body(rd(f))).join('\n').trimEnd());
 html = html.replace('<!doctype html>', () => '<!doctype html>\n<!-- GENERATED, edit src/ and run node build.mjs -->');
-writeFileSync(new URL('index.html', dir), html);
-console.log('wrote index.html', html.length, 'bytes');
+// --out <file>: write there instead of the tracked index.html (the hand-in gate builds into a temp dir and never touches the worktree it inspects).
+const oi = process.argv.indexOf('--out');
+const target = oi >= 0 ? process.argv[oi + 1] : null;
+writeFileSync(target ? target : new URL('index.html', dir), html);
+console.log('wrote', target || 'index.html', html.length, 'bytes');

@@ -3,7 +3,19 @@
 References opened: N of M listed   <!-- e.g. `References opened: 44 of 44 listed`; M = files the brief lists as reference/spec. If N < M, list each unopened file below as "not opened: <file> (reason)". -->
 
 <!-- FIRST. Everything you skipped, were refused, could not do, failed, or did not verify, one line each, with what blocked it.
-     Write "Nothing skipped, refused or failed." only if true, then say what you did NOT verify. Never leave this empty. -->
+     Write "Nothing skipped, refused or failed." only if true, then say what you did NOT verify. Never leave this empty.
+     Something you truly cannot do goes in ONE line of this form (the finish gate accepts it and tells the main session; "time", "scope", "later round" are not blocks):
+     BLOCKED: <item> | tried: <command in backticks, file or test you ran> | blocked by: <quoted error text, refused command or missing file path> | see: <path of the log or output file that holds that error; the quote must be in it> | needs: <a named thing that would unblock it: a file, a command, a decision with its subject>
+     "the complexity", "difficult", "the geometry", "a larger rewrite" are not blocks; the quoted error is checked against the see: file (a quote not found there refuses the line); "needs: help", "needs: a decision", "needs: nothing" are refused; at most 3 BLOCKED lines unless each has a different concrete cause; a BLOCKED line never waives a measured gate floor. -->
+
+BLOCKED lines, if any, go here (delete this line if there are none).
+
+## Items
+
+<!-- Only when the brief lists `ITEM:` lines: one row per item, "done" with the test, run or image that proves it, or the BLOCKED form in the row. An item with no row is refused. -->
+
+| Item | Status | Proof |
+|---|---|---|
 
 ## Prior audit items
 

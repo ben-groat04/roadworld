@@ -1,0 +1,105 @@
+## Skipped, refused or failed
+
+HANDIN: no-visual
+
+- Nothing skipped or refused in the scope of the send-back note: all 14 items of `docs/progress/gates6/AUDIT.md` "For the next builder" and item 15 (the git guard) are done, each with a named real-payload case in `tools/hooks/test_guards7.mjs` (or the suite named in the table below). Open items under reason (a) or (b): none; the one half-open reading (item 8, `rm -rf .[a-z]*` in a tree whose only link is `docs\reference`) is shown with a pair of cases in the table.
+- Not verified (said plainly): (1) the git guard and the changed hooks run in a live session only after the merge and a restart of the main session (sessions started before the merge keep the old wiring); I ran the git guard as a real process against the real main root with fake payloads, not through the harness. (2) `--verify-only` is fast only once the real backup folder has a manifest: the real main has none yet (the first real mirror is the main session's step), so `node tools/backup_reference.mjs --verify-only` on the real main still read all 404 files (17 s warm, 41 s cold); the fast path is proven on a scratch mirror (`trusted == total, read == 0`). (3) I did not run the backup mirror on the real photos (read-only runs only, as in the earlier rounds). (4) The 32-byte zero-run rule has no false positive on the 404 real photos (`--verify-only --full`: all valid), but a flat optimised-Huffman scan could in theory hold 32 zero bytes; what the validator still cannot see is listed in FAULTS Residual 5.
+- Item 11 wording the audit asked for: the baseline scan now refuses every 100-zero-byte stretch (24 offsets of a scan, all refused; was 78 % on real photos) and any 32 zero bytes in a row that are not an FF 00 stuffing pair. It cannot catch a single flipped byte (a decoder has no checksum; the manifest sha1 catches it after the first mirror), zero runs of 1 to 31 bytes that still decode, or damage inside progressive and arithmetic-coded JPEGs beyond structure and the 32-byte rule.
+- Disk was short, so scratch stayed tiny: every suite now removes its temp folder (junctions unlinked first). The old leftovers in `%TEMP%` of earlier runs (84 `gatetest-*`, 15 `hooktest-*`, 3 `guards6-*`, 2 `guards7-*` from my first failing runs) were removed by me at the end with a link-aware script (see Suite and checks).
+- Method note for the main session: this builder's Bash calls all start in the MAIN checkout (cwd reset). Every git call here used `git -C <this worktree>` or `cd <worktree> &&`. The new git guard matches exactly that situation.
+- Nothing pushed or merged. No Unreal, no sim_core, no engine test touched. The live hooks in the main checkout were not touched; only this worktree's `.claude/settings.json` gained the `git_guard.mjs` line.
+
+References opened: 12 of 12 listed (round 9 AUDIT.md, STATUS.md, FAULTS.md read in their first 30 to 40 lines; the auditgate AUDIT.md first 40 lines; `tools/check_handin.mjs` header and flow; `tools/make_brief.mjs` first 60 lines; `tools/hooks` every file (lib, root, guard, brief_gate_impl, contract_inject_impl, handin_gate_impl, delete_guard_impl, state_guard_impl, shell_lex, test_guards6 whole; audit_lib, notice_lib, gate_notice_impl, gate_ack, ref_lib, ref_log_impl headers); `.claude/settings.json`; `docs/AGENT_CONTRACT.md` (pasted in the brief); `docs/templates/BRIEF.md` and `STATUS.md`; `prototypes/road-draw/tools/scene.mjs` first 40 lines; `CLAUDE.md` "Working rules" (project instructions). Beyond the brief: `docs/progress/gates6/AUDIT.md` whole, `docs/progress/gates6/STATUS.md`, `FAULTS.md`, `INDEX.md`, `tools/backup_reference.mjs` whole, `tools/test_backup_reference.mjs`, `tools/gates_lib.mjs` (`needsIsConcrete`).) Depth note: several of the 12 were read at header depth because this round touches none of their logic.
+
+## Prior audit items
+
+Previous audit: `docs/progress/gates6/AUDIT.md` ("For the next builder": items 1 to 14; the pedantic one, the accepted-residual list and the allowed-by-design list stay excluded as the send-back note says), plus item 15 from the main session's send-back note and my own FAULTS.md (F1 to F3 and passes 1 to 3). TG7 = `node tools/hooks/test_guards7.mjs` (every case uses backslash cwds as the harness sends them; the expected values come from the gates6 AUDIT.md text, each case label names its item), TG6 = `test_guards6.mjs`, TH = `test_hooks.mjs`, TGt = `test_gates.mjs`, TB = `test_backup_reference.mjs`.
+
+| Item | Status | Proof (test or run) or reason a/b with evidence |
+|---|---|---|
+| 1 one-liner deletes of `build` (python -c shutil.rmtree, node -e fs.rmSync, pwsh Directory.Delete) refused for any path | fixed | TG7 "item 1": `python -c "import shutil; shutil.rmtree('build')"`, python3 with ignore_errors, `node -e "require('fs').rmSync('build',{recursive:true,force:true})"`, escaped-quote form, `pwsh -c "[System.IO.Directory]::Delete('build', $true)"` allowed in a clean worktree; `rmtree('docs')` in main, `rmtree('<main>/docs')`, `rmtree('<photos>')`, `rmSync('docs')` and `Directory.Delete('docs')` in the link tree, and a variable path (`os.environ['X']`) refused; F3 two literals / a computed literal |
+| 2 `del -Recurse -Force build` read as cmd `del /s` | fixed | TG7 "item 2": `del -Recurse -Force build`, `erase -Recurse -Force build`, `del -Force -Recurse .\build` allowed in a clean worktree; `del -Recurse -Force docs` in the link tree and `del -Recurse` of the photos refused; `del /s /q build` in a worktree stays refused |
+| 3 filtered `Get-ChildItem ... -Filter "build*" -Directory \| Remove-Item` from the worktree root | fixed | TG7 "item 3": allowed in a clean worktree (also `-Filter *.obj -Recurse`) and with a filter that cannot match a picture from main; refused in the link tree (the walk finds the link), with `-Filter "*.jpg"` from main and for an unfiltered listing of the worktree root |
+| 4 state guard false blocks (`grep deny state/*.log`, `cp gate.log /tmp/g.log`, inline node/python reading gate.log) | fixed | TG7 state "item 4": `grep deny <state>/*.log`, `cat state/*.log`, `cp <state>/gate.log <scratch>` and `/tmp/g.log`, `Copy-Item gate.log $env:TEMP\g.log`, `cp HANDIN_FAILED.txt out`, `node -e` and `python -c` reading gate.log, `node -e` listing handin allowed; `grep x state/*`, `cat state/ack_s*`, `cat state/?ck_secret`, `cp <secret> out`, `cp x state/gate.log`, `mv gate.log`, `rm state/*.log`, inline writes of gate.log and reads of the secret refused |
+| 5 `needs:` naming a concrete thing in plain words | fixed | TGt "v5": "a new reference photo of the roundabout please", "a licence file for the bollard model", "another screenshot of the junction from the north arm", "the texture for the kerb stone, free licence" accepted; "a photo", "help with the file", "more data please", "owner decision about the model" still refused |
+| 6 glued PowerShell braces | fixed | TG7 "item 6": `try {Remove-Item docs -Recurse -Force} catch {}`, `if (1) {..}`, `foreach (..) {..}`, `1..2 \| ForEach-Object {..}`, `& {..}`, `&{..}`, `powershell -c "& {..}"`, `powershell -Command {..}`, `if (1){..}`, `try{..}catch{}`, spaced opener with glued closer refused in the link tree; the same blocks on `build` allowed in a clean worktree; `{a,b}`, `{}` and `${HOME}` stay words (lexer cases) |
+| 7 `find \| xargs rm` without flags, `find -exec truncate` | fixed | TG7 "item 7": `find <photos> -type f \| xargs rm`, `-exec truncate -s0 {} +`, `-exec shred -u {} \;`, `\| xargs truncate -s 0`, `ls <photos>/aerial \| xargs rm` refused; `find build ... \| xargs rm`, `find . -name "*.obj" \| xargs rm`, `find build -exec truncate` allowed in a clean worktree; F2 (listings rooted at main or main\docs) |
+| 8 `gci -r \| rm -fo`, `rm -rf .[a-z]*`, `git clean -xfd -e foo` | fixed (the `.[a-z]*` half with evidence, reason b for the plain-tree reading) | TG7 "item 8": `gci -r \| rm -fo` refused in the link tree and `gci build -r \| rm -fo` allowed in a clean worktree; abbreviated parameters (`-Rec -Pa docs -Fo`, `-Recurse -Fo -Lit docs`) refused / on `build` allowed; `git clean -xfd -e foo` refused in the link tree and in main, `--exclude foo` too, allowed with a named `build`, dry run allowed. `rm -rf .[a-z]*`: allowed when the ONLY link is `docs\reference` (the glob matches dotted names and never reaches `docs`; that was the audit's payload and it is correctly allowed), refused when a dotted folder holds a link (fixture `.hidden/ln`); allowed in a clean worktree |
+| 9 `Select-String -Path state\*`, `gci state \| ForEach-Object { Get-Content }` | fixed | TG7 state "item 9": `Select-String -Path <state>\* -Pattern .`, `-Pattern . -Path ...\ack_secret`, `gci state \| ForEach-Object { Get-Content $_.FullName }`, `gci state \| % { cat $_.FullName }` (spaced and glued braces) refused; `Select-String -Path state\*.log`, `sls deny state\gate.log`, a `-Filter *.log` listing into the foreach, names only, `Get-Content gate.log -Tail 5` allowed; lexer case: the foreach body is marked piped and fe |
+| 10 generic wrapper look-through | fixed | TG7 "item 10": `unbuffer`, `watch`, `parallel ::: docs`, `flock /tmp/l`, `taskset 1`, `strace`, `script -c "rm -rf docs"`, `foo --bar -- rm -rf docs`, `-- Remove-Item docs -Recurse -Force`, `-- git clean -fdx` refused in main; the same wrappers on `build` allowed in a clean worktree; `echo rm -rf docs`, `curl -d "rm -rf docs"`, `git commit -m "rm -rf docs"`, `cmake --build build -- -j4`, `npm run build -- --watch`, `grep -rn "rm -rf" tools` allowed; F1 and F4 (`{rm,-rf,docs}`, `cmake -E rm -rf docs`) |
+| 11 baseline JPEG scan: 32-byte zero-run rule | fixed | TB "item 11": 100 zero bytes at 24 offsets of a baseline scan all refused; exactly 32 zero bytes refused with the zero-run message; 31 not judged by the rule; the undamaged scan and an FF 00 stuffed scan validate. Real data: all 404 real photos valid with the rule (`--verify-only --full` on the real main). What the decoder cannot catch: first section |
+| 12 `--verify-only` uses the manifest | fixed | TB "item 12": after one mirror, verify-only trusts every file by size + mtime and reads none (`trusted == total, read == 0`); a touched file is read and validated (`read == 1`); `--full` reads and hashes all; `--full` and the mirror catch a same-size same-mtime content change. Real main: no manifest yet (first section) |
+| 13 test_gates and test_guards6 leave temp folders and a junction | fixed | `cleanupTmp` (tools/test_isolation.mjs): unlinks every junction/symlink first, never follows links, refuses anything that is not a direct child of the OS temp folder, then removes the folder. Used by test_gates, test_hooks (its plain `rmSync` had left `hooktest-*` behind), test_guards6 and test_guards7, each with a "temp folder removed" check; after the final runs no `gatetest-*`, `hooktest-*`, `guards6-*`, `guards7-*` folder remains (Suite and checks) |
+| 14 merge checklist: the first deny line of a subagent in gate.log shows `agent_id` | fixed | Merge checklist below, line 7 |
+| 15 git guard (main session, from the incident) | fixed | `tools/hooks/git_guard.mjs` + `git_guard_impl.mjs`, wired in `.claude/settings.json` on Bash\|PowerShell beside delete_guard (timeout 15, FAIL-OPEN logged). TG7 "git guard": G1 (any subagent, effective dir = main: `git add -A`, `--all`, `.`, `*`, `-- .`, `git commit -a/-am/--all`, `git stash -u/-a/--include-untracked`, also via `cd`, `Set-Location`, `git -C`, `bash -c`) refused, explicit paths and `git add -A <path>` allowed, a worktree allowed, `git -C <main>` from a worktree refused; G2 (HANDIN_DIR outside main): add, commit, merge, reset, rebase, cherry-pick, push refused in main, status/log/diff/worktree list and `git -C <worktree> ...` allowed; a NO-CONTRACT clerk and merger keep explicit-path commits, push and merge in main; process-level cases with real transcripts (builder read from its transcript, from the BRIEF-FILE it names, unreadable transcript, bad stdin FAIL-OPEN line) |
+| F1 `{rm,-rf,docs}` brace command | fixed | TG7 "F1" |
+| F2 xargs rm over a find of main or main\docs | fixed | TG7 "F2" |
+| F3 non-literal one-liner path | fixed | TG7 "F3" |
+| F4 `cmake -E rm -rf docs` | fixed | TG7 "F4" |
+| FAULTS 4 to 9 (transcript cost, git-dir of worktrees, wildcard fall-through, double judging of inline code, `-Path` as pattern flag, TEMP moved) | fixed | TG7 cases named in FAULTS Pass 1 |
+
+## Reference files opened
+
+Case: gates6 audit and its hand-in | Opened: docs/progress/gates6/AUDIT.md, docs/progress/gates6/STATUS.md, docs/progress/gates6/FAULTS.md, docs/progress/gates6/INDEX.md
+Case: round 9 evidence (earlier brief) | Opened: C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\AUDIT.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\STATUS.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-grade-r9\docs\progress\2026-10-11-structures-r9\FAULTS.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt-auditgate\docs\progress\2026-10-11-auditgate\AUDIT.md
+Case: guards and backup | Opened: tools/hooks/delete_guard_impl.mjs, tools/hooks/state_guard_impl.mjs, tools/hooks/shell_lex.mjs, tools/hooks/test_guards6.mjs, tools/backup_reference.mjs, tools/test_backup_reference.mjs, tools/gates_lib.mjs, .claude/settings.json
+
+## Own fault list and residual
+
+FAULTS.md: Pass 1 (9 faults found by attacking my own fixes), Pass 2 (real data: 404 real photos, the real main root, this session's own cwd reset), Pass 3 (what a builder or the owner would say), Residual (6 items, each with its reason; all are limits of a text-reading net or of a decoder, or the one reading shown not to be a fault).
+
+## Changes (file:function)
+
+- `tools/hooks/shell_lex.mjs`: `parseCommand` (glued `{` and `}` become block tokens with a matching-brace scan; `{}`, `{a,b}` and `${x}` stay words; a whole-word brace list as the first word is split; statements in the body of a piped ForEach-Object / Where-Object carry `piped` and `fe`), new `matchingBrace`.
+- `tools/hooks/delete_guard_impl.mjs`: `analyse` (one-liner literal judging via `ONE_ALL` / `ONE_LIT`; `del`/`erase` with a dash switch is Remove-Item; PowerShell parameter abbreviations `psp`, `psPathFlag`, `psNameFilterFlag`; filtered listing piped into Remove-Item judged as `find -name` (`listTargets` returns `filterNames`); `psForce`; `DELETEISH` without trailing whitespace, truncate and shred; xargs and `find -exec` with truncate, shred, dd; mass delete fed by a listing that reaches the photos from above, `listFilter`; `git clean` skips the value of `-e` / `--exclude`; `lookThrough` for unknown verbs, `cmake -E rm`).
+- `tools/hooks/state_guard_impl.mjs`: `judgePath` (safe wildcard reads), `judgeCommand` (cp/copy write only the destination; inline code reading vs writing; code argument judged once; Select-String `-Path` handling; foreach-body readers).
+- `tools/hooks/git_guard.mjs`, `git_guard_impl.mjs` (new): `analyse`, `ctxOf`, `main`; `tools/hooks/lib.mjs`: `agentTranscript`, `handinDirOfAgent`; `handin_gate_impl.mjs` now imports `agentTranscript` (its private copy was removed); `.claude/settings.json` (git_guard on Bash|PowerShell).
+- `tools/backup_reference.mjs`: `scanZeroRun` (32-byte rule for baseline and progressive scans), `nextMarker`, `validateTree` (`trustStat`, `stats`), `backup` (`full`, counters `trusted`, `read`), CLI `--full`.
+- `tools/gates_lib.mjs`: `needsIsConcrete` (object word + subject).
+- `tools/test_isolation.mjs`: `cleanupTmp`; suites updated: `tools/test_gates.mjs`, `tools/hooks/test_hooks.mjs`, `tools/hooks/test_guards6.mjs`, `tools/hooks/test_guards7.mjs` (new), `tools/test_backup_reference.mjs`.
+
+## Images that carry each claim
+
+No-visual round: no pictures. The claims rest on the test cases named in the table above and the runs quoted below.
+
+| Claim | Evidence |
+|---|---|
+| each of the 14 audit items and item 15 | the test case named in "Prior audit items" |
+| the guards work as real processes with the harness payload | TG7 "git guard as a process" and TG6 "the two hooks as processes" |
+
+## Suite and checks
+
+Run one at a time, twice (logs in the scratch folder, deleted at the end). No test wrote the live gate.log: each suite's last check "no line mentioning this run's temp folder reached the real gate.log" passes in every run.
+
+| Suite | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| `node tools/test_gates.mjs` | 514 passed, 0 failed | 514 / 0 | 514 / 0 |
+| `node tools/hooks/test_hooks.mjs` | 412 / 0 | 412 / 0 | 412 / 0 |
+| `node tools/hooks/test_guards6.mjs` | 32 / 0 | 32 / 0 | 32 / 0 |
+| `node tools/hooks/test_guards7.mjs` (new) | 28 / 0 | 28 / 0 | 28 / 0 |
+| `node tools/test_worktree_tools.mjs` | 27 / 0 | 27 / 0 | 27 / 0 |
+| `node tools/test_backup_reference.mjs` | 56 / 0 | 56 / 0 | 56 / 0 |
+
+Run 1 started while I was still changing the guards (the F4 `cmake -E` rule and its cases were added during it), so runs 2 and 3, which both ran on the final code, are the ones to trust; all three agree. Before this round the counts were 506, 412, 31, none, 27, 45 (gates6 hand-in). Each test_guards tables counts a table as one test (about 600 payloads in TG7 and TG6 together). All six suites remove their temp folder; after the final run `%TEMP%` held no `gatetest-*`, `hooktest-*`, `guards6-*`, `guards7-*`, `bkref-*` or `wttools-*` folder (the 99 old ones from earlier days and my 5 own early ones were removed with `cleanupTmp`, which unlinks junctions first). The real photo folder still holds its files (checked after the cleanup). The live gate.log holds the same 10 old lines that mention a test folder as before (11 Oct and 23 Oct before isolation): no suite wrote to it.
+
+`node tools/check_handin.mjs docs/progress/gates7 --no-visual`: HAND-IN CHECK PASSED (run before reporting).
+
+## Merge checklist (for the main session), in this order
+
+1. Merge `agent/gates7` (it carries gates2 to gates7; the hook stubs import `guard.mjs`, `lib.mjs`, `root.mjs`, `shell_lex.mjs` and each other, including the new `git_guard_impl.mjs`: they land together). The branch's `.claude/settings.json` adds `git_guard.mjs` on Bash|PowerShell; it is tracked, so a plain merge brings it. Sessions started before the merge keep the old wiring (no delete, state or git guard, 60 s finish hook) until restarted; the agents now running keep the hooks they started with.
+2. `node tools/ref_seed.mjs` once in the main checkout (until then reference provenance prints FAIL-OPEN and does not refuse).
+3. `node tools/backup_reference.mjs` once for real: it validates, mirrors and writes the manifest (the real main has none yet); after that `--verify-only` is quick (size + mtime against the manifest) and `--verify-only --full` re-hashes.
+4. When the worktrees are idle: `powershell -NoProfile -ExecutionPolicy Bypass -File tools\unlink_reference_junctions.ps1 -All` (`-WhatIfOnly` first). New worktrees have none.
+5. Put `ctest assertions >= N` in each engine task file's Gates section.
+6. Delete any leftover temp folders of earlier test runs (`%TEMP%\gatetest-*`, `hooktest-*`, `guards6-*`, `guards7-*`, `bkref-*`, `wttools-*`) with a script that unlinks junctions first, never a plain recursive delete.
+7. After the merge and a restart of the main session: the first deny line of a subagent in `.claude/state/gate.log` shows `agent_id` (for example `node -e "const l=require('fs').readFileSync('.claude/state/gate.log','utf8').split('\n').filter(x=>/\"decision\":\"deny\"/.test(x)&&/\"gate\":\"(delete_guard|state_guard|git_guard)\"/.test(x)).slice(-3);console.log(l.join('\n'))"` run in the main checkout, or a Grep of the log). If a subagent deny line has no `agent_id`, the guards treat that agent as the main session: tell the owner and stop relying on the state guard.
+8. Check that `git_guard` fires for a subagent: the first `git add -A` refused for a subagent in main appears in the log as `"gate":"git_guard","decision":"deny"` with its `agent_id`.
+
+## Proposed rule text (not applied: the contract and CLAUDE.md are the main session's)
+
+- Contract item 8, add: "Every tool call of an agent starts in the MAIN checkout (the cwd is reset between calls). Run git as `git -C <your worktree> ...` or `cd <your worktree> && git ...`; `git add -A`, `git add .`, `git commit -a` and `git stash -u` in the main checkout are refused for every agent (git_guard hook), and a builder with its own worktree may not run any git write command in the main checkout. A merger or docs clerk commits in main with explicit paths."
+- CLAUDE.md "Working rules": the same two sentences under "For every agent".
+
+## Next step
+
+Merge when the auditor accepts, in the order of the checklist above.

@@ -3,19 +3,28 @@
 // Usage: node tools/make_brief.mjs <task-file> --round <name> [--worktree <path>] [--branch <name>] [--no-visual]
 // Emits a line `HANDIN_DIR: <absolute path of the progress folder in the agent's worktree>` (read by the SubagentStop
 // hook tools/hooks/handin_gate.mjs and the launch gate tools/hooks/brief_gate.mjs) and, with --no-visual, `HANDIN: no-visual`.
+// With --audit <progress-folder> (round name optional) it prints the AUDITOR brief for that round instead (docs/templates/AUDIT_BRIEF.md):
+// marker line `AUDIT-OF: <abs folder>`, the task's owner words and cases/reference files, NOT the builder's fault list; the launch gate
+// and the finish gate (tools/hooks/audit_lib.mjs) then require AUDIT.md by an agent that is not the builder.
 // Task file (markdown): first "# " line is the task; sections "## Owner's words", "## Cases",
 // "## Faults", "## Launched", "## Waiting". Refuses to print if a mandatory section is empty.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// gates_lib loads dynamically: if it is broken the brief is still printed (old layout, no GATES-VERSION line) and a FAIL-OPEN line is logged.
+let GL = null;
+try { GL = await import('./gates_lib.mjs'); } catch (e) {
+  console.error('FAIL-OPEN: gates_lib.mjs could not be loaded (' + (e && e.message) + '); the brief is printed WITHOUT the measured gates');
+  try { const lib = await import('./hooks/lib.mjs'); lib.log({ gate: 'make_brief', decision: 'allow', reason: 'FAIL-OPEN: gates_lib could not be loaded', error: String((e && e.message) || e).slice(0, 300) }); } catch { /* the console line above is all that is left */ }
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const opt = (n, d = '') => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
-const valueOpts = ['--round', '--worktree', '--branch'];
+const valueOpts = ['--round', '--worktree', '--branch', '--audit', '--override'];
 const taskFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && valueOpts.includes(args[i - 1])));
-if (!taskFile || !opt('round')) {
-  console.error('usage: node tools/make_brief.mjs <task-file> --round <name> [--worktree <path>] [--branch <name>] [--no-visual]');
+if (!taskFile || (!opt('round') && !opt('audit'))) {
+  console.error('usage: node tools/make_brief.mjs <task-file> (--round <name> | --audit <progress-folder>) [--worktree <path>] [--branch <name>] [--no-visual]');
   process.exit(2);
 }
 const text = fs.readFileSync(taskFile, 'utf8').replace(/\r\n/g, '\n');
@@ -31,21 +40,101 @@ for (const line of text.split('\n')) {
 }
 const get = (k) => (sections[k] ?? '').trim();
 const missing = [];
+const auditMode = args.includes('--audit');
 if (!task) missing.push('first line "# <task>"');
 if (!/["“]/.test(get("owner's words"))) missing.push('"## Owner\'s words" with the verbatim quote in quotation marks');
 if (get('cases').length < 5) missing.push('"## Cases" (case | absolute photo paths, at least 3 each)');
-if (!get('faults')) missing.push('"## Faults" (starting list; write "none known" if none)');
-if (!get('launched')) missing.push('"## Launched" (independent items launched now)');
-if (!get('waiting')) missing.push('"## Waiting" (items not launched and why; write "none" if none)');
-if (/time-box|whole task/i.test(text)) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
+if (!auditMode && !get('faults')) missing.push('"## Faults" (starting list; write "none known" if none)');
+if (!auditMode && !get('launched')) missing.push('"## Launched" (independent items launched now)');
+if (!auditMode && !get('waiting')) missing.push('"## Waiting" (items not launched and why; write "none" if none)');
+if (/time-box|whole task/i.test(text.replace(get("owner's words"), ''))) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
+// ---- gates v2 (tools/gates_lib.mjs). Builder briefs only; `GATES-VERSION: 3` (2 = the earlier layout, kept for agents already running) switches the measured checks on in check_handin.
+const gateLines = [];
+let overrideLog = null;
+if (!auditMode && GL) {
+  const { parseGateLine, parseRounds, methodChangeProblem, FAILURE_METRICS } = GL;
+  const noVisualFlag = args.includes('--no-visual');
+  // Engine-only briefs without HANDIN: no-visual made two builders write placeholder COMPARE tables to get through.
+  if (!noVisualFlag && /\bno[- ]renders?\b|\bno-visual\b|engine[- ]only|no[- ]pictures?\b|\bheadless\b|no[- ]screenshots?\b|\bno (?:views?|images?|visuals?)\b|nothing (?:is )?rendered/i.test(get('cases'))) {
+    missing.push('"## Cases" says there are no renders / pictures / screenshots (engine-only, headless) but the brief is not built with --no-visual (without it the hand-in demands COMPARE.md with composites, and builders fabricate placeholders)');
+  }
+  // Scope (G): at most 3 cases per round unless the task file says why more. Cases are counted by what the section lists: "Case|Scenario|View|Item|Test N:" lines,
+  // "s1:" / "1." / "2)" / "A)" lines, and an explicit "Cases: N" / "N scenarios" statement; the largest count counts. Lines that start with a drive path are file lists.
+  const caseLine = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:(?:Case|Scenario|View|Item|Test)\s*[\w.-]*\s*[:.)|-]|[A-Za-z]{1,2}\d+\s*[:.)|-]|\d+\s*[.)]|[A-Z]\s*\))/i;
+  const caseLines = get('cases').split('\n').filter((l) => caseLine.test(l) && !/^\s*(?:[-*]\s*)?[A-Za-z]:[\/]/.test(l));
+  const stated = Math.max(0, ...[...get('cases').matchAll(/\bcases?\s*[:=]\s*(\d+)|\b(\d+)\s+(?:cases|scenarios|views)\b/gi)].map((m) => Number(m[1] || m[2])));
+  const nCases = Math.max(caseLines.length, stated);
+  if (nCases > 3 && get('scope').length < 20) missing.push('"## Cases" names ' + nCases + ' cases; a round takes at most 3 unless the task file has a "## Scope" section (20+ characters) saying why more. One round with eight scenarios is how earthworks round 9 left several untouched');
+  // Gates
+  for (const raw of get('gates').split('\n')) {
+    const g = parseGateLine(raw);
+    if (!g) continue;
+    if (g.kind === 'bad') {
+      // prose lines in a Gates section are allowed (e.g. "No new test waiver"); only lines that look like gate lines are checked
+      if (/(>=|<=|==|^allow_waiver|^picture_)/i.test(g.raw)) missing.push('"## Gates": ' + g.raw + ' -> ' + g.why);
+      continue;
+    }
+    if (g.kind === 'metric' && FAILURE_METRICS.includes(g.metric) && g.op === '==') { missing.push('"## Gates": ' + g.raw + ' -> "==" on a failure count would refuse an improvement (a fix that brings it to 0); write "' + g.metric + ' <= ' + g.floor + '"'); continue; }
+    gateLines.push(g.raw);
+  }
+  // A ctest failed-assertions gate is paired with failed_tests: a crashed test shows 0 failed assertions. Failed tests cannot exceed failed assertions
+  // unless a test crashed, so the assertion floor is a valid upper bound for the pair.
+  const fa = gateLines.map(parseGateLine).find((g) => g && g.kind === 'metric' && g.metric === 'ctest failed_assertions');
+  if (fa && !gateLines.some((l) => /^ctest failed_tests\b/i.test(l))) gateLines.push('ctest failed_tests <= ' + fa.floor);
+  // Method-change rule (E)
+  const prev = text.match(/^Previous round:[ \t]*(\S.*)$/mi);
+  const rounds = parseRounds(get('rounds'));
+  if (prev && !rounds.length) missing.push('the task file names a previous round ("' + prev[1].slice(0, 60) + '") but has no "## Rounds" section with its baseline numbers, one line per round, oldest first: "round8: scene_check=20, ctest_failed_assertions=2, bare_steps=3 (lower)"');
+  for (const r of rounds) if (r.undirected && r.undirected.length) missing.push('"## Rounds": ' + r.round + ' has metric(s) with no stated direction: ' + r.undirected.join(', ') + ' (write e.g. "bare_steps=3 (lower)" or "(higher)"; the direction is never guessed from the name)');
+  if (rounds.length && rounds.some((r) => !Object.keys(r.values).length)) missing.push('"## Rounds": a line has no numbers (' + rounds.find((r) => !Object.keys(r.values).length).raw.slice(0, 60) + ')');
+  const mc = methodChangeProblem(rounds);
+  const ov = opt('override');
+  if (mc && !(ov && ov.length >= 20)) missing.push('METHOD REVIEW FIRST: ' + mc);
+  else if (mc) { console.error('make_brief: method-change rule overridden: ' + ov); overrideLog = ov; }
+}
 if (missing.length) {
   console.error('REFUSED. Fix the task file:\n - ' + missing.join('\n - '));
   process.exit(1);
 }
+if (auditMode) {
+  const folder = path.resolve(opt('audit'));
+  const round = opt('round') || path.basename(folder);
+  // reference files = path-like tokens with a file extension in the Cases section (counted so the auditor can write "N of M")
+  const refRe = /[A-Za-z]:[\\/][^\s|,;()"'<>]+\.\w{2,5}|[\w./\\-]+\.(?:jpe?g|png|webp|gif|md|mjs|js|json|cpp|h|hpp|txt|pdf|uasset|py)\b/gi;
+  const refs = [...new Set(get('cases').match(refRe) || [])];
+  const tplA = fs.readFileSync(path.join(root, 'docs/templates/AUDIT_BRIEF.md'), 'utf8');
+  const fillA = {
+    TASK: task, ROUND: round, PROGRESS: folder, OWNER_WORDS: get("owner's words"), CASES: get('cases'),
+    REF_COUNT: String(refs.length),
+    REFLIST: refs.length ? 'Files named in the cases (' + refs.length + '):\n' + refs.map((r) => '- ' + r).join('\n')
+      : '(no file paths could be read from the cases text: count the files it names yourself and say M in AUDIT.md)',
+    CONTRACT: fs.readFileSync(path.join(root, 'docs/AGENT_CONTRACT.md'), 'utf8').trim(),
+  };
+  process.stdout.write(tplA.replace(/\{\{(\w+)\}\}/g, (_, k) => fillA[k] ?? ''));
+  let canaryA = 0;
+  try {
+    const nl = await import('./hooks/notice_lib.mjs');
+    const lib = await import('./hooks/lib.mjs');
+    if (nl.isMainCheckout(root)) {
+      const rep2 = nl.canaryReport(lib.STATE_DIR);
+      if (rep2.text) console.error('\n' + rep2.text + '\n');
+      if (rep2.problems.length) canaryA = 3;
+      lib.log({ gate: 'make_brief', round: 'audit:' + round, audit_of: folder });
+    }
+  } catch (e) { console.error('make_brief: canary check could not run (' + (e && e.message) + ')'); }
+  process.exit(canaryA);
+}
 const round = opt('round');
 const worktree = opt('worktree', path.join(path.dirname(root), 'roadworld-wt', round)); // matches new_agent_worktree.ps1 (new worktrees live under ..\roadworld-wt\<name>)
 const handinDir = path.join(path.resolve(worktree), 'docs', 'progress', round);
-const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '');
+const priorAudit = opt('prior-audit') ? path.resolve(opt('prior-audit')) : '';   // send-back round: the previous AUDIT.md; the hand-in gate then demands the "Prior audit items" table
+// "## Items": the work items the brief lists, one per line ("A. text", "1) text", "- s3: text"). Each becomes an `ITEM: <id> | <text>` line; the hand-in gate demands a row per item
+// in STATUS.md "## Items" (done with proof, or a valid BLOCKED line), so an item left out is caught without reading any wording.
+// With no "## Items" section the numbered or lettered lines of "## Faults" are the items (every listed fault is fixed or BLOCKED, contract item 17); a brief with neither has no ITEM lines.
+const itemSource = get('items') || get('faults');
+if (!get('items') && /^\s*(?:[-*]\s*)?\**(?:\d{1,3}|[A-Za-z]|[A-Za-z]{1,2}\d{1,3})\**\s*[.):]\s+\S/m.test(get('faults'))) console.error('make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer');
+const itemLines = itemSource.split('\n').map((l) => l.match(/^\s*(?:[-*]\s*)?\**(\d{1,3}|[A-Za-z]|[A-Za-z]{1,2}\d{1,3})\**\s*[.):]\s+(\S.*)$/)).filter(Boolean).map((m) => 'ITEM: ' + m[1] + ' | ' + m[2].replace(/\s+/g, ' ').slice(0, 200));
+const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + (GL ? '\nGATES-VERSION: 3' + gateLines.map((g) => '\nGATE: ' + g).join('') + itemLines.map((l) => '\n' + l).join('') : '') + (priorAudit ? '\nPRIOR-AUDIT: ' + priorAudit : '');
 const fill = {
   TASK: task,
   ROUND: opt('round'),
@@ -73,7 +162,7 @@ try {
     const rep = nl.canaryReport(lib.STATE_DIR);
     if (rep.text) console.error('\n' + rep.text + '\n');
     if (rep.problems.length) canaryExit = 3;
-    lib.log({ gate: 'make_brief', round: opt('round'), handin_dir: handinDir });
+    lib.log({ gate: 'make_brief', round: opt('round'), handin_dir: handinDir, ...(overrideLog ? { method_override: overrideLog } : {}) });
   }
 } catch (e) { console.error('make_brief: canary check could not run (' + (e && e.message) + ')'); }
 process.exitCode = canaryExit;

@@ -23,7 +23,56 @@
             "args": [
               "${CLAUDE_PROJECT_DIR}/tools/hooks/handin_gate.mjs"
             ],
-            "timeout": 60
+            "timeout": 300
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/tools/hooks/delete_guard.mjs"
+            ],
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/tools/hooks/git_guard.mjs"
+            ],
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Write|Edit|NotebookEdit|Grep|Glob|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/tools/hooks/state_guard.mjs"
+            ],
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell|WebFetch|Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/tools/hooks/ref_log.mjs"
+            ],
+            "timeout": 30
           }
         ]
       }
@@ -65,7 +114,7 @@
             "args": [
               "${CLAUDE_PROJECT_DIR}/tools/hooks/handin_gate.mjs"
             ],
-            "timeout": 60
+            "timeout": 300
           }
         ]
       }

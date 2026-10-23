@@ -1,12 +1,14 @@
 // Shared helpers for the agent-rule hooks. See brief_gate.mjs for the failure policy (FAIL OPEN).
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { resolveMainRoot } from './root.mjs';
 
-// Main checkout = two levels above tools/hooks. Hooks are wired through ${CLAUDE_PROJECT_DIR}, so this is the
-// main checkout once merged. State and the contract are always read from here, never from the agent's cwd.
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-export const STATE_DIR = path.join(ROOT, '.claude', 'state');
+// Main checkout, resolved explicitly (root.mjs: through git's worktree link files, never just "where this file sits"). State and the contract are read and written ONLY here.
+export const ROOT = resolveMainRoot(path.dirname(fileURLToPath(import.meta.url)));
+// CP_GATE_STATE_DIR redirects ALL state (log, records, secret) for tests: a test run must never write into the real gate.log of the main checkout (23 Oct 2026: it did, and raised gate notices).
+export const STATE_DIR = process.env.CP_GATE_STATE_DIR ? path.resolve(process.env.CP_GATE_STATE_DIR) : path.join(ROOT, '.claude', 'state');
 export const EXEMPT_TYPES = ['Explore', 'Plan', 'claude-code-guide', 'statusline-setup'];
 export const MARKER = 'AGENT-CONTRACT-MARKER: v1';
 
@@ -47,7 +49,9 @@ export function checkBrief(text) {
   if (!ow || owBody.length < 10 || /\{\{/.test(owBody) || !/["“”]/.test(owBody)) {
     missing.push('a non-empty "## Owner\'s words" section containing the owner\'s verbatim quote in quotation marks');
   }
-  if (/time-box|whole task/i.test(t)) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo, not an item list');
+  // the owner's verbatim words are exempt (an owner quote may mention a time-box or a whole task)
+  const tNoOwner = ow ? t.replace(ow[0], '') : t;
+  if (/time-box|whole task/i.test(tNoOwner)) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo, not an item list');
   return { missing, handinDir, noVisual: /^HANDIN:[ \t]*no-visual[ \t]*$/m.test(t) };
 }
 
@@ -73,4 +77,53 @@ export function firstUserText(transcriptPath) {
     if (Array.isArray(c)) return c.map((b) => (typeof b === 'string' ? b : b && b.text) || '').join('\n');
   }
   return '';
+}
+
+// ---- secret + signed records: TAMPER EVIDENCE ONLY. Builder and audit records are HMAC-signed with .claude/state/ack_secret so that a hand-edited record does not verify.
+// The trust in a record comes from WHO writes it (only the hooks, with the harness's agent_id; see audit_lib.mjs) and from tools/hooks/state_guard.mjs keeping subagents away from
+// the state folder and the secret. LIMIT: an agent that bypasses the guard (a script file that touches the state) could sign; that is not claimed to be impossible.
+export function readSecret(stateDir = STATE_DIR) { try { return fs.readFileSync(path.join(stateDir, 'ack_secret'), 'utf8').trim() || null; } catch { return null; } }
+export function ensureSecret(stateDir = STATE_DIR) {
+  const have = readSecret(stateDir);
+  if (have) return have;
+  const s = crypto.randomBytes(12).toString('hex');
+  fs.mkdirSync(stateDir, { recursive: true });
+  // exclusive create: two hook processes starting together must end up with ONE secret (the loser reads the winner's), or one of their signed records would not verify
+  try { fs.writeFileSync(path.join(stateDir, 'ack_secret'), s, { flag: 'wx' }); } catch (e) { const other = readSecret(stateDir); if (other) return other; throw e; }
+  return s;
+}
+const canon = (o) => JSON.stringify(Object.keys(o).filter((k) => k !== 'sig').sort().map((k) => [k, o[k]]));
+export function signRecord(rec, stateDir = STATE_DIR) { const sec = ensureSecret(stateDir); return { ...rec, sig: crypto.createHmac('sha256', sec).update(canon(rec)).digest('hex') }; }
+export function verifyRecord(rec, stateDir = STATE_DIR) {
+  const sec = readSecret(stateDir);
+  if (!rec || !sec || typeof rec.sig !== 'string') return false;
+  const want = crypto.createHmac('sha256', sec).update(canon(rec)).digest('hex');
+  return want.length === rec.sig.length && crypto.timingSafeEqual(Buffer.from(want), Buffer.from(rec.sig));
+}
+
+// Fallback logger for guard.mjs: uses nothing but fs/path so a broken library cannot stop the FAIL-OPEN line being written.
+
+// The transcript file of the subagent that raised a hook event (SubagentStop carries it; a PreToolUse event carries only the main transcript_path: the subagent file sits beside it).
+export function agentTranscript(input) {
+  if (input.agent_transcript_path && fs.existsSync(input.agent_transcript_path)) return input.agent_transcript_path;
+  if (input.transcript_path && input.agent_id) {
+    const tp = input.transcript_path;
+    const guess = path.join(tp.replace(/\.jsonl$/, ''), 'subagents', `agent-${input.agent_id}.jsonl`);
+    if (fs.existsSync(guess)) return guess;
+  }
+  return null;
+}
+
+// The HANDIN_DIR a subagent was launched with (its brief, or the BRIEF-FILE the brief names), or null when it carried none or cannot be read.
+export function handinDirOfAgent(input) {
+  try {
+    const tp = agentTranscript(input);
+    if (!tp) return null;
+    const text = firstUserText(tp);
+    const own = checkBrief(text).handinDir;
+    if (own) return own;
+    const bf = briefFileOf(text);
+    if (bf) return checkBrief(fs.readFileSync(bf, 'utf8')).handinDir || null;
+  } catch { /* unreadable: no HANDIN_DIR known */ }
+  return null;
 }
