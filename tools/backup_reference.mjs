@@ -9,6 +9,7 @@
 //   - if even one picture fails, NOTHING is mirrored (the previous backup stays as it was) and the bad files are listed;
 //   - if docs/reference holds more than 5 % fewer files than the last backup recorded, NOTHING is mirrored (a delete is in progress or has happened) unless the main
 //     session passes --accept-loss "<reason of 20+ characters>"; the same limit applies to files that would be removed from the backup.
+// The top-level folder _damaged (quarantine of files known to be bad) is skipped: not validated, not mirrored.
 // The mirror copies new and changed files (size or mtime) and removes from the backup only files that no longer exist in main (within the 5 % limit). It never uses a
 // recursive delete: single files are unlinked, emptied folders removed with a non-recursive rmdir.
 // Usage: node tools/backup_reference.mjs [--main <dir>] [--backup <dir>] [--verify-only] [--dry-run] [--accept-loss "<reason>"]
@@ -104,7 +105,7 @@ export function walkFiles(root) {
     for (const e of ents) {
       const f = path.join(d, e.name), r = rel ? rel + '/' + e.name : e.name;
       if (e.isSymbolicLink()) continue;                  // a link is never followed
-      if (e.isDirectory()) walk(f, r); else if (e.isFile()) out.push({ rel: r, abs: f });
+      if (e.isDirectory()) { if (!rel && /^_damaged/i.test(e.name)) continue; walk(f, r); } else if (e.isFile()) out.push({ rel: r, abs: f });   // _damaged: the quarantine of known-bad files, neither validated nor mirrored
     }
   };
   walk(root, '');

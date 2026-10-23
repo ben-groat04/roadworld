@@ -94,6 +94,12 @@ console.log('mirror');
   const { main: m3 } = fresh('nested', 3);
   const r3 = backup({ main: m3, backupDir: path.join(m3, 'docs', 'reference', 'bk') }); t('a backup folder inside docs/reference: refused', !r3.ok && /separate folders/.test(r3.refused.join()));
 }
+{
+  const { main, bk } = fresh('quarantine', 4);
+  put(main, '_damaged/broken.png', Buffer.alloc(100)); put(main, '_damaged/sub/also.jpg', Buffer.from('x'));
+  const r = backup({ main, backupDir: bk });
+  t('the top-level _damaged quarantine is neither validated nor mirrored (the real docs/reference holds 284 known-bad files there)', r.ok && r.total === 5 && !fs.existsSync(path.join(bk, '_damaged')), JSON.stringify(r));
+}
 console.log('command line');
 {
   const { main, bk } = fresh('cli', 5);
