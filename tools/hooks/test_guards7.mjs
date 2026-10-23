@@ -100,6 +100,7 @@ table('item 7 xargs rm and find -exec truncate over the photos', [
   ['find build -exec truncate -s0 {} +', 'wt', 0, 'item 7 find build -exec truncate'],
 ]);
 table('own fault list, pass 1 (found while attacking the fixes above)', [
+  ['cmake -E rm -rf docs', 'main', 2, 'F4 cmake -E rm -rf docs'], ['cmake -E remove_directory docs', 'main', 2, 'F4 cmake -E remove_directory docs'], ['cmake -E rm -rf build', 'wt', 0, 'F4 cmake -E rm -rf build in a clean worktree'],
   ['{rm,-rf,docs}', 'main', 2, 'F1 a brace list as the whole command line is brace-expanded by bash into rm -rf docs'], ['{rm,-rf,build}', 'wt', 0, 'F1 the same on build in a clean worktree'], ['echo {a,b}', 'main', 0, 'F1 echo {a,b} is text'],
   [`find ${M}/docs -type f | xargs rm`, 'elsewhere', 2, 'F2 xargs rm over a find of the main docs folder (the photos live below it)'], [`find ${M} -name "*.jpg" | xargs rm`, 'elsewhere', 2, 'F2 find main -name *.jpg | xargs rm'], [`find ${M} -name "*.log" | xargs rm`, 'elsewhere', 0, 'F2 a name filter that cannot match a picture'],
   ['find . -type f | xargs rm', 'main', 2, 'F2 find . -type f | xargs rm in main'], ['find . -type f | xargs rm', 'wt', 0, 'F2 the same in a clean worktree'],

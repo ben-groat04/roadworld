@@ -291,10 +291,16 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
   // may still carry a delete: if an unquoted word of it IS a delete or move verb, or the words after a "--" are a command, the rest is judged as a command of its own; for the few
   // wrappers that take a command as ONE quoted string (script -c, watch, parallel, su -c, ssh) that string is judged too. Text verbs (echo, grep, curl, npm ...) are left alone.
   const LOOK_VERBS = new Set(['rm', 'rmdir', 'rd', 'del', 'erase', 'remove-item', 'ri', 'unlink', 'mv', 'move-item', 'rename-item']);
-  const TEXT_VERBS = new Set(['echo', 'printf', 'write-host', 'write-output', 'write-error', 'write-warning', 'cat', 'type', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'findstr', 'select-string', 'sls', 'sed', 'awk', 'gawk', 'less', 'more', 'head', 'tail', 'wc', 'ls', 'dir', 'gci', 'get-childitem', 'get-content', 'gc', 'curl', 'wget', 'gh', 'npm', 'npx', 'yarn', 'pnpm', 'pip', 'pip3', 'jq', 'tee', 'test', '[', '[[', 'mkdir', 'touch', 'stat', 'file', 'du', 'which', 'where', 'man', 'help', 'cmake', 'ninja', 'make', 'msbuild', 'dotnet', 'cargo', 'go', 'tsc', 'code', 'set', 'export', 'true', 'false', 'sleep', 'start-sleep', 'date', 'ctest', 'clang', 'g++', 'gcc', 'cl', 'link', 'sort', 'uniq', 'cut', 'tr', 'diff', 'comm', 'basename', 'dirname', 'realpath', 'readlink', 'id', 'whoami', 'hostname', 'uname', 'ps', 'tasklist', 'git-lfs', 'tar', 'zip', 'unzip', '7z']);
+  const TEXT_VERBS = new Set(['echo', 'printf', 'write-host', 'write-output', 'write-error', 'write-warning', 'cat', 'type', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'findstr', 'select-string', 'sls', 'sed', 'awk', 'gawk', 'less', 'more', 'head', 'tail', 'wc', 'ls', 'dir', 'gci', 'get-childitem', 'get-content', 'gc', 'curl', 'wget', 'gh', 'npm', 'npx', 'yarn', 'pnpm', 'pip', 'pip3', 'jq', 'tee', 'test', '[', '[[', 'mkdir', 'touch', 'stat', 'file', 'du', 'which', 'where', 'man', 'help', 'ninja', 'make', 'msbuild', 'dotnet', 'cargo', 'go', 'tsc', 'code', 'set', 'export', 'true', 'false', 'sleep', 'start-sleep', 'date', 'ctest', 'clang', 'g++', 'gcc', 'cl', 'link', 'sort', 'uniq', 'cut', 'tr', 'diff', 'comm', 'basename', 'dirname', 'realpath', 'readlink', 'id', 'whoami', 'hostname', 'uname', 'ps', 'tasklist', 'git-lfs', 'tar', 'zip', 'unzip', '7z']);
   const QUOTED_CMD_WRAPPERS = new Set(['script', 'watch', 'parallel', 'su', 'runuser', 'ssh', 'sg', 'pkexec', 'sudoedit', 'flock', 'unbuffer', 'chroot', 'proot', 'dbus-launch', 'xvfb-run', 'wsl']);
   const requote = (w) => (w.v === '' || /[\s"'*?\[\]{}()&|;<>$`]/.test(w.v) ? (w.v.includes('"') ? "'" + w.v + "'" : '"' + w.v + '"') : w.v);
   const lookThrough = (words, verb) => {
+    // cmake -E rm / remove / remove_directory is a delete (the other cmake calls are builds)
+    if (verb === 'cmake') {
+      const e = words.findIndex((w) => w.v === '-E');
+      if (e >= 0 && words[e + 1] && /^(?:rm|remove|remove_directory)$/.test(words[e + 1].v)) { reasons.push(...sub(['rm', '-rf', ...words.slice(e + 2).filter((w) => !/^-/.test(w.v)).map(requote)].join(' '), cur)); }
+      return;
+    }
     if (TEXT_VERBS.has(verb)) return;
     const vi = verbOf(words).index;
     for (let i = vi + 1; i < words.length; i++) {
