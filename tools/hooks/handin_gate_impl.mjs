@@ -229,11 +229,11 @@ export async function main() {
   const failures = ((checkpointNote ? checkpointNote + String.fromCharCode(10) : '') + (r.stderr || r.stdout || '')).trim();
   return blockOrRelease({ isPre, base, id, dir: handinDir, failures, kind: 'handin',
     intro: phased ? `PHASE GATE (${phase}): you may not finish yet` : 'HAND-IN GATE: you may not finish yet',
-    fix: `run \`node tools/check_handin.mjs ${handinDir}${phased ? ' --phase ' + phase : noVisual ? ' --no-visual' : ''}\` until it passes`, failedFile: 'HANDIN_FAILED.txt' });
+    fix: `run \`node tools/check_handin.mjs ${handinDir}${phased ? ' --phase ' + phase : noVisual ? ' --no-visual' : ''}\` until it passes`, failedFile: 'HANDIN_FAILED.txt', phased });
 }
 
 // Shared by the builder (hand-in check) and auditor (AUDIT.md) branches: refuse up to MAX_BLOCKS times per agent_id, then release.
-function blockOrRelease({ isPre, base, id, dir, failures, kind, intro, fix, failedFile }) {
+function blockOrRelease({ isPre, base, id, dir, failures, kind, intro, fix, failedFile, phased = false }) {
   const cf = path.join(STATE_DIR, 'handin', id + '.json');
   let blocks = 0;
   try { blocks = parseJson(fs.readFileSync(cf, 'utf8')).blocks || 0; } catch { /* first time */ }
@@ -246,6 +246,13 @@ function blockOrRelease({ isPre, base, id, dir, failures, kind, intro, fix, fail
         `The ${audit ? 'AUDIT.md' : kind === 'firstlook' ? 'FIRSTLOOK_OPUS.md' : 'hand-in'} check still failed after ${MAX_BLOCKS} refusals; the agent was allowed to stop (${new Date().toISOString()}).\n\n${failures}\n`);
       wrote = true;
     } catch { /* logged below */ }
+    // gates13 (decision 6): a released BUILDER (full hand-in, not a phase) still gets a builder record, flagged released, so the auditor's finish gate can compare ids
+    if (kind === 'handin' && !phased) {
+      try {
+        const { rec } = recordBuilder(dir, id, base.agent_type, STATE_DIR, Date.now(), { released: true });
+        log({ gate: 'audit', decision: 'owed', reason: 'audit owed: hand-in RELEASED after ' + MAX_BLOCKS + ' refusals (check still failing); builder recorded as released', handin_dir: dir, builder_id: id, builder_type: rec.agent_type, released: true });
+      } catch (e) { log({ gate: 'audit', decision: 'skip', reason: 'FAIL-OPEN: could not record the released builder', error: String((e && e.message) || e).slice(0, 300) }); }
+    }
     log({ gate: kind, ...base, decision: 'allow',
       reason: audit ? `audit still failing after ${MAX_BLOCKS} blocks; stop allowed (the audit stays owed)` : `check still failing after ${MAX_BLOCKS} blocks; stop allowed`,
       [audit ? 'audit_failed_written' : 'handin_failed_written']: wrote, handin_dir: dir, failures });
