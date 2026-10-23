@@ -828,6 +828,55 @@ console.log('the gates\' own tests are watched by test NAME, not by line analysi
   t('and not by an unrelated allow line', kk(dd('tools/hooks/test_hooks.mjs', ["t('ack without text: refused', c);"], []), ['deleted_gate_test:test_gates.mjs']).length === 1);
 }
 
+console.log('gates v3: BLOCKED carries see: <log file>; the quoted error must be found in it; needs: must name a thing (gates4 audit item 10)');
+{
+  // expected values: the main session decision of 23 Oct 2026 (a quoted error is found in the log the line points to, or the line is refused; needs: names a thing; 3-line cap stays) and the
+  // gates4 AUDIT.md fault 10 repro (`C:/x/y.cpp(3): error C2065: foo undeclared identifier` accepted with `needs: nothing`)
+  const ld = path.join(tmp, 'v3blk'); fs.mkdirSync(ld, { recursive: true });
+  const ctx3 = { version: 3, bases: [ld] }, ctx2 = { version: 2, bases: [ld] };
+  w(path.join(ld, 'build.log'), 'cmake --build build\nC:/x/y.cpp(3): error C2065: foo undeclared identifier\nLINK : fatal error LNK1181: cannot open input file x.lib\nbuild failed with 2 errors\n');
+  w(path.join(ld, 'unrelated.log'), 'all good\nnothing to see\nthird line of a different run\nfourth line of that run\n');
+  w(path.join(ld, 'echo.log'), 'C:/x/y.cpp(3): error C2065: foo undeclared identifier\n');
+  const line = (blockedBy, see = 'build.log', needs = 'the header `x.h` with the declaration of foo from the owner') => `BLOCKED: wall curl at the road ends | tried: \`node tools/scene.mjs --check\` after a ramp and a fade | blocked by: ${blockedBy}${see ? ' | see: ' + see : ''} | needs: ${needs}`;
+  const q = '`C:/x/y.cpp(3): error C2065: foo undeclared identifier`';
+  const p3 = (l) => GL.parseBlocked(l, ctx3)[0];
+  t('v3: the quoted error is in the log named by see: and needs: names a thing: accepted', p3(line(q)).ok, JSON.stringify(p3(line(q)).why));
+  t('v3: no see: field: refused, the message shows the field', !p3(line(q, '')).ok && /"see:" is missing/.test(p3(line(q, '')).why.join()));
+  t('v3: see: names a file that does not exist: refused', !p3(line(q, 'nosuch.log')).ok && /not an existing file/.test(p3(line(q, 'nosuch.log')).why.join()));
+  t('v3: the audit\'s made-up error ("foo undeclared identifier") with a real but UNRELATED log: refused, "not in unrelated.log"', !p3(line(q, 'unrelated.log')).ok && /is not in unrelated\.log/.test(p3(line(q, 'unrelated.log')).why.join()));
+  t('v3: a plausible quote that is not in the log at all ("error C9999 no such thing") : refused', !p3(line('`src/a.cpp(9): error C9999: no such thing happened`')).ok);
+  t('v3: the log holds only the quote (1 line, written to match): refused', !p3(line(q, 'echo.log')).ok && /fewer than 3/.test(p3(line(q, 'echo.log')).why.join()));
+  w(path.join(ld, 'half.log'), 'a\nb\nC:/x/y.cpp(3): error C2065: foo undeclared identifier\n'); t('v3: the quote is more than half of the file: refused as written to match', !p3(line(q, 'half.log')).ok && /more than half/.test(p3(line(q, 'half.log')).why.join()));
+  t('v3: whitespace and case in the quote do not matter (a log wraps lines)', p3(line('`c:/x/y.cpp(3):   ERROR C2065: foo undeclared  identifier`')).ok);
+  t('v3: two quoted errors, one of them not in the log: refused', !p3(line(q + ' and `LNK9999: not a real thing here`')).ok);
+  t('v3: an error code with a path and no quote (ENOENT): the code must be in the log', !p3(line('ENOENT opening data/regions/uk/x.json (the file is not there)')).ok && p3(line('error C2065 in C:/x/y.cpp')).ok === true);
+  for (const n of ['nothing', 'a decision', 'help', 'time', 'more time and tokens', 'a fix', 'input']) t(`v3: needs: "${n}" does not name a thing: refused`, !p3(line(q, 'build.log', n)).ok && /needs/.test(p3(line(q, 'build.log', n)).why.join()), n);
+  t('v3: needs: a command, a file, a named decision with its subject: accepted', p3(line(q, 'build.log', '`x.h`')).ok && p3(line(q, 'build.log', 'a decision on the crossing level from the owner')).ok);
+  t('v2 (agents running with the earlier layout): the same line WITHOUT see: and with "needs: a decision" still passes', GL.parseBlocked(line(q, '', 'a decision on the crossing level'), ctx2)[0].ok && GL.parseBlocked(line(q, ''))[0].ok);
+  const four = Array.from({ length: 4 }, (_, i) => line(q).replace('wall curl', 'item ' + i)).join('\n');
+  t('v3: the cap stays: 4 lines sharing one cause are refused', GL.parseBlocked(four, ctx3).every((b) => !b.ok && /different concrete cause/i.test(b.why.join())));
+  // end to end through check_handin with the brief's version
+  const st = (l) => statusBase('Nothing else skipped.\n' + l);
+  w(path.join(folder, 'STATUS.md'), st(line(q, ''))); w(path.join(folder, 'FAULTS.md'), faults3);
+  let c3 = check(['--gates-version', '3']); t('check_handin --gates-version 3: a BLOCKED line without see: is refused', c3.status === 1 && /"see:" is missing/.test(c3.stderr), c3.stderr);
+  c3 = check(['--gates-version', '2']); t('check_handin --gates-version 2: the same STATUS passes (the earlier layout is not newly refused)', c3.status === 0, c3.stderr);
+  w(path.join(folder, 'build.log'), fs.readFileSync(path.join(ld, 'build.log'), 'utf8')); w(path.join(folder, 'STATUS.md'), st(line(q)));
+  c3 = check(['--gates-version', '3']); t('check_handin --gates-version 3: with see: build.log (in the hand-in folder) holding the error: passes', c3.status === 0, c3.stderr);
+  w(path.join(folder, 'STATUS.md'), st(line(q, 'build.log', 'nothing'))); c3 = check(['--gates-version', '3']); t('...and "needs: nothing" is refused end to end', c3.status === 1 && /needs/.test(c3.stderr), c3.stderr);
+  fs.rmSync(path.join(folder, 'build.log')); w(path.join(folder, 'STATUS.md'), statusBase());
+}
+
+console.log('gates v3: ref_seed is a merge step, and its absence is said loudly');
+{
+  const rp = GL.referenceProblems([path.join(tmp, 'x', 'a.jpg')], { refRoot: path.join(tmp, 'x'), folder: path.join(tmp, 'f'), known: null });
+  t('no reference hash log: not refused by the library (the caller prints FAIL-OPEN)', rp.problems.length === 0);
+  const mk0 = path.join(tmp, 'noreg'); w(path.join(mk0, 'docs/reference/aerial/a.jpg'), 'a'); w(path.join(mk0, 'docs/reference/street/b.jpg'), 'b'); w(path.join(mk0, 'docs/reference/gsv/c.jpg'), 'c');
+  fs.mkdirSync(path.join(mk0, '.git'), { recursive: true });
+  const fo = path.join(mk0, 'docs/progress/r'); w(path.join(fo, 'STATUS.md'), statusBase()); w(path.join(fo, 'FAULTS.md'), faults3); w(path.join(fo, 'COMPARE.md'), '| case | render | reference | composite | before | subject | scale | viewpoint |\n|---|---|---|---|---|---|---|---|\n');
+  const rr = spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), fo, '--main', mk0, '--worktree', mk0, '--no-visual', '--gates-version', '3'], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } });
+  t('check_handin v3 with no register and no INDEX hashes: the run prints a FAIL-OPEN line that names `node tools/ref_seed.mjs` (the merge checklist item; the check does not refuse for it)', /FAIL-OPEN: gate "reference provenance"[^\n]*ref_seed/.test(rr.stderr + rr.stdout) || /FAIL-OPEN[^\n]*ref_seed/.test(rr.stderr + rr.stdout), rr.stderr + rr.stdout);
+}
+
 console.log('test isolation: a test run never writes to the real gate.log of the main checkout');
 {
   const probe = spawnSync(process.execPath, ['--input-type=module', '-e', `import('${pathToFileURL(path.join(src, 'tools/hooks/lib.mjs')).href}').then((m) => { m.log({ gate: 'isolation_probe', reason: 'from ${path.basename(tmp)}' }); console.log(m.STATE_DIR); })`], { encoding: 'utf8' });

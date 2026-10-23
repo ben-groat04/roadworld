@@ -803,8 +803,9 @@ export function blockedEvidence(blockedBy, seeRaw, ctx) {
 const NEEDS_GENERIC = /^(?:(?:a|an|the|some|more|any|your|owner'?s?)\s+)*(?:fix|decision|help|input|guidance|clarification|info|information|approach|different approach|review|answer|answers|advice|permission|access|resources?|support|direction|feedback|solution|workaround|change|changes)\W*$/i;
 export function needsNamesAThing(needs) {
   const n = String(needs || '').trim();
-  if (n.length < 8 || FILLER_RE.test(n) || NEEDS_GENERIC.test(n)) return false;
+  if (FILLER_RE.test(n) || NEEDS_GENERIC.test(n)) return false;
   if (anchorsOf(n).length) return true;
+  if (n.length < 8) return false;
   const words = n.replace(/[^\w\s./\\:-]/g, ' ').split(/\s+/).filter(Boolean);
   const content = words.filter((w) => !/^(?:a|an|the|to|of|on|in|for|and|or|with|from|by|is|are|be|more|some|any|new|please|need|needs|needed|decision|help|fix|input)$/i.test(w));
   return content.length >= 2;

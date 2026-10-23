@@ -35,7 +35,7 @@ export const BACKUP_DIRS = [...new Set(['C:/Users/bgbg0/roadworld-reference-back
 const norm = (p) => String(p).replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
 const strip = (p) => norm(p).replace(/\/+$/, '');
 // bash-on-Windows paths: /c/Users/x -> c:/users/x
-const winPath = (p) => (/^\/([a-zA-Z])(\/|$)/.test(p) ? p[1] + ':' + p.slice(2) : p);
+const winPath = (p0) => { const p = /^\/{2,}[a-zA-Z]\//.test(p0) ? p0.replace(/^\/+/, '/') : p0; return /^\/([a-zA-Z])(\/|$)/.test(p) ? p[1] + ':' + p.slice(2) : p; };
 
 // every reparse point (junction / symlink) at or below `p`, found without descending into links. Returns paths, [] when p does not exist.
 export function linksBelow(p, limit = 20000) {
@@ -131,7 +131,7 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
   ctx = ctx || context(mainRoot);
   const ncmd = norm(cmd);
   const usesScript = /remove_agent_worktree/i.test(cmd);
-  const nearText = () => ctx.near(cwd) || /roadworld/.test(ncmd) || /docs[\\/]+reference/i.test(cmd);
+  const nearText = () => ctx.near(cwd) || /roadworld/.test(ncmd) || ncmd.includes(ctx.main) || ctx.wts.some((w) => ncmd.includes(w)) || /docs[\\/]+reference/i.test(cmd);
   // recursive deletes written as a one-liner in another language near a tree
   if (/shutil\.rmtree|\brmtree\s*\(|\brm(?:dir)?(?:Sync)?\s*\([^)]*recursive\s*:\s*true|\brimraf\b|Directory\]::Delete\s*\([^)]*,\s*\$?true|Directory\.Delete\s*\([^)]*,\s*\$?true/i.test(cmd) && nearText()) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) in or near the main checkout or a worktree: it follows a docs\\reference junction');
   if (/\bgit(?:\.exe)?\s+(?:-C\s+\S+\s+)?worktree\s+(?:remove|prune)\b/i.test(cmd) && !usesScript) reasons.push('`git worktree remove|prune` outside tools\\remove_agent_worktree.ps1');
@@ -154,7 +154,7 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
     }
     // nested shells
     if (['bash', 'sh', 'zsh', 'pwsh', 'powershell', 'cmd'].includes(verb)) {
-      const k = av.findIndex((a) => /^(?:-c|-command|\/c|\/k)$/i.test(a));
+      const k = av.findIndex((a) => /^(?:-[a-z]*c|-command|\/c|\/k)$/i.test(a));
       if (k >= 0 && av[k + 1]) reasons.push(...analyse(av.slice(k + 1).join(' '), cur, depth + 1, ctx, mainRoot));
       continue;
     }

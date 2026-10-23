@@ -65,7 +65,7 @@ export function judgeCommand(cmd, depth = 0) {
     const { verb, index, args } = verbOf(seg.words);
     // nested shells and inline code
     if (SHELLS.has(verb)) {
-      const k = args.findIndex((a) => /^(?:-c|-command|\/c|\/k|-encodedcommand)$/i.test(a.v));
+      const k = args.findIndex((a) => /^(?:-[a-z]*c|-command|\/c|\/k|-encodedcommand)$/i.test(a.v));
       if (k >= 0 && args[k + 1]) reasons.push(...judgeCommand(args.slice(k + 1).map((a) => a.v).join(' '), depth + 1));
     }
     if (INLINE.has(verb)) {

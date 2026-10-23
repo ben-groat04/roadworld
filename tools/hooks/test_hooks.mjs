@@ -1154,6 +1154,10 @@ console.log('gates5: state guard and delete guard against the real payload shape
     ['Bash', 'rm -f notes.txt', wtJ, 0], ['Bash', 'git status', wtJ, 0], ['Bash', 'git clean -n', wtJ, 0], ['Bash', 'echo "rm -rf docs" > notes.txt', M, 0], ['Bash', 'git commit -m "rm -rf docs/reference is forbidden"', M, 0],
     ['Bash', 'powershell -NoProfile -ExecutionPolicy Bypass -File tools\\remove_agent_worktree.ps1 foo', M, 0], ['Bash', `cmd /c rmdir ${J2}\\docs\\reference`, M, 0], ['Bash', 'ls -la | head', wtJ, 0],
     ['Grep', 'rm -rf docs', M, 0],
+    ['Bash', `bash -lc "rm -rf ${M}/docs"`, elsewhere, 2], ['Bash', `pwsh -c 'rm -rf ${M}/docs'`, elsewhere, 2], ['Bash', `rm -r -f ${M}/docs/reference/aerial`, elsewhere, 2], ['Bash', `rm --recursive --force ${M}/docs`, elsewhere, 2],
+    ['PowerShell', `Remove-Item -LiteralPath "${M}\\docs\\reference" -Recurse`, elsewhere, 2], ['PowerShell', `ri ${M}\\docs -r -fo`, elsewhere, 2], ['Bash', `rm -rf ${M}/docs/../docs/reference`, elsewhere, 2],
+    ['Bash', `rm -rf ${M}/d*`, elsewhere, 2], ['Bash', 'rm -rf *', M, 2], ['PowerShell', 'Remove-Item -Recurse -Force .', M, 2], ['Bash', `true && rm -rf ${M}/docs`, elsewhere, 2],
+    ['Bash', `git --git-dir=${M}/.git clean -fdx`, M, 2], ['Bash', 'git clean -xdf', wtJ, 2], ['PowerShell', `Get-Item ${M}\\docs | Remove-Item -Recurse`, elsewhere, 2],
   ];
   let dgBad = [];
   for (const [tool, command, cwd, want] of dgCases) { const code = dg(tool, command, cwd); if (code !== want) dgBad.push(`${tool} ${command.slice(0, 90)} (cwd ${path.basename(cwd)}): exit ${code}, wanted ${want}`); }
