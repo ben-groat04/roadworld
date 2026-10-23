@@ -81,8 +81,7 @@ export async function main() {
     log({ ...base, decision: 'deny', reason: 'NO-CONTRACT free-text form refused', no_contract_reason: ncp.text });
     process.stderr.write('LAUNCH REFUSED by the brief gate: ' + (ncp.form === 'short' ? 'the NO-CONTRACT reason is under 20 characters.' : 'the free-text NO-CONTRACT form is not accepted any more.') +
       ' A launch carries ONE of: the contract (build it with `node tools/make_brief.mjs <task-file> --round <name>`, or a BRIEF-FILE line), `AUDIT-OF: <progress folder>` (`make_brief.mjs --audit`), `FIRSTLOOK-OF: <progress folder>` (`make_brief.mjs --first-look`), or a line `NO-CONTRACT: <category>: <reason, 20+ characters>` with category exactly one of ' +
-      NO_CONTRACT_CATEGORIES.join(', ') + '. An audit or first look is never one of those categories.
-');
+      NO_CONTRACT_CATEGORIES.join(', ') + '. An audit or first look is never one of those categories.\n');
     return 2;
   }
   const nc = ncp.form === 'ok' ? ncp.reason : null;
