@@ -106,7 +106,7 @@ export function verbOf(words) {
     const lv = v.toLowerCase();
     if (WRAPPER_VERBS.has(lv)) {
       i++;
-      if (lv === 'timeout') { while (i < words.length && /^-/.test(words[i].v)) i++; if (i < words.length && /^\d+(\.\d+)?[smhd]?$/.test(words[i].v)) i++; }
+      if (lv === 'timeout') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[ks]$/.test(words[i].v) ? 2 : 1; if (i < words.length && /^\d+(\.\d+)?[smhd]?$/.test(words[i].v)) i++; }
       else if (lv === 'nice' || lv === 'ionice') { while (i < words.length && /^-/.test(words[i].v)) { i += /^-[nc]$/.test(words[i].v) ? 2 : 1; } }
       else if (lv === 'sudo' || lv === 'doas') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[ugCT]$/.test(words[i].v) ? 2 : 1; }
       continue;

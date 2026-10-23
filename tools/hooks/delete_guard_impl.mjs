@@ -158,7 +158,7 @@ function resolveWord(raw, cwd, vars) {
   t = t.replace(/^~(?=\/|\\|$)/, home);
   t = t.replace(MKTEMP, () => path.join(os.tmpdir(), 'mktemp-x'));
   t = t.replace(/\$\(\s*pwd\s*\)|\$\(\$PWD\.Path\)|\$\(\s*\(Get-Location\)\.Path\s*\)|\$\(Get-Location\)/gi, () => cwd);
-  let unknown = t === '{}' || /\$\(|`/.test(t);
+  let unknown = t === '{}' || t === '@' || t === '$' || /\$\(|`/.test(t);
   const envVal = (name) => { const v = process.env[name] ?? process.env[name.toUpperCase()]; return v; };
   const special = (name) => (/^(pwd|psscriptroot|psscriptroot|psscript)$/i.test(name) ? cwd : undefined);
   const sub = (word, depth = 0) => {
@@ -215,6 +215,8 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
   const holdsLinkAt = (d) => { let x = path.resolve(d); for (let i = 0; i < 10; i++) { try { if (fs.lstatSync(path.join(x, 'docs', 'reference')).isSymbolicLink()) return true; } catch { /* none */ } const up = path.dirname(x); if (up === x) break; x = up; } return false; };
   const risky = (at) => ctx.underMain(at) || holdsLinkAt(at) || mentions();
 
+  // PowerShell: Remove-Item with -Recurse and a parenthesised (computed) path, in either order: the parentheses split the statement, so it is read as text
+  if (/\b(?:remove-item|ri)\b[^;|\n]*\([^;\n]*\)[^;\n]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b|\b(?:remove-item|ri)\b[^;\n]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b[^;\n]*\(/i.test(cmd) && risky(cwd)) reasons.push('Remove-Item -Recurse with a computed path in parentheses (Join-Path, Resolve-Path, Get-Item ...): its target cannot be read, in the main checkout, a tree with a docs\\reference link, or a command naming the photos');
   // recursive deletes written as a one-liner in another language near a tree
   if (/shutil\.rmtree|\brmtree\s*\(|\brm(?:dir)?(?:Sync)?\s*\([^)]*recursive\s*:\s*true|\brimraf\b|Directory\]::Delete\s*\(.*,\s*\$?true\s*\)|Directory\.Delete\s*\(.*,\s*\$?true\s*\)|\.Delete\s*\(\s*\$?true\s*\)|FileUtils\.rm_rf|File\.unlink|rm_rf\(/i.test(cmd) && nearText()) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) in or near the main checkout or a worktree: it follows a docs\\reference junction');
   // heredocs and here-strings handed to a shell run as commands
