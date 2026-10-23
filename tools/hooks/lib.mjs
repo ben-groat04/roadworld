@@ -7,7 +7,8 @@ import { resolveMainRoot } from './root.mjs';
 
 // Main checkout, resolved explicitly (root.mjs: through git's worktree link files, never just "where this file sits"). State and the contract are read and written ONLY here.
 export const ROOT = resolveMainRoot(path.dirname(fileURLToPath(import.meta.url)));
-export const STATE_DIR = path.join(ROOT, '.claude', 'state');
+// CP_GATE_STATE_DIR redirects ALL state (log, records, secret) for tests: a test run must never write into the real gate.log of the main checkout (23 Oct 2026: it did, and raised gate notices).
+export const STATE_DIR = process.env.CP_GATE_STATE_DIR ? path.resolve(process.env.CP_GATE_STATE_DIR) : path.join(ROOT, '.claude', 'state');
 export const EXEMPT_TYPES = ['Explore', 'Plan', 'claude-code-guide', 'statusline-setup'];
 export const MARKER = 'AGENT-CONTRACT-MARKER: v1';
 

@@ -48,7 +48,7 @@ if (!auditMode && !get('faults')) missing.push('"## Faults" (starting list; writ
 if (!auditMode && !get('launched')) missing.push('"## Launched" (independent items launched now)');
 if (!auditMode && !get('waiting')) missing.push('"## Waiting" (items not launched and why; write "none" if none)');
 if (/time-box|whole task/i.test(text.replace(get("owner's words"), ''))) missing.push('remove "time-box" / "whole task" wording: the finish line is the photo');
-// ---- gates v2 (tools/gates_lib.mjs). Builder briefs only; `GATES-VERSION: 2` switches the measured checks on in check_handin.
+// ---- gates v2 (tools/gates_lib.mjs). Builder briefs only; `GATES-VERSION: 3` (2 = the earlier layout, kept for agents already running) switches the measured checks on in check_handin.
 const gateLines = [];
 let overrideLog = null;
 if (!auditMode && GL) {
@@ -134,7 +134,7 @@ const priorAudit = opt('prior-audit') ? path.resolve(opt('prior-audit')) : '';  
 const itemSource = get('items') || get('faults');
 if (!get('items') && /^\s*(?:[-*]\s*)?\**(?:\d{1,3}|[A-Za-z]|[A-Za-z]{1,2}\d{1,3})\**\s*[.):]\s+\S/m.test(get('faults'))) console.error('make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer');
 const itemLines = itemSource.split('\n').map((l) => l.match(/^\s*(?:[-*]\s*)?\**(\d{1,3}|[A-Za-z]|[A-Za-z]{1,2}\d{1,3})\**\s*[.):]\s+(\S.*)$/)).filter(Boolean).map((m) => 'ITEM: ' + m[1] + ' | ' + m[2].replace(/\s+/g, ' ').slice(0, 200));
-const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + (GL ? '\nGATES-VERSION: 2' + gateLines.map((g) => '\nGATE: ' + g).join('') + itemLines.map((l) => '\n' + l).join('') : '') + (priorAudit ? '\nPRIOR-AUDIT: ' + priorAudit : '');
+const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + (GL ? '\nGATES-VERSION: 3' + gateLines.map((g) => '\nGATE: ' + g).join('') + itemLines.map((l) => '\n' + l).join('') : '') + (priorAudit ? '\nPRIOR-AUDIT: ' + priorAudit : '');
 const fill = {
   TASK: task,
   ROUND: opt('round'),

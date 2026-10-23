@@ -36,6 +36,7 @@ const priorAuditArg = optAll('--prior-audit')[0];   // previous AUDIT.md of a se
 // --item "<id>|<text>": an item the brief lists (ITEM: lines); STATUS "## Items" must hold a row for each (done with proof, or a valid BLOCKED line)
 const briefItems = optAll('--item').map((x) => { const k = String(x).indexOf('|'); return k > 0 ? { id: x.slice(0, k).trim(), text: x.slice(k + 1).trim() } : { id: String(x).trim(), text: '' }; });
 const gatesV2 = gatesVersion >= 2 || !!taskArg;
+const gatesV3 = gatesVersion >= 3;   // v3 (23 Oct 2026): BLOCKED lines carry see: <log file> and the quoted error must be found in it; "needs:" must name a thing
 const folder = args.find((a, i) => !a.startsWith('--') && !(i > 0 && VALUE_OPTS.includes(args[i - 1])));
 if (!folder) {
   console.error('usage: node tools/check_handin.mjs <progress-folder> [--main <path>] [--no-visual] [--accept [--builder <id>] [--legacy "<reason>"]] [--since <epoch-ms>] [--gates-version 2 [--gate "<GATE: line>"]... | --task <task-file>] [--worktree <root>] [--prior-audit <AUDIT.md>]');
@@ -64,6 +65,7 @@ function worktreeRoot() {
   try { return execSync("git rev-parse --show-toplevel", { cwd: fs.existsSync(abs) ? abs : process.cwd(), stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return main; }
 }
 const wtRoot = worktreeArg ? path.resolve(worktreeArg) : worktreeRoot();
+const blockedCtx = { version: gatesV3 ? 3 : 2, bases: [path.resolve(folder), wtRoot, path.dirname(wtRoot), path.join(path.dirname(main), 'roadworld-scratch'), main] };
 // An opened reference resolves if it is (a) an absolute path that exists, (b) relative to the main checkout or the hand-in's worktree, or (c) a name under docs/reference.
 const refBases = [refRoot, main, wtRoot];
 const fails = [];
@@ -239,7 +241,7 @@ try {
 const gateNotes = [];
 let blockedItems = [];
 if (gatesV2 && GL) {
-  try { blockedItems = GL.parseBlocked(status === null ? '' : status); } catch (e) { failOpen('BLOCKED reader', e); }
+  try { blockedItems = GL.parseBlocked(status === null ? '' : status, blockedCtx); } catch (e) { failOpen('BLOCKED reader', e); }
   let lines = gateLines;
   if (taskArg) {
     try {
@@ -295,8 +297,8 @@ if (gatesV2 && GL) {
   try {
     const ff = noVisual ? read('FAULTS.md') : faults;
     if (noVisual && ff === null) fails.push('FAULTS.md is missing (gates v2 asks for it on every hand-in, engine-only ones too: Pass 1..3 and Residual)');
-    GL.statusProblems(status === null ? '' : status, ff === null ? null : ff).forEach((p) => fails.push('GATE status: ' + p));
-    GL.itemsProblems(status === null ? '' : status, briefItems).forEach((p) => fails.push('GATE items: ' + p));
+    GL.statusProblems(status === null ? '' : status, ff === null ? null : ff, { blockedCtx }).forEach((p) => fails.push('GATE status: ' + p));
+    GL.itemsProblems(status === null ? '' : status, briefItems, blockedCtx).forEach((p) => fails.push('GATE items: ' + p));
   } catch (e) { failOpen('status reading', e); }
   // prior audit items (send-back rounds)
   if (priorAuditArg) {

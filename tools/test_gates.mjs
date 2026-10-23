@@ -12,6 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GL = await import(pathToFileURL(path.join(src, 'tools/gates_lib.mjs')).href);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gatetest-'));
+import { isolateState } from './test_isolation.mjs';
+const isolation = isolateState(tmp, src);   // CP_GATE_STATE_DIR: nothing of this run reaches the real gate.log (checked at the end)
 let pass = 0, fail = 0; const failed = [];
 const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok   ' + name); } else { fail++; failed.push(name); console.log('  FAIL ' + name + (detail ? '\n       ' + String(detail).replace(/\n/g, '\n       ').slice(0, 900) : '')); } };
 const git = (cwd, ...a) => { const r = spawnSync('git', a, { cwd, encoding: 'utf8' }); if (r.status !== 0) throw new Error('git ' + a.join(' ') + ': ' + r.stderr); return r.stdout.trim(); };
@@ -388,8 +390,8 @@ console.log('make_brief');
 const tf = (extra = '', cases = 'case A | a.jpg b.jpg c.jpg') => { const p = path.join(tmp, 'task_' + Math.random().toString(36).slice(2) + '.md'); w(p, `# T\n## Owner's words\n"The photo is the target." (11 Oct)\n## Cases\n${cases}\n## Faults\nnone known\n## Launched\nx\n## Waiting\nnone\n${extra}`); return p; };
 const mb = (p, ...a) => spawnSync(process.execPath, [path.join(src, 'tools/make_brief.mjs'), p, '--round', 'rr', '--worktree', path.join(tmp, 'wtrr'), ...a], { encoding: 'utf8' });
 let b = mb(tf('## Gates\nscene_check >= 20/21 (baseline 20/21, target 21/21)\nctest failed_assertions <= 2\nallow_waiver is_rough:foo\nNo new waiver in prose.\n'));
-t('brief carries GATES-VERSION: 2 and one GATE: line per gate line (prose lines dropped)', b.status === 0 && /^GATES-VERSION: 2$/m.test(b.stdout) && /^GATE: scene_check >= 20\/21 \(baseline 20\/21, target 21\/21\)$/m.test(b.stdout) && /^GATE: ctest failed_assertions <= 2$/m.test(b.stdout) && /^GATE: ctest failed_tests <= 2$/m.test(b.stdout) && /^GATE: allow_waiver is_rough:foo$/m.test(b.stdout) && !/^GATE: No new/m.test(b.stdout), b.stdout.slice(0, 600) + b.stderr);
-b = mb(tf()); t('no Gates section: still GATES-VERSION: 2 (waiver, picture and STATUS checks) and no GATE lines', b.status === 0 && /^GATES-VERSION: 2$/m.test(b.stdout) && !/^GATE:/m.test(b.stdout));
+t('brief carries GATES-VERSION: 3 and one GATE: line per gate line (prose lines dropped)', b.status === 0 && /^GATES-VERSION: 3$/m.test(b.stdout) && /^GATE: scene_check >= 20\/21 \(baseline 20\/21, target 21\/21\)$/m.test(b.stdout) && /^GATE: ctest failed_assertions <= 2$/m.test(b.stdout) && /^GATE: ctest failed_tests <= 2$/m.test(b.stdout) && /^GATE: allow_waiver is_rough:foo$/m.test(b.stdout) && !/^GATE: No new/m.test(b.stdout), b.stdout.slice(0, 600) + b.stderr);
+b = mb(tf()); t('no Gates section: still GATES-VERSION: 3 (waiver, picture and STATUS checks) and no GATE lines', b.status === 0 && /^GATES-VERSION: 3$/m.test(b.stdout) && !/^GATE:/m.test(b.stdout));
 b = mb(tf('## Gates\nscene_check >= banana\n')); t('a malformed gate line is refused at brief time', b.status === 1 && /Gates/.test(b.stderr) && /scene_check >= banana/.test(b.stderr), b.stderr);
 b = mb(tf('## Gates\nframe_rate >= 30 (baseline 30)\n')); t('an unknown metric is refused at brief time', b.status === 1 && /unknown metric/.test(b.stderr), b.stderr);
 b = mb(tf('', 'Engine and tooling work, no renders: HANDIN: no-visual.\ncase A | a.jpg b.jpg c.jpg')); t('Cases say "no renders" without --no-visual: refused', b.status === 1 && /--no-visual/.test(b.stderr), b.stderr);
@@ -824,6 +826,13 @@ console.log('the gates\' own tests are watched by test NAME, not by line analysi
   t('the same rule for tools/hooks/test_hooks.mjs', k.length === 1 && /test_hooks\.mjs/.test(k[0]), JSON.stringify(k));
   t('allowed by the prefix "deleted_gate_test:test_hooks.mjs" in the task file', kk(dd('tools/hooks/test_hooks.mjs', ["t('ack without text: refused', c);"], []), ['deleted_gate_test:test_hooks.mjs']).length === 0);
   t('and not by an unrelated allow line', kk(dd('tools/hooks/test_hooks.mjs', ["t('ack without text: refused', c);"], []), ['deleted_gate_test:test_gates.mjs']).length === 1);
+}
+
+console.log('test isolation: a test run never writes to the real gate.log of the main checkout');
+{
+  const probe = spawnSync(process.execPath, ['--input-type=module', '-e', `import('${pathToFileURL(path.join(src, 'tools/hooks/lib.mjs')).href}').then((m) => { m.log({ gate: 'isolation_probe', reason: 'from ${path.basename(tmp)}' }); console.log(m.STATE_DIR); })`], { encoding: 'utf8' });
+  t('lib.log under CP_GATE_STATE_DIR lands in the isolated folder, not under the main checkout', probe.status === 0 && path.resolve(probe.stdout.trim()) === path.resolve(isolation.stateDir) && /isolation_probe/.test(fs.readFileSync(path.join(isolation.stateDir, 'gate.log'), 'utf8')), probe.stdout + probe.stderr);
+  t('NO line mentioning this run\'s temp folder reached the real gate.log of the main checkout (' + isolation.realLog + ')', isolation.leaks().length === 0, isolation.leaks().slice(0, 3).join('\n'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);

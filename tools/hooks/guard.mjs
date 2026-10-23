@@ -11,7 +11,7 @@ export async function failOpenLog(gate, reason, error) {
   try {
     let main = path.join(HERE, '..', '..');
     try { main = (await import('./root.mjs')).resolveMainRoot(HERE); } catch { /* root.mjs itself broken: the old rule */ }
-    const dir = path.join(main, '.claude', 'state');
+    const dir = process.env.CP_GATE_STATE_DIR ? path.resolve(process.env.CP_GATE_STATE_DIR) : path.join(main, '.claude', 'state');
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'gate.log'), JSON.stringify({ ts: new Date().toISOString(), gate, decision: 'allow', reason: 'FAIL-OPEN: ' + reason, error: String((error && (error.stack || error.message)) || error || '').slice(0, 500) }) + '\n');
   } catch { /* nothing more can be done */ }

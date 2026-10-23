@@ -7,15 +7,19 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync as realSpawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { isolateState } from '../test_isolation.mjs';
+// children are COPIES of the hooks in temp mains with their own state folders; only this process (which imports the real lib from src) is redirected by CP_GATE_STATE_DIR
+const spawnSync = (c, a, o = {}) => { const env = { ...(o.env || process.env) }; delete env.CP_GATE_STATE_DIR; return realSpawn(c, a, { ...o, env }); };
 
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hooktest-'));
+const isolation = isolateState(tmp, src);   // CP_GATE_STATE_DIR for this process; the real gate.log is watched and must get no line of this run
 const root = path.join(tmp, 'main');
 const wt = path.join(tmp, 'wt');
 const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); };
-['tools/hooks/guard.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
+['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
   'tools/check_handin.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
 for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'photo ' + f); }
@@ -343,7 +347,7 @@ console.log('audit gate');
 
   // -- ack cannot clear it (own temp checkout so the shared log keeps its counts)
   const rootA = path.join(tmp, 'mainAudit');
-  ['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/guard.mjs', 'tools/hooks/gate_ack.mjs'].forEach((rel) => { const d = path.join(rootA, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+  ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/guard.mjs', 'tools/hooks/gate_ack.mjs'].forEach((rel) => { const d = path.join(rootA, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
   fs.mkdirSync(path.join(rootA, '.git'), { recursive: true });
   const folderA = path.join(tmp, 'wtA', 'docs', 'progress', 'ackround'); fs.mkdirSync(folderA, { recursive: true });
   fs.mkdirSync(path.join(rootA, '.claude/state'), { recursive: true }); fs.writeFileSync(path.join(rootA, '.claude/state/ack_secret'), 'abcdef0123456789abcdef');
@@ -463,7 +467,7 @@ console.log('gate_notice, gate_ack, canary');
   n = prompt(); t('refused acks do not clear the notice', ptxt(n.stdout).startsWith('GATE NOTICE'));
   t('refused ack writes nothing to the log', !fs.readFileSync(logPath, 'utf8').includes('"gate":"ack"'));
   // a root that never showed a notice has no secret: ack refused
-  const rootS = path.join(tmp, 'mainS'); ['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_ack.mjs'].forEach((rel) => { const d = path.join(rootS, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+  const rootS = path.join(tmp, 'mainS'); ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_ack.mjs'].forEach((rel) => { const d = path.join(rootS, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
   fs.mkdirSync(path.join(rootS, '.git'), { recursive: true }); fs.mkdirSync(path.join(rootS, '.claude/state'), { recursive: true });
   fs.writeFileSync(path.join(rootS, '.claude/state/gate.log'), JSON.stringify({ ts: new Date().toISOString(), gate: 'brief', reason: 'FAIL-OPEN: x' }) + '\n');
   a = ack('1:abcdef', 'guessing a code without ever seeing the notice', rootS); t('no ack secret yet (notice never shown): ack refused', a.status === 1 && /no ack secret/.test(a.stderr), a.stderr);
@@ -509,7 +513,7 @@ console.log('gate_notice, gate_ack, canary');
   n = prompt(); t('garbage line in the log is skipped, valid FAIL-OPEN after it still reported', n.status === 0 && /FAIL-OPEN x1/.test(ptxt(n.stdout)));
   ackAll('garbage log line test, nothing to fix here at all');
   // unreadable state: gate.log missing entirely
-  const rootN = path.join(tmp, 'mainN'); ['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/guard.mjs'].forEach((rel) => { const d = path.join(rootN, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+  const rootN = path.join(tmp, 'mainN'); ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/guard.mjs'].forEach((rel) => { const d = path.join(rootN, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
   n = prompt(rootN); t('no gate.log yet: exit 0, output empty', n.status === 0 && n.stdout === '');
   // state dir is a file: the log cannot be written; hook must still exit 0
   fs.rmSync(path.join(rootN, '.claude'), { recursive: true, force: true }); fs.writeFileSync(path.join(rootN, '.claude'), 'i am a file');
@@ -540,7 +544,7 @@ console.log('gate_notice, gate_ack, canary');
   // ---- canary through the real tools
   const mkRoot = (name) => {
     const rt = path.join(tmp, name);
-    ['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md']
+    ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md']
       .forEach((rel) => { const d = path.join(rt, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
     fs.mkdirSync(path.join(rt, '.git'), { recursive: true });
     fs.mkdirSync(path.join(rt, '.claude/state'), { recursive: true });
@@ -658,7 +662,7 @@ console.log('hand-in freshness, counter reset, owner quotes, COMPARE relevance, 
   t('canary RULE 3: exempt-type skips (decision skip) are not agent starts', c3([at3(0, { gate: 'inject', decision: 'skip', reason: 'exempt type' })], 9 * H).length === 0);
   t('canary RULE 3: audit-gate lines (gate audit) do not count as hand-in lines', c3([at3(0, { gate: 'inject', decision: 'inject', agent_id: 'zz' }), at3(100, { gate: 'audit', decision: 'owed' })], 9 * H).length === 1);
   const rC3 = path.join(tmp, 'mainC3');
-  ['tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md'].forEach((rel) => { const d = path.join(rC3, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+  ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md'].forEach((rel) => { const d = path.join(rC3, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
   fs.mkdirSync(path.join(rC3, '.git'), { recursive: true }); fs.mkdirSync(path.join(rC3, '.claude/state'), { recursive: true });
   const oldL = (h, e) => JSON.stringify({ ts: new Date(Date.now() - h * 3600000).toISOString(), ...e }) + '\n';
   fs.writeFileSync(path.join(rC3, '.claude/state/gate.log'), oldL(8, { gate: 'inject', decision: 'inject', agent_id: 'old1', agent_type: 'general-purpose' }) + oldL(0.1, { gate: 'notice', reason: 'ran' }));
@@ -738,7 +742,7 @@ console.log('measured gates through the finish hook');
   const tfg = path.join(tmp, 'gate_task.md'); fs.writeFileSync(tfg, task() + '## Gates\nscene_check >= 20/21 (baseline 20/21, target 21/21)\n');
   const mkg = (round) => { const r = spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tfg, '--round', round, '--worktree', path.join(wt, round), '--no-visual'], { encoding: 'utf8' }); if (r.status !== 0) throw new Error(r.stderr); return r.stdout; };
   const brief = mkg('gh');
-  t('make_brief wrote GATES-VERSION and the GATE line into the brief the hook reads', /^GATES-VERSION: 2$/m.test(brief) && /^GATE: scene_check >= 20\/21/m.test(brief));
+  t('make_brief wrote GATES-VERSION and the GATE line into the brief the hook reads', /^GATES-VERSION: 3$/m.test(brief) && /^GATE: scene_check >= 20\/21/m.test(brief));
   const tp = transcript('gh', brief); fs.mkdirSync(hd('gh'), { recursive: true }); fs.writeFileSync(path.join(hd('gh'), 'STATUS.md'), goodStatus);
   fs.writeFileSync(path.join(hd('gh'), 'FAULTS.md'), '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Pass 3\nthe hatching bars cross the kerb line at the island nose\n## Residual\nnone, all fixed\n');
   scene('gh', 17, 21);
@@ -1073,6 +1077,9 @@ console.log('gates3 hooks, part 4: HANDIN_DIR in the prompt, HANDIN: no-visual o
   const nv2 = stop('nv2', transcript('nvfile2', prompt));
   t('...and the check still runs: a missing STATUS.md blocks, without a COMPARE.md complaint', J(nv2.out).decision === 'block' && /STATUS\.md is missing/.test(J(nv2.out).reason) && !/COMPARE\.md is missing/.test(J(nv2.out).reason), nv2.out);
 }
+
+console.log('test isolation: nothing of this run reaches the real gate.log');
+t('NO line mentioning this run\'s temp folder reached the real gate.log of the main checkout (' + isolation.realLog + ')', isolation.leaks().length === 0, isolation.leaks().slice(0, 3).join('\n'));
 
 console.log(`\n${pass} passed, ${fail} failed (temp dir ${tmp})`);
 if (failedNames.length) console.log('FAILED TESTS:\n - ' + failedNames.join('\n - '));

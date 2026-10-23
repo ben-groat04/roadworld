@@ -767,7 +767,49 @@ export function anchorsOf(text) {
   return [...out];
 }
 const blankAnchors = (t) => String(t || '').replace(/`[^`]*`/g, ' ').replace(/"[^"]*"/g, ' ').replace(/“[^”]*”/g, ' ');
-export function parseBlocked(text) {
+// gates v3 (main session decision, 23 Oct 2026): the BLOCKED line also carries `see: <path>`, a log or output file that exists, and every quoted error (backticks or quotes) in
+// "blocked by:" must be found in that file (whitespace and case ignored); with no quoted text the error codes, else the named paths, must be found. A made-up quote therefore needs
+// a made-up file, which must look like a log (3+ lines, the quote not more than half of it). "needs:" must name a thing, not "help" or "a decision".
+// WHAT IT CANNOT SEE: a log file written by hand with real-looking lines (the 3-line and half-of-the-file rules only stop the laziest echo); STATUS says so.
+export function anchorKinds(text) {
+  const t = String(text || ''); const quoted = [], codes = [], paths = [];
+  const lookable = (x) => /[\\/._:=()\d-]/.test(x) && !VAGUE_RE.test(x);
+  for (const m of t.matchAll(/`([^`]{3,})`/g)) if (lookable(m[1])) quoted.push(m[1].trim());
+  for (const m of t.matchAll(/"([^"]{8,})"|“([^”]{8,})”/g)) if (lookable(m[1] || m[2])) quoted.push((m[1] || m[2]).trim());
+  for (const m of t.matchAll(/\b(?:E[A-Z]{3,}|C\d{4}|LNK\d{4}|exit (?:code|status) -?\d+|HTTP \d{3}|status (?:code )?\d{3})\b/g)) codes.push(m[0]);
+  for (const m of t.matchAll(/(?:[A-Za-z]:)?[\w.-]*[\\/][\w./\\-]*[\w-]\.\w{1,6}\b|\b[\w-]+\.(?:mjs|js|cpp|h|hpp|json|md|ps1|cmake|txt|log|png|jpe?g|exe|uasset|py|yml|yaml)(?::\d+)?\b/g)) paths.push(m[0].replace(/:\d+$/, ''));
+  return { quoted, codes, paths };
+}
+export function blockedEvidence(blockedBy, seeRaw, ctx) {
+  const why = [];
+  const see = String(seeRaw || '').trim().replace(/^[`"']|[`"']$/g, '');
+  if (!see) return ['"see:" is missing: give the path of the log or output file that holds the error (see: ..\\roadworld-scratch\\<round>\\build.log)'];
+  let file = null;
+  const cands = path.isAbsolute(see) ? [see] : (ctx.bases || []).map((b) => path.resolve(b, see));
+  for (const c of cands) { try { if (fs.statSync(c).isFile()) { file = c; break; } } catch { /* next */ } }
+  if (!file) return [`"see: ${see}" is not an existing file (looked in ${cands.length ? cands.join(', ') : 'no folder'}): the quoted error must be in a log or output file that is there`];
+  let body = ''; try { body = fs.readFileSync(file, 'utf8'); } catch (e) { return [`"see: ${see}" cannot be read: ${e.message}`]; }
+  const flat = (x) => String(x).replace(/\s+/g, ' ').trim().toLowerCase();
+  const hay = flat(body);
+  const kinds = anchorKinds(blockedBy);
+  const need = kinds.quoted.length ? kinds.quoted : kinds.codes.length ? kinds.codes : kinds.paths;
+  if (!need.length) return ['"blocked by:" has nothing that can be looked up in the "see:" file'];
+  const missing = need.filter((q) => !hay.includes(flat(q)));
+  if (missing.length) why.push(`"${missing[0].slice(0, 80)}" is not in ${see} (the quoted error must be found in the log the line points to${missing.length > 1 ? '; ' + missing.length + ' of ' + need.length + ' quotes are missing' : ''})`);
+  if (body.split('\n').filter((l) => l.trim()).length < 3) why.push(`${see} has fewer than 3 non-empty lines: it is not a log or output file`);
+  else if (need.reduce((n, q) => n + q.length, 0) * 2 > hay.length) why.push(`the quoted text is more than half of ${see}: it looks written to match, not captured from a run`);
+  return why;
+}
+const NEEDS_GENERIC = /^(?:(?:a|an|the|some|more|any|your|owner'?s?)\s+)*(?:fix|decision|help|input|guidance|clarification|info|information|approach|different approach|review|answer|answers|advice|permission|access|resources?|support|direction|feedback|solution|workaround|change|changes)\W*$/i;
+export function needsNamesAThing(needs) {
+  const n = String(needs || '').trim();
+  if (n.length < 8 || FILLER_RE.test(n) || NEEDS_GENERIC.test(n)) return false;
+  if (anchorsOf(n).length) return true;
+  const words = n.replace(/[^\w\s./\\:-]/g, ' ').split(/\s+/).filter(Boolean);
+  const content = words.filter((w) => !/^(?:a|an|the|to|of|on|in|for|and|or|with|from|by|is|are|be|more|some|any|new|please|need|needs|needed|decision|help|fix|input)$/i.test(w));
+  return content.length >= 2;
+}
+export function parseBlocked(text, ctx) {
   const out = [];
   String(text || '').replace(/<!--[\s\S]*?-->/g, '').split('\n').forEach((raw, i) => {
     let l0 = raw.trim();
@@ -778,7 +820,7 @@ export function parseBlocked(text) {
     const parts = m[1].split('|').map((x) => x.trim());
     const item = parts[0] || '';
     const field = (re) => { const p = parts.slice(1).find((x) => re.test(x)); return p ? p.replace(re, '').trim() : ''; };
-    const tried = field(/^tried\s*:\s*/i), blockedBy = field(/^blocked\s+by\s*:\s*/i), needs = field(/^needs\s*:\s*/i);
+    const tried = field(/^tried\s*:\s*/i), blockedBy = field(/^blocked\s+by\s*:\s*/i), needs = field(/^needs\s*:\s*/i), see = field(/^see\s*:\s*/i);
     const why = [];
     if (item.length < 4) why.push('no item before the first |');
     const ta = anchorsOf(tried), ba = anchorsOf(blockedBy);
@@ -790,6 +832,11 @@ export function parseBlocked(text) {
     else if (!ba.length) why.push('"blocked by:" names no concrete thing: quote the error text, command output, refused command, or the missing file path (in backticks or quotes, or a path or error code)');
     else if (VAGUE_RE.test(blankAnchors(blockedBy))) why.push('"blocked by:" is a judgement ("complexity", "difficult", "the geometry", "a larger rewrite"...), not a block: quote the failing thing');
     if (needs && (USAGE_RE.test(needs) || TIME_RE.test(needs))) why.push('"needs:" asks for more time, tokens or usage, which is not something that unblocks work');
+    if (ctx && ctx.version >= 3) {
+      if (!needsNamesAThing(needs)) why.push('"needs:" must name a thing that would unblock the work (a file, a command, a named decision with its subject), not "help", "a decision", "nothing" or time');
+      // the evidence check runs once the line is otherwise concrete (one clear message at a time)
+      if (!why.some((w) => /blocked by/.test(w))) why.push(...blockedEvidence(blockedBy, see, ctx));
+    }
     out.push({ line: i + 1, item, tried, blockedBy, needs, anchors: ba, ok: why.length === 0, why, raw: l });
   });
   const okOnes = out.filter((b) => b.ok);
@@ -803,7 +850,8 @@ export function parseBlocked(text) {
 
 // The items the brief lists (ITEM: lines) against the STATUS "## Items" section: every item has a row that says done with a proof, or a valid BLOCKED line. An item that is
 // simply absent (the usual way work is silently dropped) is refused without any phrase list.
-export function itemsProblems(statusText, items) {
+const blockedSee = (ctx) => (ctx && ctx.version >= 3 ? "see: <path of the log or output file that holds the error> | " : "");
+export function itemsProblems(statusText, items, blockedCtx) {
   if (!items || !items.length) return [];
   const st = String(statusText || '').replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, '');
   const sec = st.match(/^##\s+Items[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/im);
@@ -814,7 +862,7 @@ export function itemsProblems(statusText, items) {
     const idRe = new RegExp('^\\s*(?:[-*]\\s*)?\\|?\\s*\\**' + it.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
     const row = lines.find((l) => idRe.test(l));
     if (!row) { problems.push(`item ${it.id} ("${it.text.slice(0, 60)}") has no row in the STATUS "## Items" section: every listed item is done with proof or BLOCKED, none is left out`); continue; }
-    const bl = parseBlocked(row)[0];
+    const bl = parseBlocked(row, blockedCtx)[0];
     if (bl) { if (!bl.ok) problems.push(`item ${it.id}: its BLOCKED line is incomplete (${bl.why.join('; ')})`); continue; }
     const cells = row.split('|').map((c) => c.trim()).filter(Boolean);
     const status = (cells[1] || '').toLowerCase(), proof = cells.slice(2).join(' ');
@@ -829,9 +877,9 @@ const BOOKKEEPING_HEAD = /prior audit|proof|reference files|images that carry|ma
 export function statusProblems(statusText, faultsText, opts = {}) {
   const problems = [];
   const stat = String(statusText || '').replace(/<!--[\s\S]*?-->/g, '');
-  const blocked = parseBlocked(stat);
+  const blocked = parseBlocked(stat, opts.blockedCtx);
   const blockedLines = new Set(blocked.map((b) => b.line));
-  for (const b of blocked) if (!b.ok) problems.push(`STATUS.md line ${b.line}: a BLOCKED line is not acceptable (${b.why.join('; ')}): "BLOCKED: <item> | tried: <the command or file you ran> | blocked by: <the exact error, refused command or missing path> | needs: <what would unblock it>"`);
+  for (const b of blocked) if (!b.ok) problems.push(`STATUS.md line ${b.line}: a BLOCKED line is not acceptable (${b.why.join('; ')}): "BLOCKED: <item> | tried: <the command or file you ran> | blocked by: <the exact error, refused command or missing path> | ${blockedSee(opts.blockedCtx)}needs: <what would unblock it>"`);
   const lines = stat.split('\n');
   let head = '';
   lines.forEach((l, i) => {
@@ -839,7 +887,7 @@ export function statusProblems(statusText, faultsText, opts = {}) {
     if (blockedLines.has(i + 1)) return;
     const isRow = /^\s*\|/.test(l);
     const bookkeeping = isRow && BOOKKEEPING_HEAD.test(head);
-    if (notDone(l) && !/^\s*(?:Case|References opened)/i.test(l) && !bookkeeping) problems.push(`STATUS.md line ${i + 1}: an item is left undone or deferred ("${l.trim().slice(0, 100)}"): do it (contract items 5 and 17), or, if something really blocks it, write "BLOCKED: <item> | tried: <what you ran> | blocked by: <exact error or missing path> | needs: <what unblocks it>"; "out of scope", "later round" and "bigger change" are not reasons`);
+    if (notDone(l) && !/^\s*(?:Case|References opened)/i.test(l) && !bookkeeping) problems.push(`STATUS.md line ${i + 1}: an item is left undone or deferred ("${l.trim().slice(0, 100)}"): do it (contract items 5 and 17), or, if something really blocks it, write "BLOCKED: <item> | tried: <what you ran> | blocked by: <exact error or missing path> | ${blockedSee(opts.blockedCtx)}needs: <what unblocks it>"; "out of scope", "later round" and "bigger change" are not reasons`);
     if (USAGE_RE.test(l)) problems.push(`STATUS.md line ${i + 1}: a usage/time limit is given as a reason ("${l.trim().slice(0, 100)}"): that is not an accepted reason; finish the item or write a BLOCKED line with the technical block`);
   });
   // partial reads do not count as opened (contract item 1)
@@ -895,7 +943,7 @@ export function priorAuditProblems(statusText, priorAuditText) {
 
 // ---------- COMPARE.md placeholder rows ----------
 export const PLACEHOLDER_RE = /\bevidence\b|\bn\/?a\b|placeholder|no match|not applicable|\btbd\b|\btodo\b|engine[- ]only|no claim|not claimed|^none\b/i;
-export const BLOCKED_HINT = 'do not fill tables to get through the gate: if you cannot produce the render, reference or composite, finish with a BLOCKED line in STATUS.md ("BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | needs: <what unblocks it>")';
+export const BLOCKED_HINT = 'do not fill tables to get through the gate: if you cannot produce the render, reference or composite, finish with a BLOCKED line in STATUS.md ("BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | see: <log file path, gates v3> | needs: <what unblocks it>")';
 
 // ---------- E: method-change rule (make_brief) ----------
 // Direction is stated, never guessed from the name: known gate metrics have a table; any other metric needs "(higher)" or "(lower)" in the Rounds line.
