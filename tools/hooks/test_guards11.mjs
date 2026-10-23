@@ -228,6 +228,16 @@ function buildHandin(name, o = {}) {
   const sentinel = path.join(tmp, 'suite_ran.flag');
   r = chk(buildHandin('c_b_nosuiterun').hd, ...B, '--suite', `node -e "require('fs').writeFileSync(${JSON.stringify(sentinel)}, 'ran')"`);
   t('C build: the check never runs a suite command (a --suite sentinel command was not started)', !fs.existsSync(sentinel), r.stderr + r.stdout);
+  await tt('C make_brief --phase measure|build: the brief carries REFS: (the count), one CASE: line per case and the ALLOW-FAIL: lines of the task file; the finish hook reads them back', () => {
+    const task = path.join(tmp, 'task_ph.md');
+    fs.writeFileSync(task, `# T round\n\n## Owner's words\n"and ofc it needs to work with the gate system, have you been sidestepping it?" (23 Oct 2026)\n\n## Cases\nCase A: one-lane road |${photos.join(' ')}\nFiles: ${photos[0]}\n\n## Allowed failures\n- pier clearance\n- pier overhang\n\n## Faults\nnone known\n\n## Launched\nthis\n\n## Waiting\nnone\n\n## Suite\nnode -e "process.exit(0)"\n`);
+    const gw = measureHandin('c_mb'); commit(gw.w, 'measure');
+    const mb = (...a) => spawnSync(process.execPath, [path.join(src, 'tools', 'make_brief.mjs'), task, ...a], { cwd: elsewhere, encoding: 'utf8', env, timeout: 600000 });
+    const rb = mb('--round', 'rr', '--worktree', gw.w, '--phase', 'build', '--no-visual'), rm = mb('--round', 'rr', '--worktree', gw.w, '--phase', 'measure', '--no-visual');
+    const okb = rb.status === 0 && /^REFS: 3$/m.test(rb.stdout) && /^ALLOW-FAIL: pier clearance$/m.test(rb.stdout) && /^ALLOW-FAIL: pier overhang$/m.test(rb.stdout);
+    const okm = rm.status === 0 && /^REFS: 3$/m.test(rm.stdout) && /^CASE: Case A/m.test(rm.stdout) && !/^ALLOW-FAIL:/m.test(rm.stdout);
+    return { ok: okb && okm, detail: rb.stderr + rb.stdout.split('# AGENT CONTRACT')[0].slice(0, 900) + '\n---\n' + rm.stderr + rm.stdout.split('# AGENT CONTRACT')[0].slice(0, 500) };
+  });
   await tt('C make_brief: the build-phase text tells the agent to write suite_build.log under timeout 900 and names the allowed-failure list', async () => { const txt = fs.readFileSync(path.join(src, 'tools', 'make_brief.mjs'), 'utf8'); return /timeout 900/.test(txt) && /suite_build\.log/.test(txt) && /ALLOW-FAIL/.test(txt); });
   await tt('C audit brief template: the auditor re-runs the suite itself', async () => /Re-run the suite yourself/.test(fs.readFileSync(path.join(src, 'docs', 'templates', 'AUDIT_BRIEF.md'), 'utf8')));
 }

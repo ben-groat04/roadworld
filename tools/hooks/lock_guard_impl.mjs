@@ -8,6 +8,9 @@
 // `LOCK-LIST-BAD ... FAIL-OPEN` (gate notice for the main session) and shown to the builder as a warning: it never fails silently.
 // NO LIST AND NO tests/locked FOLDER MEANS NOTHING IS PROTECTED (gates9, audit F1): a glob, a folder delete, a find or a move is refused only when it can really reach a locked file (a glob that
 // matches one, a folder whose tree holds one, a destination that IS one); a move is judged by its SOURCE (the destination only when it is itself a locked file).
+// gates11 (gates10 audit fault 8): also refused when they would rewrite a locked file: chained and aliased fs calls (require('fs').rm, require('fs/promises').rm, import('fs').then(m => m.rmSync(..)), fs['rmSync']),
+// `git stash` (push/save/bare, with or without -- <path>), `git stash pop|apply|branch`, `git reset --hard`, `git checkout [<rev>] -- <locked>`, `git restore`, `git revert <commit that changed a locked file>`; the files a git
+// command would change are asked from git itself (read-only calls, 5 s each; when git cannot answer nothing is refused). `patch --dry-run|--check|-C` is only a read.
 // WHO IS LIMITED: a BUILDER subagent, i.e. an agent whose launch carried a HANDIN_DIR (read from its own transcript or the BRIEF-FILE it names; an `AUDIT-OF:` launch is an auditor). Auditors
 // (NO-CONTRACT launches), agents with no HANDIN_DIR and the main session (no agent_id) may write locked tests: that is how they get there.
 // WHAT IS REFUSED: Write / Edit / NotebookEdit of a locked file, and in Bash / PowerShell any write, delete or rename of one: redirects (> >>), rm / del / Remove-Item / unlink, mv / move /

@@ -9,6 +9,7 @@
 //  - patch and git apply: the diff names its files (--- / +++ / diff --git lines, read from the diff file the command names or from a heredoc in the command text); a name that, with 0 to 5 leading
 //    components stripped, is a locked file refuses the command (git apply --check, --stat, --numstat, --summary only read)
 //  - brace lists: rm tests/{locked_a.cpp,free.cpp}
+// gates11: `patch --dry-run`, `--check` and `-C` (and `git am` handling) are reads; a diff piped in from cat / type / Get-Content is now read, so `cat x.diff | patch -p1` is judged like `patch -i x.diff`.
 // STILL NOT SEEN (said plainly): a path built from variables or `$(...)` forms other than ls, find, git ls-files, echo and printf, `$PWD`, a diff piped in from another command, a script file.
 import fs from 'node:fs';
 
