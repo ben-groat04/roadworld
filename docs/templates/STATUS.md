@@ -5,9 +5,17 @@ References opened: N of M listed   <!-- e.g. `References opened: 44 of 44 listed
 <!-- FIRST. Everything you skipped, were refused, could not do, failed, or did not verify, one line each, with what blocked it.
      Write "Nothing skipped, refused or failed." only if true, then say what you did NOT verify. Never leave this empty.
      Something you truly cannot do goes in ONE line of this form (the finish gate accepts it and tells the main session; "time", "scope", "later round" are not blocks):
-     BLOCKED: <item> | tried: <what you attempted> | blocked by: <exact error, refusal or missing thing> | needs: <what would unblock it> -->
+     BLOCKED: <item> | tried: <command in backticks, file or test you ran> | blocked by: <quoted error text, refused command or missing file path> | needs: <what would unblock it>
+     "the complexity", "difficult", "the geometry", "a larger rewrite" are not blocks; at most 3 BLOCKED lines unless each has a different concrete cause; a BLOCKED line never waives a measured gate floor. -->
 
 BLOCKED lines, if any, go here (delete this line if there are none).
+
+## Items
+
+<!-- Only when the brief lists `ITEM:` lines: one row per item, "done" with the test, run or image that proves it, or the BLOCKED form in the row. An item with no row is refused. -->
+
+| Item | Status | Proof |
+|---|---|---|
 
 ## Prior audit items
 

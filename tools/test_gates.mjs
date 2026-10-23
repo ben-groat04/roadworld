@@ -353,6 +353,22 @@ w(path.join(vf, 'COMPARE.md'), '| case | render | reference | composite | before
 c = checkV(); t('v1: the old 5-column COMPARE.md still passes (running agents with the old layout are not refused)', c.status === 0, c.stderr);
 c = checkV(['--gates-version', '2']); t('v2: the same 5-column COMPARE.md is refused (needs 8)', c.status === 1 && /needs 8 columns/.test(c.stderr), c.stderr);
 
+console.log('the gates3 audit\'s fake hand-in (one gradient picture everywhere, a typed record) is refused end to end');
+{
+  const vf3 = path.join(wt, 'docs/progress/fake'); w(path.join(vf3, 'STATUS.md'), statusBase().replace(/Case: .*\n?/g, '') + '\n## Reference files opened\n\nCase: A | Opened: aerial/f1.jpg, aerial/f2.jpg, aerial/f3.jpg\n'); w(path.join(vf3, 'FAULTS.md'), faults3);
+  const grad = realPng(400, 300, (x, y) => [x % 256, y % 256, (x + y) % 256]);
+  for (const f of ['render.png', 'composite.png', 'before.png']) w(path.join(vf3, f), grad);
+  for (const f of ['f1.jpg', 'f2.jpg', 'f3.jpg']) w(path.join(main, 'docs/reference/aerial', f), grad);
+  w(path.join(vf3, 'render.stats.json'), JSON.stringify({ view: 'render', width: 400, height: 300, diagnostic: false, road_px: 60000, debug_px: 0, png_sha1: sha1(grad), written_by: 'prototypes/mesh-view/render.mjs' }));
+  w(path.join(vf3, 'COMPARE.md'), '| case | render | reference | composite | before | subject/type match | scale match | viewpoint match |\n|---|---|---|---|---|---|---|---|\n| A | render.png | aerial/f1.jpg | composite.png | before.png | a two lane road, same kind as the shot | the layout looks like the shot overall | seen from above, as in the shot |\n');
+  const cf = spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), vf3, '--main', main, '--worktree', wt, '--gates-version', '2'], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } });
+  t('fake hand-in: REFUSED (the old gates passed it)', cf.status === 1, cf.stdout + cf.stderr);
+  t('...the four files of one row are the same bytes: named', /render and the reference are the same file/.test(cf.stderr) && /render and the composite are the same file/.test(cf.stderr), cf.stderr);
+  t('...the three "reference photos" are one picture by content', /only 1 different picture/.test(cf.stderr), cf.stderr);
+  t('...the typed record has no mask picture, so no road pixel was measured', /names no mask picture/.test(cf.stderr), cf.stderr);
+  t('...the copies of the render are not registered reference photos', /not a registered reference photo|byte-identical to render\.png/.test(cf.stderr), cf.stderr);
+}
+
 // --task reads the Gates section of a task file
 w(path.join(tmp, 'task_gates.md'), '# T\n## Gates\nscene_check >= 20/21 (baseline 20/21, target 21/21)\nNo new test waiver.\n');
 fakeScene(17, 21); c = check(['--task', path.join(tmp, 'task_gates.md')]); t('--task <task-file> runs the Gates section lines (manual run)', c.status === 1 && /measured 17\/21/.test(c.stderr), c.stderr);

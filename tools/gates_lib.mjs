@@ -312,7 +312,7 @@ export function waiverFindings(diffText, allowed = [], contents = null) {
     }
     // ---- gates4 (gates3 audit faults 6 and 7): more evasions of the assertion, its expected value and the test run
     const isTestData = /(^|\/)tests\/.+\.(?:json|txt|golden|csv|dat|expected|ref|bin|tsv|yml|yaml|ini)$/i.test(f) || /(^|\/)(?:golden|expected|fixtures?)\//i.test(f);
-    if (isTestData && (A.length || R.length)) add('test_data:' + f, f, `a test data / golden file was edited (${A.length} line(s) added, ${R.length} removed): expected values live there; a changed expectation needs a photo measurement or a written rule`);
+    if (isTestData && !cmake && (A.length || R.length)) add('test_data:' + f, f, `a test data / golden file was edited (${A.length} line(s) added, ${R.length} removed): expected values live there; a changed expectation needs a photo measurement or a written rule`);
     if (cmake) {
       for (const l of A) if (/\badd_test\b|\bset_tests_properties\b|\bCTEST_\w+/.test(l) && /(?:^|\s)(?:-tc=|-tce=|-ts=|-sc=|-sfe=|--test-case|--dt-\w+|--no-run|-E\s|-R\s|--exclude|--tests-regex|--filter)|\bWILL_FAIL\b|\bDISABLED\b/.test(l) && !R.includes(l)) add('ctest_args:' + base + ':' + l.trim().slice(0, 40), f, `a test registration gained a filter, exclusion or disable argument: ${l.trim().slice(0, 100)} (it can run fewer tests than before)`);
     }
