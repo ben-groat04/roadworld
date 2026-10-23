@@ -52,7 +52,7 @@ export function extraJudge(env) {
     for (let i = 0; i < av.length; i++) {
       if (!/^-(?:exec|execdir|ok|okdir)$/.test(av[i])) continue;
       const grp = [];
-      for (let j = i + 1; j < av.length && av[j] !== ';' && av[j] !== '+' && av[j] !== '\\;'; j++) grp.push(av[j]);
+      for (let j = i + 1; j < av.length && ![';', '+', '\\', '\\;'].includes(av[j]); j++) grp.push(av[j]);
       if (!grp.length) continue;
       for (const g of globs) out.reasons.push(...H.judgeCommand(grp.map((x) => (x === '{}' ? g : x)).map(quote).join(' '), cur, lc, depth + 1));
     }
@@ -71,6 +71,16 @@ export function extraJudge(env) {
       files.push(a);
     }
     if (viaFlag) { for (const p of files) out.reasons.push(...H.judgeTarget(p, cur, lc, verb + ' -i', false)); out.done = true; }
+    return out;
+  }
+
+  // ---- sort -o FILE / --output=FILE writes FILE (sort -o f f is the in-place idiom)
+  if (verb === 'sort') {
+    for (let k = 0; k < av.length; k++) {
+      const m = /^(?:--output=)(.+)$/.exec(av[k]);
+      const t = m ? m[1] : (av[k] === '-o' || av[k] === '--output') ? av[++k] : /^-[a-zA-Z]*o.+/.test(av[k]) && !/^--/.test(av[k]) && /^-o/.test(av[k]) ? av[k].slice(2) : null;
+      if (t) out.reasons.push(...H.judgeTarget(t, cur, lc, 'sort -o', false));
+    }
     return out;
   }
 

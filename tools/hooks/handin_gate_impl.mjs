@@ -23,11 +23,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { ROOT, STATE_DIR, log, readStdin, parseJson, firstUserText, checkBrief, briefFileOf, agentTranscript } from './lib.mjs';
+import { phaseIn, firstLookOfIn, checkFirstLookFile, readOrderProblem, FIRSTLOOK_FILE } from './phase_marks.mjs';
 import { auditOfIn, readBuilder, recordBuilder, checkAuditFile, AUDIT_FILE, findBuilderInLog, recordAudit, parseAudit } from './audit_lib.mjs';
 
 const MAX_BLOCKS = 3;
 // Measured gates build and run the scene check: allow minutes (settings.json hook timeout must be larger; a timeout fails open and is logged).
 const GATE_TIMEOUT_MS = 270000;
+export function suitesIn(text) { return [...String(text || '').replace(/\r\n/g, '\n').matchAll(/^SUITE:[ \t]*(.+?)[ \t]*$/gm)].map((m) => m[1]); }
 export function priorAuditIn(text) { const m = String(text || '').match(/^PRIOR-AUDIT:[ 	]*(.+?)[ 	]*$/m); return m ? m[1].replace(/^`|`$/g, '') : null; }
 export function gatesIn(text) {
   const t = String(text || '').split('\r\n').join('\n');
@@ -117,6 +119,17 @@ export async function main() {
       intro: `AUDIT GATE: you are the auditor of ${aof} and may not finish yet`,
       fix: `write ${path.join(aof, AUDIT_FILE)} (template docs/templates/AUDIT.md; your agent id is ${id})`, failedFile: 'AUDIT_FAILED.txt' });
   }
+  // gates10: an Opus first-look agent (make_brief --first-look): may not finish until FIRSTLOOK_OPUS.md passes (its own 3-refusal count, FIRSTLOOK_FAILED.txt on release)
+  let flo = firstLookOfIn(text);
+  if (!flo) { const bf1 = briefFileOf(text); if (bf1) { try { flo = firstLookOfIn(fs.readFileSync(bf1, 'utf8')); } catch { /* handled as a normal brief below */ } } }
+  if (flo) {
+    const probs = checkFirstLookFile(flo, { actualId: id, notBefore: runStart - SLACK_MS, main: ROOT });
+    const ord = readOrderProblem(tp);
+    if (ord) { let ft = ''; try { ft = fs.readFileSync(path.join(flo, FIRSTLOOK_FILE), 'utf8'); } catch { /* reported above */ } if (!/^Order:[ \t]*\S.{19,}/m.test(ft)) probs.push(ord + ' (or add a line "Order: <what you read first and why>", 20+ characters, which the main session will see)'); }
+    if (!probs.length) { resetCounter(id); return allow({ ...base, decision: 'allow', reason: 'first look written', firstlook_of: flo }); }
+    return blockOrRelease({ isPre, base, id, dir: flo, failures: probs.map((p) => ' - ' + p).join('\n'), kind: 'firstlook',
+      intro: 'FIRST-LOOK GATE: you may not finish yet', fix: 'write ' + path.join(flo, FIRSTLOOK_FILE) + ' (template docs/templates/FIRSTLOOK.md; your agent id is ' + id + ')', failedFile: 'FIRSTLOOK_FAILED.txt' });
+  }
   let briefFileText = null;
   let handinDir = info.handinDir;
   let noVisual = info.noVisual;
@@ -134,8 +147,10 @@ export async function main() {
   // gates8 CHECKPOINT hand-back: a builder may stop early with <HANDIN_DIR>/CHECKPOINT.md (first line "CHECKPOINT: <what is done> | images: <paths>", one existing image at least). The stop is let
   // through ONCE per agent, logged as decision=checkpoint, and is NOT a hand-in: no builder record, no audit owed, no counter. The hook runs twice at one finish (PreToolUse on
   // SubagentHandback, then Stop): the second call within CHECKPOINT_WINDOW_MS of the first, for the same unchanged file, is the same finish. Any later stop is a hand-in and gets the full check.
+  const phase = phaseIn(text) || (briefFileText ? phaseIn(briefFileText) : null);
+  const phased = phase === 'measure' || phase === 'build';   // a phase agent of a split round: its own check, its own counter, no CHECKPOINT allowance, no audit owed
   let checkpointNote = '';
-  try {
+  if (!phased) try {
     const cpFile = path.join(handinDir, 'CHECKPOINT.md');
     // gates9 (gates8 audit H5): a CHECKPOINT.md older than the latest commit of the worktree is a leftover (the builder worked on after it): ignored and logged, the stop is a hand-in.
     const cpMtime0 = fs.existsSync(cpFile) ? fs.statSync(cpFile).mtimeMs : 0;
@@ -166,13 +181,14 @@ export async function main() {
 
   const args = [path.join(ROOT, 'tools', 'check_handin.mjs'), handinDir, '--main', ROOT];
   if (noVisual) args.push('--no-visual');
+  if (phased) { args.push('--phase', phase); for (const sc of [...suitesIn(text), ...(briefFileText ? suitesIn(briefFileText) : [])]) args.push('--suite', sc); }
   // Gates v2: only a brief that carries `GATES-VERSION: 2` (make_brief.mjs) gets the measured checks; its `GATE:` lines are passed on.
-  const gv = gatesIn(text) || (briefFileText ? gatesIn(briefFileText) : null);
+  const gv = phased ? null : (gatesIn(text) || (briefFileText ? gatesIn(briefFileText) : null));
   if (gv) { args.push('--gates-version', String(gv.version)); for (const g of gv.gates) args.push('--gate', g); for (const it of gv.items || []) args.push('--item', it); }
   const pa = priorAuditIn(text) || (briefFileText ? priorAuditIn(briefFileText) : null);
   if (pa) args.push('--prior-audit', pa);
   if (runStart) args.push('--since', String(Math.round(runStart - SLACK_MS)));
-  const r = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', timeout: gv ? GATE_TIMEOUT_MS : 30000, env: { ...process.env, CP_FROM_HOOK: '1' } });
+  const r = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', timeout: gv || phased ? GATE_TIMEOUT_MS : 30000, env: { ...process.env, CP_FROM_HOOK: '1' } });
   const passed = r.status === 0 && /HAND-IN CHECK PASSED/.test(r.stdout || "");
   const failed = r.status === 1 && /HAND-IN CHECK FAILED/.test(r.stderr || "");
   if (r.error || (!passed && !failed)) {
@@ -193,6 +209,7 @@ export async function main() {
       try { const last = fs.readFileSync(path.join(STATE_DIR, 'gate.log'), 'utf8').split(NL).filter((l) => l.includes('"gate":"blocked"') && l.includes(JSON.stringify(handinDir).slice(1, -1))).pop(); dup = !!last && JSON.stringify(parseJson(last).items) === JSON.stringify(blockedLines.slice(0, 10)); } catch { /* no log yet */ }
       if (!dup) log({ gate: 'blocked', ...base, decision: 'allow', reason: 'BLOCKED', handin_dir: handinDir, items: blockedLines.slice(0, 10), count: blockedLines.length });
     }
+    if (phased) return allow({ ...base, decision: 'allow', reason: 'phase check passed (' + phase + '): not a hand-in, no audit owed until the render phase', handin_dir: handinDir, phase });
     try {
       const { changed, rec } = recordBuilder(handinDir, id, input.agent_type, STATE_DIR);
       if (changed) log({ gate: 'audit', decision: 'owed', reason: 'audit owed: hand-in passed, no AUDIT.md by a different agent yet', handin_dir: handinDir, builder_id: id, builder_type: rec.agent_type });
@@ -202,8 +219,8 @@ export async function main() {
 
   const failures = ((checkpointNote ? checkpointNote + String.fromCharCode(10) : '') + (r.stderr || r.stdout || '')).trim();
   return blockOrRelease({ isPre, base, id, dir: handinDir, failures, kind: 'handin',
-    intro: 'HAND-IN GATE: you may not finish yet',
-    fix: `run \`node tools/check_handin.mjs ${handinDir}${noVisual ? ' --no-visual' : ''}\` until it passes`, failedFile: 'HANDIN_FAILED.txt' });
+    intro: phased ? `PHASE GATE (${phase}): you may not finish yet` : 'HAND-IN GATE: you may not finish yet',
+    fix: `run \`node tools/check_handin.mjs ${handinDir}${phased ? ' --phase ' + phase : noVisual ? ' --no-visual' : ''}\` until it passes`, failedFile: 'HANDIN_FAILED.txt' });
 }
 
 // Shared by the builder (hand-in check) and auditor (AUDIT.md) branches: refuse up to MAX_BLOCKS times per agent_id, then release.
@@ -217,7 +234,7 @@ function blockOrRelease({ isPre, base, id, dir, failures, kind, intro, fix, fail
     try {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, failedFile),
-        `The ${audit ? 'AUDIT.md' : 'hand-in'} check still failed after ${MAX_BLOCKS} refusals; the agent was allowed to stop (${new Date().toISOString()}).\n\n${failures}\n`);
+        `The ${audit ? 'AUDIT.md' : kind === 'firstlook' ? 'FIRSTLOOK_OPUS.md' : 'hand-in'} check still failed after ${MAX_BLOCKS} refusals; the agent was allowed to stop (${new Date().toISOString()}).\n\n${failures}\n`);
       wrote = true;
     } catch { /* logged below */ }
     log({ gate: kind, ...base, decision: 'allow',

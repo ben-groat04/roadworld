@@ -15,6 +15,14 @@ export function isolateState(tmpDir, srcRoot, { setEnv = true } = {}) {
   const stateDir = path.join(tmpDir, 'state-isolated'); fs.mkdirSync(stateDir, { recursive: true });
   if (setEnv) process.env.CP_GATE_STATE_DIR = stateDir;
   const marker = path.basename(tmpDir);
+  // gates10 (gates9 audit fault 10): a suite that dies or is interrupted (Ctrl-C, a crash, process.exit in a failing test) left its temp folder behind: remove it on exit and on SIGINT / SIGTERM
+  // (links unlinked first, as cleanupTmp does). The normal end of a suite calls cleanupTmp itself; a second call on a removed folder is harmless.
+  if (!isolateState.hooked) isolateState.hooked = new Set();
+  if (!isolateState.hooked.has(tmpDir)) {
+    isolateState.hooked.add(tmpDir);
+    process.on('exit', () => { try { cleanupTmp(tmpDir); } catch { /* best effort */ } });
+    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { try { cleanupTmp(tmpDir); } catch { /* best effort */ } process.exit(130); });
+  }
   return {
     stateDir, realLog: real,
     // lines appended to the real log since the start that mention this run's temp folder (the live hooks keep writing their own lines there: those are not ours)

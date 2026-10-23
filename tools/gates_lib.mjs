@@ -22,6 +22,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
+import { imageDecodable } from './image_lib.mjs';
 
 export const METRICS = ['scene_check', 'ctest failed_assertions', 'ctest failed_tests', 'ctest assertions'];
 export const FAILURE_METRICS = ['ctest failed_assertions', 'ctest failed_tests'];
@@ -454,10 +455,29 @@ export function collectWaiverDiff(wt) {
 }
 
 /// ---------- C: picture sanity ----------
-export function headlineViews(compareText) {
+// gates10: a COMPARE.md row may declare its frame kind `unreal` (a 9th column "unreal", or the tag [unreal] in the case cell): a playtest frame from the Unreal editor, which the browser
+// render tools' stats.json / mask.png records cannot describe (found by m3ui-r1). Such a row is exempt from the records, but its render must still be a real, complete, decodable picture of
+// at least UNREAL_MIN_BYTES, written during the run (newer than the brief). Everything else about the row (files exist, different by content, movement from the before picture) still holds.
+export const UNREAL_MIN_BYTES = 10240;
+export function compareRowCells(compareText) {
   if (!compareText) return [];
-  const rows = compareText.split('\n').filter((l) => l.trim().startsWith('|') && !/^\s*\|[\s:|-]+\|\s*$/.test(l)).slice(1);
-  return rows.map((r) => (r.split('|')[2] || '').trim().replace(/`/g, '')).filter(Boolean);
+  return compareText.split('\n').filter((l) => l.trim().startsWith('|') && !/^\s*\|[\s:|-]+\|\s*$/.test(l)).slice(1).map((r) => r.split('|').slice(1, -1).map((c) => c.trim()));
+}
+export const isUnrealRow = (cells) => /^\[?unreal\]?$/i.test(String(cells[8] || '').replace(/`/g, '').trim()) || /\[unreal\]/i.test(String(cells[0] || ''));
+export function headlineViews(compareText) {
+  return compareRowCells(compareText).filter((c) => !isUnrealRow(c)).map((c) => (c[1] || '').replace(/`/g, '')).filter(Boolean);
+}
+export function unrealFrameProblems(rows, since = 0) {
+  const problems = [];
+  for (const r of rows) {
+    if (!r.unreal || !r.render) continue;   // a missing render is check_handin's own complaint
+    const f = r.render;
+    let st; try { st = fs.statSync(f); } catch { problems.push(`COMPARE.md row "${r.kase}" (unreal): the render cannot be read`); continue; }
+    if (st.size < UNREAL_MIN_BYTES) problems.push(`COMPARE.md row "${r.kase}" (unreal): ${path.basename(f)} is only ${st.size} bytes (under ${UNREAL_MIN_BYTES}): not a real frame`);
+    if (since > 0 && st.mtimeMs < since) problems.push(`COMPARE.md row "${r.kase}" (unreal): ${path.basename(f)} is older than this run (written before ${new Date(since).toISOString()}): a frame from an earlier round does not count`);
+    if (!imageDecodable(f)) problems.push(`COMPARE.md row "${r.kase}" (unreal): ${path.basename(f)} is not a complete decodable picture (bad header or cut off)`);
+  }
+  return problems;
 }
 export const sha1File = (p) => { try { return crypto.createHash('sha1').update(fs.readFileSync(p)).digest('hex'); } catch { return null; } };
 function pngSize(file) {
@@ -566,6 +586,12 @@ export function pictureProblems(folder, compareText, opts = {}) {
     if (!p) { const bn = path.basename(cell); p = all.find((x) => path.basename(x) === bn && !/(^|\/)before\//i.test(rel(x))); }
     if (!p) continue; // a missing render is check_handin's own COMPARE.md complaint
     must.set(path.resolve(p), 'listed in COMPARE.md'); compareFiles.add(path.resolve(p));
+  }
+  // gates10: frames declared `unreal` in COMPARE.md have no browser-render record (they get their own check, unrealFrameProblems)
+  for (const c of compareRowCells(compareText).filter(isUnrealRow)) {
+    const cell = (c[1] || '').replace(/`/g, ''); if (!cell) continue;
+    const p = path.isAbsolute(cell) ? cell : bases.map((b) => path.join(b, cell)).find((x) => fs.existsSync(x)) || all.find((x) => path.basename(x) === path.basename(cell));
+    if (p) must.delete(path.resolve(p));
   }
   for (const [p, why] of must) {
     const rec = path.resolve(p.replace(/\.(png|jpe?g)$/i, '.stats.json'));

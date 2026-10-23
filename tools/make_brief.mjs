@@ -21,10 +21,10 @@ try { GL = await import('./gates_lib.mjs'); } catch (e) {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const opt = (n, d = '') => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
-const valueOpts = ['--round', '--worktree', '--branch', '--audit', '--override'];
+const valueOpts = ['--round', '--worktree', '--branch', '--audit', '--override', '--phase', '--first-look', '--prior-audit'];
 const taskFile = args.find((a, i) => !a.startsWith('--') && !(i > 0 && valueOpts.includes(args[i - 1])));
-if (!taskFile || (!opt('round') && !opt('audit'))) {
-  console.error('usage: node tools/make_brief.mjs <task-file> (--round <name> | --audit <progress-folder>) [--worktree <path>] [--branch <name>] [--no-visual]');
+if (!taskFile || (!opt('round') && !opt('audit') && !opt('first-look'))) {
+  console.error('usage: node tools/make_brief.mjs <task-file> (--round <name> [--phase measure|build|render] | --audit <progress-folder> | --first-look <progress-folder>) [--worktree <path>] [--branch <name>] [--no-visual]');
   process.exit(2);
 }
 const text = fs.readFileSync(taskFile, 'utf8').replace(/\r\n/g, '\n');
@@ -40,7 +40,11 @@ for (const line of text.split('\n')) {
 }
 const get = (k) => (sections[k] ?? '').trim();
 const missing = [];
-const auditMode = args.includes('--audit');
+const auditMode = args.includes('--audit') || args.includes('--first-look');   // a first look is briefed like an audit: owner's words and cases, no builder sections
+const lookMode = args.includes('--first-look');
+const phaseOpt = opt('phase');
+if (phaseOpt && !['measure', 'build', 'render'].includes(phaseOpt)) { console.error('REFUSED: --phase must be measure, build or render (got "' + phaseOpt + '")'); process.exit(1); }
+if (phaseOpt && !opt('round')) { console.error('REFUSED: --phase needs --round <name>'); process.exit(1); }
 if (!task) missing.push('first line "# <task>"');
 if (!/["“]/.test(get("owner's words"))) missing.push('"## Owner\'s words" with the verbatim quote in quotation marks');
 if (get('cases').length < 5) missing.push('"## Cases" (case | absolute photo paths, at least 3 each)');
@@ -97,12 +101,12 @@ if (missing.length) {
   process.exit(1);
 }
 if (auditMode) {
-  const folder = path.resolve(opt('audit'));
+  const folder = path.resolve(opt(lookMode ? 'first-look' : 'audit'));
   const round = opt('round') || path.basename(folder);
   // reference files = path-like tokens with a file extension in the Cases section (counted so the auditor can write "N of M")
   const refRe = /[A-Za-z]:[\\/][^\s|,;()"'<>]+\.\w{2,5}|[\w./\\-]+\.(?:jpe?g|png|webp|gif|md|mjs|js|json|cpp|h|hpp|txt|pdf|uasset|py)\b/gi;
   const refs = [...new Set(get('cases').match(refRe) || [])];
-  const tplA = fs.readFileSync(path.join(root, 'docs/templates/AUDIT_BRIEF.md'), 'utf8');
+  const tplA = fs.readFileSync(path.join(root, lookMode ? 'docs/templates/FIRSTLOOK_BRIEF.md' : 'docs/templates/AUDIT_BRIEF.md'), 'utf8');
   const fillA = {
     TASK: task, ROUND: round, PROGRESS: folder, OWNER_WORDS: get("owner's words"), CASES: get('cases'),
     REF_COUNT: String(refs.length),
@@ -119,7 +123,7 @@ if (auditMode) {
       const rep2 = nl.canaryReport(lib.STATE_DIR);
       if (rep2.text) console.error('\n' + rep2.text + '\n');
       if (rep2.problems.length) canaryA = 3;
-      lib.log({ gate: 'make_brief', round: 'audit:' + round, audit_of: folder });
+      lib.log({ gate: 'make_brief', round: (lookMode ? 'firstlook:' : 'audit:') + round, [lookMode ? 'firstlook_of' : 'audit_of']: folder });
     }
   } catch (e) { console.error('make_brief: canary check could not run (' + (e && e.message) + ')'); }
   process.exit(canaryA);
@@ -134,7 +138,22 @@ const priorAudit = opt('prior-audit') ? path.resolve(opt('prior-audit')) : '';  
 const itemSource = get('items') || get('faults');
 if (!get('items') && /^\s*(?:[-*]\s*)?\**(?:\d{1,3}|[A-Za-z]|[A-Za-z]{1,2}\d{1,3})\**\s*[.):]\s+\S/m.test(get('faults'))) console.error('make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer');
 const itemLines = itemSource.split('\n').map((l) => l.match(/^\s*(?:[-*]\s*)?\**(\d{1,3}|[A-Za-z]|[A-Za-z]{1,2}\d{1,3})\**\s*[.):]\s+(\S.*)$/)).filter(Boolean).map((m) => 'ITEM: ' + m[1] + ' | ' + m[2].replace(/\s+/g, ' ').slice(0, 200));
-const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + (GL ? '\nGATES-VERSION: 3' + gateLines.map((g) => '\nGATE: ' + g).join('') + itemLines.map((l) => '\n' + l).join('') : '') + (priorAudit ? '\nPRIOR-AUDIT: ' + priorAudit : '');
+// ---- phase mode (gates10): a round split into short fresh agents. build and render start only when the earlier phase's file exists AND passes its own check (run here, not quoted).
+const suiteLines = get('suite').split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').replace(/^\x60|\x60$/g, '').trim()).filter(Boolean);
+if (phaseOpt === 'build' || phaseOpt === 'render') {
+  const { spawnSync } = await import('node:child_process');
+  const need = phaseOpt === 'build' ? ['measure'] : ['measure', 'build'];
+  const bad = [];
+  for (const ph of need) {
+    const f = path.join(handinDir, ph === 'measure' ? 'MEASURE.md' : 'BUILD.md');
+    if (!fs.existsSync(f)) { bad.push(f + ' does not exist: the ' + ph + ' phase has not handed over'); continue; }
+    const cargs = [path.join(root, 'tools', 'check_handin.mjs'), handinDir, '--phase', ph, '--main', root, '--worktree', path.resolve(worktree), ...(ph === 'build' ? suiteLines.flatMap((c) => ['--suite', c]) : [])];
+    const r = spawnSync(process.execPath, cargs, { encoding: 'utf8', timeout: 25 * 60 * 1000 });
+    if (r.status !== 0) bad.push('the ' + ph + ' phase check fails:\n   ' + String(r.stderr || r.stdout || r.error || '').trim().split('\n').slice(0, 12).join('\n   '));
+  }
+  if (bad.length) { console.error('REFUSED: the ' + phaseOpt + ' phase cannot be briefed yet:\n - ' + bad.join('\n - ')); process.exit(1); }
+}
+const handinLines = 'HANDIN_DIR: ' + handinDir + (phaseOpt ? '\nPHASE: ' + phaseOpt : '') + (phaseOpt === 'build' ? suiteLines.map((c) => '\nSUITE: ' + c).join('') : '') + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + (GL ? '\nGATES-VERSION: 3' + gateLines.map((g) => '\nGATE: ' + g).join('') + itemLines.map((l) => '\n' + l).join('') : '') + (priorAudit ? '\nPRIOR-AUDIT: ' + priorAudit : '');
 const fill = {
   TASK: task,
   ROUND: opt('round'),
@@ -150,7 +169,12 @@ const fill = {
 };
 const tpl = fs.readFileSync(path.join(root, 'docs/templates/BRIEF.md'), 'utf8');
 // single pass so placeholder-like text inside the pasted values is never re-expanded
-process.stdout.write(tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k] ?? ''));
+const PHASE_TEXT = {
+  measure: 'MEASURE phase (first of up to three short agents; the next one starts from your file). You open EVERY reference, measure in lane widths or metres, and write MEASURE.md in the progress folder, nothing else: no code. Format: a line "References opened: N of M listed" (N < M needs a "not opened" line with the file and why); one "## Case <name>" section per case, each with a table "| photo file | what was measured | value (m, cm or lane widths) |" naming at least 3 different photos, and at least one trace or overlay image of your own (a PNG/JPEG you draw over the photo or the render, written during this run, named in the section). You may not finish until "node tools/check_handin.mjs <HANDIN_DIR> --phase measure" passes (your own 3-refusal count; the CHECKPOINT allowance does not apply). Commit MEASURE.md and the images with [skip ci].',
+  build: 'BUILD phase (second of up to three short agents). Read MEASURE.md and the decisions in this brief; write the code and its tests; commit after each verified step with [skip ci]. Write BUILD.md in the progress folder with a "Commits:" line listing every commit you made since MEASURE.md was written, and run the SUITE: line(s) of this brief yourself. For every NEW test file keep a fail_first_<name>.txt in the progress folder that shows the new tests failing on the code before your change. No new waiver, skip or loosened tolerance. git status must be empty when you finish. You may not finish until "node tools/check_handin.mjs <HANDIN_DIR> --phase build" passes (it runs the suite itself; your own 3-refusal count; no CHECKPOINT allowance).',
+  render: 'RENDER phase (last of up to three short agents). MEASURE.md and BUILD.md passed their checks. You make the renders, composites and the self-audit and write the full hand-in below (STATUS.md, FAULTS.md, COMPARE.md, INDEX.md); the ordinary hand-in check applies unchanged, and the round is audited after it.',
+};
+process.stdout.write(tpl.replace(/\{\{(\w+)\}\}/g, (_, k) => fill[k] ?? '').replace(/^(## Finish line)/m, () => (phaseOpt ? '## Phase\n' + PHASE_TEXT[phaseOpt] + '\n\n' : '') + '## Finish line'));
 
 // Canary (tools/hooks/notice_lib.mjs): hooks that never run cannot report themselves, so look at gate.log from this side.
 // Only in the main checkout, which owns the live log. The brief above is still printed; the exit code is 3 if tripped.

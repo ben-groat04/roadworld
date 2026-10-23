@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { log, readStdin, parseJson, checkBrief, noContractReason, briefFileOf, EXEMPT_TYPES } from './lib.mjs';
 import { auditOfIn, pastedFaultList } from './audit_lib.mjs';
+import { firstLookOfIn, disguisedJob } from './phase_marks.mjs';
 
 // True when the text asks an agent to write / create an AUDIT.md (or to be "the auditor" that writes one). Mentions of the file are not enough.
 export function asksToWriteAudit(text) {
@@ -59,7 +60,33 @@ export async function main() {
       '\nBuild the auditor brief with `node tools/make_brief.mjs <task-file> --audit <progress-folder>`.\n');
     return 2;
   }
+  // gates10: a first-look launch (make_brief --first-look): FIRSTLOOK-OF in the prompt or its BRIEF-FILE. Same shape as an auditor: absolute folder, never a builder (no HANDIN_DIR).
+  let flText = prompt;
+  let fo = firstLookOfIn(prompt);
+  if (!fo && briefFileOf(prompt)) { try { flText = fs.readFileSync(briefFileOf(prompt), 'utf8'); fo = firstLookOfIn(flText); } catch { /* handled below as a normal brief */ } }
+  if (fo) {
+    const why = [];
+    if (!path.win32.isAbsolute(fo) && !path.posix.isAbsolute(fo)) why.push(`FIRSTLOOK-OF must be an absolute path (got "${fo}")`);
+    if (/^HANDIN_DIR:/m.test(flText)) why.push('a FIRSTLOOK-OF brief must not also carry HANDIN_DIR (a first look is not a builder; make the brief with make_brief.mjs --first-look)');
+    if (!why.length) { log({ ...base, decision: 'allow', reason: 'FIRSTLOOK-OF', firstlook_of: fo }); return 0; }
+    log({ ...base, decision: 'deny', reason: 'FIRSTLOOK-OF refused', missing: why });
+    process.stderr.write('LAUNCH REFUSED by the brief gate (FIRSTLOOK-OF launch):\n - ' + why.join('\n - ') + '\nBuild the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progress-folder>`.\n');
+    return 2;
+  }
   const nc = noContractReason(prompt);
+  // gates10: a NO-CONTRACT launch whose description or reason says it IS an audit or a first look (the 23 Oct launches "Auditor for gates9 hand-in", "Opus first look on grade-r12 images" all passed as
+  // NO-CONTRACT, so no builder record was compared, no AUDIT.md or FIRSTLOOK_OPUS.md was validated and the round stayed owed on paper only). Refused with the way to launch it properly.
+  // Clerks, mergers, researchers and read-only checks are not affected: only the job itself is matched (phase_marks.disguisedJob).
+  if (nc) {
+    const job = disguisedJob(ti.description, nc);
+    if (job) {
+      log({ ...base, decision: 'deny', reason: 'NO-CONTRACT ' + job + ' launch refused', no_contract_reason: nc });
+      process.stderr.write(`LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an ${job} ("${String(ti.description || '').slice(0, 80)}"). An ${job} agent launched without its marker is not recorded and its file is not validated. ` +
+        (job === 'audit' ? 'Build the auditor brief with `node tools/make_brief.mjs <task-file> --audit <progress-folder>` (marker line AUDIT-OF).' : 'Build the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progress-folder>` (marker line FIRSTLOOK-OF).') +
+        ' Clerks, merges, research and read-only checks stay allowed with NO-CONTRACT.\n');
+      return 2;
+    }
+  }
   // A NO-CONTRACT launch cannot be asked to WRITE an AUDIT.md: that file only counts when an auditor launched with make_brief --audit (marker AUDIT-OF) writes it and the finish
   // gate records it. Only prompts that ask for the file to be written are refused: mergers, clerks and readers may mention AUDIT.md, audits and progress folders freely
   // (gates3 audit fault 3: the wording rule refused merge and bookkeeping prompts and was evaded by synonyms). A synonym that slips past this wording buys nothing:
