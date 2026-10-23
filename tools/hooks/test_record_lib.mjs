@@ -10,18 +10,19 @@ import { fileURLToPath } from 'node:url';
 const HOOKS = path.dirname(fileURLToPath(import.meta.url));
 export const RUNNER = path.resolve(HOOKS, '..', 'run_suite.mjs');
 // logFile: where the log should end up (any name; the runner itself writes suite_node.log). exit: the fake suite's exit code. runner: another copy of run_suite.mjs (fixtures).
-export function logRun(wt, logFile, content, { exit = 0, stateDir = process.env.CP_GATE_STATE_DIR, runner = RUNNER, timeout = 60, scriptBody = null } = {}) {
+export function logRun(wt, logFile, content, { exit = 0, stateDir = process.env.CP_GATE_STATE_DIR, runner = RUNNER, timeout = 60, scriptBody = null, round = '_runs' } = {}) {
   const env = { ...process.env, CP_GATE_STATE_DIR: stateDir };
   const dotgit = path.join(wt, '.git');
   const fakeDir = fs.statSync(dotgit).isDirectory() ? path.join(dotgit, 'fake_suite') : path.join(path.dirname(path.resolve(wt)), path.basename(wt) + '_fake_suite');
   fs.mkdirSync(fakeDir, { recursive: true });
   const script = path.join(fakeDir, 'test_fake_suite.mjs');
   fs.writeFileSync(script, scriptBody || `process.stdout.write(${JSON.stringify(String(content))}); process.exit(${Number(exit) || 0});\n`);
-  const round = '_runs';
   const r = spawnSync(process.execPath, [runner, wt, '--script', script, '--round', round, '--timeout', String(timeout)], { encoding: 'utf8', env, timeout: 90000 });
   const own = path.join(wt, 'docs', 'progress', round, 'suite_node.log');
   fs.mkdirSync(path.dirname(logFile), { recursive: true });
-  if (fs.existsSync(own)) { fs.copyFileSync(own, logFile); }
-  try { fs.rmSync(path.join(wt, 'docs', 'progress', round), { recursive: true, force: true }); } catch { /* best effort */ }
+  if (round === '_runs') {
+    if (fs.existsSync(own)) fs.copyFileSync(own, logFile);
+    try { fs.rmSync(path.join(wt, 'docs', 'progress', round), { recursive: true, force: true }); } catch { /* best effort */ }
+  }
   return { run: r, ok: r.status === (Number(exit) || 0), log: logFile };
 }
