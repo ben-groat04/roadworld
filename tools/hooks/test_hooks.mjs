@@ -236,6 +236,21 @@ console.log('audit gate');
   t('notice lists the folder as AUDIT OWED with the builder id', /AUDIT OWED x1/.test(cA) && cA.includes(folderP) && /builder general-purpose\/p1/.test(cA) && /--audit/.test(cA), cA);
   t('notice says an ack cannot clear it', /an ack does nothing/.test(cA));
   t('the failed hand-in (vis) was never recorded as a builder: no audit owed for it', !al.readBuilder(hd('vis'), stateDir));
+  // -- gates13 (main-session decision 6): a hand-in RELEASED after 3 refusals writes a RELEASED builder record, so the auditor's finish gate can compare ids; --accept still fails until the hand-in passes
+  let c0;
+  const relRec = typeof al.readReleased === 'function' ? al.readReleased(hd('vis'), stateDir) : null;
+  t('gates13 D6: the release wrote a signed builder record flagged released (agent v1, the vis folder)', !!relRec && relRec.agent_id === 'v1' && relRec.released === true && relRec.handin_dir === path.resolve(hd('vis')), JSON.stringify(relRec));
+  t('gates13 D6: the released record raises no "audit owed" notice (it is not a passed hand-in)', !/AUDIT OWED[^\n]*vis/.test(noticeCtx()) && !fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(J).some((e) => e.gate === 'audit' && e.decision === 'owed' && e.handin_dir === hd('vis')));
+  const visAudTp = transcript('aud_vis', mkAudit(hd('vis')).stdout);
+  r = stop('av1', visAudTp); t('gates13 D6: an auditor of the released folder is blocked for the missing AUDIT.md, NOT for "no record of who built this folder"', J(r.out).decision === 'block' && /AUDIT\.md is missing/.test(J(r.out).reason) && !/no record of who built/.test(J(r.out).reason), r.out);
+  fs.writeFileSync(path.join(hd('vis'), 'AUDIT.md'), auditText('v1'));
+  const accRel = (extra = []) => spawnSync(process.execPath, [path.join(root, 'tools/check_handin.mjs'), hd('vis'), '--main', root, '--accept', ...extra], { cwd: elsewhere, encoding: 'utf8' });
+  c0 = accRel(); t('gates13 D6: --accept names the released builder: an AUDIT.md by v1 is refused ("never the same agent"), not "no record of who built"', /never the same agent/.test(c0.stderr) && !/no record of who built/.test(c0.stderr), c0.stderr.slice(0, 500));
+  fs.writeFileSync(path.join(hd('vis'), 'AUDIT.md'), auditText('av2'));
+  r = stop('av2', transcript('aud_vis2', mkAudit(hd('vis')).stdout)); t('gates13 D6: a different auditor with a valid AUDIT.md finishes, logged as independent of the released builder v1', r.code === 0 && r.out === '' && lastLog().reason === 'audit written' && lastLog().builder_id === 'v1', r.out + JSON.stringify(lastLog()));
+  const accV = accRel();
+  t('gates13 D6: --accept on the released folder still FAILS (the hand-in itself never passed)', accV.status === 1 && /FAULTS\.md is missing|COMPARE\.md is missing/.test(accV.stderr), accV.stderr.slice(0, 400));
+  fs.rmSync(path.join(hd('vis'), 'AUDIT.md'), { force: true });
 
   // -- finish gate for the auditor
   const audTp = transcript('aud', auditBrief);
