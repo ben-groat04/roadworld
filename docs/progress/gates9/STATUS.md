@@ -66,3 +66,8 @@ Source: `docs/progress/gates8/AUDIT.md`, "Fault list": F1-F3, H1-H7, C1-C5 (15 i
 ## Next step
 
 Fresh auditor first (it starts as soon as `check_handin.mjs` passes), then the merge in the order above.
+
+## Reference files opened
+
+Case: gates8 audit and round files | Opened: C:\Users\bgbg0\Documents\Programming\roadworld-wt\gates9\docs\progress\gates8\AUDIT.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt\gates9\docs\progress\gates8\STATUS.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt\gates9\docs\progress\gates8\FAULTS.md
+Case: contract and rules | Opened: C:\Users\bgbg0\Documents\Programming\roadworld-wt\gates9\docs\AGENT_CONTRACT.md, C:\Users\bgbg0\Documents\Programming\roadworld-wt\gates9\CLAUDE.md, C:\Users\bgbg0\AppData\Local\Temp\claude\C--Users-bgbg0-Documents-Programming-roadworld\dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8\scratchpad\gates9.brief.txt
