@@ -30,8 +30,10 @@ const LEAD = String.raw`^\s*(?:(?:fresh|independent|opus)\s+)*`;
 const RE_LOOK_DESC = new RegExp(LEAD + String.raw`first[- ]look\b`, 'i');
 const RE_AUDIT_DESC = new RegExp(LEAD + String.raw`(?:auditor\b|audit(?:ing)?\s+(?:of|for)\b|audit(?:ing)?\b[^\n]*\b(?:independently|round|hand-?in)\b)`, 'i');
 const PROG = String.raw`[\`"']?\S*docs[\\/]+progress[\\/]+[\w.-]+`;
-const RE_AUDIT_PROMPT = new RegExp(String.raw`\b(?:audit(?:or|ing)?)\s*(?:[:\-]|of\b|for\b)?\s*(?:the\s+)?(?:hand-?in\s+)?(?:folder\s+)?(?:at\s+)?` + PROG, 'i');
-const RE_LOOK_PROMPT = new RegExp(String.raw`\bfirst[- ]look\s*(?:[:\-]|of\b|on\b|for\b)?\s*(?:the\s+)?(?:hand-?in\s+)?(?:folder\s+)?(?:at\s+)?` + PROG, 'i');
+// the PROMPT names a folder to audit only when a LINE of it opens with the audit order ("Audit <folder>", "Auditor: ...", "You are the auditor of <folder>"); a clerk line that merely says that an
+// audit of a folder was accepted does not.
+const RE_AUDIT_PROMPT = new RegExp(String.raw`^[ \t>*-]*(?:you are (?:the |an? )?(?:fresh |independent )?)?(?:audit(?:or|ing)?)\b[^\n]{0,60}?` + PROG, 'im');
+const RE_LOOK_PROMPT = new RegExp(String.raw`^[ \t>*-]*(?:you are (?:the |an? )?(?:opus )?)?first[- ]look\b[^\n]{0,60}?` + PROG, 'im');
 export function disguisedJob(description, reason, prompt = '') {
   const d = String(description || ''); void reason;
   const p = String(prompt || '');

@@ -1,0 +1,197 @@
+// PreToolUse hook (matcher Bash|PowerShell): contract item 26 made mechanical (gates11, main-session decision 13). 23 Oct 2026: two agents waited over an hour on hung test runs (one test ran 5.5 hours).
+//
+// RULES (every session, main or agent; the same command text is judged the same way):
+//   T1  a command that RUNS a long job without a time limit is refused. The jobs (the verb of a command segment, after wrappers such as `cd x &&`, `env`, `time`, `&`, `bash -c`, `powershell -Command`):
+//       sim_core_tests, ctest, `cmake --build`, ninja, msbuild, Run-Playtest.ps1, Build-Editor.ps1, Run-EditorPython.ps1, `node ... scene.mjs`, `node ... render.mjs`, any `*_tests` or `t_full*` program.
+//       A command that only MENTIONS a name (grep ctest, cat sim_core_tests.log, git log --grep ninja, echo ..., a commit message) is not running it and passes.
+//       A LIMIT is: a GNU `timeout <N>` prefix (Bash tool; N from 1 to 900 seconds, suffixes s m h d read, so `timeout 15m` is 900); for the three Unreal .ps1 scripts their own `-TimeoutSec <N>`
+//       (Build-Editor.ps1 up to 5400, the others up to 1800: an Unreal build is allowed to be longer than a suite); in PowerShell `$p = Start-Process -PassThru ...; Wait-Process -Id $p.Id -Timeout <N>`
+//       (N up to 900). `timeout` typed in the PowerShell tool is Windows timeout.exe (a pause, not a limit) and does not count.
+//       `timeout 0` (no limit) and a limit over the cap are refused too. Quick read-only forms are not runs: `--help`, `--version`, `--list-test-cases`, `ctest -N`, `cmake --build --help`.
+//   T2  a second copy of a TEST program (sim_core_tests, ctest, *_tests, t_full*) is refused while one of the same name is still running from the same worktree: the guard writes a line to
+//       state/runs.jsonl for every test run it lets through (name, worktree, time, limit) and refuses when such a line is younger than its limit AND the process list still shows the image.
+//       The process lookup (tasklist, or pgrep off Windows) is bounded to 300 ms: on a timeout or error the check is skipped, a FAIL-OPEN line goes to gate.log and the command passes.
+//       CP_TIME_GUARD_PROCS="a.exe,b.exe" replaces the lookup (tests); CP_TIME_GUARD_PROC_CMD='["cmd","arg"]' replaces the command (tests of the timeout).
+// WHAT IT CANNOT SEE: a job started by a script file (`bash run_all.sh`), a variable or command substitution holding the program name, an alias, a `-TimeoutMinutes` backstop typed with no -TimeoutSec
+// (the .ps1 scripts' old parameter stays, but it is not accepted as the limit: the guard wants seconds, like the contract). FAIL OPEN (logged) on any internal error.
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { STATE_DIR, log, readStdin, parseJson } from './lib.mjs';
+import { parseCommand, shellInner, WRAPPER_VERBS } from './shell_lex.mjs';
+
+export const MAX_SECS = 900;
+const PS_CAP = { 'build-editor': 5400, 'run-playtest': 1800, 'run-editorpython': 1800 };
+const secsOf = (txt) => {
+  const m = String(txt).match(/^(\d+(?:\.\d+)?)([smhd]?)$/i); if (!m) return null;
+  return Number(m[1]) * ({ '': 1, s: 1, m: 60, h: 3600, d: 86400 })[m[2].toLowerCase()];
+};
+const baseVerb = (v) => String(v).replace(/^\\/, '').toLowerCase().replace(/^.*[\/\\]/, '').replace(/\.exe$/, '');
+const isTestName = (b) => /_tests$/.test(b) || /^t_full/.test(b) || b === 'ctest';
+const QUICK = /^(?:--help|-h|-\?|--version|-v|--list-test-cases|-ltc|--list-test-suites|-lts|--list-reporters|-lr)$/i;
+
+// the walk over wrappers: returns { i (index of the program word), tm (seconds of the tightest timeout wrapper, null if none, 0 = unlimited), startProc, psTimeout }
+function walk(words, shell, inheritedTm) {
+  let i = 0, tm = inheritedTm, startProc = false;
+  while (i < words.length) {
+    const v = words[i].v.replace(/^\\/, ''); const lv = baseVerb(v);
+    if (WRAPPER_VERBS.has(lv) || WRAPPER_VERBS.has(v.toLowerCase())) {
+      i++;
+      if (lv === 'timeout') {
+        if (shell !== 'bash') { while (i < words.length && /^[-/]/.test(words[i].v)) i++; if (i < words.length && secsOf(words[i].v) !== null) i++; continue; }   // Windows timeout.exe: a pause, never a limit
+        while (i < words.length && /^-/.test(words[i].v)) i += /^-[ks]$/.test(words[i].v) ? 2 : 1;
+        const s = i < words.length ? secsOf(words[i].v) : null;
+        if (s !== null) { i++; tm = tm === null ? s : (s === 0 ? tm : (tm === 0 ? s : Math.min(tm, s))); }
+      } else if (lv === 'nice' || lv === 'ionice') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[nc]$/.test(words[i].v) ? 2 : 1; }
+      else if (lv === 'sudo' || lv === 'doas') { while (i < words.length && /^-/.test(words[i].v)) i += /^-[ugCT]$/.test(words[i].v) ? 2 : 1; }
+      else if (lv === 'start-process') {
+        startProc = true;
+        while (i < words.length && /^-/.test(words[i].v)) {
+          const f = words[i].v.toLowerCase(); i++;
+          if (f === '-filepath') break;
+          if (/^-(?:argumentlist|workingdirectory|verb|redirectstandardoutput|redirectstandarderror|redirectstandardinput|windowstyle)$/.test(f)) i++;
+        }
+      }
+      continue;
+    }
+    if (/^[A-Za-z_]\w*=/.test(v) && !words[i].q) { i++; continue; }
+    if (i > 0 && /^-/.test(v) && WRAPPER_VERBS.has(String(words[i - 1].v).toLowerCase())) { i++; continue; }
+    break;
+  }
+  return { i, tm, startProc };
+}
+
+// is this program word + its arguments a long job? returns { name, kind } or null
+function classify(verb, args) {
+  const b = baseVerb(verb);
+  const av = args.map((a) => a.v);
+  if (isTestName(b)) return av.some((a) => QUICK.test(a)) || (b === 'ctest' && av.some((a) => /^(?:-N|--show-only(?:=.*)?|--help|--version)$/.test(a))) ? null : { name: b, kind: 'test' };
+  if (b === 'ninja' || b === 'msbuild') return av.some((a) => QUICK.test(a)) || av.includes('-t') ? null : { name: b, kind: 'build' };
+  if (b === 'cmake') return av.includes('--build') && !av.some((a) => /^(?:--help|-h)$/.test(a)) ? { name: 'cmake --build', kind: 'build' } : null;
+  const ps = b.replace(/\.ps1$/, '');
+  if (PS_CAP[ps]) return av.some((a) => /^(?:-\?|-help|--help)$/i.test(a)) ? null : { name: ps + '.ps1', kind: 'ps', cap: PS_CAP[ps] };
+  if (/^(?:node|nodejs)$/.test(b)) {
+    const f = av.find((a) => /\.(?:mjs|js|cjs)$/i.test(a));
+    if (f && /^(?:scene|render)\.mjs$/i.test(baseVerbRaw(f))) return av.some((a) => QUICK.test(a)) ? null : { name: baseVerbRaw(f), kind: 'tool' };
+  }
+  return null;
+}
+const baseVerbRaw = (f) => String(f).toLowerCase().replace(/^.*[\/\\]/, '');
+const PS_FILE_FLAG = /^-(?:f|file)$/i;
+
+// walk a command text; collects jobs [{ name, kind, limit: {ok, why}, shell }]
+export function jobsIn(command, shell = 'bash', inheritedTm = null, depth = 0) {
+  const jobs = []; if (depth > 4) return jobs;
+  let parsed; try { parsed = parseCommand(command); } catch { return jobs; }
+  const segs = parsed.segments || [];
+  // PowerShell Start-Process is limited by a Wait-Process -Timeout N anywhere in the same command
+  let waitSecs = null;
+  for (const s of segs) {
+    const w = s.words.map((x) => x.v); const k = w.findIndex((x) => /^wait-process$/i.test(baseVerb(x)));
+    if (k >= 0) { const t = w.findIndex((x, j) => j > k && /^-timeout$/i.test(x)); if (t >= 0 && secsOf(w[t + 1]) !== null) waitSecs = secsOf(w[t + 1]); }
+  }
+  for (const seg of segs) {
+    if (!seg.words.length) continue;
+    const { i, tm, startProc } = walk(seg.words, shell, inheritedTm);
+    if (i >= seg.words.length) continue;
+    const verb = seg.words[i].v; const args = seg.words.slice(i + 1); const b = baseVerb(verb); const av = args.map((a) => a.v);
+    // nested shells
+    if (/^(?:bash|sh|zsh|dash|ksh)$/.test(b) || /^(?:powershell|pwsh|cmd)$/.test(b)) {
+      const inner = shellInner(b, av);
+      const sh2 = /^(?:powershell|pwsh|cmd)$/.test(b) ? 'ps' : 'bash';
+      if (inner) { jobs.push(...jobsIn(inner, sh2, tm, depth + 1)); continue; }
+      if (sh2 === 'ps') {   // -File script.ps1 args
+        const fi = av.findIndex((a) => PS_FILE_FLAG.test(a));
+        if (fi >= 0 && av[fi + 1]) { const rest = seg.words.slice(i + 1 + fi + 2); const c = classify(av[fi + 1], rest); if (c) jobs.push(finish(c, rest, tm, shell === 'ps' ? 'ps' : 'bash', startProc, waitSecs)); }
+        continue;
+      }
+    }
+    const c = classify(verb, args);
+    if (c) { jobs.push(finish(c, args, tm, shell, startProc, waitSecs)); continue; }
+    // iex "..." / invoke-expression "...": a command line in a string
+    if (seg.words[i].q && /\s/.test(verb)) jobs.push(...jobsIn(verb, shell, tm, depth + 1));
+  }
+  return jobs;
+}
+function finish(c, args, tm, shell, startProc, waitSecs) {
+  const av = args.map((a) => a.v);
+  let secs = null, how = null;
+  if (c.kind === 'ps') {
+    const k = av.findIndex((a) => /^-timeoutsec(?::|=)?/i.test(a));
+    if (k >= 0) { const m = av[k].match(/^-timeoutsec[:=](.+)$/i); const s = secsOf(m ? m[1] : av[k + 1]); if (s !== null) { secs = s; how = '-TimeoutSec'; } }
+  }
+  if (secs === null && tm !== null && shell === 'bash') { secs = tm; how = 'timeout'; }
+  if (secs === null && startProc && waitSecs !== null) { secs = waitSecs; how = 'Wait-Process -Timeout'; }
+  const cap = c.kind === 'ps' && how === '-TimeoutSec' ? c.cap : MAX_SECS;
+  let why = null;
+  if (secs === null) why = 'none';
+  else if (secs <= 0) why = `zero (${how} 0 means no limit)`;
+  else if (secs > cap) why = `${how} ${secs} s is over the ${cap} s cap`;
+  return { name: c.name, kind: c.kind, shell, secs: secs === null ? null : secs, how, ok: why === null, why };
+}
+
+const advice = (j) => j.shell === 'ps'
+  ? 'In PowerShell: run the Unreal scripts with their own limit (`-TimeoutSec 600`; Build-Editor.ps1 may use up to 5400, Run-Playtest.ps1 and Run-EditorPython.ps1 up to 1800), or start the program and bound the wait: `$p = Start-Process -PassThru -NoNewWindow <exe> -ArgumentList ...; Wait-Process -Id $p.Id -Timeout 600` (900 at most for a full suite), or run it from the Bash tool as `timeout 900 <cmd>`. `timeout` typed in PowerShell is Windows timeout.exe, a pause, not a limit.'
+  : 'Put GNU timeout in front: `timeout 900 <cmd>` for a full suite (15 minutes at most), `timeout 600 <cmd>` for anything else, e.g. `timeout 900 build/tests/sim_core_tests.exe > suite.log 2>&1`; for the Unreal scripts add `-TimeoutSec 600`.';
+
+// ---- second copy of a test program
+export function findRoot(cwd) {
+  let d = path.resolve(cwd || process.cwd());
+  for (let k = 0; k < 40; k++) { if (fs.existsSync(path.join(d, '.git'))) return d; const p = path.dirname(d); if (p === d) break; d = p; }
+  return path.resolve(cwd || process.cwd());
+}
+const normP = (p) => String(p).replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '');
+export function processRunning(name) {
+  // returns true / false / null (null = could not tell within 300 ms)
+  const forced = process.env.CP_TIME_GUARD_PROCS;
+  if (forced !== undefined) return forced.split(',').map((x) => x.trim().toLowerCase().replace(/\.exe$/, '')).includes(name);
+  let cmd;
+  try { cmd = process.env.CP_TIME_GUARD_PROC_CMD ? JSON.parse(process.env.CP_TIME_GUARD_PROC_CMD) : (process.platform === 'win32' ? ['tasklist', '/FI', `IMAGENAME eq ${name}.exe`, '/FO', 'CSV', '/NH'] : ['pgrep', '-x', name]); } catch { return null; }
+  const r = spawnSync(cmd[0], cmd.slice(1), { timeout: 300, encoding: 'utf8', windowsHide: true });
+  if (r.error || r.signal) return null;
+  if (process.platform === 'win32' || process.env.CP_TIME_GUARD_PROC_CMD) return String(r.stdout).toLowerCase().includes(name);
+  return r.status === 0;
+}
+function runsFile() { return path.join(STATE_DIR, 'runs.jsonl'); }
+export function recentRuns(root, name, now = Date.now()) {
+  let lines = []; try { lines = fs.readFileSync(runsFile(), 'utf8').split('\n').filter(Boolean); } catch { return []; }
+  const out = [];
+  for (const l of lines.slice(-200)) { try { const o = JSON.parse(l); if (o.name === name && normP(o.root) === normP(root) && now - o.ts < (o.secs || MAX_SECS) * 1000) out.push(o); } catch { /* skip */ } }
+  return out;
+}
+function recordRun(root, j) { try { fs.mkdirSync(STATE_DIR, { recursive: true }); fs.appendFileSync(runsFile(), JSON.stringify({ ts: Date.now(), name: j.name, root, secs: j.secs || MAX_SECS }) + '\n'); } catch { /* never break a command */ } }
+
+export function judge(command, tool, cwd) {
+  const shell = /^powershell$/i.test(tool) ? 'ps' : 'bash';
+  const jobs = jobsIn(command, shell);
+  const reasons = jobs.filter((j) => !j.ok).map((j) => `\`${j.name}\` runs without a time limit (${j.why === 'none' ? 'no limit found' : j.why}). ${advice(j)}`);
+  return { jobs, reasons };
+}
+
+export async function main() {
+  const raw = await readStdin();
+  const input = raw === null ? undefined : parseJson(raw);
+  if (!input || typeof input !== 'object') { log({ gate: 'time_guard', decision: 'allow', reason: 'FAIL-OPEN: stdin missing or not JSON' }); return 0; }
+  if (!/^(Bash|PowerShell)$/.test(input.tool_name || '')) return 0;
+  const command = (input.tool_input && input.tool_input.command) || '';
+  if (!command || !/(?:_tests|t_full|ctest|ninja|msbuild|cmake|Run-Playtest|Build-Editor|Run-EditorPython|scene\.mjs|render\.mjs)/i.test(command)) return 0;
+  const { jobs, reasons } = judge(command, input.tool_name, input.cwd);
+  const dup = [];
+  if (!reasons.length) {
+    const root = findRoot(input.cwd);
+    const tests = [...new Map(jobs.filter((j) => j.kind === 'test').map((j) => [j.name, j])).values()];
+    for (const j of tests) {
+      const rec = recentRuns(root, j.name);
+      if (!rec.length) continue;
+      const up = processRunning(j.name);
+      if (up === null) { log({ gate: 'time_guard', decision: 'allow', reason: 'FAIL-OPEN: process lookup for ' + j.name + ' timed out or failed (300 ms bound); second-copy check skipped', cwd: input.cwd }); continue; }
+      if (up) dup.push(`a copy of \`${j.name}\` started ${Math.round((Date.now() - rec[rec.length - 1].ts) / 1000)} s ago from this worktree (${root}) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations).`);
+    }
+    if (!dup.length) for (const j of tests) recordRun(findRoot(input.cwd), j);
+  }
+  const all = [...reasons, ...dup];
+  if (!all.length) return 0;
+  log({ gate: 'time_guard', decision: 'deny', reason: dup.length && !reasons.length ? 'second copy of a running test refused' : 'long run without a time limit refused', agent_id: input.agent_id || null, cwd: input.cwd, command: String(command).slice(0, 300), reasons: all });
+  process.stderr.write('REFUSED by the time-limit guard (tools/hooks/time_guard.mjs; contract item 26):\n - ' + all.join('\n - ') + '\n');
+  return 2;
+}

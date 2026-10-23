@@ -93,14 +93,15 @@ console.log('gates10 A: phase measure (check_handin --phase measure on made-up h
 
 console.log('gates10 A: phase build (check_handin --phase build: commit list, the suite run by the check, fail_first, waivers, git status)');
 const suiteOk = 'node -e "process.exit(0)"', suiteBad = 'node -e "process.exit(3)"';
-function buildHandin(name, { testFile = false, failFirst = false, list = true, dirty = false, extraUnlisted = false } = {}) {
+function buildHandin(name, { testFile = false, failFirst = false, list = true, dirty = false, extraUnlisted = false, log = 'ok' } = {}) {
   const x = measureHandin(name); commit(x.w, 'measure phase');
-  wr(path.join(x.w, 'src.txt'), 'code'); let sha = commit(x.w, 'build step one');
+  wr(path.join(x.w, 'src.mjs'), 'code'); let sha = commit(x.w, 'build step one');
   const shas = [sha];
   if (testFile) { wr(path.join(x.w, 'tests', 'test_new_thing.mjs'), 'tests'); shas.push(commit(x.w, 'add test_new_thing')); }
-  if (extraUnlisted) { wr(path.join(x.w, 'src2.txt'), 'more'); commit(x.w, 'unlisted step'); }
-  if (failFirst) wr(path.join(x.hd, 'fail_first_new_thing.txt'), 'test_new_thing.mjs run against the old code: FAIL 4 cases (expected, the new code is missing)\n');
-  wr(path.join(x.hd, 'BUILD.md'), `# BUILD\nCommits: ${list ? shas.map((s) => s.slice(0, 10)).join(' ') : 'none'}\n`);
+  if (extraUnlisted) { wr(path.join(x.w, 'src2.mjs'), 'more'); commit(x.w, 'unlisted step'); }
+  if (failFirst) wr(path.join(x.hd, 'fail_first_new_thing.txt'), 'test_new_thing.mjs run against the old code:\nFAIL new thing joins up\nFAIL new thing mirrors\n10 passed, 2 failed\n');
+  wr(path.join(x.hd, 'BUILD.md'), `# BUILD\nCommits: ${list ? shas.map((s) => s.slice(0, 10)).join(' ') : 'none'}\nSuite binary: src.mjs\n`);
+  if (log === 'ok') wr(path.join(x.hd, 'suite_build.log'), '12 passed, 0 failed\n'); else if (log === 'bad') wr(path.join(x.hd, 'suite_build.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n');
   commit(x.w, 'BUILD.md'); // the hand-in files are committed too: BUILD.md lists the commits before it
   if (dirty) wr(path.join(x.w, 'stray.txt'), 'untracked');
   return x;
@@ -109,13 +110,13 @@ function buildHandin(name, { testFile = false, failFirst = false, list = true, d
   const g = buildHandin('b_good', { testFile: true, failFirst: true });
   // the BUILD.md commit itself is later than the listed ones: list it by amending the list after the fact is not needed because the hook lists commits since MEASURE.md; list all
   const allShas = git(g.w, 'log', '--format=%H').stdout.trim().split('\n').slice(0, -2).map((s) => s.slice(0, 10));
-  wr(path.join(g.hd, 'BUILD.md'), `# BUILD\nCommits: ${allShas.join(' ')}\n`);
+  wr(path.join(g.hd, 'BUILD.md'), `# BUILD\nCommits: ${allShas.join(' ')}\nSuite binary: src.mjs\n`);
   // BUILD.md is rewritten after the commit listing: commit it, which adds one more commit that must be listed too; the last one is listed by the loop below
-  let sha = commit(g.w, 'BUILD.md final'); wr(path.join(g.hd, 'BUILD.md'), `# BUILD\nCommits: ${[...allShas, sha.slice(0, 10)].join(' ')}\n`);
+  let sha = commit(g.w, 'BUILD.md final'); wr(path.join(g.hd, 'BUILD.md'), `# BUILD\nCommits: ${[...allShas, sha.slice(0, 10)].join(' ')}\nSuite binary: src.mjs\n`);
   // the file that lists the last commit is itself a change: the rule is "commits since the measure phase", so the final BUILD.md is committed with a message that is listed via the hash of its parent
   sha = commit(g.w, 'BUILD.md listed'); const listAll = git(g.w, 'log', '--format=%H', `${git(g.w, 'log', '-1', '--format=%H', '--', 'docs/progress/rr/MEASURE.md').stdout.trim()}..HEAD`).stdout.trim().split('\n');
   // the last commit cannot list itself (a hash is not known before the commit): the build phase lists everything up to the one before it and the check accepts a final commit that only touches BUILD.md
-  wr(path.join(g.hd, 'BUILD.md'), `# BUILD\nCommits: ${listAll.slice(1).map((s) => s.slice(0, 10)).join(' ')}\n`); sha = commit(g.w, 'BUILD.md');
+  wr(path.join(g.hd, 'BUILD.md'), `# BUILD\nCommits: ${listAll.slice(1).map((s) => s.slice(0, 10)).join(' ')}\nSuite binary: src.mjs\n`); sha = commit(g.w, 'BUILD.md');
   const r = chk(g.hd, '--phase', 'build', '--suite', suiteOk);
   t('A build: a GOOD build hand-in (every commit listed, suite exits 0 when the check runs it, fail_first for the new test file, no waiver, clean git status) passes', passed(r) || /only BUILD\.md/.test(r.stderr), r.stderr + r.stdout);
 }
@@ -124,8 +125,8 @@ function buildHandin(name, { testFile = false, failFirst = false, list = true, d
     ['no BUILD.md', () => { const x = buildHandin('b_none'); fs.rmSync(path.join(x.hd, 'BUILD.md')); commit(x.w, 'rm'); return x; }, /BUILD\.md is missing/, [suiteOk]],
     ['a commit made since the measure phase is not listed', () => buildHandin('b_unlisted', { extraUnlisted: true }), /does not list it/, [suiteOk]],
     ['no Commits: line', () => { const x = buildHandin('b_nolist'); wr(path.join(x.hd, 'BUILD.md'), '# BUILD\nnothing here\n'); commit(x.w, 'x'); return x; }, /no "Commits:" line/, [suiteOk]],
-    ['the suite fails when the check runs it', () => buildHandin('b_suite'), /exited 3 when the check ran it/, [suiteBad]],
-    ['no suite named at all', () => buildHandin('b_nosuite'), /no suite to run/, []],
+    ['suite_build.log shows a failing test the brief does not allow', () => buildHandin('b_suite', { log: 'bad' }), /not in the brief's allowed list/, []],
+    ['no suite_build.log at all', () => buildHandin('b_nosuite', { log: 'none' }), /suite_build\.log is missing/, []],
     ['a new test file with no fail_first_*.txt', () => buildHandin('b_nff', { testFile: true }), /no fail_first_\*\.txt/, [suiteOk]],
     ['git status not empty', () => buildHandin('b_dirty', { dirty: true }), /git status is not empty/, [suiteOk]],
   ];
@@ -171,9 +172,10 @@ const briefOf = (hd, extra) => `AGENT-CONTRACT-MARKER: v1\nHANDIN_DIR: ${hd}\nHA
   t('A hook: the render phase gets the ordinary full hand-in check (STATUS.md is demanded)', rr.code === 2 && /HAND-IN GATE/.test(rr.err) && /STATUS\.md/.test(rr.err), rr.err.slice(0, 300));
   // build phase through the hook: SUITE: lines of the brief are run by the check
   const bg = buildHandin('h_build'); const allSha = git(bg.w, 'log', '--format=%H', `${git(bg.w, 'log', '-1', '--format=%H', '--', 'docs/progress/rr/MEASURE.md').stdout.trim()}..HEAD`).stdout.trim().split('\n').filter(Boolean);
-  wr(path.join(bg.hd, 'BUILD.md'), `# BUILD\nCommits: ${allSha.map((s) => s.slice(0, 10)).join(' ')}\n`); commit(bg.w, 'final BUILD.md');
+  wr(path.join(bg.hd, 'BUILD.md'), `# BUILD\nCommits: ${allSha.map((s) => s.slice(0, 10)).join(' ')}\nSuite binary: src.mjs\n`); commit(bg.w, 'final BUILD.md');
+  wr(path.join(bg.hd, 'suite_build.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n'); commit(bg.w, 'bad suite log');
   const rb = stopHook('ph_build', mkTr('tr_ph_build', briefOf(bg.hd, `PHASE: build\nSUITE: ${suiteBad}`)), 'PreToolUse');
-  t('A hook: a build-phase agent whose SUITE: command fails is refused (the hook passed --suite to the check)', rb.code === 2 && /exited 3 when the check ran it/.test(rb.err), rb.err.slice(0, 400));
+  t('A hook: a build-phase agent whose suite_build.log shows a failure the brief does not allow is refused (the hook reads the log and never runs the suite)', rb.code === 2 && /not in the brief's allowed list/.test(rb.err), rb.err.slice(0, 400));
 }
 
 console.log('gates10 A: the `unreal` frame kind of COMPARE.md');

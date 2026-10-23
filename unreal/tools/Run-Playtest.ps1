@@ -23,10 +23,12 @@ param(
     [string]$Map = '/Game/CityPainter/Maps/L_Sandbox',
     [string]$EngineRoot,
     [int]$TimeoutMinutes = 25,
+    [int]$TimeoutSec = 0,   # same limit in seconds (rounded up to whole minutes); the time-limit guard (tools/hooks/time_guard.mjs) looks for this or a GNU timeout / Wait-Process -Timeout
     [string]$LocalDdcPath = 'C:\UEDDC',
     [Nullable[int]]$GraphicsAdapter = $null,
     [string[]]$ExtraArgs = @()
 )
+if ($TimeoutSec -gt 0) { $TimeoutMinutes = [Math]::Max(1, [int][Math]::Ceiling($TimeoutSec / 60.0)) }
 $ErrorActionPreference = 'Stop'
 
 try { $ue = & (Join-Path $PSScriptRoot 'Find-Unreal.ps1') -EngineRoot $EngineRoot -Quiet }

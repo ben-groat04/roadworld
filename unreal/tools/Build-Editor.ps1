@@ -23,6 +23,7 @@ param(
     [string]$Configuration = 'Development',
     [int]$MaxErrors = 40,
     [int]$TimeoutMinutes = 90,
+    [int]$TimeoutSec = 0,   # same limit in seconds (rounded up to whole minutes); the time-limit guard (tools/hooks/time_guard.mjs) looks for this or a GNU timeout / Wait-Process -Timeout
     [switch]$GenerateProjectFiles,
     [switch]$SkipGenerate,   # no-op, kept for compatibility (skipping is the default now)
     [int]$MaxParallelActions = 4,
@@ -31,6 +32,7 @@ param(
     [switch]$Stream,
     [switch]$Clean
 )
+if ($TimeoutSec -gt 0) { $TimeoutMinutes = [Math]::Max(1, [int][Math]::Ceiling($TimeoutSec / 60.0)) }
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'BuildLogParser.ps1')
