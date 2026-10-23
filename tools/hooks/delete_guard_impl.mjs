@@ -41,7 +41,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, log, readStdin, parseJson } from './lib.mjs';
+import { ROOT, log, readStdin, parseJson, reEsc, safeRe } from './lib.mjs';
 import { worktreeRoots } from './root.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
@@ -109,9 +109,9 @@ function segRe(pat) {
     const c = pat[i];
     if (c === '*') re += '.*'; else if (c === '?') re += '.';
     else if (c === '[') { const j = pat.indexOf(']', i + 1); if (j < 0) re += '\\['; else { let cls = pat.slice(i + 1, j).replace(/^!/, '^').replace(/\\/g, '\\\\'); re += '[' + cls + ']'; i = j; } }
-    else re += c.replace(/[.+^${}()|\\]/g, '\\$&');
+    else re += reEsc(c);
   }
-  return new RegExp(re + '$', 'i');
+  return safeRe(re + '$', 'i');
 }
 // expand * ? [class] in any segment of an absolute path against the disk (case-insensitive); returns [] when nothing matches
 export function expandGlob(abs, limit = 400) {

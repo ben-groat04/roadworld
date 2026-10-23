@@ -159,3 +159,9 @@ export function launchInfoOfAgent(input) {
     return info;
   } catch { return null; }
 }
+
+// gates13 (main-session decision 8): the ONE way a hook turns text it did not write (a command, a path, a glob, an agent id) into a regular expression.
+// reEsc escapes EVERY metacharacter (including [ ] and -), so the text matches literally; safeRe never throws: a pattern the engine rejects becomes a regex that matches nothing.
+// state_guard crashed (FAIL-OPEN, 23 Oct 22:02) on an agent's C++ heredoc whose "[" the old class-escape missed: no hook builds a RegExp from input text any other way.
+export const reEsc = (s) => String(s).replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&');
+export function safeRe(src, flags = '') { try { return new RegExp(src, flags); } catch { return /(?!)/; } }

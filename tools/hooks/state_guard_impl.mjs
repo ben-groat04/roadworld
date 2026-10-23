@@ -31,7 +31,7 @@
 // match, a settings change made by a program. It reads tool input text (and the cwd of the event) and nothing else. FAIL OPEN (logged) on any internal error.
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, log, readStdin, parseJson } from './lib.mjs';
+import { ROOT, log, readStdin, parseJson, reEsc, safeRe } from './lib.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
 const norm = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
@@ -63,7 +63,7 @@ function judgeLock(raw, sub, { op, what, content }) {
   if (op === 'create') return [`${what} ${raw}: owner.txt is a file, not a folder`];
   // writing owner.txt: only the owner changes an existing one; the Write tool's content must name the writer
   if (owner && owner !== me) return [held('rewrites the owner file of')];
-  if (content !== undefined && me && !new RegExp('^[ \\t]*agent(?:[ _-]?id)?[ \\t]*[:=][ \\t]*' + me.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'im').test(String(content))) return [`${what} ${raw}: owner.txt must hold a line "agent: ${me}" (your own agent id), plus round, time and purpose`];
+  if (content !== undefined && me && !safeRe('^[ \\t]*agent(?:[ _-]?id)?[ \\t]*[:=][ \\t]*' + reEsc(me) + '\\b', 'im').test(String(content))) return [`${what} ${raw}: owner.txt must hold a line "agent: ${me}" (your own agent id), plus round, time and purpose`];
   return [];
 }
 const WRITE_VERBS = new Set(['rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri', 'mv', 'move', 'move-item', 'mi', 'cp', 'copy', 'copy-item', 'cpi', 'tee', 'tee-object', 'set-content', 'add-content', 'out-file', 'new-item', 'ni', 'touch', 'mkdir', 'md', 'sc', 'ac', 'clear-content', 'rename-item', 'rni', 'ren', 'truncate', 'dd', 'install', 'ln', 'set-itemproperty']);
@@ -82,7 +82,7 @@ const WRITER_WORDS = /\b(?:recordAudit|recordBuilder|signRecord|verifyRecord|ack
 const WRITER_FILES = ['gate_ack.mjs', 'ref_seed.mjs', 'audit_lib.mjs'];
 const RUN_SCRIPT = /^(?:gate_ack|ref_seed|audit_lib)(?:\.mjs)?$/i;
 
-const globToRe = (g) => new RegExp('^' + String(g).replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
+const globToRe = (g) => safeRe('^' + reEsc(g).replace(/\\\*/g, '.*').replace(/\\\?/g, '.') + '$', 'i');
 const hasGlob = (s) => /[*?]|\[[^\]]+\]/.test(s);
 // does a glob word (possibly with a directory part) name a writer script?
 const globNamesWriter = (w) => { const base = String(w).replace(/^.*[\\/]/, ''); return hasGlob(base) && WRITER_FILES.some((f) => globToRe(base.replace(/\[[^\]]*\]/g, '?')).test(f)); };

@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { log, readStdin, parseJson, launchInfoOfAgent, STATE_DIR } from './lib.mjs';
+import { log, readStdin, parseJson, launchInfoOfAgent, STATE_DIR, reEsc, safeRe } from './lib.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 import { extraJudge } from './lock_extra.mjs';
 
@@ -44,9 +44,9 @@ export function globToRe(g) {
     if (c === '*') { if (g[i + 1] === '*') { i++; if (g[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*'; } else re += '[^/]*'; }
     else if (c === '?') re += '[^/]';
     else if (c === '[') { const k = g.indexOf(']', i + 1); if (k > i + 1) { re += '[' + g.slice(i + 1, k).replace(/\\/g, '\\\\') + ']'; i = k; } else re += '\\['; }
-    else re += c.replace(/[.+^${}()|\\]/g, '\\$&');
+    else re += reEsc(c);
   }
-  return new RegExp('^' + re + '$');
+  return safeRe('^' + re + '$');
 }
 
 // every file below a folder (bounded: depth, count); links are not followed
