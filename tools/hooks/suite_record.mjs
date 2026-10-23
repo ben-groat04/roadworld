@@ -18,7 +18,7 @@ export function findSuiteRun(logFile, wt, { after = 0, stateDir = STATE_DIR } = 
   const sha = sha256Of(logFile); if (!sha) return { ok: false, why: `${logFile} cannot be read` };
   const lf = normP(path.resolve(logFile)); const root = normP(wt);
   const recs = [];
-  for (const l of lines) { let o; try { o = JSON.parse(l); } catch { continue; } if (o && o.v === 1 && normP(o.log || '') === lf) recs.push(o); }
+  for (const l of lines) { let o; try { o = JSON.parse(l); } catch { continue; } if (o && o.v === 1 && (normP(o.log || '') === lf || o.logSha === sha)) recs.push(o); }
   const how = 'make the log with `node tools/run_suite.mjs <worktree>` (foreground or background); a log made by any other command, or typed, has no record';
   if (!recs.length) return { ok: false, why: `no suite run record for ${path.basename(logFile)}: ${how}` };
   const signed = recs.filter((r) => verifyRecord(r, stateDir));

@@ -103,7 +103,7 @@ function buildHandin(name, { testFile = false, failFirst = false, list = true, d
   if (failFirst) wr(path.join(x.hd, 'fail_first_new_thing.txt'), 'test_new_thing.mjs run against the old code:\nFAIL new thing joins up\nFAIL new thing mirrors\n10 passed, 2 failed\n');
   wr(path.join(x.hd, 'BUILD.md'), `# BUILD\nCommits: ${list ? shas.map((s) => s.slice(0, 10)).join(' ') : 'none'}\nSuite binary: src.mjs\n`);
   // gates12: the log is made through the real hooks (a typed log has no run record and is refused)
-  if (log === 'ok') logRun(x.w, path.join(x.hd, 'suite_build.log'), '12 passed, 0 failed\n', { stateDir: state }); else if (log === 'bad') logRun(x.w, path.join(x.hd, 'suite_build.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n', { stateDir: state, exit: 1 });
+  if (log === 'ok') logRun(x.w, path.join(x.hd, 'suite_node.log'), '12 passed, 0 failed\n', { stateDir: state }); else if (log === 'bad') logRun(x.w, path.join(x.hd, 'suite_node.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n', { stateDir: state, exit: 1 });
   commit(x.w, 'BUILD.md'); // the hand-in files are committed too: BUILD.md lists the commits before it
   if (dirty) wr(path.join(x.w, 'stray.txt'), 'untracked');
   return x;
@@ -127,8 +127,8 @@ function buildHandin(name, { testFile = false, failFirst = false, list = true, d
     ['no BUILD.md', () => { const x = buildHandin('b_none'); fs.rmSync(path.join(x.hd, 'BUILD.md')); commit(x.w, 'rm'); return x; }, /BUILD\.md is missing/, [suiteOk]],
     ['a commit made since the measure phase is not listed', () => buildHandin('b_unlisted', { extraUnlisted: true }), /does not list it/, [suiteOk]],
     ['no Commits: line', () => { const x = buildHandin('b_nolist'); wr(path.join(x.hd, 'BUILD.md'), '# BUILD\nnothing here\n'); commit(x.w, 'x'); return x; }, /no "Commits:" line/, [suiteOk]],
-    ['suite_build.log shows a failing test the brief does not allow', () => buildHandin('b_suite', { log: 'bad' }), /not in the brief's allowed list/, []],
-    ['no suite_build.log at all', () => buildHandin('b_nosuite', { log: 'none' }), /suite_build\.log is missing/, []],
+    ['suite_node.log shows a failing test the brief does not allow', () => buildHandin('b_suite', { log: 'bad' }), /not in the brief's allowed list/, []],
+    ['no suite_node.log at all', () => buildHandin('b_nosuite', { log: 'none' }), /no suite log in the hand-in folder/, []],
     ['a new test file with no fail_first_*.txt', () => buildHandin('b_nff', { testFile: true }), /no fail_first_\*\.txt/, [suiteOk]],
     ['git status not empty', () => buildHandin('b_dirty', { dirty: true }), /git status is not empty/, [suiteOk]],
   ];
@@ -175,9 +175,9 @@ const briefOf = (hd, extra) => `AGENT-CONTRACT-MARKER: v1\nHANDIN_DIR: ${hd}\nHA
   // build phase through the hook: SUITE: lines of the brief are run by the check
   const bg = buildHandin('h_build'); const allSha = git(bg.w, 'log', '--format=%H', `${git(bg.w, 'log', '-1', '--format=%H', '--', 'docs/progress/rr/MEASURE.md').stdout.trim()}..HEAD`).stdout.trim().split('\n').filter(Boolean);
   wr(path.join(bg.hd, 'BUILD.md'), `# BUILD\nCommits: ${allSha.map((s) => s.slice(0, 10)).join(' ')}\nSuite binary: src.mjs\n`); commit(bg.w, 'final BUILD.md');
-  logRun(bg.w, path.join(bg.hd, 'suite_build.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n', { stateDir: state, exit: 1 }); commit(bg.w, 'bad suite log');
+  logRun(bg.w, path.join(bg.hd, 'suite_node.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n', { stateDir: state, exit: 1 }); commit(bg.w, 'bad suite log');
   const rb = stopHook('ph_build', mkTr('tr_ph_build', briefOf(bg.hd, `PHASE: build\nSUITE: ${suiteBad}`)), 'PreToolUse');
-  t('A hook: a build-phase agent whose suite_build.log shows a failure the brief does not allow is refused (the hook reads the log and never runs the suite)', rb.code === 2 && /not in the brief's allowed list/.test(rb.err), rb.err.slice(0, 400));
+  t('A hook: a build-phase agent whose suite_node.log shows a failure the brief does not allow is refused (the hook reads the log and never runs the suite)', rb.code === 2 && /not in the brief's allowed list/.test(rb.err), rb.err.slice(0, 400));
 }
 
 console.log('gates10 A: the `unreal` frame kind of COMPARE.md');
@@ -292,16 +292,16 @@ console.log('gates10 B: the launch hook and NO-CONTRACT audits / first looks (re
     ['Opus first look: tjunction5 images', 'short first-look image check for the tjunction5 round (reads images, writes one file, no build)', 'first look'],
     ['Opus first look: grade-r10 images', 'short first-look image check for the earthworks round 10 hand-in (reads images, writes one file, no build or review hand-in)', 'first look'],
   ];
-  for (const [d, reason, job] of refuse) { const r = launch(d, nc(reason)); t(`B launch: NO-CONTRACT "${d}" is refused as an ${job}, and the text names the way to launch it`, r.status === 2 && new RegExp('is an ' + job).test(r.stderr) && /make_brief\.mjs/.test(r.stderr) && (job === 'audit' ? /--audit/ : /--first-look/).test(r.stderr), r.stderr.slice(0, 300)); }
+  for (const [d, reason, job] of refuse) { const r = launch(d, nc(reason)); t(`B launch: NO-CONTRACT "${d}" is refused as an ${job}, and the text names the way to launch it`, r.status === 2 && /free-text NO-CONTRACT form is not accepted/.test(r.stderr) && /clerk, merge, research, status, measure/.test(r.stderr) && /make_brief\.mjs/.test(r.stderr) && (job === 'audit' ? /--audit/ : /--first-look/).test(r.stderr), r.stderr.slice(0, 300)); }
   const allow = [
-    ['Clerk: contract speed rules, queue, acceptance', 'clerk doc update in main (contract speed rules, QUEUE.md and ACCEPTANCE.md round states); no code.'],
-    ['Merge gates7 then gates9 into main', 'merger for gates7 then gates9 into main (hook tooling); follows the gates9 STATUS merge checklist, writes no new feature'],
-    ['Recovery round 2: validate and re-fetch photos', 'reference-photo validation and re-download job (no code, no builds; reference photo downloads are pre-approved by the owner)'],
-    ['Queue catch-up for 22-23 Oct events', 'clerk job bringing docs/QUEUE.md, docs/ACCEPTANCE.md and the docs/HANDOFF.md top note up to date (docs only, no build or review hand-in)'],
-    ['Re-fetch 18 truncated photos and back up', 'reference-photo re-download of 18 damaged files plus validated backup (no code, no builds)'],
-    ['Research: Unreal plugin facts', 'research on Unreal plugin build flags from C:\\UE_5.8 source (read-only; the AUDIT.md of gates9 mentions none of it)'],
+    ['Clerk: contract speed rules, queue, acceptance', 'clerk doc update in main (contract speed rules, QUEUE.md and ACCEPTANCE.md round states); no code.', 'clerk'],
+    ['Merge gates7 then gates9 into main', 'merger for gates7 then gates9 into main (hook tooling); follows the gates9 STATUS merge checklist, writes no new feature', 'merge'],
+    ['Recovery round 2: validate and re-fetch photos', 'reference-photo validation and re-download job (no code, no builds; reference photo downloads are pre-approved by the owner)', 'measure'],
+    ['Queue catch-up for 22-23 Oct events', 'clerk job bringing docs/QUEUE.md, docs/ACCEPTANCE.md and the docs/HANDOFF.md top note up to date (docs only, no build or review hand-in)', 'clerk'],
+    ['Re-fetch 18 truncated photos and back up', 'reference-photo re-download of 18 damaged files plus validated backup (no code, no builds)', 'measure'],
+    ['Research: Unreal plugin facts', 'research on Unreal plugin build flags from C:\\UE_5.8 source (read-only; the AUDIT.md of gates9 mentions none of it)', 'research'],
   ];
-  for (const [d, reason] of allow) { const r = launch(d, nc(reason)); t(`B launch: NO-CONTRACT "${d}" stays allowed`, r.status === 0, r.stderr.slice(0, 300)); }
+  for (const [d, reason, cat] of allow) { const r = launch(d, nc(cat + ': ' + reason)); t(`B launch: NO-CONTRACT "${d}" stays allowed`, r.status === 0, r.stderr.slice(0, 300)); }
   const hdA = path.join(tmp, 'fl_a', 'docs', 'progress', 'fl');
   let r = launch('Opus first look', `FIRSTLOOK-OF: ${hdA}\nAGENT-CONTRACT-MARKER: v1\n## Owner's words\n"x" (1 Oct)\n`);
   t('B launch: a FIRSTLOOK-OF launch (make_brief --first-look) is allowed without NO-CONTRACT', r.status === 0 && logOf().some((l) => l.reason === 'FIRSTLOOK-OF'), r.stderr);
