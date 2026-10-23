@@ -79,6 +79,8 @@ export function analyse(command, cwd = process.cwd(), depth = 0) {
   const ncmd = norm(cmd);
   const mainRoot = norm(ROOT).replace(/\/+$/, '');
   const usesScript = /remove_agent_worktree/i.test(cmd);
+  // recursive deletes written as a one-liner in another language (python shutil.rmtree, node fs.rmSync recursive / rimraf, .NET Directory.Delete(path, true)) near a worktree
+  if (/shutil\.rmtree|\brmtree\s*\(|\brm(?:dir)?(?:Sync)?\s*\([^)]*recursive\s*:\s*true|\brimraf\b|Directory\]::Delete\s*\([^)]*,\s*\$?true|Directory\.Delete\s*\([^)]*,\s*\$?true/i.test(cmd) && (/roadworld/.test(ncmd) || /docs\/reference/.test(ncmd) || underWorktree(cwd))) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) in or near a worktree: it follows the docs\\reference junction');
   if (/\bgit(?:\.exe)?\s+(?:-C\s+\S+\s+)?worktree\s+(?:remove|prune)\b/i.test(cmd) && !usesScript) reasons.push('`git worktree remove|prune` outside tools\\remove_agent_worktree.ps1');
   if (/\brobocopy\b/i.test(cmd) && /\/(?:mir|purge)\b/i.test(cmd) && (/docs\/reference/.test(ncmd) || /roadworld-wt/.test(ncmd))) reasons.push('robocopy /MIR or /PURGE with docs\\reference or a worktree path in the command (it deletes in the destination)');
   for (const seg of segments(cmd)) {

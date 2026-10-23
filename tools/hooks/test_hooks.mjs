@@ -969,6 +969,10 @@ console.log('gates4 hooks: state guard, delete guard, reference register, made-u
   d = dgRun('bash -c "rm -rf ' + wtA.replace(/\\/g, '/') + '"'); t('delete guard: the same delete inside bash -c "...": denied', d.code === 2, d.err);
   d = dgRun('git clean -fdx', wtA); t('delete guard: git clean -fdx (removes ignored files such as the junction): denied', d.code === 2, d.err);
   d = dgRun('rm -rf $wt', wtA); t('delete guard: rm -rf of a shell variable near a worktree: denied (cannot be checked)', d.code === 2, d.err);
+  d = dgRun('python -c "import shutil; shutil.rmtree(\'C:/x/roadworld-wt/foo\')"'); t('delete guard: python shutil.rmtree of a worktree path: denied', d.code === 2, d.err);
+  d = dgRun('node -e "require(\'fs\').rmSync(\'C:/x/roadworld-wt/foo\', { recursive: true })"'); t('delete guard: node fs.rmSync recursive near a worktree: denied', d.code === 2, d.err);
+  d = dgRun('powershell -c "[System.IO.Directory]::Delete(\'C:\\x\\roadworld-wt\\foo\', $true)"'); t('delete guard: .NET Directory.Delete(path, $true) near a worktree: denied', d.code === 2, d.err);
+  d = dgRun('python -c "import shutil; shutil.rmtree(\'C:/scratch/tmp1\')"'); t('delete guard: rmtree of an unrelated scratch path: allowed', d.code === 0, d.err);
   d = dgRun('ls -la && git status'); t('delete guard: harmless commands: allowed', d.code === 0, d.err);
   d = dgRun('rm -rf /tmp/scratch-run', elsewhere); t('delete guard: rm -rf of a plain scratch path outside any worktree: allowed', d.code === 0, d.err);
   d = guardRun('delete_guard.mjs', '{not json'); t('delete guard: bad JSON: fail open, logged', d.code === 0 && /FAIL-OPEN/.test(lastLog().reason));
