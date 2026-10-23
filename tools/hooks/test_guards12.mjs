@@ -27,7 +27,7 @@ const t = (name, cond, detail = '') => { if (cond) { pass++; console.log('  ok  
 const tt = async (name, fn) => { try { const r = await fn(); t(name, r === true || (r && r.ok), r && r.detail); } catch (e) { t(name, false, 'THREW ' + String((e && e.message) || e).slice(0, 200)); } };
 const mk = (p) => fs.mkdirSync(p, { recursive: true });
 const wr = (p, s = 'x') => { mk(path.dirname(p)); fs.writeFileSync(p, s); };
-const imp = (rel) => import(pathToFileURL(path.join(src, rel)).href);
+const imp = (rel) => import(pathToFileURL(path.join(src, rel)).href).catch(() => new Proxy({}, { get: (_, k) => k === 'then' ? undefined : () => { throw new Error('module missing: ' + rel); } }));   // a missing module fails the cases that use it, it does not end the run
 const sleepSync = (ms) => { const a = new Int32Array(new SharedArrayBuffer(4)); Atomics.wait(a, 0, 0, ms); };
 const R = String.raw;
 
@@ -67,11 +67,12 @@ const tgRefuse = (r) => r.status === 2 && /REFUSED by the time-limit guard/.test
 const tgAllow = (r) => r.status === 0 && r.stderr === '';
 const exeIn = path.join(tgRepo, 'build', 'tests', 'sim_core_tests.exe'), exeOther = path.join(tgRepo2, 'build', 'tests', 'sim_core_tests.exe');
 const cmdA = 'timeout 900 build/tests/sim_core_tests.exe > suite.log 2>&1';
+const runsOf = (ds) => { try { return fs.readFileSync(path.join(ds, 'runs.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };   // a missing record file is an empty list, not a crash
 const dstate = (n) => { const d = path.join(tmp, 'state-' + n); mk(d); return d; };
 {
   let ds = dstate('dupA');
   let r = tg(cmdA, 'Bash', { stateDir: ds, id: 'u1' });
-  t('A the first limited run is allowed and recorded (a start line with the id, worktree and image)', tgAllow(r) && fs.readFileSync(path.join(ds, 'runs.jsonl'), 'utf8').includes('"id":"u1"'), r.stderr);
+  t('A the first limited run is allowed and recorded (a start line with the id, worktree and image)', tgAllow(r) && runsOf(ds).some((o) => o.id === 'u1'), r.stderr);
   r = tg(cmdA, 'Bash', { stateDir: ds, id: 'u2', e: { CP_TIME_GUARD_PROCS: 'sim_core_tests', CP_TIME_GUARD_PATHS: exeIn } });
   t('A REFUSE: a second copy while this worktree\'s own process is running; the refusal names the executable path it matched', tgRefuse(r) && r.stderr.includes(exeIn) && /second copy/.test(r.stderr), `status ${r.status} ${r.stderr.slice(0, 400)}`);
   ds = dstate('dupB');
@@ -123,14 +124,14 @@ console.log('gates12 B: the suite record: start (time guard), end + exit + hash 
   const logp = path.join(tmp, 'rec', 'suite.log'); mk(path.dirname(logp));
   const cmd = `timeout 900 node tools/hooks/test_guards12.mjs > "${logp.replace(/\\/g, '/')}" 2>&1`;
   let r = tg(cmd, 'Bash', { stateDir: ds, id: 'r1' });
-  const start = fs.existsSync(path.join(ds, 'runs.jsonl')) ? fs.readFileSync(path.join(ds, 'runs.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+  const start = runsOf(ds);
   t('B a limited node suite run is recorded at its start with the output file it redirects to', tgAllow(r) && start.length === 1 && start[0].ev === 'start' && start[0].kind === 'suite' && path.resolve(start[0].files[0]) === path.resolve(logp), JSON.stringify(start));
   fs.writeFileSync(logp, '5 passed, 0 failed\n');
   const p = tgPost('r1', ds);
-  const all = fs.readFileSync(path.join(ds, 'runs.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); const end = all.find((o) => o.ev === 'end');
+  const all = runsOf(ds); const end = all.find((o) => o.ev === 'end');
   t('B the post hook appends an end line: exit 0 and the sha256 of the log as it is then', p.status === 0 && end && end.id === 'r1' && end.exit === 0 && end.files[0].sha256 === crypto.createHash('sha256').update('5 passed, 0 failed\n').digest('hex'), JSON.stringify(end));
-  const p2 = tgPost('not-a-suite-run', ds); t('B a call the guard did not record leaves no end line', p2.status === 0 && fs.readFileSync(path.join(ds, 'runs.jsonl'), 'utf8').split('\n').filter(Boolean).length === 2);
-  const pm = await imp('tools/hooks/time_guard_post_impl.mjs');
+  const p2 = tgPost('not-a-suite-run', ds); t('B a call the guard did not record leaves no end line', p2.status === 0 && runsOf(ds).length === 2);
+  const pm = await imp('tools/hooks/time_guard_post_impl.mjs'); const ec = (i) => { try { return pm.exitCodeOf(i); } catch (e) { return 'THREW ' + e.message; } };
   const shapes = [
     [{ hook_event_name: 'PostToolUse', tool_response: { stdout: 'x', interrupted: false } }, 0, 'PostToolUse success'],
     [{ hook_event_name: 'PostToolUseFailure', error: 'Exit code 3\nsome output' }, 3, 'PostToolUseFailure "Exit code 3"'],
@@ -138,7 +139,7 @@ console.log('gates12 B: the suite record: start (time guard), end + exit + hash 
     [{ hook_event_name: 'PostToolUse', tool_response: { exit_code: 7, stdout: '' } }, 7, 'tool_response.exit_code'],
     [{ hook_event_name: 'PostToolUse', tool_response: { stdout: '', interrupted: true } }, null, 'interrupted'],
   ];
-  for (const [inp, want, label] of shapes) t(`B exitCodeOf: ${label} -> ${want}`, pm.exitCodeOf(inp) === want, String(pm.exitCodeOf(inp)));
+  for (const [inp, want, label] of shapes) t(`B exitCodeOf: ${label} -> ${want}`, ec(inp) === want, String(ec(inp)));
   // the build phase check against records
   const chk = (hd, ...a) => spawnSync(process.execPath, [path.join(root, 'tools', 'check_handin.mjs'), hd, '--main', root, ...a], { cwd: elsewhere, encoding: 'utf8', env, timeout: 600000 });
   const failedWith = (rr, re) => rr.status === 1 && /HAND-IN CHECK FAILED/.test(rr.stderr) && re.test(rr.stderr);
