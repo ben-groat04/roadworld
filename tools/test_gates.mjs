@@ -567,6 +567,52 @@ console.log('waiver guard: the gates3 audit evasions (faults 6 and 7)');
   t('"ctest assertions >= N" is a gate metric (the vacuous-test backstop)', GL.parseGateLine('ctest assertions >= 12000 (baseline 12000)').kind === 'metric');
 }
 
+console.log('BLOCKED needs a concrete cause; items table; rewordings of "not done" (gates3 audit faults 5, 13, 14, 16)');
+{
+  const ok = '`node tools/scene.mjs --check` after a ramp and a fade';
+  const bp = (line) => GL.statusProblems(line + '\n', null).filter((x) => /BLOCKED/.test(x));
+  t('blocked by "the complexity of the junction geometry": refused', bp(`BLOCKED: whole junction layout | tried: ${ok} | blocked by: the complexity of the junction geometry | needs: a different approach`).length === 1);
+  t('blocked by "it is very hard to do properly": refused', bp(`BLOCKED: layout | tried: ${ok} | blocked by: it is very hard to do properly here | needs: a decision`).length === 1);
+  t('blocked by "not feasible in this round honestly": refused', bp(`BLOCKED: layout | tried: ${ok} | blocked by: not feasible in this round honestly | needs: a decision`).length === 1);
+  t('blocked by a quoted error and a path: accepted', bp(`BLOCKED: layout | tried: ${ok} | blocked by: \`FAIL ground_under_road\` at 2.1 m in src/earthworks.js:412 | needs: a decision on the level`).length === 0);
+  t('blocked by an error code (ENOENT) and a missing file path: accepted', bp(`BLOCKED: layout | tried: ${ok} | blocked by: ENOENT opening C:\\data\\regions\\uk\\x.json (the file is not there) | needs: the file`).length === 0);
+  t('a vague judgement next to a quoted error is still refused ("a larger rewrite")', bp(`BLOCKED: layout | tried: ${ok} | blocked by: \`FAIL x\` and a larger rewrite of the junction | needs: a decision`).length === 1);
+  t('tried names nothing that was run ("attempted various approaches overall"): refused', bp('BLOCKED: layout | tried: attempted various approaches overall | blocked by: `FAIL ground_under_road` at 2.1 m | needs: a decision').length === 1);
+  t('needs asks for more tokens and more time: refused', bp(`BLOCKED: layout | tried: ${ok} | blocked by: \`FAIL ground_under_road\` at 2.1 m | needs: more tokens and more time`).length === 1);
+  t('tried gives a usage reason: refused', bp('BLOCKED: layout | tried: `node a.mjs` before the usage window ended | blocked by: `FAIL ground_under_road` at 2.1 m | needs: a decision').length === 1);
+  const row = `| BLOCKED: wall curl | tried: ${ok} | blocked by: \`FAIL ground_under_road\` at 2.1 m (src/earthworks.js:412) | needs: a decision |`;
+  t('a BLOCKED line inside a table row is read like a line (gates3 audit: it was skipped)', GL.parseBlocked(row).length === 1 && GL.parseBlocked(row)[0].ok);
+  t('...and a vague one in a table row is refused too', bp(`| BLOCKED: wall curl | tried: ${ok} | blocked by: too hard to do | needs: a decision |`).length === 1);
+  const same = (n) => Array.from({ length: n }, (_, i) => `BLOCKED: item ${i} | tried: ${ok} | blocked by: \`FAIL ground_under_road\` at 2.1 m (src/earthworks.js:412) | needs: a decision`).join('\n');
+  t('3 BLOCKED lines sharing one cause: accepted', GL.parseBlocked(same(3)).every((b) => b.ok));
+  t('4 BLOCKED lines sharing one cause: all refused (more than 3 need a different cause each)', GL.parseBlocked(same(4)).every((b) => !b.ok && /different concrete cause/i.test(b.why.join())));
+  const distinct = Array.from({ length: 5 }, (_, i) => `BLOCKED: item ${i} | tried: ${ok} | blocked by: \`error C200${i}\` in src/file${i}.cpp:${10 + i} | needs: a fix`).join('\n');
+  t('5 BLOCKED lines with 5 different concrete causes: accepted', GL.parseBlocked(distinct).every((b) => b.ok));
+  const allVague = ['layout', 'markings', 'islands'].map((x) => `BLOCKED: ${x} | tried: various approaches | blocked by: the complexity of it all | needs: time`).join('\n');
+  t('a STATUS whose items are all BLOCKED with vague causes is refused, one problem per line (the "6a" loophole)', GL.statusProblems(allVague + '\n', null).filter((x) => /BLOCKED line is not acceptable/.test(x)).length === 3);
+  // the audit's 13 rewordings are all caught now
+  for (const s of ['Kerb work was dropped for now.', 'The lighting columns remain as they were.', 'I chose not to build the island.', 'Left as is: marking offsets.', 'Postponing the signals.', 'No further work on kerbs.', 'This will be revisited.', 'Out of reach this round.', 'Would require a larger refactor.', 'The slip lane was omitted.', 'Descoped: islands.', 'Parked.', 'Deprioritised.']) {
+    t('reworded "not done" refused: ' + s, GL.statusProblems(s + '\n', null).some((x) => /left undone or deferred/.test(x)), s);
+  }
+  t('honest sentences about the engine are not flagged (no false positive on "unchanged" scope statements)', GL.statusProblems('- sim_core was not changed, nothing in it is affected\n- the wall height is rounded to 0.1 m\n', null).length === 0);
+  // items
+  const items = [{ id: 'A', text: 'measured gates' }, { id: 'B', text: 'waiver guard' }, { id: 'G', text: 'scope line in the brief template' }];
+  const sheet = (rows) => '## Items\n\n| Item | Status | Proof |\n|---|---|---|\n' + rows + '\n';
+  t('every listed item has a done row with a proof: passes', GL.itemsProblems(sheet('| A | done | test "measured gates" in test_gates.mjs |\n| B | done | test "waiver guard" in test_gates.mjs |\n| G | done | docs/templates/BRIEF.md line 13 |'), items).length === 0);
+  const miss = GL.itemsProblems(sheet('| A | done | test "measured gates" in test_gates.mjs |\n| B | done | test "waiver guard" in test_gates.mjs |'), items);
+  t('an item with no row (G left out, nothing said about it): refused by name, no phrase list involved', miss.length === 1 && /item G/.test(miss[0]), miss.join('|'));
+  t('an item whose row says "partly": refused', GL.itemsProblems(sheet('| A | partly | some of it |\n| B | done | test "waiver guard" in test_gates.mjs |\n| G | done | docs/templates/BRIEF.md line 13 |'), items).some((x) => /item A/.test(x)));
+  t('"done" without a proof: refused', GL.itemsProblems(sheet('| A | done | ok |\n| B | done | test "waiver guard" in test_gates.mjs |\n| G | done | docs/templates/BRIEF.md line 13 |'), items).some((x) => /item A.*proves/.test(x)));
+  t('a valid BLOCKED row stands for the item', GL.itemsProblems(sheet(`| A | done | test "measured gates" in test_gates.mjs |\n| B | done | test "waiver guard" in test_gates.mjs |\n| G | BLOCKED: scope line | tried: ${ok} | blocked by: \`ENOENT\` docs/templates/BRIEF.md | needs: the file |`), items).length === 0);
+  t('a vague BLOCKED row does not stand for the item', GL.itemsProblems(sheet('| A | done | test "measured gates" in test_gates.mjs |\n| B | done | test "waiver guard" in test_gates.mjs |\n| G | BLOCKED: scope line | tried: tried | blocked by: complexity | needs: time |'), items).some((x) => /item G/.test(x)));
+  t('no "## Items" section at all: refused, the item ids are listed', GL.itemsProblems('## Skipped, refused or failed\nx\n', items).some((x) => /no "## Items" section/.test(x) && /A, B, G/.test(x)));
+  t('no items in the brief: nothing to check', GL.itemsProblems('x', []).length === 0);
+  // references count
+  const refSt = (n) => `References opened: ${n} of 12\nnot opened: x.md (reason)\n\n## Reference files opened\nCase: a | Opened: 1.md, 2.md, 3.md, 4.md\nCase: b | Opened: 5.md, 6.md, 7.md, 8.md\nCase: c | Opened: 9.md, 10.md, 11.md\n`;
+  t('"References opened: 10 of 12" next to 11 named files: refused (the gates3 STATUS arithmetic)', GL.statusProblems(refSt(10), null).some((x) => /names 11 distinct file/.test(x)));
+  t('"11 of 12" with 11 named files and one not-opened line: consistent', !GL.statusProblems(refSt(11), null).some((x) => /distinct file/.test(x)));
+}
+
 console.log('ctest gate (gates2 audit fault 3)');
 {
   const ct = path.join(tmp, 'ctw'); fs.mkdirSync(path.join(ct, 'build/Testing/Temporary'), { recursive: true }); fs.mkdirSync(path.join(ct, 'tests'), { recursive: true });

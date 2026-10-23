@@ -752,7 +752,9 @@ const blankAnchors = (t) => String(t || '').replace(/`[^`]*`/g, ' ').replace(/"[
 export function parseBlocked(text) {
   const out = [];
   String(text || '').replace(/<!--[\s\S]*?-->/g, '').split('\n').forEach((raw, i) => {
-    const l = raw.trim().replace(/^\|\s*/, '').replace(/\s*\|\s*$/, '').replace(/^[-*]\s+/, '');
+    let l0 = raw.trim();
+    if (l0.startsWith('|')) { const k = l0.search(/\|\s*BLOCKED\s*:/i); if (k >= 0) l0 = l0.slice(k); }   // a BLOCKED cell anywhere in a table row (the item id may come first)
+    const l = l0.replace(/^\|\s*/, '').replace(/\s*\|\s*$/, '').replace(/^[-*]\s+/, '');
     const m = l.match(/^BLOCKED\s*:\s*(.*)$/i);
     if (!m) return;
     const parts = m[1].split('|').map((x) => x.trim());
@@ -830,7 +832,7 @@ export function statusProblems(statusText, faultsText, opts = {}) {
   if (ro && refSec) {
     const named = new Set();
     for (const c of refSec[1].matchAll(/^\s*Case:[^|\n]*\|\s*Opened:\s*(.*)$/gim)) for (const f of c[1].split(',').map((x) => x.trim()).filter(Boolean)) named.add(f.toLowerCase());
-    if (named.size && +ro[2] !== named.size + (stat.match(/^\s*not opened:/gim) || []).length && +ro[1] !== named.size) problems.push(`STATUS.md: "References opened: ${ro[1]} of ${ro[2]}" but the "Reference files opened" section names ${named.size} distinct file(s) (plus ${(stat.match(/^\s*not opened:/gim) || []).length} "not opened" line(s)): the count must match the files named`);
+    if (named.size && (+ro[1] + (stat.match(/^\s*not opened:/gim) || []).length !== +ro[2] || +ro[1] > named.size)) problems.push(`STATUS.md: "References opened: ${ro[1]} of ${ro[2]}" but the "Reference files opened" section names ${named.size} distinct file(s) (plus ${(stat.match(/^\s*not opened:/gim) || []).length} "not opened" line(s)): the count must match the files named`);
   }
   const f = String(faultsText || '').replace(/<!--[\s\S]*?-->/g, '');
   f.split('\n').forEach((l, i) => { if (USAGE_RE.test(l)) problems.push(`FAULTS.md line ${i + 1}: a usage/time limit is given as a reason ("${l.trim().slice(0, 100)}")`); });
