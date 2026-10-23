@@ -255,7 +255,8 @@ function splitArgs(s) {
   return out;
 }
 const FIRST_ARG = /(?:^|[^\w.])(?:fs(?:\.promises)?\.)?(?:writeFileSync|writeFile|appendFileSync|appendFile|unlinkSync|unlink|rmSync|rmdirSync|rmdir|truncateSync|truncate|createWriteStream)\s*\(|(?:^|[^\w.])(?:fs(?:\.promises)?|fsp|fsPromises)\.rm\s*\(|(?:^|[^\w.])(?:os\.remove|os\.unlink|os\.rmdir|os\.truncate|shutil\.rmtree|rmtree|File\.write|File\.delete|File\.unlink|FileUtils\.rm\w*|Deno\.writeTextFileSync|Deno\.writeFileSync|Deno\.removeSync|Deno\.remove|Bun\.write)\s*\(/g;
-const BOTH_ARGS = /(?:^|[^\w.])(?:fs(?:\.promises)?\.renameSync|fs(?:\.promises)?\.rename|renameSync|os\.rename|os\.replace|shutil\.move|File\.rename|FileUtils\.mv|Deno\.renameSync|Deno\.rename)\s*\(/g;
+const ANY_RECV = /(?:^|[^\w.])[A-Za-z_$][\w$]*\s*\.\s*(?:writeFileSync|writeFile|appendFileSync|appendFile|unlinkSync|unlink|rmSync|rm|rmdirSync|rmdir|truncateSync|truncate|createWriteStream)\s*\(/g;
+const BOTH_ARGS =/(?:^|[^\w.])(?:fs(?:\.promises)?\.renameSync|fs(?:\.promises)?\.rename|renameSync|os\.rename|os\.replace|shutil\.move|File\.rename|FileUtils\.mv|Deno\.renameSync|Deno\.rename)\s*\(/g;
 const DEST_ARG = /(?:^|[^\w.])(?:fs(?:\.promises)?\.)?(?:copyFileSync|copyFile|cpSync|cp)\s*\(|(?:^|[^\w.])(?:shutil\.(?:copy|copy2|copyfile|copytree|copymode)|FileUtils\.cp\w*|Deno\.copyFileSync|Deno\.copyFile)\s*\(/g;
 const OPEN_CALL = /(?:^|[^\w.])(?:io\.|codecs\.|os\.)?open\s*\(/g;
 const FS_OPEN = /(?:^|[^\w.])fs(?:\.promises)?\.open(?:Sync)?\s*\(/g;
@@ -284,6 +285,8 @@ export function inlineWrites(code0, lc) {
   };
   const calls = (re, pick) => { re.lastIndex = 0; let m; while ((m = re.exec(code))) { const open = m.index + m[0].length - 1; const close = matchParen(code, open); const args = splitArgs(code.slice(open + 1, close < 0 ? code.length : close)); for (const a of pick(args)) { const n = lockedIn(a); if (n) hits.push(n); } } };
   calls(FIRST_ARG, (a) => a.slice(0, 1));
+  // the fs module under any variable name (import('fs').then((m) => m.rmSync(p)), const f = await import('fs'); f.rm(p)): when the code names the fs module, a write method on ANY receiver counts
+  if (/['"](?:node:)?fs(?:\/promises)?['"]/.test(String(code0))) calls(ANY_RECV, (a) => a.slice(0, 1));
   calls(BOTH_ARGS, (a) => a.slice(0, 2));
   calls(DEST_ARG, (a) => a.slice(1, 2));
   calls(OPEN_CALL, (a) => (a.slice(1).some((x) => /^(?:mode\s*=\s*)?['"][^'"]*[wax+]/.test(x)) ? a.slice(0, 1) : []));
@@ -301,10 +304,10 @@ function gitNames(repo, args) {
     return String(r.stdout || '').split('\0').join('\n').split('\n').map((x) => x.trim()).filter(Boolean);
   } catch { return []; }
 }
-const porcelainPath = (l) => { const p = l.slice(3); const k = p.indexOf(' -> '); return (k >= 0 ? p.slice(k + 4) : p).replace(/^"|"$/g, ''); };
+const porcelainPath = (l) => { const p = l.replace(/^[MADRCUT?! ]{1,2}\s+/, ''); const k = p.indexOf(' -> '); return (k >= 0 ? p.slice(k + 4) : p).replace(/^"|"$/g, ''); };
 function judgeGitHistory(sub, rest, repo, lc, dd) {
   const out = []; const hit = (names, what) => { for (const n of names) { const h = judgeTarget(n, repo, lc, what, false); if (h.length) { out.push(...h); break; } } };
-  const flags = rest.filter((x) => /^-/.test(x)); const pos = rest.filter((x) => !/^-/.test(x));
+  const flags = rest.filter((x) => /^-/.test(x)); const pos = (dd >= 0 ? rest.slice(0, dd) : rest).filter((x) => !/^-/.test(x));
   if (sub === 'reset') {
     if (!flags.includes('--hard')) return out;
     const target = pos[0] || 'HEAD';

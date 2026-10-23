@@ -102,7 +102,7 @@ export function checkFirstLookFile(folder, { actualId = null, notBefore = 0, mai
     if (items.length < 3 || sub.length < 3) probs.push('"Top 3:" needs three numbered lines (1. 2. 3.), each a real observation (20+ letters)');
     for (const m of items) { const why = placeholderWhy(m[2]); if (why) probs.push('"Top 3:" line ' + m[1] + ' is a placeholder, not an observation (' + why + ')'); }
   }
-  const nb = text.match(/^\W*what here would never be built\W*:?[ \t]*(.*)$/mi);
+  const nb = text.match(/^\W*what here would never be built[ \t]*:?[ \t]*(.*)$/mi);
   if (!nb) probs.push('no line "What here would never be built: <answer>"');
   else {
     const idx = t3.findIndex((l) => /^\W*what here would never be built/i.test(l));

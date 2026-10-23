@@ -249,13 +249,39 @@ export function heredocInterpreter(pre, post) {
   }
   return null;
 }
+// "cat > s.mjs <<EOF ... EOF && node s.mjs": the heredoc is a file write, but when a LATER part of the same command runs an interpreter on that very file the body is code that runs now.
+// targets = the files a heredoc command writes to (> f, >> f, tee f); the rest of the command is searched for an interpreter whose arguments name one of them.
+function writtenTargets(pre, post) {
+  const own = String(pre).split(/&&|\|\||;/).pop() + ' ' + String(post).split(/&&|\|\||;/)[0];
+  const out = [...own.matchAll(/\d*>>?\s*(['"]?)([^\s'">|&;]+)\1/g)].map((m) => m[2]);
+  const tee = own.match(/\btee\s+(?:-\w+\s+)*(['"]?)([^\s'">|&;]+)\1/); if (tee) out.push(tee[2]);
+  return out.filter((x) => x && !/^\/dev\/|^&/.test(x));
+}
+const baseName = (x) => String(x).replace(/\\/g, '/').replace(/^.*\//, '').toLowerCase();
+function runsAnyOf(rest, targets) {
+  if (!targets.length) return false;
+  const names = targets.map(baseName);
+  for (const seg of String(rest).split(/&&|\|\||;|\n|\|/)) {
+    const toks = seg.trim().split(/\s+/).filter(Boolean).map((x) => x.replace(/^['"]|['"]$/g, ''));
+    let i = 0;
+    while (i < toks.length) {
+      const base = toks[i].toLowerCase().replace(/^.*[\/\\]/, '').replace(/\.(?:exe|cmd|bat|ps1)$/, '');
+      if (/^\w+=/.test(toks[i]) || WRAP_VERBS.has(base) || /^-/.test(toks[i]) || /^\d+$/.test(toks[i])) { i++; continue; }
+      if (INTERP_VERBS.has(base) || base === 'source' || base === '.') { if (toks.slice(i + 1).some((a) => names.includes(baseName(a)))) return true; break; }
+      if (names.includes(baseName(toks[i]))) return true;   // ./s.sh, s.mjs run directly
+      break;
+    }
+  }
+  return false;
+}
 const HEREDOC_RE = /([^\n]*?)<<-?[ \t]*(['"]?)([A-Za-z_][\w.-]*)\2([^\n]*)\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g;
 const HERESTRING_RE = /([^\n]*?)@(['"])[ \t]*\n([\s\S]*?)\n[ \t]*\2@([^\n]*)/g;
 export function codeText(command) {
   const cmd = String(command || '').replace(/\r\n/g, '\n');
   try {
     let kept = '';
-    let body = cmd.replace(HEREDOC_RE, (m, pre, _q, _tag, post, text) => { if (heredocInterpreter(pre, post)) kept += '\n' + text; return pre + post; });
+    const restOf = cmd.replace(HEREDOC_RE, (m, pre, _q, _tag, post) => pre + post).replace(HERESTRING_RE, (m, pre, _q, text, post) => pre + post);
+    let body = cmd.replace(HEREDOC_RE, (m, pre, _q, _tag, post, text) => { if (heredocInterpreter(pre, post) || runsAnyOf(restOf, writtenTargets(pre, post))) kept += '\n' + text; return pre + post; });
     // PowerShell here-strings (@' ... '@): the text of a file being written, unless an interpreter takes it (iex, powershell, "| node -")
     body = body.replace(HERESTRING_RE, (m, pre, _q, text, post) => { if (heredocInterpreter(pre, post)) kept += '\n' + text; return pre + post; });
     const { segments } = parseCommand(body);

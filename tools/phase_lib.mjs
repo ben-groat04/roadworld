@@ -134,7 +134,7 @@ export function parseSuiteLog(text) {
   out.timedOut = /(?:^|\n)\s*exit(?:\s*code)?\s*[=:]\s*(?:124|137)\b/i.test(t) || /timed out after/i.test(t.slice(-400));
   return out;
 }
-const FAIL_MARK = [/^\s*(?:FAIL|FAILED|not ok|✗|✘)\b/m, /^TEST CASE:[\s\S]*?\bERROR:/m, /\[doctest\] test cases:.*\|\s*[1-9]\d* failed/, /\*\*\*Failed|\(Failed\)|[1-9]\d* tests? failed out of/, /^\s*[1-9]\d* failed\b/m, /\bassertions?:.*\|\s*[1-9]\d* failed/i];
+const FAIL_MARK = [/^\s*(?:FAIL|FAILED|not ok|✗|✘)\b/m, /^TEST CASE:[\s\S]*?\bERROR:/m, /\[doctest\] test cases:.*\|\s*[1-9]\d* failed/, /\*\*\*Failed|\(Failed\)|[1-9]\d* tests? failed out of/, /(?:^|[,|;])\s*[1-9]\d* failed\b/m, /\bassertions?:.*\|\s*[1-9]\d* failed/i];
 export const failFirstShowsFailure = (text) => FAIL_MARK.some((re) => re.test(String(text || '')));
 const TEST_PATH = /(?:^|\/)tests?\/|(?:^|\/)test_[^/]*\.(?:mjs|cjs|js|ts|py|cpp|cc)$|_tests?\.(?:mjs|cjs|js|ts|py|cpp|cc)$|\.(?:test|spec)\.(?:mjs|cjs|js|ts)$|(?:^|\/)Tests\//;
 // content that registers tests wherever the file lives: doctest TEST_CASE, node:test, describe / test / it, or the repo's own runner shape (a t( "name", cond ) helper printing PASS / FAIL)
