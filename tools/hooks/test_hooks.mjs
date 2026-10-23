@@ -1054,6 +1054,9 @@ console.log('gates4: ITEM lines from the task file reach the finish hook; omissi
   bi = stop('items1b', tpI);
   t('with a row per item, each done with a proof: the stop is allowed', bi.code === 0 && bi.out === '', bi.out + bi.err);
   const mbOld = spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tf, '--round', 'items2', '--worktree', path.join(wt, 'items2'), '--no-visual'], { encoding: 'utf8' });
+  const tfF = path.join(tmp, 'items_faults.md'); fs.writeFileSync(tfF, task().replace('none known', '1. the kerb stops short\n2. the island is flat\nKnown: other things not numbered'));
+  const mbF = spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), tfF, '--round', 'items4', '--no-visual'], { encoding: 'utf8' });
+  t('no "## Items" section: the numbered lines of "## Faults" become the items (prose lines such as "Known: ..." do not), and the brief says so', /^ITEM: 1 \| the kerb stops short$/m.test(mbF.stdout) && /^ITEM: 2 \| the island is flat$/m.test(mbF.stdout) && !/^ITEM: Known/m.test(mbF.stdout) && /numbered lines of "## Faults"/.test(mbF.stderr), mbF.stdout.split('\n').filter((l) => /^ITEM/.test(l)).join('|') + mbF.stderr);
   t('a task file WITHOUT an Items section emits no ITEM lines (older task files are unaffected)', !/^ITEM:/m.test(spawnSync(process.execPath, [path.join(root, 'tools/make_brief.mjs'), path.join(tmp, 'ownerq.md'), '--round', 'items3', '--no-visual'], { encoding: 'utf8' }).stdout) && mbOld.status === 0);
 }
 

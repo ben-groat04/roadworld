@@ -616,6 +616,10 @@ console.log('BLOCKED needs a concrete cause; items table; rewordings of "not don
   for (const s of ['Kerb work was dropped for now.', 'The lighting columns remain as they were.', 'I chose not to build the island.', 'Left as is: marking offsets.', 'Postponing the signals.', 'No further work on kerbs.', 'This will be revisited.', 'Out of reach this round.', 'Would require a larger refactor.', 'The slip lane was omitted.', 'Descoped: islands.', 'Parked.', 'Deprioritised.']) {
     t('reworded "not done" refused: ' + s, GL.statusProblems(s + '\n', null).some((x) => /left undone or deferred/.test(x)), s);
   }
+  for (const s of ['N/A for this round.', 'No attempt was made at the island.', 'Nothing was done about the markings.', 'Ignored the slip lane.', 'Skipping the lighting columns.', 'I will not fix the kerb radius.', 'Leaving the signals as is.', 'Leaving the signals alone.', 'Marking offsets: n/a for this case.', 'The island shape stays as it is.', 'Did not get round to the hatching.', 'Hatching: pending.', 'Hatching: open.', 'Hatching remains.', 'Hatching is still missing.', 'The slip lane is absent.', 'Only the kerb was done.', 'Partial: kerbs only.', 'We stopped at the kerbs.']) {
+    t('second batch of rewordings refused (pass 2 attack): ' + s, GL.statusProblems(s + '\n', null).some((x) => /left undone or deferred/.test(x)), s);
+  }
+  t('honest sentences stay clean after the second batch', GL.statusProblems('- The kerb radius is 8 m.\n- Nothing skipped, refused or failed.\n- Did not verify the live editor.\n- Measured 20/21 in 38 s.\n- the open question is only about colour\n', null).length === 0);
   t('honest sentences about the engine are not flagged (no false positive on "unchanged" scope statements)', GL.statusProblems('- sim_core was not changed, nothing in it is affected\n- the wall height is rounded to 0.1 m\n', null).length === 0);
   // items
   const items = [{ id: 'A', text: 'measured gates' }, { id: 'B', text: 'waiver guard' }, { id: 'G', text: 'scope line in the brief template' }];

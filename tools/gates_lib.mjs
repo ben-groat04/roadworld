@@ -740,6 +740,11 @@ const NOT_DONE_MORE_RE = new RegExp([
   String.raw`\bchose\s+not\s+to\b`, String.raw`\b(?:decided|elected)\s+(?:not\s+to|against)\b`, String.raw`\bno\s+(?:further|more)\s+work\b`,
   String.raw`\b(?:postpon\w*|deprioriti[sz]\w*|descop\w*)\b`, String.raw`\bwill\s+be\s+(?:revisited|picked\s+up|handled|done|addressed)\b`, String.raw`\bto\s+be\s+(?:revisited|picked\s+up)\b`,
   String.raw`\bout\s+of\s+reach\b`, String.raw`\b(?:would|will)\s+(?:require|need)\s+(?:a\s+)?(?:larger|bigger|major|separate|new)\b`, String.raw`\bparked\b`, String.raw`\bfor\s+now\b`,
+  // gates4 pass 2: a second batch found by attacking the reader with 24 fresh phrasings (a phrase list is never complete: the ITEM rows are the structural check)
+  String.raw`\bno\s+attempt\b`, String.raw`\bnothing\s+(?:was\s+)?done\s+(?:about|for|on|to)\b`, String.raw`\bn/a\s+(?:for|this)\b`,
+  String.raw`(?:^|[.:;]\s*)(?:ignored|skipping)\b`, String.raw`\b(?:will\s+not|won${AP}t)\s+(?:fix|change|touch|address|do)\b`, String.raw`\bleaving\b[^.\n]{0,40}\b(?:as\s+is|alone|unchanged|as\s+it\s+is)\b`,
+  String.raw`\bstays?\s+as\s+(?:it\s+is|they\s+are|before)\b`, String.raw`\bdid\s+not\s+get\s+(?:round|around)\s+to\b`, String.raw`\b(?:is|are)\s+(?:still\s+)?(?:missing|absent|pending)\b`,
+  String.raw`:\s*(?:pending|open|n/a|tbd)\s*\.?\s*$`, String.raw`\bstopped\s+at\b`, String.raw`\bpartial\s*:`, String.raw`\bonly\s+(?:the\s+)?\w+\s+was\s+done\b`, String.raw`\bremains\s*\.?\s*$`,
   String.raw`\b(?:was|were|is|are|has|have)\s+not\s+touched\b`, String.raw`\bnot\s+in\s+this\s+round\b`, String.raw`\b(?:won${AP}t|will\s+not)\s+(?:be\s+)?(?:built|done|fixed|addressed|implemented)\b`,
 ].join('|'), 'i');
 const notDone = (l) => NOT_DONE_RE.test(l) || NOT_DONE_MORE_RE.test(l) || (/(?<![\d%]\s?)\bskipped\b/i.test(l) && !/\b(?:no|nothing|none|not|never|without)\b[^.\n]{0,40}\bskipped\b/i.test(l));
