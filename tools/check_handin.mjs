@@ -27,7 +27,7 @@ const builderArg = bi >= 0 ? args[bi + 1] : null;
 const mainArg = mi >= 0 ? args[mi + 1] : null;
 // Gates v2 (tools/gates_lib.mjs): switched on by the brief's `GATES-VERSION: 2`; the hook passes the brief's `GATE:` lines as --gate "<line>".
 // --task <task-file> reads the "## Gates" section of a task file instead (manual runs). --worktree overrides the worktree root.
-const VALUE_OPTS = ['--main', '--builder', '--since', '--gates-version', '--gate', '--task', '--worktree', '--legacy', '--prior-audit', '--item', '--phase', '--suite'];
+const VALUE_OPTS = ['--main', '--builder', '--since', '--gates-version', '--gate', '--task', '--worktree', '--legacy', '--prior-audit', '--item', '--phase', '--suite', '--refs', '--case', '--allow-fail'];
 const optAll = (n) => args.flatMap((a, i) => (a === n ? [args[i + 1]] : []));
 const gatesVersion = Number(optAll('--gates-version')[0] || 1);
 const gateLines = optAll('--gate');
@@ -176,8 +176,8 @@ if (args.includes('--checkpoint')) {
     try { PL = await import('./phase_lib.mjs'); } catch (e) { console.error('FAIL-OPEN: phase_lib.mjs could not be loaded: ' + (e && e.message)); process.exit(1); }
     const lines = [];
     const probs = ph === 'measure'
-      ? PL.measureProblems(folder, { since })
-      : PL.buildProblems(folder, wtRoot, { since, suites: optAll('--suite'), GL, log: (...a) => lines.push(a.join(' ')) });
+      ? PL.measureProblems(folder, { since, main, refs: optAll('--refs')[0] !== undefined ? Number(optAll('--refs')[0]) : null, cases: optAll('--case').length ? optAll('--case') : null })
+      : PL.buildProblems(folder, wtRoot, { since, allowFail: optAll('--allow-fail'), GL, log: (...a) => lines.push(a.join(' ')) });
     lines.forEach((l) => console.error('phase check: ' + l));
     if (probs.length) { console.error(`HAND-IN CHECK FAILED (${probs.length}) for ${folder} (phase ${ph}):\n - ` + probs.join('\n - ')); process.exit(1); }
     console.log(`HAND-IN CHECK PASSED for ${folder} (phase ${ph})`);
@@ -291,7 +291,7 @@ if (noVisual) { /* skipped */ } else if (compare === null) {
   });
   // different files by content, in every role and across rows (a copy of one image in four columns is the fake the gates3 audit built)
   if (GL && gatesV2) { try { GL.compareIntegrity(compareRows).forEach((p) => fails.push('GATE picture: ' + p)); } catch (e) { failOpen('compare integrity', e); } }
-  if (GL && GL.unrealFrameProblems) { try { GL.unrealFrameProblems(compareRows, since).forEach((p) => fails.push('GATE picture: ' + p)); } catch (e) { failOpen('unreal frames', e); } }
+  if (GL && GL.unrealFrameProblems) { try { GL.unrealFrameProblems(compareRows, since, { folder: path.resolve(folder), compareDirs: [path.join(refRoot, '_compare', path.basename(path.resolve(folder))), path.join(wtRoot, 'docs', 'reference', '_compare', path.basename(path.resolve(folder)))], statusText: status || '', resolve: (p) => resolveFile(p, [path.resolve(folder), wtRoot, main, refRoot, scratchBase]) }).forEach((p) => fails.push('GATE picture: ' + p)); } catch (e) { failOpen('unreal frames', e); } }
 }
 
 // ---- Wrapper gate (any brief version): a round that adds a sim_core/src/*.cpp needs its Unreal wrapper (tools/check_wrappers.mjs).

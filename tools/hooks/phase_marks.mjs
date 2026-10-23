@@ -20,16 +20,48 @@ export function firstLookOfIn(text) {
 }
 // A NO-CONTRACT launch that is really an audit or a first look. The description or the stated reason names it. Clerks, mergers, researchers and read-only checks mention audits in
 // passing ("follows the gates9 STATUS merge checklist", "records round states"): only the job itself is matched.
-export function disguisedJob(description, reason) {
-  const d = String(description || ''), r = String(reason || '');
-  const firstLook = /first[- ]?look/i.test(d) || /first[- ]?look/i.test(r) || /FIRSTLOOK_OPUS/i.test(r);
-  const audit = /^\s*(?:fresh\s+|opus\s+|independent\s+)?audit(?:or|ing)?\b/i.test(d) || /\bauditor\s+for\b/i.test(d) || /\b(?:fresh|independent)\s+auditor\b/i.test(r) || /\baudit\s+job\b/i.test(r) || /^\s*(?:an?\s+)?auditor\b/i.test(r) || /\bwrites?\s+AUDIT\.md\b/i.test(r);
-  return firstLook ? 'first look' : audit ? 'audit' : null;
+// gates11 (main-session decision 1, after the gates10 audit found "Write audit first-look rule into docs" refused): only the JOB is matched, never the words anywhere in the text.
+//  - the DESCRIPTION starts with an audit or first-look phrase: `^(auditor|audit(ing)? (of|for)|opus first look|first look)\b`, plus the forms the log shows for real round audits
+//    ("Audit gate-notice hooks independently", "Audit T-junction round", "Audit X hand-in": `audit ... independently | round | hand-in`), a leading fresh / independent / opus allowed;
+//  - or the PROMPT names a progress folder to audit ("Audit of <...>/docs/progress/<round>", "audit the hand-in folder <...>/docs/progress/<round>").
+// A description that merely mentions the words later ("Write audit first-look rule into docs", "Clerk: ... first look notes") passes, as does "Audit repo organisation, read-only"
+// (a read-only check of something that is not a hand-in). The reason text is not read any more.
+const LEAD = String.raw`^\s*(?:(?:fresh|independent|opus)\s+)*`;
+const RE_LOOK_DESC = new RegExp(LEAD + String.raw`first[- ]look\b`, 'i');
+const RE_AUDIT_DESC = new RegExp(LEAD + String.raw`(?:auditor\b|audit(?:ing)?\s+(?:of|for)\b|audit(?:ing)?\b[^\n]*\b(?:independently|round|hand-?in)\b)`, 'i');
+const PROG = String.raw`[\`"']?\S*docs[\\/]+progress[\\/]+[\w.-]+`;
+const RE_AUDIT_PROMPT = new RegExp(String.raw`\b(?:audit(?:or|ing)?)\s*(?:[:\-]|of\b|for\b)?\s*(?:the\s+)?(?:hand-?in\s+)?(?:folder\s+)?(?:at\s+)?` + PROG, 'i');
+const RE_LOOK_PROMPT = new RegExp(String.raw`\bfirst[- ]look\s*(?:[:\-]|of\b|on\b|for\b)?\s*(?:the\s+)?(?:hand-?in\s+)?(?:folder\s+)?(?:at\s+)?` + PROG, 'i');
+export function disguisedJob(description, reason, prompt = '') {
+  const d = String(description || ''); void reason;
+  const p = String(prompt || '');
+  if (RE_LOOK_DESC.test(d) || RE_LOOK_PROMPT.test(p)) return 'first look';
+  if (RE_AUDIT_DESC.test(d) || RE_AUDIT_PROMPT.test(p)) return 'audit';
+  return null;
 }
 
 // ---- the first-look file
 const IMG = /\.(?:png|jpe?g|webp|gif|bmp)$/i;
 const clean = (p) => p.trim().replace(/^[`"'(\[]+|[`"')\].,;]+$/g, '');
+// gates11: a line that is a placeholder, not an observation: <...>, TODO, tbd, under 15 characters, one character repeated, or the same word over and over
+export function placeholderWhy(line) {
+  const x = String(line || '').trim();
+  if (/<[^<>]*>/.test(x)) return 'a <placeholder> left in';
+  if (/\b(?:todo|tbd|fixme|lorem ipsum|xxx+)\b/i.test(x)) return 'a TODO / tbd marker';
+  if (x.length < 15) return 'under 15 characters';
+  const letters = x.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (letters.length && new Set(letters).size <= 3) return 'one or two characters repeated';
+  if (/(.)\1{5,}/i.test(letters)) return 'a character repeated';
+  const words = x.toLowerCase().match(/[a-z0-9']+/g) || [];
+  if (words.length >= 4 && new Set(words).size <= Math.max(2, Math.floor(words.length / 3))) return 'the same few words repeated';
+  return null;
+}
+// the paths of an "Opened:" line: quoted paths may hold spaces, the rest is split at commas, semicolons or runs of spaces
+export function openedPaths(line) {
+  const quoted = []; let rest = String(line);
+  rest = rest.replace(/"([^"]+)"|'([^']+)'|\x60([^\x60]+)\x60/g, (m, a, b, c) => { quoted.push(a || b || c); return ' , '; });
+  return [...quoted, ...rest.split(/\s*[,;]\s*|\s{2,}/)];
+}
 export function checkFirstLookFile(folder, { actualId = null, notBefore = 0, main = null } = {}) {
   const probs = [];
   const file = path.join(folder, FIRSTLOOK_FILE);
@@ -43,7 +75,7 @@ export function checkFirstLookFile(folder, { actualId = null, notBefore = 0, mai
   const bases = [folder, path.dirname(folder), main, main && path.join(main, 'docs', 'reference'), main && path.join(main, 'docs', 'reference', '_compare')].filter(Boolean);
   if (!om) probs.push('no line "Opened: <image path>, <image path>, ..." naming the images and photos you looked at');
   else {
-    const paths = [...new Set(om[1].split(/\s*[,;]\s*|\s{2,}/).map(clean).filter((x) => IMG.test(x)))];
+    const paths = [...new Set(openedPaths(om[1]).map(clean).filter((x) => IMG.test(x)))];
     const found = []; const missing = [];
     for (const p of paths) { const r = path.isAbsolute(p) ? p : bases.map((b) => path.join(b, p)).find((x) => fs.existsSync(x)); if (r && fs.existsSync(r)) found.push(path.resolve(r)); else missing.push(p); }
     if (missing.length) probs.push('Opened: names files that do not exist: ' + missing.slice(0, 5).join(', '));
@@ -51,9 +83,11 @@ export function checkFirstLookFile(folder, { actualId = null, notBefore = 0, mai
     else {
       const n = (p) => p.replace(/\\/g, '/').toLowerCase();
       const f0 = n(path.resolve(folder)), cmp = '/docs/reference/_compare/';
-      const own = found.filter((p) => n(p).startsWith(f0 + '/') || n(p).includes(cmp) || n(p).includes('/docs/progress/'));
+      const isPhoto = (p) => n(p).includes('/docs/reference/') && !n(p).includes(cmp);
+      const own = found.filter((p) => !isPhoto(p) && (n(p).startsWith(f0 + '/') || n(p).includes(cmp) || n(p).includes('/docs/progress/')));
+      const photosFound = found.filter(isPhoto);
       if (!own.length) probs.push('Opened: names no picture of this round (under the progress folder or docs/reference/_compare): the first look is of the round\'s headline images');
-      if (own.length === found.length) probs.push('Opened: names no reference photo (a first look compares the round\'s images with the photos)');
+      if (!photosFound.length) probs.push('Opened: names no reference photo under docs/reference (not _compare): a first look compares the round\'s images with the photos, and an image from anywhere else on disk is not one');
       const bad = found.filter((p) => !imageDecodable(p));
       if (bad.length) probs.push('Opened: these are not complete decodable pictures: ' + bad.slice(0, 3).join(', '));
     }
@@ -64,6 +98,7 @@ export function checkFirstLookFile(folder, { actualId = null, notBefore = 0, mai
     const items = []; for (let i = hi + 1; i < t3.length && items.length < 3; i++) { const m = /^\s*(?:[-*]\s*)?([1-3])[.)]\s+(\S.*)$/.exec(t3[i]); if (m) items.push(m); else if (/^\W*what here would never be built/i.test(t3[i])) break; }
     const sub = items.filter((m) => m[2].replace(/[^A-Za-z0-9]/g, '').length >= 20);
     if (items.length < 3 || sub.length < 3) probs.push('"Top 3:" needs three numbered lines (1. 2. 3.), each a real observation (20+ letters)');
+    for (const m of items) { const why = placeholderWhy(m[2]); if (why) probs.push('"Top 3:" line ' + m[1] + ' is a placeholder, not an observation (' + why + ')'); }
   }
   const nb = text.match(/^\W*what here would never be built\W*:?[ \t]*(.*)$/mi);
   if (!nb) probs.push('no line "What here would never be built: <answer>"');
@@ -71,6 +106,7 @@ export function checkFirstLookFile(folder, { actualId = null, notBefore = 0, mai
     const idx = t3.findIndex((l) => /^\W*what here would never be built/i.test(l));
     const answer = (nb[1] + ' ' + t3.slice(idx + 1).join(' ')).replace(/[^A-Za-z0-9 ]/g, '');
     if (answer.trim().length < 20) probs.push('"What here would never be built:" is empty or a placeholder: say what it is');
+    else { const why = placeholderWhy((nb[1] + ' ' + t3.slice(idx + 1).join(' ')).trim()); if (why) probs.push('"What here would never be built:" is a placeholder (' + why + '): say what it is'); }
   }
   return probs;
 }

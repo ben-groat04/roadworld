@@ -78,7 +78,7 @@ export async function main() {
   // NO-CONTRACT, so no builder record was compared, no AUDIT.md or FIRSTLOOK_OPUS.md was validated and the round stayed owed on paper only). Refused with the way to launch it properly.
   // Clerks, mergers, researchers and read-only checks are not affected: only the job itself is matched (phase_marks.disguisedJob).
   if (nc) {
-    const job = disguisedJob(ti.description, nc);
+    const job = disguisedJob(ti.description, nc, prompt);
     if (job) {
       log({ ...base, decision: 'deny', reason: 'NO-CONTRACT ' + job + ' launch refused', no_contract_reason: nc });
       process.stderr.write(`LAUNCH REFUSED by the brief gate: this NO-CONTRACT launch is an ${job} ("${String(ti.description || '').slice(0, 80)}"). An ${job} agent launched without its marker is not recorded and its file is not validated. ` +

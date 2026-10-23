@@ -20,6 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { log, readStdin, parseJson, launchInfoOfAgent, STATE_DIR } from './lib.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 import { extraJudge } from './lock_extra.mjs';
@@ -161,7 +162,7 @@ export function lockCtx({ handinDir, priorAudit }) {
 const DEL = new Set(['rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri', 'unlink', 'shred', 'truncate']);
 const MOVE = new Set(['mv', 'move', 'move-item', 'mi', 'ren', 'rename-item', 'rni']);
 const COPY = new Set(['cp', 'copy', 'copy-item', 'cpi', 'install']);
-const WRITE = new Set(['tee', 'tee-object', 'touch', 'set-content', 'sc', 'add-content', 'ac', 'clear-content', 'clc', 'out-file', 'new-item', 'ni', 'set-itemproperty', 'dd']);
+const WRITE = new Set(['tee', 'tee-object', 'touch', 'set-content', 'sc', 'add-content', 'ac', 'clear-content', 'clc', 'out-file', 'new-item', 'ni', 'set-itemproperty', 'dd', 'chmod', 'chown', 'chgrp', 'icacls', 'attrib', 'takeown', 'setfacl', 'set-acl']);
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'pwsh', 'powershell', 'cmd']);
 const INLINE = new Set(['python', 'python3', 'py', 'node', 'nodejs', 'perl', 'ruby', 'bun', 'deno']);
 const RUNNERS = new Set(['npx', 'pnpx', 'bunx']);
@@ -259,7 +260,19 @@ const DEST_ARG = /(?:^|[^\w.])(?:fs(?:\.promises)?\.)?(?:copyFileSync|copyFile|c
 const OPEN_CALL = /(?:^|[^\w.])(?:io\.|codecs\.|os\.)?open\s*\(/g;
 const FS_OPEN = /(?:^|[^\w.])fs(?:\.promises)?\.open(?:Sync)?\s*\(/g;
 const PATH_METHOD =/Path\s*\(([^)]*)\)\s*\.\s*(?:write_text|write_bytes|unlink|touch|rename|replace|rmdir)\b/g;
-export function inlineWrites(code, lc) {
+// gates11 (gates10 audit fault 8): spellings that name the same call as the bare fs.<call>: require('fs').rm(...), require('node:fs/promises').rm(...), (await import('fs')).rmSync(...),
+// fs['rmSync'](...), process.binding-free. The call is rewritten to fs.<call> / fs.promises.<call> before the patterns below read it.
+export function normalizeFsRefs(code) {
+  let c = String(code);
+  c = c.replace(/\brequire\s*\(\s*['"](?:node:)?fs\/promises['"]\s*\)/g, 'fs.promises');
+  c = c.replace(/\brequire\s*\(\s*['"](?:node:)?fs['"]\s*\)/g, 'fs');
+  c = c.replace(/\(?\s*await\s+import\s*\(\s*['"](?:node:)?fs\/promises['"]\s*\)\s*\)?/g, 'fs.promises');
+  c = c.replace(/\(?\s*await\s+import\s*\(\s*['"](?:node:)?fs['"]\s*\)\s*\)?/g, 'fs');
+  c = c.replace(/\b(fs(?:\.promises)?)\s*\[\s*['"](\w+)['"]\s*\]/g, '$1.$2');
+  return c;
+}
+export function inlineWrites(code0, lc) {
+  const code = normalizeFsRefs(code0);
   const hits = [];
   const lockedIn = (txt) => {
     const low = slash(txt).replace(/\/+/g, '/').toLowerCase();
@@ -279,6 +292,39 @@ export function inlineWrites(code, lc) {
   return hits;
 }
 
+// gates11 (gates10 audit fault 8): git commands that rewrite tracked files from history or from a stash. The files they would change are asked from git itself (read-only calls,
+// 5 s each); a locked file among them refuses the command. When git cannot answer (not a repository, unknown revision) nothing is refused: the command itself fails then.
+function gitNames(repo, args) {
+  try {
+    const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 5000 });
+    if (r.status !== 0) return [];
+    return String(r.stdout || '').split('\0').join('\n').split('\n').map((x) => x.trim()).filter(Boolean);
+  } catch { return []; }
+}
+const porcelainPath = (l) => { const p = l.slice(3); const k = p.indexOf(' -> '); return (k >= 0 ? p.slice(k + 4) : p).replace(/^"|"$/g, ''); };
+function judgeGitHistory(sub, rest, repo, lc, dd) {
+  const out = []; const hit = (names, what) => { for (const n of names) { const h = judgeTarget(n, repo, lc, what, false); if (h.length) { out.push(...h); break; } } };
+  const flags = rest.filter((x) => /^-/.test(x)); const pos = rest.filter((x) => !/^-/.test(x));
+  if (sub === 'reset') {
+    if (!flags.includes('--hard')) return out;
+    const target = pos[0] || 'HEAD';
+    hit(gitNames(repo, ['diff', '--name-only', target]), 'git reset --hard (would rewrite)');
+  } else if (sub === 'revert') {
+    if (flags.some((x) => /^--(?:abort|continue|quit|skip)$/.test(x))) return out;
+    for (const c of pos) hit(gitNames(repo, ['log', '--name-only', '--format=', ...(c.includes('..') ? [] : ['-1']), c]), 'git revert ' + c + ' (would rewrite)');
+  } else if (sub === 'stash') {
+    const act = pos[0] && !/^--/.test(pos[0]) ? pos[0].toLowerCase() : 'push';
+    if (['push', 'save'].includes(act) || (!pos.length) || (pos[0] && /^(?:-|--)/.test(pos[0]))) {
+      const spec = dd >= 0 ? rest.slice(dd + 1) : [];
+      if (spec.length) { for (const p of spec) { const h = judgeTarget(p, repo, lc, 'git stash push --', true); if (h.length) { out.push(...h); break; } } }
+      else hit(gitNames(repo, ['status', '--porcelain=v1', '-uall']).map(porcelainPath), 'git stash (would move away)');
+    } else if (['pop', 'apply', 'branch'].includes(act)) {
+      const which = pos.slice(1).find((x) => /^stash@/.test(x)) || 'stash@{0}';
+      hit(gitNames(repo, ['stash', 'show', '--name-only', which]), 'git stash ' + act + ' (would rewrite)');
+    }
+  }
+  return out;
+}
 const EXTRA_H = { hasGlob, isFlag, absOf, parseCommand, verbOf, producerPaths, braceExpand, diffTargets, looksLikeDiff, judgeTarget, judgeCommand: (...a) => judgeCommand(...a) };
 export function judgeCommand(cmd, cwd, lc, depth = 0) {
   const reasons = [];
@@ -372,10 +418,11 @@ export function judgeCommand(cmd, cwd, lc, depth = 0) {
       const nonFlag = rest.filter((x) => !/^-/.test(x));
       if (sub === 'rm') for (const p of nonFlag) reasons.push(...judgeTarget(p, repo, lc, 'git rm', true));
       else if (sub === 'mv') { for (const p of nonFlag.slice(0, Math.max(1, nonFlag.length - 1))) reasons.push(...judgeTarget(p, repo, lc, 'git mv', true)); if (nonFlag.length >= 2) reasons.push(...judgeDest(nonFlag[nonFlag.length - 1], repo, lc, 'git mv', nonFlag.slice(0, -1))); }
-      else if (sub === 'checkout' && dd >= 0) for (const p of rest.slice(dd + 1)) { if (p !== '.') reasons.push(...judgeTarget(p, repo, lc, 'git checkout --', false)); }
-      else if (sub === 'restore') for (const p of nonFlag) { if (p !== '.') reasons.push(...judgeTarget(p, repo, lc, 'git restore', false)); }
+      else if (sub === 'checkout' && dd >= 0) { const withRev = rest.slice(0, dd).some((x) => !/^-/.test(x)); for (const p of rest.slice(dd + 1)) { if (p !== '.' || withRev) reasons.push(...judgeTarget(p, repo, lc, 'git checkout' + (withRev ? ' <revision> --' : ' --'), withRev)); } }
+      else if (sub === 'restore') { const src = rest.some((x) => /^(?:--source|-s)/.test(x)); for (const p of nonFlag) { if (p !== '.' || src) reasons.push(...judgeTarget(p, repo, lc, 'git restore' + (src ? ' --source' : ''), src)); } }
+      else if (sub === 'reset' || sub === 'revert' || sub === 'stash') reasons.push(...judgeGitHistory(sub, rest, repo, lc, dd));
       else if (sub === 'clean') { if (!rest.some((x) => (/^-[a-zA-Z]*n/.test(x) && !/^--/.test(x)) || x === '--dry-run')) for (const p of nonFlag) reasons.push(...judgeTarget(p, repo, lc, 'git clean', true)); }
-      else if (sub === 'checkout' && dd < 0) { /* branch switch or `checkout <ref> <file>`: the file form is judged here */ for (const p of nonFlag) reasons.push(...judgeTarget(p, repo, lc, 'git checkout', false)); }
+      else if (sub === 'checkout' && dd < 0) { /* branch switch or `checkout <ref> <file>`: the file form is judged here */ for (const p of nonFlag) reasons.push(...judgeTarget(p, repo, lc, 'git checkout', nonFlag.length >= 2)); }
       continue;
     }
     if (INLINE.has(verb)) {

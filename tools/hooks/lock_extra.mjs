@@ -114,13 +114,16 @@ export function extraJudge(env) {
       files.push(a);
     }
     const texts = []; const explicit = [];
+    // gates11: a diff piped in from a file ("cat p.diff | patch -p1", "Get-Content p.diff | git apply -"): the previous command's file arguments are the diff
+    const stdinOnly = !files.length || files.every((x) => x === '-');
+    if (stdinOnly && prev && /^(?:cat|type|get-content|gc)$/.test(prev.verb)) for (const pf of prev.av.filter((x) => !/^-/.test(x))) files.push(pf);
     for (const f of files) {
       let t = null; try { const p = H.absOf(f, cur); const st = fs.statSync(p); if (st.isFile() && st.size < 4e6) t = fs.readFileSync(p, 'utf8'); } catch { /* not a readable file */ }
       if (t !== null && H.looksLikeDiff(t)) texts.push(t); else explicit.push(f);
     }
     if (/^(?:\+\+\+|---) \S/m.test(cmd) || /^diff --git /m.test(cmd)) texts.push(cmd);
     if (verb === 'patch') for (const f of explicit) out.reasons.push(...H.judgeTarget(f, cur, lc, 'patch', false));
-    const what = verb === 'patch' ? 'patch' : 'git apply';
+    const what = verb === 'patch' ? 'patch' : (args === undefined ? 'git apply' : 'git apply / git am');
     for (const t of texts) for (const name of H.diffTargets(t)) {
       const parts = name.replace(/\\/g, '/').split('/').filter(Boolean);
       const levels = strip !== null ? [strip] : [0, 1, 2, 3, 4, 5];
@@ -132,13 +135,19 @@ export function extraJudge(env) {
       }
     }
   };
-  if (verb === 'patch') { diffIn(av, false); out.done = out.reasons.length > 0; return out; }
+  // gates11: patch --dry-run / --check / -C only reads (false refusal found by the gates10 audit)
+  if (verb === 'patch') { diffIn(av, av.some((x) => /^(?:--dry-run|--check|-C)$/.test(x))); out.done = out.reasons.length > 0; return out; }
   if (verb === 'git') {
     let i = 0;
     while (i < av.length && /^-/.test(av[i])) i += (av[i] === '-C' || av[i] === '-c') ? 2 : 1;
-    if (String(av[i] || '').toLowerCase() === 'apply') {
+    const gsub = String(av[i] || '').toLowerCase();
+    if (gsub === 'apply') {
       const rest = av.slice(i + 1);
       diffIn(rest, rest.some((x) => /^--(?:check|stat|numstat|summary)$/.test(x)));
+    } else if (gsub === 'am') {
+      // gates11: git am applies the patches of a mailbox: the files they name are read from the mailbox file
+      const rest = av.slice(i + 1);
+      diffIn(rest, rest.some((x) => /^--(?:abort|quit|show-current-patch|skip)$/.test(x)));
     }
   }
   return out;

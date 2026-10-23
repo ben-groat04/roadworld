@@ -30,6 +30,8 @@ const MAX_BLOCKS = 3;
 // Measured gates build and run the scene check: allow minutes (settings.json hook timeout must be larger; a timeout fails open and is logged).
 const GATE_TIMEOUT_MS = 270000;
 export function suitesIn(text) { return [...String(text || '').replace(/\r\n/g, '\n').matchAll(/^SUITE:[ \t]*(.+?)[ \t]*$/gm)].map((m) => m[1]); }
+// gates11: lines of a phase brief that the phase checks compare with: REFS: <count of reference files>, CASE: <case label>, ALLOW-FAIL: <test name text the build suite may fail>
+export function briefLinesIn(text, key) { return [...String(text || '').replace(/\r\n/g, '\n').matchAll(new RegExp('^' + key + ':[ \t]*(.+?)[ \t]*$', 'gm'))].map((m) => m[1]); }
 export function priorAuditIn(text) { const m = String(text || '').match(/^PRIOR-AUDIT:[ 	]*(.+?)[ 	]*$/m); return m ? m[1].replace(/^`|`$/g, '') : null; }
 export function gatesIn(text) {
   const t = String(text || '').split('\r\n').join('\n');
@@ -181,7 +183,14 @@ export async function main() {
 
   const args = [path.join(ROOT, 'tools', 'check_handin.mjs'), handinDir, '--main', ROOT];
   if (noVisual) args.push('--no-visual');
-  if (phased) { args.push('--phase', phase); for (const sc of [...suitesIn(text), ...(briefFileText ? suitesIn(briefFileText) : [])]) args.push('--suite', sc); }
+  if (phased) {
+    args.push('--phase', phase);
+    const both = text + '\n' + (briefFileText || '');
+    for (const sc of suitesIn(both)) args.push('--suite', sc);
+    const rf = briefLinesIn(both, 'REFS')[0]; if (rf && /^\d+$/.test(rf)) args.push('--refs', rf);
+    for (const c of briefLinesIn(both, 'CASE')) args.push('--case', c);
+    for (const c of briefLinesIn(both, 'ALLOW-FAIL')) args.push('--allow-fail', c);
+  }
   // Gates v2: only a brief that carries `GATES-VERSION: 2` (make_brief.mjs) gets the measured checks; its `GATE:` lines are passed on.
   const gv = phased ? null : (gatesIn(text) || (briefFileText ? gatesIn(briefFileText) : null));
   if (gv) { args.push('--gates-version', String(gv.version)); for (const g of gv.gates) args.push('--gate', g); for (const it of gv.items || []) args.push('--item', it); }

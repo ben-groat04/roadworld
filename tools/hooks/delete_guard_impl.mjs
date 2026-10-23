@@ -230,12 +230,34 @@ const DELETEISH = /remove-item|\bri\b|\.delete\s*\(|\[io\.file\]::delete|\bunlin
 // The command as CODE (gates10): heredoc bodies are kept only when the heredoc is fed to an interpreter or shell, and the words of a prose segment (git, gh, echo, printf, grep, cat, ...) are dropped.
 // Nothing else is removed: a one-liner in python -c / node -e / powershell -Command keeps its text. On any parse problem the whole command is returned (the old behaviour).
 const PROSE_VERBS = new Set(['git', 'gh', 'echo', 'printf', 'write-host', 'write-output', 'write-error', 'write-warning', 'cat', 'type', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'findstr', 'select-string', 'sls', 'less', 'more', 'head', 'tail', 'wc', 'jq']);
-const CODE_HEREDOC = /(?:^|[\s|;&])(?:bash|sh|zsh|pwsh|powershell|python3?|py|node|nodejs|perl|ruby|deno|bun|cmd|iex|invoke-expression)(?:\s|$)/i;
+const INTERP_VERBS = new Set(['bash', 'sh', 'zsh', 'pwsh', 'powershell', 'python', 'python3', 'py', 'node', 'nodejs', 'perl', 'ruby', 'deno', 'bun', 'cmd', 'iex', 'invoke-expression']);
+const WRAP_VERBS = new Set(['sudo', 'env', 'time', 'nohup', 'command', 'exec', 'timeout', 'nice', 'stdbuf', 'unbuffer', 'call', 'start']);
+// gates11 (gates10 audit fault 11): is the heredoc / here-string fed to an interpreter? Only the command that OWNS the heredoc is read: the text before the "<<" back to the last
+// && || ; and the text after the tag up to the next && || ; (so "node -v && cat > x.mjs <<EOF" and "cat > x.mjs <<EOF && node x.mjs" are a file write, not code), plus every
+// command piped on from it ("cat <<EOF | node -"). Redirect targets ("> node.mjs") are not words of the command. Returns the interpreter verb or null.
+export function heredocInterpreter(pre, post) {
+  const own = String(pre).split(/&&|\|\||;/).pop() + ' ' + String(post).split(/&&|\|\||;/)[0];
+  for (const part of own.split('|')) {
+    const toks = part.replace(/\d*>>?\s*\S+/g, ' ').replace(/<<?-?\s*\S*/g, ' ').trim().split(/\s+/).filter(Boolean).map((x) => x.replace(/^['"]|['"]$/g, ''));
+    let i = 0;
+    while (i < toks.length) {
+      const base = toks[i].toLowerCase().replace(/^.*[\/]/, '').replace(/\.(?:exe|cmd|bat|ps1)$/, '');
+      if (/^\w+=/.test(toks[i]) || WRAP_VERBS.has(base) || /^-/.test(toks[i]) || /^\d+$/.test(toks[i])) { i++; continue; }
+      if (INTERP_VERBS.has(base)) return base;
+      break;
+    }
+  }
+  return null;
+}
+const HEREDOC_RE = /([^\n]*?)<<-?[ \t]*(['"]?)([A-Za-z_][\w.-]*)\2([^\n]*)\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g;
+const HERESTRING_RE = /([^\n]*?)@(['"])[ \t]*\n([\s\S]*?)\n[ \t]*\2@([^\n]*)/g;
 export function codeText(command) {
   const cmd = String(command || '').replace(/\r\n/g, '\n');
   try {
     let kept = '';
-    const body = cmd.replace(/([^\n]*?)<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\2([^\n]*)\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g, (m, pre, _q, _tag, post, text) => { if (CODE_HEREDOC.test(pre + ' ' + post)) kept += '\n' + text; return pre + post; });
+    let body = cmd.replace(HEREDOC_RE, (m, pre, _q, _tag, post, text) => { if (heredocInterpreter(pre, post)) kept += '\n' + text; return pre + post; });
+    // PowerShell here-strings (@' ... '@): the text of a file being written, unless an interpreter takes it (iex, powershell, "| node -")
+    body = body.replace(HERESTRING_RE, (m, pre, _q, text, post) => { if (heredocInterpreter(pre, post)) kept += '\n' + text; return pre + post; });
     const { segments } = parseCommand(body);
     const out = [kept]; let dropped = body !== cmd;
     for (const seg of segments) {
@@ -280,8 +302,8 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
   }
   if ((scan.match(ONE_ALL) || []).length > oneLits.length && nearText()) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) with a path that is not a string literal, in or near the main checkout or a worktree: it follows a docs\\reference junction');
   // heredocs and here-strings handed to a shell run as commands
-  for (const m of cmd.replace(/\r\n/g, '\n').matchAll(/([^\n]*?)<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\2([^\n]*)\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g)) {
-    if (/(?:^|[\s|;&])(?:bash|sh|zsh|pwsh|powershell)(?:\s|$)/.test(m[1] + ' ' + m[4])) reasons.push(...sub(m[5], cwd));
+  for (const m of cmd.replace(/\r\n/g, '\n').matchAll(HEREDOC_RE)) {
+    if (/^(?:bash|sh|zsh|pwsh|powershell)$/.test(heredocInterpreter(m[1], m[4]) || '')) reasons.push(...sub(m[5], cwd));
   }
 
   const { segments } = parseCommand(cmd);
