@@ -32,3 +32,7 @@ docs/reference/_compare/
 
 # Personal Claude settings
 .claude/settings.local.json
+
+# Raw free-asset library: stays on disk, never committed (owner decision 11 Oct 2026)
+unreal/CityPainter/SourceArt/Free/
+unreal/CityPainter/SourceArt/Meshes/Free/
