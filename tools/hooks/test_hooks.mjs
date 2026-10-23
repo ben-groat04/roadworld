@@ -851,9 +851,9 @@ console.log('gates3 hooks');
 
   // -- BLOCKED through the finish hook
   const faults3 = '## Pass 1\nthe kerb stops 4 m short of the island on the south arm\n## Pass 2\nthe give-way line is a stub, not a span across the whole arm\n## Pass 3\nthe hatching bars cross the kerb line at the island nose\n## Residual\nnone, all fixed\n';
-  const blkLine = 'BLOCKED: wall curl at the road ends | tried: `node tools/scene.mjs --check` after a ramp, a fillet and a longer fade | blocked by: `FAIL ground_under_road` stays at worst 2.1 m (src/earthworks.js:412) | needs: a decision on the crossing level';
+  const blkLine = 'BLOCKED: wall curl at the road ends | tried: `node tools/scene.mjs --check` after a ramp, a fillet and a longer fade | blocked by: `FAIL ground_under_road` stays at worst 2.1 m (src/earthworks.js:412) | see: scene_check.log | needs: a decision on the crossing level';
   const blkTp = transcript('blk', mk('blk', ['--no-visual', '--v2']));
-  fs.mkdirSync(hd('blk'), { recursive: true }); fs.writeFileSync(path.join(hd('blk'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', blkLine)); fs.writeFileSync(path.join(hd('blk'), 'FAULTS.md'), faults3);
+  fs.mkdirSync(hd('blk'), { recursive: true }); fs.writeFileSync(path.join(hd('blk'), 'STATUS.md'), goodStatus.replace('Nothing skipped; did not verify the live editor.', blkLine)); fs.writeFileSync(path.join(hd('blk'), 'FAULTS.md'), faults3); fs.writeFileSync(path.join(hd('blk'), 'scene_check.log'), 'scene check 17/21\nPASS median_flat\nFAIL ground_under_road stays at worst 2.1 m (src/earthworks.js:412)\nFAIL no_bare_steps\n');
   let bl = stop('blk1', blkTp);
   const lg = logOf(root);
   t('a STATUS whose only open item is a complete BLOCKED line: the stop is ALLOWED', bl.code === 0 && bl.out === '' && lg.some((e) => e.gate === 'handin' && e.reason === 'hand-in check passed' && e.agent_id === 'blk1'), bl.out + bl.err);
@@ -1076,6 +1076,114 @@ console.log('gates3 hooks, part 4: HANDIN_DIR in the prompt, HANDIN: no-visual o
   fs.rmSync(path.join(hdir, 'STATUS.md'));
   const nv2 = stop('nv2', transcript('nvfile2', prompt));
   t('...and the check still runs: a missing STATUS.md blocks, without a COMPARE.md complaint', J(nv2.out).decision === 'block' && /STATUS\.md is missing/.test(J(nv2.out).reason) && !/COMPARE\.md is missing/.test(J(nv2.out).reason), nv2.out);
+}
+
+console.log('gates5: state guard and delete guard against the real payload shapes (gates4 audit items 1-9, 12); main checkout resolved from a worktree; settings.json canary');
+{
+  // Where the expected values come from: the gates4 AUDIT.md fault list (repro payloads), the main session design decisions of 23 Oct 2026 (lane lock and gate.log reads allowed for every agent,
+  // judge the destination of robocopy, state guard on real targets not words, delete guard refuses main/docs/reference/worktree roots/backup, git clean -x/-X/-d, del /s on a worktree),
+  // and CLAUDE.md line 65 (the backup mirror is robocopy main docs\reference -> C:\Users\bgbg0\roadworld-reference-backup /MIR).
+  const common = (tool, ti, extra = {}) => ({ session_id: 's1', transcript_path: path.join(tmp, 'tr.jsonl'), cwd: elsewhere, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: ti, tool_use_id: 'toolu_01', agent_id: 'ag5', agent_type: 'general-purpose', ...extra });
+  const sdir = path.join(root, '.claude', 'state').replace(/\\/g, '/');
+  const lock = sdir + '/unreal_lane.lock', glog = sdir + '/gate.log', secret = sdir + '/ack_secret';
+  const sgv = (tool, ti, extra) => run('state_guard.mjs', common(tool, ti, extra)).code;
+  const B = (command) => ['Bash', { command, description: 'x' }], P = (command) => ['PowerShell', { command }];
+  const sgCases = [
+    // [tool, input, expect (0 allow / 2 deny), label]
+    [...B(`touch ${lock}`), 0, 'touch the Unreal lane lock'], [...B(`rm -f ${lock}`), 0, 'rm -f the lane lock'], [...B(`test -f ${lock} && cat ${lock}`), 0, 'test -f && cat the lane lock'],
+    [...P(`New-Item -ItemType File -Path ${lock.replace(/\//g, '\\')} -Force`), 0, 'New-Item the lane lock (PowerShell)'], [...P(`Remove-Item ${lock.replace(/\//g, '\\')} -Force`), 0, 'Remove-Item the lane lock (PowerShell)'],
+    [...B(`echo 4242 > ${lock}`), 0, 'redirect into the lane lock'],
+    ['Write', { file_path: lock, content: '4242' }, 0, 'Write tool on the lane lock'], ['Read', { file_path: lock }, 0, 'Read tool on the lane lock'],
+    ['Read', { file_path: glog }, 0, 'Read tool on gate.log'], ['Grep', { pattern: 'FAIL-OPEN', path: glog, output_mode: 'content' }, 0, 'Grep tool on gate.log (gates4 fault 4)'],
+    ['Grep', { pattern: 'FAIL-OPEN', path: sdir, glob: 'gate.log' }, 0, 'Grep over the state folder limited to gate.log by glob'], ['Glob', { pattern: '*', path: sdir }, 0, 'Glob lists the state folder (names only)'],
+    [...B(`cat ${glog} | tail -20`), 0, 'cat gate.log | tail (piped read, gates4 fault 4)'], [...P(`Get-Content ${glog.replace(/\//g, '\\')} -Tail 20 | Select-String error`), 0, 'Get-Content gate.log | Select-String'],
+    [...B(`tail -n 5 ${glog}; grep FAIL ${glog}`), 0, 'tail and grep of gate.log'],
+    [...B('git commit -m "docs: ref_seed and gate_ack notes [skip ci]"'), 0, 'commit message that names ref_seed and gate_ack (gates4 fault 3)'], [...B('grep -rn gate_ack docs tools'), 0, 'grep pattern gate_ack (gates4 fault 3)'],
+    [...B('rg -n "recordAudit|ack_secret" tools'), 0, 'rg pattern naming recordAudit and ack_secret'], [...B('echo "see .claude/state/ack_secret" >> notes.txt'), 0, 'echo text that mentions the state folder'],
+    [...B('cat <<EOF > x.md\nuse .claude/state/builders/x.json and gate_ack\nEOF'), 0, 'heredoc body that mentions the state'], ['Grep', { pattern: 'ack_secret', path: root + '/docs' }, 0, 'Grep pattern ack_secret outside the state folder'],
+    [...B('node --check tools/ref_seed.mjs'), 0, 'node --check of ref_seed (syntax only)'], [...B('cat tools/hooks/gate_ack.mjs'), 0, 'reading the source of gate_ack'],
+    [...B('node tools/check_handin.mjs docs/progress/x && git status'), 0, 'check_handin and git'],
+    [...B(`robocopy ${root}\\docs\\reference C:\\Users\\bgbg0\\roadworld-reference-backup /MIR /R:1`), 0, 'the prescribed backup mirror (state guard has no opinion on it)'],
+    [...B(`cat ${secret}`), 2, 'cat ack_secret'], [...P(`Get-Content ${secret.replace(/\//g, '\\')}`), 2, 'Get-Content ack_secret'], [...B(`echo {} > ${sdir}/builders/z.json`), 2, 'redirect into builders/'],
+    [...B('node tools/hooks/gate_ack.mjs "3:abcdef" "fixed it"'), 2, 'running gate_ack'], [...B('node tools/ref_seed.mjs --force'), 2, 'running ref_seed'],
+    [...B('node -e "import(\'./tools/hooks/audit_lib.mjs\').then(m=>m.recordAudit())"'), 2, 'inline node code calling recordAudit'], [...B(`rm -rf ${sdir}`), 2, 'rm -rf the state folder'],
+    [...B(`cat ${sdir}/*`), 2, 'wildcard into the state folder'], [...B(`cat ${glog} > ${glog}`), 2, 'redirect over gate.log'], [...B(`rm ${glog}`), 2, 'rm gate.log'],
+    [...B(`bash -c "cat ${secret}"`), 2, 'ack_secret inside bash -c'], [...B(`cp ${secret} /tmp/x`), 2, 'cp ack_secret'], [...B(`cat ${sdir}/../state/ack_secret`), 2, 'path with .. back into the state folder'],
+    [...B(`cat ${lock}/../ack_secret`), 2, 'lane lock path with .. to ack_secret'], [...B(`grep -r secret ${sdir}`), 2, 'grep -r over the state folder'],
+    ['Grep', { pattern: '.', path: sdir }, 2, 'Grep tool over the whole state folder'], ['Read', { file_path: secret }, 2, 'Read tool on ack_secret'],
+    ['Write', { file_path: sdir + '/builders/x.json', content: '{}' }, 2, 'Write tool into builders/'], ['Edit', { file_path: glog, old_string: 'a', new_string: 'b' }, 2, 'Edit tool on gate.log'], ['Write', { file_path: glog, content: '' }, 2, 'Write tool on gate.log'],
+  ];
+  let sgBad = [];
+  for (const [tool, ti, want, label] of sgCases) { const code = sgv(tool, ti); if (code !== want) sgBad.push(`${label}: exit ${code}, wanted ${want}`); }
+  t(`state guard: ${sgCases.length} real-payload cases (lane lock, gate.log reads, words in messages, secret, records) all judged as decided`, sgBad.length === 0, sgBad.join('\n'));
+  t('state guard: the lane lock is allowed for the MAIN session too (no agent_id)', run('state_guard.mjs', common('Bash', { command: `touch ${lock}` }, { agent_id: undefined })).code === 0);
+
+  // ---- delete guard
+  const rrRoot = path.join(tmp, 'rr'); const rrMain = path.join(rrRoot, 'main'); const rrWt = path.join(rrRoot, 'roadworld-wt', 'w1');
+  fs.mkdirSync(path.join(rrMain, '.git', 'worktrees', 'w1'), { recursive: true }); fs.mkdirSync(path.join(rrMain, 'docs', 'reference', 'aerial'), { recursive: true }); fs.writeFileSync(path.join(rrMain, 'docs', 'reference', 'aerial', 'p.jpg'), 'photo');
+  fs.mkdirSync(rrWt, { recursive: true }); fs.writeFileSync(path.join(rrWt, '.git'), 'gitdir: ' + path.join(rrMain, '.git', 'worktrees', 'w1') + '\n');
+  fs.writeFileSync(path.join(rrMain, '.git', 'worktrees', 'w1', 'gitdir'), path.join(rrWt, '.git') + '\n'); fs.writeFileSync(path.join(rrMain, '.git', 'worktrees', 'w1', 'commondir'), '../..\n');
+  fs.mkdirSync(path.join(rrWt, 'build'), { recursive: true }); fs.mkdirSync(path.join(rrWt, 'docs'), { recursive: true });
+  for (const f of fs.readdirSync(path.join(root, 'tools', 'hooks'))) { const d = path.join(rrWt, 'tools', 'hooks', f); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(root, 'tools', 'hooks', f), d); }
+  const rrRun = (script, input) => spawnSync(process.execPath, [path.join(rrWt, 'tools/hooks', script)], { input: JSON.stringify(input), cwd: rrWt, encoding: 'utf8', timeout: 60000 });
+  const rrState = path.join(rrMain, '.claude', 'state', 'gate.log');
+  let r = rrRun('delete_guard.mjs', common('Bash', { command: `rm -rf ${rrMain.replace(/\\/g, '/')}` }, { cwd: rrWt }));
+  t('delete guard run FROM A WORKTREE copy: rm -rf of the MAIN checkout is refused (gates4 fault 5: the hook used its own location as the root)', r.status === 2 && /main checkout/.test(r.stderr), r.stderr);
+  r = rrRun('delete_guard.mjs', common('Bash', { command: `rm -rf ${rrMain.replace(/\\/g, '/')}/docs` }, { cwd: rrWt })); t('...and rm -rf main\\docs (where the photos live): refused', r.status === 2, r.stderr);
+  t('...the refusal is logged in the MAIN checkout\'s .claude/state, not in the worktree\'s', fs.existsSync(rrState) && /delete_guard/.test(fs.readFileSync(rrState, 'utf8')) && !fs.existsSync(path.join(rrWt, '.claude')));
+  r = rrRun('state_guard.mjs', '{bad json'); t('...a FAIL-OPEN line from a worktree copy also lands in the main checkout\'s state (CLAUDE_PROJECT_DIR is the main checkout; hooks resolve it themselves either way)', r.status === 0 && /FAIL-OPEN/.test(fs.readFileSync(rrState, 'utf8')) && !fs.existsSync(path.join(rrWt, '.claude')));
+  const dg = (tool, command, cwd = elsewhere) => run('delete_guard.mjs', common(tool, { command }, { cwd })).code;
+  const M = root, BK = 'C:\\Users\\bgbg0\\roadworld-reference-backup';
+  const wtJ = path.join(tmp, 'dg2', 'roadworld-wt', 'j1'); fs.mkdirSync(path.join(wtJ, 'docs'), { recursive: true }); fs.mkdirSync(path.join(tmp, 'dg2', 'photos'), { recursive: true }); fs.writeFileSync(path.join(tmp, 'dg2', 'photos', 'k.jpg'), 'k');
+  fs.symlinkSync(path.join(tmp, 'dg2', 'photos'), path.join(wtJ, 'docs', 'reference'), 'junction'); fs.mkdirSync(path.join(wtJ, 'build'), { recursive: true });
+  const J2 = wtJ.replace(/\//g, '\\');
+  const dgCases = [
+    // [tool, command, cwd, expect]
+    ['Bash', `rm -rf ${M}`, wtJ, 2], ['Bash', `rm -rf ${M}/docs`, wtJ, 2], ['PowerShell', `Remove-Item -Recurse -Force ${M}\\docs\\reference`, elsewhere, 2], ['Bash', `rm -rf ${J2}`, elsewhere, 2],
+    ['Bash', `rm -rf ${BK}`, elsewhere, 2], ['PowerShell', `Remove-Item -Recurse -Force ${BK}\\aerial`, elsewhere, 2], ['Bash', `rm -rf ${path.dirname(wtJ)}`, elsewhere, 2],
+    ['PowerShell', 'if (Test-Path docs) { Remove-Item docs -Recurse -Force }', M, 2], ['PowerShell', 'try { Remove-Item -Recurse -Force docs } catch {}', M, 2], ['PowerShell', 'foreach ($d in "docs") { Remove-Item $d -Recurse }', M, 2],
+    ['PowerShell', '(Remove-Item docs -Recurse -Force)', M, 2], ['PowerShell', '$null = Remove-Item docs -Recurse -Force', M, 2], ['PowerShell', 'Remove-Item docs -Recurse:$true -Force', M, 2],
+    ['PowerShell', 'Remove-Item build,docs -Recurse -Force', M, 2], ['Bash', 'env rm -rf docs', M, 2], ['Bash', 'echo docs | xargs rm -rf', M, 2], ['Bash', 'find docs -exec rm -rf {} +', M, 2], ['Bash', 'find docs -delete', M, 2],
+    ['Bash', 'rm -rf docs/ref""erence', M, 2], ['Bash', 'cd docs && rm -rf reference', M, 2], ['Bash', `cd "${M}" && rm -rf docs`, elsewhere, 2], ['PowerShell', `Set-Location ${M}; Remove-Item -Recurse -Force .\\docs`, elsewhere, 2],
+    ['Bash', `git -C ${J2} clean -fdx`, elsewhere, 2], ['Bash', 'git clean -fd', wtJ, 2], ['Bash', 'git clean -fdx', M, 2], ['Bash', 'git clean -n -fdx', wtJ, 0],
+    ['Bash', `del /s /q ${J2}\\*`, elsewhere, 2], ['Bash', `rmdir /s /q ${J2}`, elsewhere, 2], ['Bash', `cmd /c "rmdir /s /q ${M}\\docs"`, elsewhere, 2],
+    ['Bash', `robocopy C:\\x ${M}\\docs\\reference /MIR`, elsewhere, 2], ['Bash', `robocopy C:\\x ${J2} /PURGE`, elsewhere, 2], ['Bash', `robocopy C:\\x ${BK} /MIR`, elsewhere, 2], ['Bash', `robocopy C:\\scratch ${M}\\docs /MIR`, elsewhere, 2],
+    ['Bash', 'rm -rf $x', wtJ, 2], ['Bash', 'rm -rf $(pwd)/docs', wtJ, 2], ['PowerShell', 'Get-ChildItem docs -Recurse | Remove-Item -Force', M, 2], ['Bash', `git worktree remove ${J2}`, M, 2],
+    ['Bash', `robocopy ${M}\\docs\\reference ${BK} /MIR /R:1`, M, 0], ['PowerShell', `robocopy ${M}\\docs\\reference ${BK} /MIR /R:1 /W:1 /XD _compare`, wtJ, 0], ['Bash', 'robocopy C:\\a C:\\scratch\\copy /E', elsewhere, 0],
+    ['Bash', 'rm -rf build', wtJ, 0], ['Bash', `rm -rf ${J2}\\build`, elsewhere, 0], ['PowerShell', 'Remove-Item -Recurse -Force .\\build', wtJ, 0], ['Bash', 'rm -rf /tmp/scratch-x', wtJ, 0], ['Bash', 'rm -rf node_modules && npm install', wtJ, 0],
+    ['Bash', 'rm -f notes.txt', wtJ, 0], ['Bash', 'git status', wtJ, 0], ['Bash', 'git clean -n', wtJ, 0], ['Bash', 'echo "rm -rf docs" > notes.txt', M, 0], ['Bash', 'git commit -m "rm -rf docs/reference is forbidden"', M, 0],
+    ['Bash', 'powershell -NoProfile -ExecutionPolicy Bypass -File tools\\remove_agent_worktree.ps1 foo', M, 0], ['Bash', `cmd /c rmdir ${J2}\\docs\\reference`, M, 0], ['Bash', 'ls -la | head', wtJ, 0],
+    ['Grep', 'rm -rf docs', M, 0],
+  ];
+  let dgBad = [];
+  for (const [tool, command, cwd, want] of dgCases) { const code = dg(tool, command, cwd); if (code !== want) dgBad.push(`${tool} ${command.slice(0, 90)} (cwd ${path.basename(cwd)}): exit ${code}, wanted ${want}`); }
+  t(`delete guard: ${dgCases.length} cases (gates4 audit faults 2, 5-8 and the allowed backup mirror, builds and scratch deletes) all judged as decided`, dgBad.length === 0, dgBad.join('\n'));
+  t('delete guard: the junction in the test worktree and its photo survived every case', fs.readFileSync(path.join(tmp, 'dg2', 'photos', 'k.jpg'), 'utf8') === 'k' && fs.readFileSync(path.join(rrMain, 'docs', 'reference', 'aerial', 'p.jpg'), 'utf8') === 'photo');
+  fs.rmdirSync(path.join(wtJ, 'docs', 'reference'));   // link only
+  // ---- the root helper
+  {
+    const rt = await import(pathToFileURL(path.join(src, 'tools/hooks/root.mjs')).href);
+    t('root.mjs: from a worktree\'s tools/hooks the main checkout is found through the .git file and commondir', path.resolve(rt.mainRootFrom(path.join(rrWt, 'tools', 'hooks'))) === path.resolve(rrMain), String(rt.mainRootFrom(path.join(rrWt, 'tools', 'hooks'))));
+    t('root.mjs: from the main checkout itself it is that folder; worktreeRoots lists the registered worktree', path.resolve(rt.mainRootFrom(path.join(rrMain, 'tools'))) === path.resolve(rrMain) && rt.worktreeRoots(rrMain).map((x) => path.resolve(x)).includes(path.resolve(rrWt)));
+    const sub = spawnSync(process.execPath, ['-e', `import(${JSON.stringify(pathToFileURL(path.join(rrWt, 'tools/hooks/lib.mjs')).href)}).then((m) => console.log(m.ROOT))`], { cwd: rrWt, encoding: 'utf8' });
+    t('lib.ROOT of a hook file that sits in a worktree is the main checkout (state and the contract are read and written there only)', path.resolve(sub.stdout.trim()) === path.resolve(rrMain), sub.stdout + sub.stderr);
+  }
+  // ---- settings.json canary: the exact command lines of the wiring run against a fake payload of the matching event, from a worktree cwd, with CLAUDE_PROJECT_DIR = the (temp) main checkout
+  {
+    const st5 = JSON.parse(fs.readFileSync(path.join(src, '.claude/settings.json'), 'utf8'));
+    const payloads = { PreToolUse: common('Bash', { command: 'ls' }), PostToolUse: common('Bash', { command: 'ls' }, { hook_event_name: 'PostToolUse' }), UserPromptSubmit: { hook_event_name: 'UserPromptSubmit', prompt: 'hi', cwd: rrWt, session_id: 's1' }, SubagentStart: { hook_event_name: 'SubagentStart', agent_type: 'general-purpose', agent_id: 'cn1', cwd: rrWt }, SubagentStop: { hook_event_name: 'SubagentStop', agent_type: 'general-purpose', agent_id: 'cn2', cwd: rrWt } };
+    const probs = []; let n = 0;
+    for (const [ev, ms] of Object.entries(st5.hooks)) for (const m of ms) for (const h of m.hooks) {
+      n++;
+      const argv = (h.args || []).map((a) => a.replace(/\$\{CLAUDE_PROJECT_DIR\}/g, root));
+      const toolFor = ev === 'PreToolUse' && /^Agent$/.test(m.matcher) ? common('Agent', { subagent_type: 'Explore', prompt: 'look' }) : ev === 'PreToolUse' && /SubagentHandback/.test(m.matcher) ? common('SubagentHandback', { message: 'x' }) : payloads[ev];
+      const before = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8').split('\n').length : 0;
+      const rr = realSpawn(h.command === 'node' ? process.execPath : h.command, argv, { input: JSON.stringify(toolFor), cwd: rrWt, encoding: 'utf8', timeout: 60000, env: { ...process.env, CLAUDE_PROJECT_DIR: root, CP_GATE_STATE_DIR: undefined } });
+      const newLog = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8').split('\n').slice(before - 1).join('\n') : '';
+      if (rr.status !== 0 || /Cannot find module|SyntaxError|ERR_/.test(rr.stderr) || /could not load or crashed/.test(newLog)) probs.push(`${ev} ${m.matcher || ''} ${argv.join(' ').slice(-50)}: exit ${rr.status} ${rr.stderr.slice(0, 160)}`);
+    }
+    t(`settings.json canary: all ${n} hook command lines of the wiring start and exit 0 on a fake payload of their event, run from a worktree cwd (a wrong path or a missing import would show here, not only in a live session)`, n >= 8 && probs.length === 0, probs.join('\n'));
+  }
 }
 
 console.log('test isolation: nothing of this run reaches the real gate.log');
