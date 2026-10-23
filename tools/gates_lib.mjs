@@ -23,7 +23,7 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { spawnSync } from 'node:child_process';
 
-export const METRICS = ['scene_check', 'ctest failed_assertions', 'ctest failed_tests'];
+export const METRICS = ['scene_check', 'ctest failed_assertions', 'ctest failed_tests', 'ctest assertions'];
 export const FAILURE_METRICS = ['ctest failed_assertions', 'ctest failed_tests'];
 export const METRIC_DIRECTION = { scene_check: 'higher', ctest_failed_assertions: 'lower', ctest_failed_tests: 'lower' };
 const sh = (cmd, args, cwd, timeout = 60000) => spawnSync(cmd, args, { cwd, encoding: 'utf8', timeout, maxBuffer: 64 << 20 });
@@ -34,6 +34,8 @@ export function parseGateLine(raw) {
   if (!line) return null;
   let m = line.match(/^allow_waiver[:\s]+(\S.*?)\s*$/i);
   if (m) return { kind: 'allow', key: m[1].trim(), raw: line };
+  m = line.match(/^allow_floor_miss[:\s]+(scene_check|ctest failed_assertions|ctest failed_tests)\s*$/i);
+  if (m) return { kind: 'floormiss', metric: m[1].toLowerCase().replace(/\s+/g, ' '), raw: line };   // only the main session writes this into a task file: a BLOCKED line never waives a measured floor
   m = line.match(/^(picture_min_road|picture_max_debug)\s*[:=]?\s*([0-9.]+)\s*$/i);
   if (m) return { kind: 'picture', name: m[1].toLowerCase(), value: Number(m[2]), raw: line };
   m = line.match(/^([a-z_]+(?:\s+[a-z_]+)?)\s*(>=|<=|==)\s*(\d+(?:\/\d+)?)\s*(?:\((.*)\))?\s*$/i);
@@ -161,12 +163,13 @@ export function measureCtest(wt) {
 }
 
 // Evaluates metric gates. Returns { problems, notes, shortfalls, errors, blocked } ; shortfalls = metrics below target but at/above floor.
-// blockedItems: parseBlocked(STATUS): a measured floor miss that a valid BLOCKED item names (metric name in its item text) is reported in `blocked`, not as a refusal.
-export function runMeasuredGates(gates, wt, log = () => {}, blockedItems = []) {
+// A measured floor miss is NEVER waived by a BLOCKED line in STATUS.md (an agent writes those); only the task file can, with a line `allow_floor_miss <metric>`, written by the main session.
+// `ctest assertions >= N` (N = the base's whole-suite assertion count printed by doctest in LastTest.log) is the backstop against a test made vacuous: assertions that no longer run show as a drop.
+export function runMeasuredGates(gates, wt, log = () => {}) {
   const out = { problems: [], notes: [], shortfalls: [], errors: [], blocked: [] };
   const metrics = gates.filter((g) => g.kind === 'metric');
   let scene = null, ctest = null;
-  const coveredByBlocked = (g) => blockedItems.some((b) => b.ok && new RegExp(g.metric.replace(/[_ ]/g, '[ _]'), 'i').test(b.item));
+  const coveredByBlocked = (g) => gates.some((x) => x.kind === 'floormiss' && x.metric === g.metric);
   for (const g of metrics) {
     let value = null, extra = '';
     const op = FAILURE_METRICS.includes(g.metric) && g.op === '==' ? '<=' : g.op;
@@ -181,12 +184,12 @@ export function runMeasuredGates(gates, wt, log = () => {}, blockedItems = []) {
     } else {
       ctest ??= measureCtest(wt);
       if (ctest.fail) { if (coveredByBlocked(g)) out.blocked.push(`${g.metric}: ${ctest.fail}`); else out.problems.push(`gate ${g.raw}: ${ctest.fail}`); continue; }
-      value = g.metric === 'ctest failed_assertions' ? ctest.failed_assertions : ctest.failed_tests;
+      value = g.metric === 'ctest failed_assertions' ? ctest.failed_assertions : g.metric === 'ctest assertions' ? ctest.assertions : ctest.failed_tests;
       out.notes.push(`measured ${g.metric} ${value} (${ctest.assertions} assertions, ${ctest.tests}/${ctest.registered} tests, ${ctest.cases} cases, from ${path.basename(path.dirname(path.dirname(path.dirname(ctest.file))))}${ctest.crashed.length ? '; CRASHED: ' + ctest.crashed.join(', ') : ''})`);
     }
     if (!satisfies(value, op, g.floor)) {
-      const msg = `gate ${g.raw}: measured ${value}, which is on the wrong side of ${op} ${g.floor} (the floor)${extra}. The number you typed in STATUS is not read; fix the cause, or finish with a BLOCKED line in STATUS.md naming ${g.metric} ("BLOCKED: <item> | tried: ... | blocked by: ... | needs: ...")`;
-      if (coveredByBlocked(g)) out.blocked.push(`${g.metric} measured ${value}, floor ${op} ${g.floor}${extra}`); else out.problems.push(msg);
+      const msg = `gate ${g.raw}: measured ${value}, which is on the wrong side of ${op} ${g.floor} (the floor)${extra}. The number you typed in STATUS is not read; fix the cause. A BLOCKED line does not waive a measured floor; only the main session can, with an allow_floor_miss line in the task file`;
+      if (coveredByBlocked(g)) out.blocked.push(`${g.metric} measured ${value}, floor ${op} ${g.floor}${extra} (allowed by allow_floor_miss in the task file)`); else out.problems.push(msg);
     } else if (g.target && !satisfies(value, g.metric === 'scene_check' || op === '>=' ? '>=' : op === '<=' ? '<=' : '==', g.target)) {
       out.shortfalls.push({ metric: g.metric, measured: value, target: g.target });
     }
@@ -666,15 +669,37 @@ const NOT_DONE_MORE_RE = new RegExp([
   String.raw`\b(?:could\s*not|couldn${AP}t|unable\s+to)\s+(?:finish|complete|implement|fix|do|get|make|build|address|add|write|run|render|attempt)\b`,
   String.raw`\bgave\s+up\b`, String.raw`\bunfinished\b`, String.raw`\bunresolved\b`, String.raw`\b(?:partial(?:ly)?|partly|half)[- ](?:done|implemented|finished|fixed|complete|completed)\b`,
   String.raw`\bnot\s+(?:yet\s+)?(?:been\s+)?(?:done|implemented|finished|fixed|addressed|written|built)\s+(?:yet|at\s+all)\b`,
+  // gates3 audit fault 13: rewordings of "not done"
+  String.raw`\b(?:was|were|is|are|been|being|got)\s+(?:dropped|omitted|descoped|parked|shelved|abandoned|ignored|left\s+out)\b`,
+  String.raw`\b(?:dropped|omitted|descoped|parked|shelved|abandoned)\s+(?:for\s+now|this\s+round|from\s+(?:this|the)\s+round)\b`,
+  String.raw`\bleft\s+as\s+(?:is|it\s+was|they\s+were)\b`, String.raw`\bremains?\s+as\s+(?:it\s+was|they\s+were|before|is)\b`, String.raw`\bremain(?:s|ed)?\s+(?:unchanged|as\s+they\s+were)\b`,
+  String.raw`\bchose\s+not\s+to\b`, String.raw`\b(?:decided|elected)\s+(?:not\s+to|against)\b`, String.raw`\bno\s+(?:further|more)\s+work\b`,
+  String.raw`\b(?:postpon\w*|deprioriti[sz]\w*|descop\w*)\b`, String.raw`\bwill\s+be\s+(?:revisited|picked\s+up|handled|done|addressed)\b`, String.raw`\bto\s+be\s+(?:revisited|picked\s+up)\b`,
+  String.raw`\bout\s+of\s+reach\b`, String.raw`\b(?:would|will)\s+(?:require|need)\s+(?:a\s+)?(?:larger|bigger|major|separate|new)\b`, String.raw`\bparked\b`, String.raw`\bfor\s+now\b`,
+  String.raw`\b(?:was|were|is|are|has|have)\s+not\s+touched\b`, String.raw`\bnot\s+in\s+this\s+round\b`, String.raw`\b(?:won${AP}t|will\s+not)\s+(?:be\s+)?(?:built|done|fixed|addressed|implemented)\b`,
 ].join('|'), 'i');
 const notDone = (l) => NOT_DONE_RE.test(l) || NOT_DONE_MORE_RE.test(l) || (/(?<![\d%]\s?)\bskipped\b/i.test(l) && !/\b(?:no|nothing|none|not|never|without)\b[^.\n]{0,40}\bskipped\b/i.test(l));
 
-// BLOCKED form: `BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | needs: <what unblocks it>`
+// BLOCKED form: `BLOCKED: <item> | tried: <what was run> | blocked by: <the concrete thing> | needs: <what unblocks it>` (a table row `| BLOCKED: ... | tried: ... |` is the same form).
+// "Concrete" = something a reader can look up: a quoted error text, a command in backticks, a file path or file:line, an error code (ENOENT, C2065, exit code 1, HTTP 403), a refused
+// command, a missing file path. "The complexity", "the geometry", "difficult", "a larger rewrite", time, usage, scope and later-round words are not blocks. At most 3 BLOCKED lines
+// unless each names a DIFFERENT concrete cause. A BLOCKED line never waives a measured gate floor (runMeasuredGates) and never replaces a missing item the brief listed (itemsProblems).
 const FILLER_RE = /^(?:nothing|none|n\/?a|no|tbd|todo|unknown|time|\?+|-+|\.+|see above|same)\W*$/i;
+const VAGUE_RE = /\b(?:complexity|complex|complicated|difficult(?:y|ies)?|hard|tricky|geometry|infeasible|not feasible|unfeasible|too (?:much|many|big|large|long|slow)|larger? (?:refactor|rewrite|change)|bigger|rewrite|refactor|effort|inherent|nature of|a lot of work|beyond)\b/i;
+const TIME_RE = /\b(?:(?:more|extra|additional|enough)\s+(?:time|tokens|context|budget)|tokens?|usage|quota|rate limit|budget)\b/i;
+export function anchorsOf(text) {
+  const t = String(text || ''), out = new Set();
+  for (const m of t.matchAll(/`([^`]{3,})`/g)) out.add(m[1].trim().toLowerCase());
+  for (const m of t.matchAll(/"([^"]{8,})"|“([^”]{8,})”/g)) out.add((m[1] || m[2]).trim().toLowerCase());
+  for (const m of t.matchAll(/(?:[A-Za-z]:)?[\w.-]*[\\/][\w./\\-]*[\w-]\.\w{1,6}\b|\b[\w-]+\.(?:mjs|js|cpp|h|hpp|json|md|ps1|cmake|txt|log|png|jpe?g|exe|uasset|py|yml|yaml)(?::\d+)?\b/g)) out.add(m[0].toLowerCase());
+  for (const m of t.matchAll(/\b(?:E[A-Z]{3,}|C\d{4}|LNK\d{4}|exit (?:code|status) -?\d+|HTTP \d{3}|status (?:code )?\d{3})\b/g)) out.add(m[0].toLowerCase());
+  return [...out];
+}
+const blankAnchors = (t) => String(t || '').replace(/`[^`]*`/g, ' ').replace(/"[^"]*"/g, ' ').replace(/“[^”]*”/g, ' ');
 export function parseBlocked(text) {
   const out = [];
   String(text || '').replace(/<!--[\s\S]*?-->/g, '').split('\n').forEach((raw, i) => {
-    const l = raw.trim().replace(/^[-*]\s+/, '');
+    const l = raw.trim().replace(/^\|\s*/, '').replace(/\s*\|\s*$/, '').replace(/^[-*]\s+/, '');
     const m = l.match(/^BLOCKED\s*:\s*(.*)$/i);
     if (!m) return;
     const parts = m[1].split('|').map((x) => x.trim());
@@ -683,29 +708,77 @@ export function parseBlocked(text) {
     const tried = field(/^tried\s*:\s*/i), blockedBy = field(/^blocked\s+by\s*:\s*/i), needs = field(/^needs\s*:\s*/i);
     const why = [];
     if (item.length < 4) why.push('no item before the first |');
-    if (tried.length < 12 || FILLER_RE.test(tried)) why.push('"tried:" is missing or too short (say what you attempted, 12+ characters)');
+    const ta = anchorsOf(tried), ba = anchorsOf(blockedBy);
+    if (tried.length < 12 || FILLER_RE.test(tried)) why.push('"tried:" is missing or too short (say what you ran, 12+ characters)');
+    else if (!ta.length) why.push('"tried:" names nothing that was run (a command in backticks, a file path, a test name): "what I attempted" in general words is not a record');
+    else if (USAGE_RE.test(tried) || TIME_RE.test(tried)) why.push('"tried:" gives time, usage or tokens as a reason');
     if (blockedBy.length < 12 || FILLER_RE.test(blockedBy)) why.push('"blocked by:" is missing or too short (the exact error, refusal or missing thing, 12+ characters)');
-    else if (USAGE_RE.test(blockedBy) || /^(?:time|scope|later|next round|usage)\b/i.test(blockedBy)) why.push('"blocked by:" names time, usage, scope or a later round, which is not a block');
-    out.push({ line: i + 1, item, tried, blockedBy, needs, ok: why.length === 0, why, raw: l });
+    else if (USAGE_RE.test(blockedBy) || TIME_RE.test(blockedBy) || /^(?:time|scope|later|next round|usage)\b/i.test(blockedBy)) why.push('"blocked by:" names time, usage, scope or a later round, which is not a block');
+    else if (!ba.length) why.push('"blocked by:" names no concrete thing: quote the error text, command output, refused command, or the missing file path (in backticks or quotes, or a path or error code)');
+    else if (VAGUE_RE.test(blankAnchors(blockedBy))) why.push('"blocked by:" is a judgement ("complexity", "difficult", "the geometry", "a larger rewrite"...), not a block: quote the failing thing');
+    if (needs && (USAGE_RE.test(needs) || TIME_RE.test(needs))) why.push('"needs:" asks for more time, tokens or usage, which is not something that unblocks work');
+    out.push({ line: i + 1, item, tried, blockedBy, needs, anchors: ba, ok: why.length === 0, why, raw: l });
   });
+  const okOnes = out.filter((b) => b.ok);
+  if (out.length > 3) {
+    const keys = out.map((b) => b.anchors.slice().sort().join('\u0001'));
+    if (new Set(keys).size < out.length) out.forEach((b) => { b.ok = false; b.why.push(`${out.length} BLOCKED lines: more than 3 need a DIFFERENT concrete cause each, and some share one (one cause = one line)`); });
+  }
+  void okOnes;
   return out;
 }
 
+// The items the brief lists (ITEM: lines) against the STATUS "## Items" section: every item has a row that says done with a proof, or a valid BLOCKED line. An item that is
+// simply absent (the usual way work is silently dropped) is refused without any phrase list.
+export function itemsProblems(statusText, items) {
+  if (!items || !items.length) return [];
+  const st = String(statusText || '').replace(/\r\n/g, '\n').replace(/<!--[\s\S]*?-->/g, '');
+  const sec = st.match(/^##\s+Items[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/im);
+  if (!sec) return [`STATUS.md has no "## Items" section: the brief lists ${items.length} item(s) (${items.map((i) => i.id).join(', ')}); give one row per item, "| <id> | done | <the test, run or image that proves it> |" or a BLOCKED line`];
+  const lines = sec[1].split('\n');
+  const problems = [];
+  for (const it of items) {
+    const idRe = new RegExp('^\\s*(?:[-*]\\s*)?\\|?\\s*\\**' + it.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+    const row = lines.find((l) => idRe.test(l));
+    if (!row) { problems.push(`item ${it.id} ("${it.text.slice(0, 60)}") has no row in the STATUS "## Items" section: every listed item is done with proof or BLOCKED, none is left out`); continue; }
+    const bl = parseBlocked(row)[0];
+    if (bl) { if (!bl.ok) problems.push(`item ${it.id}: its BLOCKED line is incomplete (${bl.why.join('; ')})`); continue; }
+    const cells = row.split('|').map((c) => c.trim()).filter(Boolean);
+    const status = (cells[1] || '').toLowerCase(), proof = cells.slice(2).join(' ');
+    if (!/^(?:done|fixed)\b/.test(status)) problems.push(`item ${it.id}: the row says "${(cells[1] || '').slice(0, 30)}"; use "done" with its proof, or a BLOCKED line`);
+    else if (proof.length < 15 || /^(?:done|ok|fixed|yes)\W*$/i.test(proof)) problems.push(`item ${it.id}: "done" needs the test, run or image that proves it (15+ characters)`);
+  }
+  return problems;
+}
+
+// Section headings whose table rows are bookkeeping, not statements of work (they may quote the words the reader looks for)
+const BOOKKEEPING_HEAD = /prior audit|proof|reference files|images that carry|main session additions|items|gate tests removed|changes \(/i;
 export function statusProblems(statusText, faultsText, opts = {}) {
   const problems = [];
   const stat = String(statusText || '').replace(/<!--[\s\S]*?-->/g, '');
   const blocked = parseBlocked(stat);
   const blockedLines = new Set(blocked.map((b) => b.line));
-  for (const b of blocked) if (!b.ok) problems.push(`STATUS.md line ${b.line}: a BLOCKED line is incomplete (${b.why.join('; ')}): "BLOCKED: <item> | tried: <what you attempted> | blocked by: <exact error or missing thing> | needs: <what would unblock it>"`);
+  for (const b of blocked) if (!b.ok) problems.push(`STATUS.md line ${b.line}: a BLOCKED line is not acceptable (${b.why.join('; ')}): "BLOCKED: <item> | tried: <the command or file you ran> | blocked by: <the exact error, refused command or missing path> | needs: <what would unblock it>"`);
   const lines = stat.split('\n');
+  let head = '';
   lines.forEach((l, i) => {
-    if (/^\s*#/.test(l) || blockedLines.has(i + 1)) return;
-    if (notDone(l) && !/^\s*(?:Case|References opened|\|)/i.test(l)) problems.push(`STATUS.md line ${i + 1}: an item is left undone or deferred ("${l.trim().slice(0, 100)}"): do it (contract items 5 and 17), or, if something really blocks it, write "BLOCKED: <item> | tried: <what> | blocked by: <exact error or missing thing> | needs: <what unblocks it>"; "out of scope", "later round" and "bigger change" are not reasons`);
+    if (/^\s*#/.test(l)) { head = l; return; }
+    if (blockedLines.has(i + 1)) return;
+    const isRow = /^\s*\|/.test(l);
+    const bookkeeping = isRow && BOOKKEEPING_HEAD.test(head);
+    if (notDone(l) && !/^\s*(?:Case|References opened)/i.test(l) && !bookkeeping) problems.push(`STATUS.md line ${i + 1}: an item is left undone or deferred ("${l.trim().slice(0, 100)}"): do it (contract items 5 and 17), or, if something really blocks it, write "BLOCKED: <item> | tried: <what you ran> | blocked by: <exact error or missing path> | needs: <what unblocks it>"; "out of scope", "later round" and "bigger change" are not reasons`);
     if (USAGE_RE.test(l)) problems.push(`STATUS.md line ${i + 1}: a usage/time limit is given as a reason ("${l.trim().slice(0, 100)}"): that is not an accepted reason; finish the item or write a BLOCKED line with the technical block`);
   });
   // partial reads do not count as opened (contract item 1)
   const ro = stat.match(/References opened:\s*(\d+)\s+of\s+(\d+)/i);
   if (ro && +ro[1] >= +ro[2] && /\b(?:partly|partially|read\s+(?:only\s+)?(?:the\s+)?(?:head|first|top)|skimmed|heads\s+and\s+greps|first\s+\d+\s+(?:lines|characters))\b/i.test(stat.split(/^##\s+Reference files opened/im)[0])) problems.push('STATUS.md: "References opened" says all files were opened but the text says some were only partly read; a partial read counts as not opened (contract item 1): open them in full, or write N < M with a "not opened: <file> (reason)" line');
+  // the count must match the files named in the Reference files section (gates3 audit: "10 of 12" next to 11 named files)
+  const refSec = stat.match(/^##\s+Reference files opened[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/im);
+  if (ro && refSec) {
+    const named = new Set();
+    for (const c of refSec[1].matchAll(/^\s*Case:[^|\n]*\|\s*Opened:\s*(.*)$/gim)) for (const f of c[1].split(',').map((x) => x.trim()).filter(Boolean)) named.add(f.toLowerCase());
+    if (named.size && +ro[2] !== named.size + (stat.match(/^\s*not opened:/gim) || []).length && +ro[1] !== named.size) problems.push(`STATUS.md: "References opened: ${ro[1]} of ${ro[2]}" but the "Reference files opened" section names ${named.size} distinct file(s) (plus ${(stat.match(/^\s*not opened:/gim) || []).length} "not opened" line(s)): the count must match the files named`);
+  }
   const f = String(faultsText || '').replace(/<!--[\s\S]*?-->/g, '');
   f.split('\n').forEach((l, i) => { if (USAGE_RE.test(l)) problems.push(`FAULTS.md line ${i + 1}: a usage/time limit is given as a reason ("${l.trim().slice(0, 100)}")`); });
   if (faultsText !== null && faultsText !== undefined) {

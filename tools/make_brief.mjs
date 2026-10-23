@@ -128,7 +128,10 @@ const round = opt('round');
 const worktree = opt('worktree', path.join(path.dirname(root), 'roadworld-wt', round)); // matches new_agent_worktree.ps1 (new worktrees live under ..\roadworld-wt\<name>)
 const handinDir = path.join(path.resolve(worktree), 'docs', 'progress', round);
 const priorAudit = opt('prior-audit') ? path.resolve(opt('prior-audit')) : '';   // send-back round: the previous AUDIT.md; the hand-in gate then demands the "Prior audit items" table
-const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + (GL ? '\nGATES-VERSION: 2' + gateLines.map((g) => '\nGATE: ' + g).join('') : '') + (priorAudit ? '\nPRIOR-AUDIT: ' + priorAudit : '');
+// "## Items": the work items the brief lists, one per line ("A. text", "1) text", "- s3: text"). Each becomes an `ITEM: <id> | <text>` line; the hand-in gate demands a row per item
+// in STATUS.md "## Items" (done with proof, or a valid BLOCKED line), so an item left out is caught without reading any wording.
+const itemLines = get('items').split('\n').map((l) => l.match(/^\s*(?:[-*]\s*)?\**(\w{1,6})\**\s*[.):]\s+(\S.*)$/)).filter(Boolean).map((m) => 'ITEM: ' + m[1] + ' | ' + m[2].replace(/\s+/g, ' ').slice(0, 200));
+const handinLines = 'HANDIN_DIR: ' + handinDir + (args.includes('--no-visual') ? '\nHANDIN: no-visual' : '') + (GL ? '\nGATES-VERSION: 2' + gateLines.map((g) => '\nGATE: ' + g).join('') + itemLines.map((l) => '\n' + l).join('') : '') + (priorAudit ? '\nPRIOR-AUDIT: ' + priorAudit : '');
 const fill = {
   TASK: task,
   ROUND: opt('round'),

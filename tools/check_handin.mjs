@@ -25,7 +25,7 @@ const builderArg = bi >= 0 ? args[bi + 1] : null;
 const mainArg = mi >= 0 ? args[mi + 1] : null;
 // Gates v2 (tools/gates_lib.mjs): switched on by the brief's `GATES-VERSION: 2`; the hook passes the brief's `GATE:` lines as --gate "<line>".
 // --task <task-file> reads the "## Gates" section of a task file instead (manual runs). --worktree overrides the worktree root.
-const VALUE_OPTS = ['--main', '--builder', '--since', '--gates-version', '--gate', '--task', '--worktree', '--legacy', '--prior-audit'];
+const VALUE_OPTS = ['--main', '--builder', '--since', '--gates-version', '--gate', '--task', '--worktree', '--legacy', '--prior-audit', '--item'];
 const optAll = (n) => args.flatMap((a, i) => (a === n ? [args[i + 1]] : []));
 const gatesVersion = Number(optAll('--gates-version')[0] || 1);
 const gateLines = optAll('--gate');
@@ -33,6 +33,8 @@ const taskArg = optAll('--task')[0];
 const worktreeArg = optAll('--worktree')[0];
 const legacyArg = optAll('--legacy')[0];
 const priorAuditArg = optAll('--prior-audit')[0];   // previous AUDIT.md of a send-back round: STATUS must carry the "Prior audit items" table (contract item 17)
+// --item "<id>|<text>": an item the brief lists (ITEM: lines); STATUS "## Items" must hold a row for each (done with proof, or a valid BLOCKED line)
+const briefItems = optAll('--item').map((x) => { const k = String(x).indexOf('|'); return k > 0 ? { id: x.slice(0, k).trim(), text: x.slice(k + 1).trim() } : { id: String(x).trim(), text: '' }; });
 const gatesV2 = gatesVersion >= 2 || !!taskArg;
 const folder = args.find((a, i) => !a.startsWith('--') && !(i > 0 && VALUE_OPTS.includes(args[i - 1])));
 if (!folder) {
@@ -70,6 +72,15 @@ const read = (f) => {
   return fs.existsSync(p) ? fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n') : null;
 };
 const stripComments = (s) => s.replace(/<!--[\s\S]*?-->/g, '');
+const compareRows = [];
+const refCandidates = new Set();   // absolute paths of reference files named by the round (STATUS Case lines, COMPARE.md reference cells): provenance-checked in the v2 gates
+function resolveFile(name, bases) {
+  name = name.trim().replace(/^`|`$/g, '');
+  if (!name) return null;
+  if (path.isAbsolute(name)) return fs.existsSync(name) ? name : null;
+  const b = bases.find((x) => fs.existsSync(path.join(x, name)));
+  return b ? path.join(b, name) : null;
+}
 
 function findFile(name, bases) {
   name = name.trim().replace(/^`|`$/g, '');
@@ -132,6 +143,11 @@ if (status === null) {
     } else if (bad.length) {
       fails.push(`STATUS.md: case "${c[1]}": files not found (absolute, under ${wtRoot}, ${main} or ${refRoot}): ${bad.join(', ')}`);
     }
+    if (GL && gatesV2) {
+      const abs = ok.map((f) => resolveFile(f, refBases)).filter(Boolean);
+      abs.forEach((a) => refCandidates.add(a));
+      try { GL.distinctReferenceProblems(c[1], abs).forEach((p) => fails.push(p)); } catch (e) { failOpen('distinct references', e); }
+    }
   }
 }
 
@@ -192,7 +208,12 @@ if (noVisual) { /* skipped */ } else if (compare === null) {
     if (!findFile(ref, refBases)) fails.push(`COMPARE.md row "${kase}": reference not found: ${ref}`);
     if (!findFile(comp, bases)) fails.push(`COMPARE.md row "${kase}": composite not found (expected under docs/reference/_compare/<topic>/): ${comp}`);
     if (!findFile(before, bases)) fails.push(`COMPARE.md row "${kase}": before image not found: ${before}`);
+    const row = { kase, render: resolveFile(render, bases), reference: resolveFile(ref, refBases), composite: resolveFile(comp, bases), before: resolveFile(before, bases) };
+    compareRows.push(row);
+    if (row.reference) refCandidates.add(row.reference);
   });
+  // different files by content, in every role and across rows (a copy of one image in four columns is the fake the gates3 audit built)
+  if (GL && gatesV2) { try { GL.compareIntegrity(compareRows).forEach((p) => fails.push('GATE picture: ' + p)); } catch (e) { failOpen('compare integrity', e); } }
 }
 
 // ---- Wrapper gate (any brief version): a round that adds a sim_core/src/*.cpp needs its Unreal wrapper (tools/check_wrappers.mjs).
@@ -230,11 +251,11 @@ if (gatesV2 && GL) {
   const gates = GL.parseGates(lines).filter((g) => g.kind !== 'bad');
   // A: measured gates
   try {
-    const mg = GL.runMeasuredGates(gates, wtRoot, () => {}, blockedItems);
+    const mg = GL.runMeasuredGates(gates, wtRoot, () => {});
     mg.problems.forEach((p) => fails.push('GATE: ' + p));
     mg.errors.forEach((e) => failOpen(e.split(':')[0], e));
     mg.notes.forEach((n) => gateNotes.push(n));
-    mg.blocked.forEach((b) => gateNotes.push('BLOCKED (named in STATUS.md): ' + b));
+    mg.blocked.forEach((b) => gateNotes.push('FLOOR MISS ALLOWED by the task file: ' + b));
     for (const sf of mg.shortfalls) {
       const key = sf.metric.split(' ').pop().replace(/_/g, '[ _]');
       if (!new RegExp(key, 'i').test(skipBodyAll)) fails.push(`GATE: ${sf.metric} measured ${sf.measured}, below the target ${sf.target} (at or above the floor, so it may pass) but the "Skipped, refused or failed" section of STATUS.md does not mention it: state the shortfall there, first`);
@@ -262,11 +283,20 @@ if (gatesV2 && GL) {
       pp.notes.forEach((n) => gateNotes.push('picture ' + n));
     } catch (e) { failOpen('picture sanity', e); }
   }
+  // C2: reference provenance (files named as references are real, registered photos, not the round's own pictures)
+  try {
+    const known = GL.knownReferenceHashes(main);
+    if (known === null && refCandidates.size) failOpen('reference provenance', new Error('no reference hash log or hashes in docs/reference INDEX.md under ' + main + ': run node tools/ref_seed.mjs in the main checkout once'));
+    const rp = GL.referenceProblems([...refCandidates], { refRoot, folder: path.resolve(folder), known });
+    rp.problems.forEach((p) => fails.push('GATE reference: ' + p));
+    rp.notes.forEach((n) => gateNotes.push(n));
+  } catch (e) { failOpen('reference provenance', e); }
   // D: STATUS reading (+ BLOCKED form)
   try {
     const ff = noVisual ? read('FAULTS.md') : faults;
     if (noVisual && ff === null) fails.push('FAULTS.md is missing (gates v2 asks for it on every hand-in, engine-only ones too: Pass 1..3 and Residual)');
     GL.statusProblems(status === null ? '' : status, ff === null ? null : ff).forEach((p) => fails.push('GATE status: ' + p));
+    GL.itemsProblems(status === null ? '' : status, briefItems).forEach((p) => fails.push('GATE items: ' + p));
   } catch (e) { failOpen('status reading', e); }
   // prior audit items (send-back rounds)
   if (priorAuditArg) {

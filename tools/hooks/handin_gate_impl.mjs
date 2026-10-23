@@ -32,7 +32,7 @@ export function gatesIn(text) {
   const t = String(text || '').split('\r\n').join('\n');
   const v = t.match(/^GATES-VERSION:[ \t]*(\d+)[ \t]*$/m);
   if (!v) return null;
-  return { version: Number(v[1]), gates: [...t.matchAll(/^GATE:[ \t]*(.+?)[ \t]*$/gm)].map((m) => m[1]) };
+  return { version: Number(v[1]), gates: [...t.matchAll(/^GATE:[ \t]*(.+?)[ \t]*$/gm)].map((m) => m[1]), items: [...t.matchAll(/^ITEM:[ \t]*(.+?)[ \t]*$/gm)].map((m) => m[1]) };
 }
 
 // When this agent's run began: timestamp of the first transcript line, else the transcript file's creation time.
@@ -129,7 +129,7 @@ export async function main() {
   if (noVisual) args.push('--no-visual');
   // Gates v2: only a brief that carries `GATES-VERSION: 2` (make_brief.mjs) gets the measured checks; its `GATE:` lines are passed on.
   const gv = gatesIn(text) || (briefFileText ? gatesIn(briefFileText) : null);
-  if (gv) { args.push('--gates-version', String(gv.version)); for (const g of gv.gates) args.push('--gate', g); }
+  if (gv) { args.push('--gates-version', String(gv.version)); for (const g of gv.gates) args.push('--gate', g); for (const it of gv.items || []) args.push('--item', it); }
   const pa = priorAuditIn(text) || (briefFileText ? priorAuditIn(briefFileText) : null);
   if (pa) args.push('--prior-audit', pa);
   if (runStart) args.push('--since', String(Math.round(runStart - SLACK_MS)));

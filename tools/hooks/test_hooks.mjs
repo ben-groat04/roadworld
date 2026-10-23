@@ -17,7 +17,7 @@ const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(
 ['tools/hooks/guard.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
   'tools/check_handin.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
-for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'x'); }
+for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'photo ' + f); }
 fs.mkdirSync(path.join(root, '.git'), { recursive: true }); // main-checkout marker for make_brief's canary
 const elsewhere = path.join(tmp, 'elsewhere'); fs.mkdirSync(elsewhere);
 const logPath = path.join(root, '.claude/state/gate.log');

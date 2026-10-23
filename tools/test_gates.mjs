@@ -28,6 +28,21 @@ const realPng = (wd, ht, fn) => {
 };
 const crc32 = (buf) => { let c, crc = -1; for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 255; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; crc = (crc >>> 8) ^ c; } return ~crc; };
 const sha1 = (buf) => crypto.createHash('sha1').update(buf).digest('hex');
+// a REAL view for the picture gate: render PNG, flat-colour class mask PNG (mesh-view palette) and the record the render tool writes beside them.
+// road_px red pixels, then debug_by_class.needs blue, then .rock yellow, rest black; the render shows dark road, orange needs-structure, brown rock, bluish sky.
+const mkView = (dir, rel, o = {}) => {
+  const W = o.width || 800, H = o.height || 450;
+  const by = o.debug_by_class || { needs: o.debug_px || 0, rock: 0 };
+  const road = o.road_px ?? 30000, needs = by.needs || 0, rock = by.rock || 0;
+  const cls = (i) => (i < road ? 1 : i < road + needs ? 2 : i < road + needs + rock ? 3 : 0);
+  const maskPng = o.maskPng || realPng(W, H, (x, y) => [[0, 0, 0], [255, 0, 0], [0, 0, 255], [255, 255, 0]][cls(y * W + x)]);
+  const renderPng = o.renderPng || realPng(W, H, (x, y) => { const k = cls(y * W + x); return k === 1 ? [60 + ((x * 7 + y * 3) % 40), 58 + ((x * 5) % 40), 55 + ((y * 11) % 40)] : k === 2 ? [201, 116, 58] : k === 3 ? [138, 125, 112] : [150 + ((x * 3) % 60), 170 + (y % 50), 215]; });
+  w(path.join(dir, rel + '.png'), renderPng);
+  if (!o.noMask) w(path.join(dir, rel + '.mask.png'), maskPng);
+  const rec = { view: path.basename(rel), width: W, height: H, diagnostic: !!o.diagnostic, png_sha1: sha1(renderPng), mask_png: path.basename(rel) + '.mask.png', mask_sha1: sha1(maskPng), road_px: road, debug_px: needs + rock, debug_by_class: { needs, rock }, written_by: 'prototypes/mesh-view/render.mjs', ...(o.rec || {}) };
+  w(path.join(dir, rel + '.stats.json'), JSON.stringify(rec));
+  return rec;
+};
 
 // ======================================================= grammar
 console.log('gate grammar');
@@ -109,24 +124,24 @@ t('lower-is-better improving: no refusal', GL.methodChangeProblem(R({ ctest_fail
 const pr = GL.parseRounds('- round7: scene_check=19, ctest failed_assertions=2\nround8: scene_check 20/21; ctest_failed_assertions 2\nprose line without a colon number');
 t('parseRounds reads "k=v" and "k v" and P/T values', pr.length === 2 && pr[0].values.scene_check === 19 && pr[0].values.ctest_failed_assertions === 2 && pr[1].values.scene_check === 20, JSON.stringify(pr));
 
-// ======================================================= picture sanity
+// ======================================================= picture sanity (gates4: the road and debug pixels are COUNTED in the mask picture)
 console.log('picture sanity');
 const pf = path.join(tmp, 'pic'); fs.mkdirSync(pf);
-const stats = (name, o = {}, png = mkPng(o.width || 1600, o.height || 900)) => { w(path.join(pf, name + '.png'), png); w(path.join(pf, name + '.stats.json'), JSON.stringify({ view: name, width: 1600, height: 900, diagnostic: false, road_px: 60000, debug_px: 0, png_sha1: sha1(png), debug_by_class: { needs: 0, rock: 0 }, ...o })); };
+const stats = (name, o = {}) => mkView(pf, name, o);
 const cmpText = (...views) => '| case | render |\n|---|---|\n' + views.map((v) => `| c | ${v}.png | r | c | b | x | y | z |`).join('\n') + '\n';
 stats('ok_aerial'); stats('ok_street');
-let pp = GL.pictureProblems(pf, cmpText('ok_aerial')); t('road in frame, no debug colour: passes', pp.problems.length === 0, pp.problems.join('|'));
-stats('empty_street', { road_px: 0 }); pp = GL.pictureProblems(pf, cmpText('empty_street')); t('no road in frame (round 9 s6 street): refused, says the subject is not in the picture', pp.problems.some((x) => /empty_street/.test(x) && /not in the picture/.test(x)), pp.problems.join('|'));
-stats('orange_aerial', { debug_px: 727680, debug_by_class: { needs: 397719, rock: 329961 } }); pp = GL.pictureProblems(pf, cmpText('ok_street'));
+let pp = GL.pictureProblems(pf, cmpText('ok_aerial')); t('road in frame, no debug colour: passes, and says the numbers were counted in the mask', pp.problems.length === 0 && /counted in the mask/.test(pp.notes.join('|')), pp.problems.join('|'));
+stats('empty_street', { road_px: 0 }); pp = GL.pictureProblems(pf, cmpText('empty_street')); t('no road in frame (round 9 s6 street): refused, says the subject is not in the picture', pp.problems.some((x) => /empty_street/.test(x) && /not in the picture/.test(x) && /0\.00%/.test(x)), pp.problems.join('|'));
+stats('orange_aerial', { road_px: 15000, debug_by_class: { needs: 90000, rock: 90000 } }); pp = GL.pictureProblems(pf, cmpText('ok_street'));
 t('a debug-colour view in the folder is judged even when COMPARE.md does not list it (50% orange/rock, round 9 s4 aerial)', pp.problems.some((x) => /orange_aerial/.test(x) && /debug colours/.test(x)), pp.problems.join('|'));
-stats('orange_aerial', { debug_px: 800, debug_by_class: { needs: 800, rock: 0 } }); pp = GL.pictureProblems(pf, cmpText('ok_street')); t('a few debug pixels (0.06%) are tolerated', !pp.problems.some((x) => /orange/.test(x)), pp.problems.join('|'));
-stats('orange_aerial', { diagnostic: true, debug_px: 727680 }); pp = GL.pictureProblems(pf, cmpText('ok_street')); t('a headline-named view (*_aerial) declared diagnostic: REFUSED, rename it (round 9 s4 aerial could not hide behind the flag)', pp.problems.some((x) => /orange_aerial/.test(x) && /headline view/.test(x)), pp.problems.join('|'));
-fs.rmSync(path.join(pf, 'orange_aerial.stats.json')); fs.rmSync(path.join(pf, 'orange_aerial.png'));
-stats('wallface_close', { diagnostic: true, debug_px: 727680, road_px: 0 }); pp = GL.pictureProblems(pf, cmpText('ok_street'));
+stats('orange_aerial', { debug_by_class: { needs: 200, rock: 0 } }); pp = GL.pictureProblems(pf, cmpText('ok_street')); t('a few debug pixels (0.06%) are tolerated', !pp.problems.some((x) => /orange/.test(x)), pp.problems.join('|'));
+stats('orange_aerial', { diagnostic: true, road_px: 0, debug_by_class: { needs: 90000, rock: 0 } }); pp = GL.pictureProblems(pf, cmpText('ok_street')); t('a headline-named view (*_aerial) declared diagnostic: REFUSED, rename it (round 9 s4 aerial could not hide behind the flag)', pp.problems.some((x) => /orange_aerial/.test(x) && /headline view/.test(x)), pp.problems.join('|'));
+fs.rmSync(path.join(pf, 'orange_aerial.stats.json')); fs.rmSync(path.join(pf, 'orange_aerial.png')); fs.rmSync(path.join(pf, 'orange_aerial.mask.png'));
+stats('wallface_close', { diagnostic: true, road_px: 0, debug_by_class: { needs: 90000, rock: 0 } }); pp = GL.pictureProblems(pf, cmpText('ok_street'));
 t('a diagnostic view with no explanation in STATUS.md: refused', pp.problems.some((x) => /wallface_close/.test(x) && /STATUS\.md has no line/.test(x)), pp.problems.join('|'));
 pp = GL.pictureProblems(pf, cmpText('ok_street'), { statusText: '- wallface_close is a diagnostic view of the retaining wall face only, no road in frame by design\n' }); t('...explained in STATUS.md (name, "diagnostic", a reason): exempt from the road and debug checks', !pp.problems.some((x) => /wallface_close/.test(x)), pp.problems.join('|'));
 pp = GL.pictureProblems(pf, cmpText('wallface_close'), { statusText: 'wallface_close diagnostic view of the wall face only for the section' }); t('...but cannot be listed in COMPARE.md', pp.problems.some((x) => /diagnostic but is listed/.test(x)), pp.problems.join('|'));
-fs.rmSync(path.join(pf, 'wallface_close.stats.json')); fs.rmSync(path.join(pf, 'wallface_close.png'));
+fs.rmSync(path.join(pf, 'wallface_close.stats.json')); fs.rmSync(path.join(pf, 'wallface_close.png')); fs.rmSync(path.join(pf, 'wallface_close.mask.png'));
 w(path.join(pf, 'ghost.png'), mkPng(1600, 900)); pp = GL.pictureProblems(pf, cmpText('ghost')); t('a COMPARE.md render with no stats file: refused, names render.mjs', pp.problems.some((x) => /ghost/.test(x) && /render\.mjs/.test(x)), pp.problems.join('|'));
 fs.rmSync(path.join(pf, 'ghost.png'));
 w(path.join(pf, 'x_aerial.png'), 'png'); pp = GL.pictureProblems(pf, cmpText('ok_aerial')); t('an *_aerial.png with no stats file is refused even when COMPARE.md does not list it', pp.problems.some((x) => /x_aerial/.test(x)), pp.problems.join('|'));
@@ -136,12 +151,112 @@ for (const n of ['a', 'b', 'c', 'd']) w(path.join(pf2, n + '.stats.json'), JSON.
 pp = GL.pictureProblems(pf2, cmpText('a')); t('a diagnostic flag on 3 of 4 views: refused (cannot be the way past)', pp.problems.some((x) => /3 of 4 views are declared diagnostic/.test(x)), pp.problems.join('|'));
 pp = GL.pictureProblems(pf, cmpText('ok_aerial'), { minRoad: 0.5 }); t('picture_min_road override applies', pp.problems.some((x) => /need at least 50/.test(x)));
 
+console.log('picture gate: typed numbers never decide; forged records, masks and renders (gates3 audit fault 1)');
+{
+  const root3 = path.join(tmp, 'picgate'); fs.mkdirSync(root3);
+  const put = (rel, o = {}) => mkView(root3, rel, o);
+  const cmpFor = (...paths) => '| case | render |\n|---|---|\n' + paths.map((p) => `| c | ${p} | r | c | b | x | y | z |`).join('\n') + '\n';
+  const gp = (...paths) => GL.pictureProblems(root3, cmpFor(...paths));
+  put('after/t_aerial'); put('after/t_street'); put('before/t_aerial', { road_px: 0 });
+  let p = gp('after/t_aerial.png', 'after/t_street.png');
+  t('the real tjunction layout (renders, masks and stats in after/ and before/): passes; before/ history is not judged', p.problems.length === 0, p.problems.join('|'));
+  t('...and both after/ views were measured', p.notes.length === 2, JSON.stringify(p.notes));
+  fs.rmSync(path.join(root3, 'after/t_street.stats.json'));
+  p = gp('after/t_aerial.png', 'after/t_street.png'); t('a COMPARE render in after/ without its record beside it: refused, names the file', p.problems.some((x) => /after\/t_street\.png/.test(x) && /t_street\.stats\.json/.test(x)), p.problems.join('|'));
+  put('after/t_street', { rec: { png_sha1: 'f'.repeat(40) } }); p = gp('after/t_street.png'); t('a typed hash that does not match the PNG: refused', p.problems.some((x) => /hash differs/.test(x)), p.problems.join('|'));
+  put('after/t_street'); fs.rmSync(path.join(root3, 'after/t_street.png'));
+  p = gp('after/t_aerial.png'); t('a stats record with NO png beside it (typed hash, picture elsewhere): refused', p.problems.some((x) => /has no t_street\.png beside it/.test(x)), p.problems.join('|'));
+  fs.rmSync(path.join(root3, 'after/t_street.stats.json')); fs.rmSync(path.join(root3, 'after/t_street.mask.png'));
+  // the typed numbers are not what decides
+  put('after/lie_street', { rec: { road_px: 30000 }, maskPng: realPng(800, 450, () => [0, 0, 0]) }); p = gp('after/lie_street.png');
+  t('typed road_px 30000 with a mask that holds NO road: refused, both numbers shown (the gates3 audit fake)', p.problems.some((x) => /lie_street/.test(x) && /road 30000 px/.test(x) && /road 0 px/.test(x)), p.problems.join('|'));
+  put('after/lie_street', { road_px: 30000, rec: { debug_px: 0 }, debug_by_class: { needs: 80000, rock: 0 } }); p = gp('after/lie_street.png');
+  t('typed debug 0 with a mask that holds 80000 debug pixels: refused (the typed number is not read)', p.problems.some((x) => /lie_street/.test(x) && /debug 0 px/.test(x)), p.problems.join('|'));
+  put('after/lie_street', { noMask: true }); fs.rmSync(path.join(root3, 'after/lie_street.mask.png'), { force: true }); p = gp('after/lie_street.png'); t('the mask picture missing: refused', p.problems.some((x) => /mask picture .* missing/.test(x)), p.problems.join('|'));
+  const r0 = put('after/lie_street'); fs.writeFileSync(path.join(root3, 'after/lie_street.mask.png'), realPng(800, 450, () => [255, 0, 0]));
+  p = gp('after/lie_street.png'); t('a mask edited after the record was written: refused (hash differs)', p.problems.some((x) => /mask\.png does not match the record/.test(x)), p.problems.join('|'));
+  put('after/lie_street', { maskPng: realPng(800, 450, (x, y) => [x % 256, y % 256, (x + y) % 256]) }); p = gp('after/lie_street.png');
+  t('a mask that is a colour gradient, not a class pass: refused', p.problems.some((x) => /neither black nor a class colour/.test(x)), p.problems.join('|'));
+  put('after/lie_street', { maskPng: realPng(640, 360, () => [255, 0, 0]) }); p = gp('after/lie_street.png'); t('a mask of another size than the render: refused', p.problems.some((x) => /the mask is 640x360/.test(x)), p.problems.join('|'));
+  put('after/lie_street', { rec: { written_by: 'my own script' } }); p = gp('after/lie_street.png'); t('written_by not a known render tool: refused', p.problems.some((x) => /not a known render tool/.test(x)), p.problems.join('|'));
+  put('after/lie_street', { rec: { mask_png: undefined, mask_sha1: undefined } }); p = gp('after/lie_street.png'); t('a record with no mask fields (the pre-gates4 layout): refused, says to render again', p.problems.some((x) => /names no mask picture/.test(x)), p.problems.join('|'));
+  // render and mask must agree
+  const grass = realPng(800, 450, (x, y) => [40 + (x % 64), 120 + (y % 100), 30 + ((x + y) % 80)]);
+  put('after/lie_street', { renderPng: grass }); p = gp('after/lie_street.png'); t('a mask whose road pixels are GRASS in the render: refused (mask does not belong to this render)', p.problems.some((x) => /grass-coloured/.test(x)), p.problems.join('|'));
+  const orangeRender = realPng(800, 450, (x, y) => (y < 100 ? [201, 116, 58] : [70 + (x % 30), 68 + (y % 30), 66]));
+  put('after/lie_street', { renderPng: orangeRender }); p = gp('after/lie_street.png'); t('a render with 22% orange "needs structure" colour next to a mask that reports no debug pixels: refused', p.problems.some((x) => /debug-orange/.test(x)), p.problems.join('|'));
+  // identical bytes and frame fit
+  const same = realPng(800, 450, (x, y) => [(x * 5) & 255, (y * 3) & 255, 90]);
+  put('after/lie_street', { renderPng: same, maskPng: same, rec: { road_px: 0 } }); p = gp('after/lie_street.png'); t('mask = render (identical bytes): refused', p.problems.some((x) => /the mask picture is the render itself/.test(x)), p.problems.join('|'));
+  put('after/lie_street', { road_px: 400000 }); p = gp('after/lie_street.png'); t('road_px larger than the 800x450 frame: refused (the mask cannot hold it)', p.problems.length > 0, p.problems.join('|'));
+  const wrongSize = put('after/lie_street', { rec: { width: 640, height: 480 } }); p = gp('after/lie_street.png'); t('stats width/height that disagree with the PNG header: refused', p.problems.some((x) => /says 640x480 but the PNG is 800x450/.test(x)), p.problems.join('|'));
+  void wrongSize; void r0;
+  for (const e of ['png', 'mask.png', 'stats.json']) fs.rmSync(path.join(root3, 'after/lie_street.' + e), { force: true });
+  put('after/hidden_aerial', { diagnostic: true, road_px: 0, debug_by_class: { needs: 80000, rock: 0 } });
+  p = GL.pictureProblems(root3, cmpFor('after/t_aerial.png'), { statusText: 'hidden_aerial is a diagnostic view of nothing in particular, listed here' }); t('round 9\'s s4 aerial flagged diagnostic and not in COMPARE.md: still refused (a headline-named view cannot be diagnostic)', p.problems.some((x) => /hidden_aerial/.test(x) && /headline view/.test(x)), p.problems.join('|'));
+  put('after/section_close', { diagnostic: true, road_px: 0 });
+  p = GL.pictureProblems(root3, cmpFor('after/t_aerial.png'), { statusText: 'section_close: diagnostic view of the wall face, no road in frame on purpose, for the section sheet' });
+  t('a diagnostic close-up explained in STATUS.md (name + reason): accepted', !p.problems.some((x) => /section_close/.test(x)), p.problems.join('|'));
+  t('the thresholds are documented in the source with the measured round 9 figures', /Round 9 views with no subject: s6 street 0\.00 %/.test(fs.readFileSync(path.join(src, 'tools/gates_lib.mjs'), 'utf8')));
+  // both render tools write the mask and the record
+  const sceneSrc = fs.readFileSync(path.join(src, 'prototypes/road-draw/tools/scene.mjs'), 'utf8');
+  t('scene.mjs writes <view>.stats.json and <view>.mask.png next to each render', /stats\.json/.test(sceneSrc) && /mask\.png/.test(sceneSrc) && /mask_sha1/.test(sceneSrc) && /writeStats\(name\)/.test(sceneSrc));
+  const rsrc = fs.readFileSync(path.join(src, 'prototypes/mesh-view/render.mjs'), 'utf8');
+  t('mesh-view render.mjs writes the mask picture and its hash', /mask\.png/.test(rsrc) && /mask_sha1/.test(rsrc) && /mask: c\.toDataURL/.test(fs.readFileSync(path.join(src, 'prototypes/mesh-view/mesh-view.js'), 'utf8')));
+}
+
+console.log('picture plausibility: size and flat pictures');
+{
+  const pq = path.join(tmp, 'picq'); fs.mkdirSync(pq);
+  const cm = (n) => '| c | ' + n + '.png | r | c | b | x | y | z |';
+  const gq = (n) => GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm(n) + '\n');
+  mkView(pq, 'real_aerial', { renderPng: realPng(800, 450, (x, y) => (y * 800 + x < 30000 ? [60 + ((x * 7) % 40), 58 + (y % 30), 55 + ((x + y) % 30)] : [150 + ((x * 3) % 60), 170 + (y % 50), 215])) });
+  let pp = gq('real_aerial'); t('a decodable 800x450 picture with many colours: passes', pp.problems.length === 0, pp.problems.join('|'));
+  t('pngColourCount decodes the writer\'s PNG', GL.pngColourCount(path.join(pq, 'real_aerial.png')).decoded === true && GL.pngColourCount(path.join(pq, 'real_aerial.png')).colours > 100);
+  mkView(pq, 'flat_aerial', { renderPng: realPng(800, 450, () => [90, 90, 90]) });
+  pp = gq('flat_aerial'); t('a flat single-colour render with a matching mask: refused ("flat or blank picture")', pp.problems.some((x) => /flat or blank picture/.test(x)), pp.problems.join('|'));
+  mkView(pq, 'tiny_aerial', { width: 40, height: 20, road_px: 100 });
+  pp = gq('tiny_aerial'); t('a 40x20 picture: refused as too small', pp.problems.some((x) => /tiny_aerial/.test(x) && /only 40x20/.test(x)), pp.problems.join('|'));
+  mkView(pq, 'hdr_aerial', { renderPng: mkPng(800, 450) });
+  pp = gq('hdr_aerial'); t('a header-only render PNG cannot be decoded: the pixel checks of the render are skipped, the mask still decides', !pp.problems.some((x) => /hdr_aerial/.test(x) && /colours|grass|orange/.test(x)), pp.problems.join('|'));
+}
+
+console.log('picture gate: file identity across roles, reference provenance (gates3 audit fault 1)');
+{
+  const d = path.join(tmp, 'ident'); fs.mkdirSync(d);
+  const f = (n, content) => { const p = path.join(d, n); w(p, content); return p; };
+  const A = f('a.png', 'AAAA picture one'), B = f('b.png', 'BBBB picture two'), C = f('c.png', 'CCCC picture three'), D = f('d.png', 'DDDD picture four'), A2 = f('a_copy.png', 'AAAA picture one');
+  let ci = GL.compareIntegrity([{ kase: 'x', render: A, reference: B, composite: C, before: D }]); t('four different files: passes', ci.length === 0, ci.join('|'));
+  ci = GL.compareIntegrity([{ kase: 'x', render: A, reference: A2, composite: C, before: D }]); t('the reference is a copy of the render: refused, names both roles', ci.some((x) => /render and the reference are the same file/.test(x)), ci.join('|'));
+  ci = GL.compareIntegrity([{ kase: 'x', render: A, reference: B, composite: A2, before: D }]); t('the composite is the render: refused', ci.some((x) => /render and the composite are the same file/.test(x)), ci.join('|'));
+  ci = GL.compareIntegrity([{ kase: 'x', render: A, reference: B, composite: C, before: A2 }]); t('before identical to the render (nothing moved): refused, says so', ci.some((x) => /shows no change from the before picture/.test(x)), ci.join('|'));
+  ci = GL.compareIntegrity([{ kase: 'x', render: A, reference: B, composite: C, before: D }, { kase: 'y', render: A2, reference: B, composite: D, before: D }]); t('the same render used for two cases: refused', ci.some((x) => /rows "x" and "y" use the same render/.test(x)), ci.join('|'));
+  t('three copies of one image are one reference: refused (STATUS Case line)', GL.distinctReferenceProblems('k', [A, A2, f('a_copy2.png', 'AAAA picture one')]).length === 1);
+  t('three different images are three references', GL.distinctReferenceProblems('k', [A, B, C]).length === 0);
+  // provenance
+  const refRoot = path.join(d, 'main/docs/reference'); w(path.join(refRoot, 'aerial/p1.jpg'), 'photo one'); w(path.join(refRoot, 'street/p2.jpg'), 'photo two'); w(path.join(refRoot, '_compare/c1.png'), 'composite one');
+  const folder = path.join(d, 'wt/docs/progress/r'); w(path.join(folder, 'render.png'), 'my render'); w(path.join(folder, 'ref_copy.jpg'), 'a picture that lives in the folder');
+  const known = new Set([sha1('photo one'), sha1('photo two')]);
+  let rp = GL.referenceProblems([path.join(refRoot, 'aerial/p1.jpg'), path.join(refRoot, 'street/p2.jpg')], { refRoot, folder, known }); t('registered photos under docs/reference: pass', rp.problems.length === 0, rp.problems.join('|'));
+  w(path.join(refRoot, 'street/p3.jpg'), 'photo three, never registered');
+  rp = GL.referenceProblems([path.join(refRoot, 'street/p3.jpg')], { refRoot, folder, known }); t('a file in docs/reference whose hash is in no INDEX and no log: refused', rp.problems.some((x) => /not a registered reference photo/.test(x)), rp.problems.join('|'));
+  rp = GL.referenceProblems([path.join(folder, 'ref_copy.jpg')], { refRoot, folder, known }); t('a "reference" inside the hand-in folder: refused', rp.problems.some((x) => /inside the hand-in folder/.test(x)), rp.problems.join('|'));
+  w(path.join(refRoot, 'aerial/p_is_render.jpg'), 'my render'); const known2 = new Set([...known, sha1('my render')]);
+  rp = GL.referenceProblems([path.join(refRoot, 'aerial/p_is_render.jpg')], { refRoot, folder, known: known2 }); t('a registered-looking reference that is byte-identical to the round\'s own render: refused', rp.problems.some((x) => /byte-identical to render\.png/.test(x)), rp.problems.join('|'));
+  rp = GL.referenceProblems([path.join(refRoot, '_compare/c1.png')], { refRoot, folder, known }); t('a composite from _compare as a reference: refused', rp.problems.some((x) => /composite from docs\/reference\/_compare/.test(x)), rp.problems.join('|'));
+  rp = GL.referenceProblems([path.join(refRoot, 'street/p3.jpg')], { refRoot, folder, known: null }); t('no hash log at all: not refused (the caller says FAIL-OPEN: not checkable)', rp.problems.length === 0);
+  const m2 = path.join(d, 'main'); w(path.join(m2, '.claude/state/ref_log.jsonl'), JSON.stringify({ sha1: sha1('photo one') }) + '\n'); w(path.join(refRoot, 'INDEX.md'), 'file x sha1 ' + sha1('photo two') + '\n');
+  const kh = GL.knownReferenceHashes(m2); t('knownReferenceHashes reads the hook log and any 40-hex hash in an INDEX.md', kh && kh.has(sha1('photo one')) && kh.has(sha1('photo two')) && !kh.has(sha1('photo three, never registered')));
+  t('knownReferenceHashes is null when nothing is recorded', GL.knownReferenceHashes(path.join(d, 'nowhere')) === null);
+}
+
 // ======================================================= end to end: a real git repo, a main checkout on a branch not called main, a worktree
 console.log('check_handin end to end');
 const main = path.join(tmp, 'main');
 fs.mkdirSync(main);
 git(main, 'init', '-q', '-b', 'trunk'); git(main, 'config', 'user.email', 't@t'); git(main, 'config', 'user.name', 't');
-for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) w(path.join(main, 'docs/reference', f), 'x');
+for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) w(path.join(main, 'docs/reference', f), 'photo ' + f);
+w(path.join(main, 'docs/reference/INDEX.md'), ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg'].map((f) => f + ' sha1 ' + sha1('photo ' + f)).join('\n') + '\n');
 w(path.join(main, 'tests/test_a.cpp'), 'TEST_CASE("alpha") {}\nTEST_CASE("beta" * doctest::should_fail()) {}\nbool is_rough(const std::string& n) { return n == "old_case"; }\nconstexpr double kTolHeight = 1.5e-4;\n');
 w(path.join(main, 'sim_core/src/a.cpp'), 'int a;\n');
 w(path.join(main, '.gitignore'), 'build*/\nnode_modules/\n');
@@ -223,17 +338,16 @@ w(path.join(folder, 'FAULTS.md'), faults3);
 
 // picture gate in a visible hand-in
 const vf = path.join(wt, 'docs/progress/vis'); w(path.join(vf, 'STATUS.md'), statusBase()); w(path.join(vf, 'FAULTS.md'), faults3);
-for (const f of ['comp.png', 'before.png']) w(path.join(vf, f), 'x');
-w(path.join(vf, 's6_street.png'), mkPng(1600, 900));
+w(path.join(vf, 'comp.png'), 'composite of the s6 case'); w(path.join(vf, 'before.png'), 'the earlier s6 render');
+w(path.join(vf, 's6_street.png'), mkPng(800, 450));
 const row = '| case | render | reference | composite | before | subject/type match | scale match | viewpoint match |\n|---|---|---|---|---|---|---|---|\n| s6 | s6_street.png | aerial/a.jpg | comp.png | before.png | embankment, same type as photo | both about 40 m across | street level, both |\n';
 w(path.join(vf, 'COMPARE.md'), row);
 const checkV = (flags = []) => spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), vf, '--main', main, '--worktree', wt, ...flags], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } });
 c = checkV(['--gates-version', '2']); t('visible v2 hand-in whose COMPARE render has no stats record: refused', c.status === 1 && /s6_street/.test(c.stderr) && /stats\.json/.test(c.stderr), c.stderr);
-const shaX = sha1(mkPng(1600, 900));
-w(path.join(vf, 's6_street.stats.json'), JSON.stringify({ width: 1600, height: 900, diagnostic: false, road_px: 0, debug_px: 0, png_sha1: shaX }));
+mkView(vf, 's6_street', { road_px: 0 });
 c = checkV(['--gates-version', '2']); t('...stats say no road in frame (round 9 s6 street): refused with the percentage', c.status === 1 && /covers 0\.00% of the frame/.test(c.stderr), c.stderr);
-w(path.join(vf, 's6_street.stats.json'), JSON.stringify({ width: 1600, height: 900, diagnostic: false, road_px: 60000, debug_px: 0, png_sha1: shaX }));
-c = checkV(['--gates-version', '2']); t('...with road in frame and no debug colour: passes', c.status === 0 && /picture s6_street: road 4\.2%/.test(c.stdout), c.stderr + c.stdout);
+mkView(vf, 's6_street', { road_px: 30000 });
+c = checkV(['--gates-version', '2']); t('...with road in frame and no debug colour: passes', c.status === 0 && /picture s6_street: road 8\.3%/.test(c.stdout), c.stderr + c.stdout);
 c = checkV(); t('the same folder under v1: 8-column COMPARE accepted too, no picture gate (older briefs unaffected)', c.status === 0 && !/picture/.test(c.stdout), c.stderr);
 w(path.join(vf, 'COMPARE.md'), '| case | render | reference | composite | before |\n|---|---|---|---|---|\n| s6 | s6_street.png | aerial/a.jpg | comp.png | before.png |\n');
 c = checkV(); t('v1: the old 5-column COMPARE.md still passes (running agents with the old layout are not refused)', c.status === 0, c.stderr);
@@ -297,15 +411,12 @@ console.log('self-audit hardening');
   }
   t('ordinary STATUS text is not mistaken for an excuse', GL.statusProblems('- the wall height is rounded\n- the kerb radius is 8 m\n- nothing skipped, refused or failed\n', ok3).length === 0);
   let sp = GL.statusProblems('ok\n', '## Pass 1\n\n## Pass 2\n\n## Pass 3\n\n## Residual\nnone\n'); t('three EMPTY "## Pass N" headings are not three passes', sp.some((x) => /empty, filler or under 40/.test(x)) && sp.some((x) => /need 3/.test(x)), sp.join('|'));
-  // stats bound to the picture bytes
+  // stats bound to the picture bytes (records written by mkView: render, mask and record)
   const pf3 = path.join(tmp, 'pic3'); fs.mkdirSync(pf3);
-  const realPng = mkPng(800, 450); w(path.join(pf3, 'v_aerial.png'), realPng);
-  const sha = (s) => crypto.createHash('sha1').update(s).digest('hex');
-  const st = (o) => w(path.join(pf3, 'v_aerial.stats.json'), JSON.stringify({ width: 800, height: 450, diagnostic: false, road_px: 9000, debug_px: 0, ...o }));
-  st({ png_sha1: sha(realPng) }); let pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('stats with the hash of the PNG next to it: passes', pp2.problems.length === 0, pp2.problems.join('|'));
-  st({ png_sha1: sha('another picture') }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('stats made for another picture (hash differs): refused, says to render again', pp2.problems.some((x) => /not made for v_aerial\.png/.test(x)), pp2.problems.join('|'));
-  st({}); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('a hand-typed stats file without png_sha1: refused', pp2.problems.some((x) => /no png_sha1/.test(x)), pp2.problems.join('|'));
-  w(path.join(pf3, 'v_aerial.png'), mkPng(800, 451)); st({ png_sha1: sha(realPng) }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('the PNG edited after the stats were written: refused', pp2.problems.some((x) => /hash differs/.test(x)), pp2.problems.join('|'));
+  mkView(pf3, 'v_aerial'); let pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('stats with the hash of the PNG next to it: passes', pp2.problems.length === 0, pp2.problems.join('|'));
+  mkView(pf3, 'v_aerial', { rec: { png_sha1: sha1('another picture') } }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('stats made for another picture (hash differs): refused, says to render again', pp2.problems.some((x) => /not made for v_aerial\.png/.test(x)), pp2.problems.join('|'));
+  mkView(pf3, 'v_aerial', { rec: { png_sha1: undefined } }); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('a hand-typed stats file without png_sha1: refused', pp2.problems.some((x) => /no png_sha1/.test(x)), pp2.problems.join('|'));
+  const rc = mkView(pf3, 'v_aerial'); w(path.join(pf3, 'v_aerial.png'), mkPng(800, 451)); pp2 = GL.pictureProblems(pf3, cmpText('v_aerial')); t('the PNG edited after the stats were written: refused', rc && pp2.problems.some((x) => /hash differs/.test(x)), pp2.problems.join('|'));
   // --accept does not fail open
   fakeScene(21, 21);
   fs.rmSync(path.join(wt, 'prototypes/road-draw/node_modules'), { recursive: true });
@@ -373,16 +484,16 @@ console.log('STATUS reading: excuses, honest blocks, false positives (gates2 aud
   for (const okp of ['deferred shading is used for the sky dome', 'a time constraint of 5 ms per frame applies to the tile build', 'the API rate limit is 100 requests per minute', 'the context window of the camera is 90 degrees', 'not done by design: the road ends at the island', 'Nothing skipped, refused or failed.', 'no tests were skipped', 'the engine cannot model a tunnel under a river in one mesh', 'the scene check failed to find node_modules and I installed it', 'incomplete data in the fixture is handled by a default']) {
     t('honest text is not mistaken for an excuse: "' + okp + '"', bad('- ' + okp).length === 0, bad('- ' + okp).join('|'));
   }
-  const blk = 'BLOCKED: wall curl at the road ends | tried: a ramp, a fillet and a longer fade, three renders | blocked by: the crossing road keeps the ground 2 m high (see s4 render) | needs: a decision on the crossing level';
+  const blk = 'BLOCKED: wall curl at the road ends | tried: `node tools/scene.mjs --check` after a ramp, a fillet and a longer fade | blocked by: `FAIL ground_under_road` stays at worst 2.1 m (src/earthworks.js:412) | needs: a decision on the crossing level';
   t('a complete BLOCKED line passes the status reader', bad(blk).length === 0, bad(blk).join('|'));
-  t('...even when its own words would be an excuse elsewhere ("not done", "skipped")', bad('BLOCKED: skipped curl | tried: the fade and the ramp, not done yet | blocked by: the crossing road holds the ground at 2 m | needs: a decision').length === 0);
+  t('...even when its own words would be an excuse elsewhere ("not done", "skipped")', bad('BLOCKED: skipped curl | tried: `node tools/scene.mjs --check` with the fade, not done yet | blocked by: `FAIL ground_under_road` at 2.1 m in earthworks.js | needs: a decision').length === 0);
   t('BLOCKED without "tried:" is refused and the message shows the form', bad('BLOCKED: wall curl | blocked by: the crossing road keeps the ground high').some((x) => /tried/.test(x) && /BLOCKED: <item>/.test(x)));
   t('BLOCKED without "blocked by:" is refused', bad('BLOCKED: wall curl | tried: a ramp and a longer fade').some((x) => /blocked by/.test(x)));
   t('BLOCKED with "blocked by: time" is refused (an excuse in the form of a block)', bad('BLOCKED: wall curl | tried: a ramp and a fillet | blocked by: time').some((x) => /not a block|too short/.test(x)));
   t('BLOCKED with "blocked by: the usage window ran out" is refused', bad('BLOCKED: wall curl | tried: a ramp and a fillet | blocked by: the usage window ran out of room').some((x) => /not a block/.test(x)));
   t('BLOCKED with "blocked by: nothing" is refused', bad('BLOCKED: wall curl | tried: a ramp and a fillet | blocked by: nothing').length >= 1);
   t('the old exemption "tried ...; blocked by nothing" no longer hides a not-attempted item', bad('Not attempted: item 4 (tried: it; blocked by nothing)').length >= 1);
-  t('parseBlocked returns item, tried, blocked by, needs', (() => { const b = GL.parseBlocked(blk)[0]; return b.ok && b.item === 'wall curl at the road ends' && /ramp/.test(b.tried) && /crossing road/.test(b.blockedBy) && /decision/.test(b.needs); })());
+  t('parseBlocked returns item, tried, blocked by, needs', (() => { const b = GL.parseBlocked(blk)[0]; return b.ok && b.item === 'wall curl at the road ends' && /ramp/.test(b.tried) && /ground_under_road/.test(b.blockedBy) && /decision/.test(b.needs); })());
   t('a BLOCKED line in an HTML comment (the template) is not read', GL.parseBlocked('<!-- BLOCKED: x | tried: y | blocked by: z -->').length === 0);
   // partial reads
   const stPart = '## Skipped, refused or failed\n- hooks, scene.mjs and the audit read partly (heads and greps)\n\nReferences opened: 12 of 12 listed\n\n## Reference files opened\n';
@@ -393,7 +504,7 @@ console.log('STATUS reading: excuses, honest blocks, false positives (gates2 aud
   t('"Residual only unfixable:" that names no item: refused', GL.statusProblems('ok\n', two + 'Residual only unfixable: the pit needs a tunnel the engine cannot model at all\n').some((x) => /must name the residual items/.test(x)));
   t('"Residual only unfixable:" that names item 1: accepted', GL.statusProblems('ok\n', two + 'Residual only unfixable: item 1, the pit needs a tunnel the engine cannot model at all\n').length === 0);
   t('a Pass body of filler ("n/a", "none", a dozen characters) is not a pass', GL.statusProblems('ok\n', '## Pass 1\nn/a n/a n/a n/a n/a n/a n/a n/a n/a n/a n/a\n## Pass 2\nnone\n## Pass 3\ntwelve chars\n## Residual\nnone\n').some((x) => /empty, filler/.test(x)));
-  t('a BLOCKED self-audit item lets fewer than 3 passes through', GL.statusProblems('BLOCKED: the self-audit passes 2 and 3 | tried: a render of both views and a composite | blocked by: the viewer exits with code 4 on launch (log in scratch) | needs: a working GPU\n', two).length === 0);
+  t('a BLOCKED self-audit item lets fewer than 3 passes through', GL.statusProblems('BLOCKED: the self-audit passes 2 and 3 | tried: `node prototypes/mesh-view/render.mjs` for both views and a composite | blocked by: `render.mjs` exit code 4: no usable browser | needs: a working GPU\n', two).length === 0);
 }
 
 console.log('prior audit items table (contract item 17)');
@@ -414,53 +525,6 @@ console.log('prior audit items table (contract item 17)');
   w(path.join(folder, 'STATUS.md'), statusBase() + '\n' + head.replace('## Skipped, refused or failed\nok\n\n', '') + rows.join('\n') + '\n');
   c = check(['--gates-version', '2', '--prior-audit', pa]); t('...and with the table: passes', c.status === 0, c.stderr);
   w(path.join(folder, 'STATUS.md'), statusBase());
-}
-
-console.log('picture gate: layouts, forged records, diagnostic flags (gates2 audit fault 2)');
-{
-  const root3 = path.join(tmp, 'picgate'); fs.mkdirSync(root3);
-  const put = (rel, o = {}, png = mkPng(o.width || 800, o.height || 450)) => { w(path.join(root3, rel + '.png'), png); w(path.join(root3, rel + '.stats.json'), JSON.stringify({ view: path.basename(rel), width: 800, height: 450, diagnostic: false, road_px: 30000, debug_px: 0, png_sha1: sha1(png), ...o })); };
-  const cmpFor = (...paths) => '| case | render |\n|---|---|\n' + paths.map((p) => `| c | ${p} | r | c | b | x | y | z |`).join('\n') + '\n';
-  put('after/t_aerial'); put('after/t_street'); put('before/t_aerial', { road_px: 0 });
-  let pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png', 'after/t_street.png'));
-  t('the real tjunction layout (renders and stats in after/ and before/): passes; before/ history is not judged', pp.problems.length === 0, pp.problems.join('|'));
-  t('...and both after/ views were measured', pp.notes.length === 2, JSON.stringify(pp.notes));
-  fs.rmSync(path.join(root3, 'after/t_street.stats.json'));
-  pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png', 'after/t_street.png')); t('a COMPARE render in after/ without its record beside it: refused, names the file', pp.problems.some((x) => /after\/t_street\.png/.test(x) && /t_street\.stats\.json/.test(x)), pp.problems.join('|'));
-  put('after/t_street', { png_sha1: 'f'.repeat(40) }); pp = GL.pictureProblems(root3, cmpFor('after/t_street.png')); t('a typed hash that does not match the PNG: refused', pp.problems.some((x) => /hash differs/.test(x)), pp.problems.join('|'));
-  put('after/t_street'); fs.rmSync(path.join(root3, 'after/t_street.png'));
-  pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png')); t('a stats record with NO png beside it (typed hash, picture elsewhere): refused', pp.problems.some((x) => /has no t_street\.png beside it/.test(x)), pp.problems.join('|'));
-  fs.rmSync(path.join(root3, 'after/t_street.stats.json'));
-  put('after/big_street', { road_px: 400000 }); pp = GL.pictureProblems(root3, cmpFor('after/big_street.png')); t('road_px larger than the 800x450 frame: refused as not fitting the frame', pp.problems.some((x) => /do not fit the 800x450 frame/.test(x)), pp.problems.join('|'));
-  put('after/big_street', { debug_px: 360000, road_px: 30000 }); pp = GL.pictureProblems(root3, cmpFor('after/big_street.png')); t('road + debug together larger than the frame: refused', pp.problems.some((x) => /do not fit/.test(x)), pp.problems.join('|'));
-  put('after/big_street', { width: 640, height: 480 }, mkPng(800, 450)); w(path.join(root3, 'after/big_street.stats.json'), JSON.stringify({ width: 640, height: 480, diagnostic: false, road_px: 30000, debug_px: 0, png_sha1: sha1(mkPng(800, 450)) }));
-  pp = GL.pictureProblems(root3, cmpFor('after/big_street.png')); t('stats width/height that disagree with the PNG header: refused', pp.problems.some((x) => /says 640x480 but the PNG is 800x450/.test(x)), pp.problems.join('|'));
-  fs.rmSync(path.join(root3, 'after/big_street.stats.json')); fs.rmSync(path.join(root3, 'after/big_street.png'));
-  put('after/hidden_aerial', { diagnostic: true, road_px: 0, debug_px: 400000 });
-  pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png'), { statusText: 'hidden_aerial is a diagnostic view of nothing in particular, listed here' }); t('round 9\'s s4 aerial flagged diagnostic and not in COMPARE.md: still refused (a headline-named view cannot be diagnostic)', pp.problems.some((x) => /hidden_aerial/.test(x) && /headline view/.test(x)), pp.problems.join('|'));
-  put('after/section_close', { diagnostic: true, road_px: 0 });
-  pp = GL.pictureProblems(root3, cmpFor('after/t_aerial.png'), { statusText: 'section_close: diagnostic view of the wall face, no road in frame on purpose, for the section sheet' });
-  t('a diagnostic close-up explained in STATUS.md (name + reason): accepted', !pp.problems.some((x) => /section_close/.test(x)), pp.problems.join('|'));
-  t('the thresholds are documented in the source with their origin (no photo behind them, stated)', /no photo measurement stands behind these numbers/.test(fs.readFileSync(path.join(src, 'tools/gates_lib.mjs'), 'utf8')));
-  // scene.mjs writes the same record (task C named scene.mjs)
-  const sceneSrc = fs.readFileSync(path.join(src, 'prototypes/road-draw/tools/scene.mjs'), 'utf8');
-  t('scene.mjs writes <view>.stats.json next to each render (png_sha1, road_px, debug_px, width, height)', /stats\.json/.test(sceneSrc) && /png_sha1/.test(sceneSrc) && /road_px/.test(sceneSrc) && /debug_px/.test(sceneSrc) && /writeStats\(name\)/.test(sceneSrc));
-}
-
-console.log('picture plausibility: size and flat pictures');
-{
-  const pq = path.join(tmp, 'picq'); fs.mkdirSync(pq);
-  const put = (name, png, o = {}) => { w(path.join(pq, name + '.png'), png); w(path.join(pq, name + '.stats.json'), JSON.stringify({ width: o.width || 800, height: o.height || 450, diagnostic: false, road_px: o.road_px ?? 30000, debug_px: 0, png_sha1: sha1(png) })); };
-  const cm = (n) => '| c | ' + n + '.png | r | c | b | x | y | z |';
-  put('real_aerial', realPng(800, 450, (x, y) => [(x * 7) & 255, (y * 5) & 255, ((x + y) * 3) & 255]));
-  let pp = GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm('real_aerial') + '\n'); t('a decodable 800x450 picture with many colours: passes', pp.problems.length === 0, pp.problems.join('|'));
-  t('pngColourCount decodes the writer\'s PNG', GL.pngColourCount(path.join(pq, 'real_aerial.png')).decoded === true && GL.pngColourCount(path.join(pq, 'real_aerial.png')).colours > 100);
-  put('flat_aerial', realPng(800, 450, () => [90, 120, 60]));
-  pp = GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm('flat_aerial') + '\n'); t('a flat single-colour PNG with a matching typed record: refused ("flat or blank picture")', pp.problems.some((x) => /flat or blank picture/.test(x)), pp.problems.join('|'));
-  put('tiny_aerial', realPng(40, 20, (x, y) => [x * 6, y * 12, 7]), { width: 40, height: 20, road_px: 100 });
-  pp = GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm('tiny_aerial') + '\n'); t('a 40x20 picture: refused as too small', pp.problems.some((x) => /tiny_aerial/.test(x) && /only 40x20/.test(x)), pp.problems.join('|'));
-  put('hdr_aerial', mkPng(800, 450));
-  pp = GL.pictureProblems(pq, '| case | render |\n|---|---|\n' + cm('hdr_aerial') + '\n'); t('a header-only PNG cannot be decoded: the colour check is skipped, not failed (size and hash still apply)', !pp.problems.some((x) => /hdr_aerial/.test(x)), pp.problems.join('|'));
 }
 
 console.log('ctest gate (gates2 audit fault 3)');
@@ -575,24 +639,25 @@ console.log('BLOCKED form and placeholder refusal, end to end (coordinator addit
   const SCg = ['--gates-version', '2', '--gate', 'scene_check >= 20/21 (baseline 20/21, target 21/21)'];
   w(path.join(folder, 'FAULTS.md'), faults3);
   fakeScene(17, 21);
-  w(path.join(folder, 'STATUS.md'), statusBase('Nothing else skipped.\nBLOCKED: scene_check below the floor (17/21) | tried: three changes to the wall fade and a longer ramp, each re-measured | blocked by: ground_under_road keeps failing because the crossing road holds the ground 2 m high | needs: a decision on the crossing level'));
+  w(path.join(folder, 'STATUS.md'), statusBase('Nothing else skipped.\nBLOCKED: scene_check below the floor (17/21) | tried: `node tools/scene.mjs --check` after three changes to the wall fade and a longer ramp | blocked by: `FAIL ground_under_road` keeps failing, the crossing road holds the ground 2 m high (earthworks.js) | needs: a decision on the crossing level'));
   c = check(SCg);
-  t('scene 17/21 (below the floor) with a complete BLOCKED line that names scene_check: PASSES, the measurement is still printed as BLOCKED', c.status === 0 && /BLOCKED \(named in STATUS\.md\): scene_check measured 17\/21/.test(c.stdout), c.stdout + c.stderr);
-  t('...and prints one BLOCKED-ITEM line per item for the hand-in hook to log', /^BLOCKED-ITEM: BLOCKED: scene_check below the floor/m.test(c.stdout), c.stdout);
-  w(path.join(folder, 'STATUS.md'), statusBase('Nothing else skipped.\nBLOCKED: the wall curl | tried: a ramp and a fade, re-measured twice | blocked by: the crossing road holds the ground 2 m high here | needs: a decision'));
+  t('scene 17/21 (below the floor) with a COMPLETE BLOCKED line that names scene_check: STILL REFUSED (a BLOCKED line never waives a measured floor)', c.status === 1 && /measured 17\/21/.test(c.stderr) && /does not waive a measured floor/.test(c.stderr), c.stdout + c.stderr);
+  { const SCa = [...SCg, '--gate', 'allow_floor_miss scene_check']; c = check(SCa); t('...only an allow_floor_miss line in the task file (the main session) lets the miss through, and it is printed', c.status === 0 && /FLOOR MISS ALLOWED by the task file: scene_check measured 17\/21/.test(c.stdout), c.stdout + c.stderr); }
+  t('...and the allowed miss still prints the BLOCKED-ITEM line for the hand-in hook to log', /^BLOCKED-ITEM: BLOCKED: scene_check below the floor/m.test(c.stdout), c.stdout);
+  w(path.join(folder, 'STATUS.md'), statusBase('Nothing else skipped.\nBLOCKED: the wall curl | tried: `node tools/scene.mjs --check` after a ramp and a fade, twice | blocked by: `FAIL ground_under_road`, the crossing road holds the ground 2 m high here | needs: a decision'));
   c = check(SCg); t('...a BLOCKED line about something ELSE does not excuse the floor miss: refused', c.status === 1 && /measured 17\/21/.test(c.stderr), c.stderr);
   w(path.join(folder, 'STATUS.md'), statusBase('Nothing else skipped.\nBLOCKED: scene_check below the floor | tried: it | blocked by: time'));
-  c = check(SCg); t('...an incomplete BLOCKED line (no real tried / blocked by) excuses nothing and is itself refused', c.status === 1 && /BLOCKED line is incomplete/.test(c.stderr) && /measured 17\/21/.test(c.stderr), c.stderr);
+  c = check(SCg); t('...an incomplete BLOCKED line (no real tried / blocked by) excuses nothing and is itself refused', c.status === 1 && /BLOCKED line is not acceptable/.test(c.stderr) && /measured 17\/21/.test(c.stderr), c.stderr);
   w(path.join(folder, 'STATUS.md'), statusBase('- scene_check is below the floor, out of scope for this round, a later round will fix it'));
   c = check(SCg); t('...excuses without tried / blocked by (scope, later round) refuse as before', c.status === 1 && /left undone or deferred/.test(c.stderr), c.stderr);
-  w(path.join(folder, 'STATUS.md'), statusBase('BLOCKED: wall curl at the road ends | tried: a ramp, a fillet and a longer fade, three renders | blocked by: the crossing road keeps the ground 2 m high | needs: a decision on the crossing level'));
+  w(path.join(folder, 'STATUS.md'), statusBase('BLOCKED: wall curl at the road ends | tried: `node tools/scene.mjs --check` after a ramp, a fillet and a longer fade | blocked by: `FAIL ground_under_road` stays at worst 2.1 m (src/earthworks.js:412) | needs: a decision on the crossing level'));
   fakeScene(21, 21); c = check(SCg); t('an item that only the STATUS reader sees (no metric involved) in the BLOCKED form: passes at 21/21 and is reported', c.status === 0 && /BLOCKED-ITEM: BLOCKED: wall curl/.test(c.stdout), c.stdout + c.stderr);
   w(path.join(folder, 'STATUS.md'), statusBase());
 
   // placeholder COMPARE tables (gates2's own COMPARE row, roadtool3 and gradelayer): refused firmly, pointing to the BLOCKED form
   const vf2 = path.join(wt, 'docs/progress/vis2'); w(path.join(vf2, 'STATUS.md'), statusBase()); w(path.join(vf2, 'FAULTS.md'), faults3);
-  for (const f of ['comp.png', 'before.png']) w(path.join(vf2, f), 'x');
-  w(path.join(vf2, 'r.png'), mkPng(800, 450)); w(path.join(vf2, 'r.stats.json'), JSON.stringify({ width: 800, height: 450, diagnostic: false, road_px: 30000, debug_px: 0, png_sha1: sha1(mkPng(800, 450)) }));
+  w(path.join(vf2, 'comp.png'), 'composite two'); w(path.join(vf2, 'before.png'), 'before two');
+  mkView(vf2, 'r', {});
   const hdr = '| case | render | reference | composite | before | subject/type match | scale match | viewpoint match |\n|---|---|---|---|---|---|---|---|\n';
   const cv = (rows) => { w(path.join(vf2, 'COMPARE.md'), hdr + rows + '\n'); return spawnSync(process.execPath, [path.join(src, 'tools/check_handin.mjs'), vf2, '--main', main, '--worktree', wt, '--gates-version', '2'], { encoding: 'utf8', cwd: tmp, env: { ...process.env, CP_FROM_HOOK: '1' } }); };
   c = cv('| s | r.png | aerial/a.jpg | comp.png | before.png | evidence row only, no match claimed | evidence row only, no match claimed | evidence row only, no match claimed |');
