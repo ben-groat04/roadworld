@@ -40,8 +40,10 @@ export function scanReferences(mainRoot, stateDir, by = 'hook', now = Date.now()
     const key = `${st.size}:${Math.round(st.mtimeMs)}`;
     if (cache[f.rel] && cache[f.rel].key === key) continue;
     let sha; try { sha = sha1File(f.abs); } catch { continue; }
+    // gates6 (audit item 26): a picture whose PATH already had another sha1 was overwritten, not downloaded: written by a subagent it is logged as replaced and never counts as a reference
+    const prevSha = cache[f.rel] && cache[f.rel].sha1; const replaced = !!prevSha && prevSha !== sha && /^agent:/.test(by);
     cache[f.rel] = { key, sha1: sha };
-    lines.push(JSON.stringify({ ts: new Date(now).toISOString(), path: f.rel, sha1: sha, size: st.size, by }));
+    lines.push(JSON.stringify({ ts: new Date(now).toISOString(), path: f.rel, sha1: sha, size: st.size, by, ...(replaced ? { replaced: true, prev_sha1: prevSha } : {}) }));
   }
   if (lines.length) {
     fs.mkdirSync(stateDir, { recursive: true });

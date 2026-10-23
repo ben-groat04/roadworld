@@ -889,6 +889,23 @@ console.log('gates6 BLOCKED evidence v4: own, fresh, untracked file; needs names
   for (const n of ['owner decision whether the kerb radius should follow the photo or the standard 6 metres', 'the file `D:/assets/missing_tex.uasset` from the owner', 'run `node tools/foo.mjs --fetch` with network access', 'a decision: choose between the two-lane and the three-lane layout for the slip road']) t(`v4: needs: "${n.slice(0, 50)}..." is concrete: accepted`, p(mkLine(path.join(own, 'build.log'), n)).ok, JSON.stringify(p(mkLine(path.join(own, 'build.log'), n)).why));
 }
 
+console.log('gates6: an overwritten reference photo is not a reference (gates5 audit item 26)');
+{
+  const { scanReferences } = await import(pathToFileURL(path.join(src, 'tools/hooks/ref_lib.mjs')).href);
+  const m = path.join(tmp, 'ref26'); const sd = path.join(m, '.claude', 'state'); fs.mkdirSync(path.join(m, 'docs', 'reference', 'aerial'), { recursive: true });
+  const ph = path.join(m, 'docs', 'reference', 'aerial', '01.jpg'); fs.writeFileSync(ph, 'original photo bytes');
+  scanReferences(m, sd, 'main', 1000);
+  const sha = (x) => crypto.createHash('sha1').update(x).digest('hex');
+  fs.writeFileSync(ph, 'render derived picture, overwritten by an agent'); const tt = new Date(Date.now() + 5000); fs.utimesSync(ph, tt, tt);
+  scanReferences(m, sd, 'agent:abc', 2000);
+  const known = GL.knownReferenceHashes(m);
+  t('item 26: the original photo stays a known reference', known && known.has(sha('original photo bytes')));
+  t('item 26: the hash of the photo overwritten by a subagent is NOT a known reference (logged as replaced)', known && !known.has(sha('render derived picture, overwritten by an agent')) && /"replaced":true/.test(fs.readFileSync(path.join(sd, 'ref_log.jsonl'), 'utf8')));
+  fs.writeFileSync(ph, 'main session re-fetched the photo'); const t2 = new Date(Date.now() + 9000); fs.utimesSync(ph, t2, t2);
+  scanReferences(m, sd, 'main', 3000);
+  t('item 26: a re-fetch by the main session is registered normally', GL.knownReferenceHashes(m).has(sha('main session re-fetched the photo')));
+}
+
 console.log('gates v3: ref_seed is a merge step, and its absence is said loudly');
 {
   const rp = GL.referenceProblems([path.join(tmp, 'x', 'a.jpg')], { refRoot: path.join(tmp, 'x'), folder: path.join(tmp, 'f'), known: null });

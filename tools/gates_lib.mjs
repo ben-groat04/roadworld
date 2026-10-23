@@ -698,7 +698,7 @@ export function distinctReferenceProblems(caseName, files) {
 export function knownReferenceHashes(main) {
   const set = new Set(); let any = false;
   const logFile = path.join(main, '.claude', 'state', 'ref_log.jsonl');
-  try { for (const l of fs.readFileSync(logFile, 'utf8').split('\n')) { if (!l.trim()) continue; try { const o = JSON.parse(l); if (o && /^[0-9a-f]{40}$/.test(o.sha1)) { set.add(o.sha1); any = true; } } catch { /* skip */ } } } catch { /* no log */ }
+  try { for (const l of fs.readFileSync(logFile, 'utf8').split('\n')) { if (!l.trim()) continue; try { const o = JSON.parse(l); if (o && o.replaced === true) { any = true; continue; }   /* an overwritten picture (gates6, audit item 26) is not a reference */ if (o && /^[0-9a-f]{40}$/.test(o.sha1)) { set.add(o.sha1); any = true; } } catch { /* skip */ } } } catch { /* no log */ }
   for (const f of walkFiles(path.join(main, 'docs', 'reference'), 0).filter((x) => /(^|[\\/])INDEX\.md$/.test(x))) {
     try { for (const m of fs.readFileSync(f, 'utf8').matchAll(/\b[0-9a-f]{40}\b/g)) { set.add(m[0]); any = true; } } catch { /* skip */ }
   }

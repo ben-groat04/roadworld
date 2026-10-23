@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 export const DEFAULT_BACKUP = 'C:\\Users\\bgbg0\\roadworld-reference-backup';
 export const MAX_LOSS = 0.05;
 export const ZERO_RUN = 64 * 1024;
+const ZERO_BLOCK = Buffer.alloc(ZERO_RUN);
 const MANIFEST = '.backup_manifest.json';
 const PIC = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i;
 
@@ -177,7 +178,7 @@ export function validateFile(buf, name) {
   else if (/\.jpe?g$/i.test(name)) { const r = validateJpeg(buf); if (r) return r; }
   else if (/\.gif$/i.test(name)) { if (!/^GIF8[79]a/.test(buf.toString('latin1', 0, 6)) || buf[buf.length - 1] !== 0x3b) return 'GIF header or trailer missing'; }
   else if (/\.webp$/i.test(name)) { if (buf.toString('latin1', 0, 4) !== 'RIFF' || buf.toString('latin1', 8, 12) !== 'WEBP' || buf.readUInt32LE(4) + 8 > buf.length) return 'WebP RIFF header missing or size past the end'; }
-  const z = longestZeroRun(buf);
+  const z = buf.includes(ZERO_BLOCK) ? longestZeroRun(buf) : 0;   // native search first: the byte loop only runs on a suspect file
   if (z >= ZERO_RUN) return `a run of ${z} zero bytes (>= 64 KB: wiped or half-written)`;
   if (/\.jpe?g$/i.test(name)) { const r = validateJpegScan(buf); if (r) return r; }
   return null;
