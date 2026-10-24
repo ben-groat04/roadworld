@@ -1,0 +1,170 @@
+gates15 A: a word with an unclosed [ (the 24 Oct 08:46Z fail-open) never crashes a hook; a pattern the engine rejects refuses
+  ok   A the word "[..*Linking" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat [..*Linking` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "[" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat [` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "[a-" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat [a-` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "[\\" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat [\` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "[]" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat []` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "[z-a]*" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat [z-a]*` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "[[]" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat [[]` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "[^" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat [^` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "*[" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat *[` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "x[a-z" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat x[a-z` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the word "[\\]" through judgeCommand and the glob helpers throws nothing
+  ok   A the real hook on `cat [\]` exits 0 or 2, writes no FAIL-OPEN line and no SyntaxError
+  ok   A the exact word of the live failure ([..*Linking) is judged without an exception
+  ok   A globRe on an invalid pattern returns a regex that matches everything (the caller then refuses)
+  ok   A globSegRe of an invalid class ([z-a]*) matches everything: a glob that cannot be read is treated as able to name the secret
+  ok   A no FAIL-OPEN line in the redirected gate.log after all the words
+  ok   A REFUSE: a glob that cannot be compiled and can only mean the secret folder: cat ~/.[z-a]*/ack*
+gates15 B: ACCEPTED RESIDUAL: deliberate code reads the secret. DETECTION: code outside tools/ and the tests that imports a hooks file or names the secret is refused
+  ok   B REFUSE: node <scratch>/forge.mjs (a script file naming ack_secret; the audit's fault 1 form 1)
+  ok   B REFUSE: cd <scratch> && node forge.mjs (relative after a cd)
+  ok   B REFUSE: node <scratch>/sig.mjs (a script file that imports lib.mjs and signs; form 3)
+  ok   B REFUSE: node -e import(lib.mjs).then(m => m.readSecret()) (form 2)
+  ok   B REFUSE: node -e import of audit_lib.mjs (any hooks file)
+  ok   B REFUSE: node --input-type=module -e with an import of a hooks file
+  ok   B REFUSE: python -c naming the secret folder
+  ok   B REFUSE: node - <<EOF with an import of lib.mjs (a heredoc fed to the interpreter)
+  ok   B REFUSE: cat > f.mjs <<EOF ... import lib.mjs ... EOF (a script written by a heredoc)
+  ok   B REFUSE: the Write tool: a new .mjs outside tools that imports lib.mjs
+  ok   B REFUSE: the Write tool: a new .py naming the secret folder
+  ok   B REFUSE: the Write tool: a new tools/forge.mjs (not a test, not hooks, not existing) naming readSecret
+  ok   B REFUSE: the Edit tool: new_string that imports a hooks file into a scratch script
+  ok   B REFUSE: NODE_OPTIONS=--import <file> node tools/run_suite.mjs (preload of a gate tool)
+  ok   B REFUSE: node --import ./x.mjs tools/lane_lock.mjs take (preload of the lane tool)
+  ok   B REFUSE: node --require ./x.cjs tools/check_handin.mjs (preload)
+  ok   B REFUSE: node -r ./x.cjs tools/make_brief.mjs (preload)
+  ok   B REFUSE: $env:NODE_OPTIONS = "--import x" in PowerShell
+  ok   B ALLOW: node <scratch>/innocent.mjs (a script that names nothing)
+  ok   B ALLOW: node tools/check_x.mjs (a script under tools/ may import the hooks library: run_suite, check_handin and the suites do)
+  ok   B ALLOW: node tools/hooks/test_guards15.mjs (a test of the hooks)
+  ok   B ALLOW: node tools/run_suite.mjs <wt> --round r (plain)
+  ok   B ALLOW: node --check tools/x.mjs (a flag that is not a preload)
+  ok   B ALLOW: NODE_OPTIONS=--max-old-space-size=4096 node tools/run_suite.mjs (no preload in it)
+  ok   B ALLOW: the Write tool: a .md that names ack_secret and signRecord (text, not code)
+  ok   B ALLOW: the Write tool: a new test file under tools/hooks naming the secret
+  ok   B ALLOW: the Write tool: a new test_*.mjs anywhere (a test of the hooks)
+  ok   B ALLOW: the Edit tool: an edit of an EXISTING tools file that names readSecret
+  ok   B ALLOW: the Write tool: a scratch script with no secret in it
+  ok   B ALLOW: git commit -m "state_guard now refuses signRecord imports" (the words are text)
+  ok   B ALLOW: echo naming the secret folder into a .md note
+  ok   B ALLOW: the main session (no agent id) runs a forging-looking script
+gates15 C: run_suite: the whole import tree, a clean child environment, the gcc exe tied to the CMake build
+  ok   C an unchanged script with an unchanged import tree runs and leaves a record
+  ok   C REFUSE: a direct import (helper.mjs) changed, the script unchanged (audit fault 3a): exit 3, names the helper, no record
+  ok   C REFUSE: an import of an import (deep.mjs, two levels down) changed
+  ok   C REFUSE: a helper added on the branch and imported through a changed import
+  ok   C ALLOW: everything restored to main's bytes runs again
+  ok   C a spawning script with tools/ unchanged runs
+  ok   C REFUSE: a script that spawns processes while a file under tools/ changed (it may run that file)
+  ok   C ALLOW: a script with only literal imports is not held back by a change under tools/ it cannot reach
+  ok   C REFUSE: NODE_OPTIONS with --import around run_suite (audit fault 3b): exit 2, no record, the log is not the preload's
+  ok   C REFUSE: node --import <x> tools/run_suite.mjs: exit 2, no record
+  ok   C the child runs in a clean environment: FOO_X is gone, a CP_* variable is kept, no NODE_OPTIONS, no execArgv
+  ok   C REFUSE: NODE_PATH set around run_suite
+  ok   C REFUSE: a dropped-in sim_core_tests.exe with no CMakeCache.txt (audit fault 3c): exit 3, no record
+  ok   C REFUSE: a CMakeCache.txt whose source dir is another tree
+  ok   C REFUSE: the right CMakeCache.txt but no object file under build/tests
+  ok   C REFUSE: the exe is older than the newest object file (stale or dropped in before the objects)
+  ok   C ALLOW: CMakeCache of this worktree, objects, exe newer than them: runs and leaves a record naming the exe hash
+gates15 D: the home folder (any folder above ~/.roadworld-gate) as the whole source of a copy, move, archive, recursive search; Grep and Glob rooted there; git on it
+  ok   D REFUSE: cp -r ~ <dest> (audit fault 2)
+  ok   D REFUSE: cp -r $HOME <dest>
+  ok   D REFUSE: cp -r <home absolute path> <dest>
+  ok   D REFUSE: cd ~ && cp -r . <dest>
+  ok   D REFUSE: cd ~ && cp -r * <dest> (a glob over the home folder)
+  ok   D REFUSE: mv ~ <dest>
+  ok   D REFUSE: tar cf x.tar ~
+  ok   D REFUSE: tar cf x.tar <drive-level parent of home>
+  ok   D REFUSE: zip -r h.zip ~
+  ok   D REFUSE: rsync -a ~/ <dest>
+  ok   D REFUSE: rm -rf ~ (a recursive delete of the home folder)
+  ok   D REFUSE: grep -r . ~ (audit fault 2)
+  ok   D REFUSE: grep -rl deadbeef <parent of home>
+  ok   D REFUSE: cd ~ && grep -rn x (the default root is the home folder)
+  ok   D REFUSE: rg --hidden x ~
+  ok   D REFUSE: find ~ -name ack_secret
+  ok   D REFUSE: find ~ -type f | xargs cat
+  ok   D REFUSE: find ~ -name ack_secret -exec cat {} ;
+  ok   D REFUSE: ls -R ~
+  ok   D REFUSE: du ~
+  ok   D REFUSE: echo ~/.roadworld-gate/ack_secret | xargs cat (audit fault 2)
+  ok   D REFUSE: git clone ~/.roadworld-gate <dest> (audit fault 2)
+  ok   D REFUSE: git -C ~/.roadworld-gate init (audit fault 2)
+  ok   D REFUSE: git -C ~ status
+  ok   D REFUSE: git clone ~ <dest>
+  ok   D REFUSE: Compress-Archive -Path $HOME (audit fault 2)
+  ok   D REFUSE: gci -Recurse $HOME -Filter ack_secret | gc (audit fault 2)
+  ok   D REFUSE: Get-ChildItem -Recurse ~
+  ok   D REFUSE: Copy-Item -Recurse $env:USERPROFILE C:\x
+  ok   D REFUSE: robocopy $HOME C:\x /E
+  ok   D REFUSE: the Grep tool with path = the home folder, pattern . (audit fault 2)
+  ok   D REFUSE: the Grep tool with path = home, glob ack_*
+  ok   D REFUSE: the Glob tool **/ack_secret under the home folder (audit fault 2)
+  ok   D REFUSE: the Glob tool .roadworld-gate/* under the home folder
+  ok   D ALLOW: the Grep tool over the home folder limited to *.md files
+  ok   D ALLOW: the Grep tool over the home folder with type js
+  ok   D ALLOW: the Glob tool **/*.mjs under the home folder (cannot end on ack_secret)
+  ok   D ALLOW: the Grep and Glob tools on the repo
+  ok   D ALLOW: ls ~
+  ok   D ALLOW: cd ~ && ls -la
+  ok   D ALLOW: cat ~/.gitconfig
+  ok   D ALLOW: find ~ -maxdepth 1 -name "*.json" (one level)
+  ok   D ALLOW: find ~ -name "*.png" (a name filter that cannot be ack_secret)
+  ok   D ALLOW: grep -rn x ~/Documents
+  ok   D ALLOW: grep -r --include=*.md x ~ (files limited to *.md)
+  ok   D ALLOW: cp -r <repo>/docs ~/AppData/x (a sub-folder destination)
+  ok   D ALLOW: git clone <repo> <dest>
+  ok   D ALLOW: git commit -m "fix .roadworld-gate handling"
+  ok   D ALLOW: Get-ChildItem $HOME (not recursive)
+  ok   D ALLOW: Compress-Archive of a repo folder
+  ok   D ALLOW: the main session (no agent id) copies the home folder
+  ok   D REFUSE: git -C <main> clean -fdx (deletes .claude/state)
+  ok   D ALLOW: git -C <elsewhere> clean -fd
+gates15 E: the lane lock holder is the fold of the lane lines in gate.log; owner.txt is a hint; preloads of the tool are refused
+  ok   E status of a free lane says free
+  ok   E take appends a gate.log lane line (agent, id, round, purpose) and writes the hint owner.txt
+  ok   E a hand-written owner.txt naming ag9 does not change who status says holds the lane (still ag5)
+  ok   E ag9 cannot take the lane by forging owner.txt: exit 1, names ag5, no new lane line
+  ok   E ag9 cannot release it either (the forged owner.txt names ag9, the log says ag5)
+  ok   E deleting the lock folder does not free the lane (the log decides)
+  ok   E the holder taking it again is idempotent
+  ok   E the main session (--agent main) releases any holder; a release line is logged; status says free
+  ok   E two take lines in a row: the first holds, the second is ignored (a lost race)
+  ok   E a release line from a non-holder is ignored
+  ok   E the holder's release frees it
+  ok   E the tool refuses to run under NODE_OPTIONS (a preload could rewrite argv)
+  ok   E the tool refuses to run under node --import
+  ok   E REFUSE: the audit's relative-after-cd form: cd <lock> && echo 'agent: other' > owner.txt is harmless now; but a gate.log write is refused: echo {"gate":"lane"} >> gate.log
+  ok   E REFUSE: tee -a gate.log with a forged lane line
+  ok   E REFUSE: the Write tool on gate.log
+  ok   E REFUSE: node --import ./x.mjs tools/lane_lock.mjs take --agent ag5 (the audit's preload form)
+  ok   E REFUSE: NODE_OPTIONS='--import ./x.mjs' node tools/lane_lock.mjs take --agent ag5
+  ok   E REFUSE: lane_lock take --agent ag9 by agent ag5
+  ok   E ALLOW: lane_lock take --agent ag5 by agent ag5
+  ok   E ALLOW: lane_lock status
+  ok   E REFUSE: rm -r <lock> by ag7 whose forged owner.txt names ag7 while the log says ag5 holds it
+  ok   E ALLOW: rm -r <lock> by ag5, the holder per the log
+gates15 F: the NO-CONTRACT descriptions the gates14 notice listed as unmapped are in the table
+  ok   F "Clerk: suitespeed brief and bookkeeping" is in the table with a launch form
+  ok   F "M6 research: lighting columns, cover" is in the table with a launch form
+  ok   F "Clerk: update pvetrees task, worktree" is in the table with a launch form
+  ok   F "Clerk: tjunction7 waiver keys, re-check" is in the table with a launch form
+  ok   F "Clerk: draft m6lights task file" is in the table with a launch form
+  ok   F "Performance architecture review (whole pipeline)" is in the table with a launch form
+  ok   F "Clerk: free disk from finished worktrees" is in the table with a launch form
+  ok   F "Trace photo asphalt edges" is in the table with a launch form
+  ok   F "Clerk: remove merged old worktrees" is in the table with a launch form
+  ok   no line of this run reached the real gate.log
+
+162 passed, 0 failed

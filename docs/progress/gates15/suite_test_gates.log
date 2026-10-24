@@ -1,0 +1,153 @@
+gate grammar
+  ok   scene_check line with baseline and target
+  ok   ctest failed_assertions == 2
+  ok   leading dash, <=, target only
+  ok   allow_waiver line
+  ok   picture_min_road override
+  ok   unknown metric is "bad" with the known list
+  ok   prose line is "bad" (make_brief ignores prose lines)
+  ok   blank line is null
+  ok   satisfies P/T >=
+  ok   satisfies numbers ==, <=
+waiver guard (diff forms)
+  ok   is_rough list gains two names: both found (the real round 9 form)
+  ok   the same is_rough line unchanged: nothing found
+  ok   one more GRADE_CHECK(is_rough(...)) than before: found
+  ok   should_fail added to an existing test: found, keyed by the test name
+  ok   should_fail already there (unchanged context): not found
+  ok   doctest::skip added: found
+  ok   doctest::may_fail added: found
+  ok   WILL_FAIL in tests/CMakeLists.txt: found
+  ok   kTolHeight loosened 1.5e-4 -> 1e-3: found
+  ok   kTolHeight tightened: not found
+  ok   a new tolerance constant: found
+  ok   "reps = 3" and "steps = 4" are not tolerance constants (round 9 false positive)
+  ok   a deleted TEST_CASE: found
+  ok   a TEST_CASE moved to another file is not "deleted"
+  ok   CHECK turned into WARN_MESSAGE: found
+  ok   scene.mjs: a check with hard-coded pass: true added: found
+  ok   scene.mjs: a check removed: found
+  ok   JS it.skip added: found
+  ok   allowed by the task file via the full key
+  ok   allowed by the bare name
+  ok   allowing one name does not allow another
+  ok   empty diff: nothing found
+status reading
+  ok   clean STATUS and 3 passes: no problems
+  ok   "Not attempted" item: refused
+  ok   "did not attempt": refused
+  ok   ordinary use of "time limit"/"quota" is not a usage reason: - the time limit of the scene check is 240 s
+  ok   ordinary use of "time limit"/"quota" is not a usage reason: - the quota of lane widths per arm is 3
+  ok   refused: hit the time limit
+  ok   refused: will do next round
+  ok   "never tried": refused
+  ok   "tried ... blocked by ...": allowed
+  ok   usage/time reason refused: "Pass 3 not done (usage window)"
+  ok   usage/time reason refused: "stopped because of the usage limit"
+  ok   usage/time reason refused: "ran out of tokens"
+  ok   usage/time reason refused: "running out of time"
+  ok   usage/time reason refused: "context window nearly full"
+  ok   usage/time reason refused: "hit the rate limit"
+  ok   usage/time reason refused: "token budget"
+  ok   usage/time reason refused: "no time left"
+  ok   2 passes, no residual-only line: refused
+  ok   2 passes + a residual-only-unfixable line: allowed
+  ok   residual-only line too short (under 40 chars): refused
+  ok   usage wording in FAULTS.md: refused
+  ok   usage words inside an HTML comment (the template) are not read
+method-change rule
+  ok   fewer than 3 rounds: no rule
+  ok   last two rounds did not improve (flat, then worse): method review demanded
+  ok   the last round improved: no refusal
+  ok   the round before improved: no refusal
+  ok   lower-is-better metric (failed assertions) worsening twice: refusal
+  ok   lower-is-better improving: no refusal
+  ok   parseRounds reads "k=v" and "k v" and P/T values
+picture sanity
+  ok   road in frame, no debug colour: passes, and says the numbers were counted in the mask
+  ok   no road in frame (round 9 s6 street): refused, says the subject is not in the picture
+  ok   a debug-colour view in the folder is judged even when COMPARE.md does not list it (50% orange/rock, round 9 s4 aerial)
+  ok   a few debug pixels (0.06%) are tolerated
+  ok   a headline-named view (*_aerial) declared diagnostic: REFUSED, rename it (round 9 s4 aerial could not hide behind the flag)
+  ok   a diagnostic view with no explanation in STATUS.md: refused
+  ok   ...explained in STATUS.md (name, "diagnostic", a reason): exempt from the road and debug checks
+  ok   ...but cannot be listed in COMPARE.md
+  ok   a COMPARE.md render with no stats file: refused, names render.mjs
+  ok   an *_aerial.png with no stats file is refused even when COMPARE.md does not list it
+  ok   a diagnostic flag on 3 of 4 views: refused (cannot be the way past)
+  ok   picture_min_road override applies
+picture gate: typed numbers never decide; forged records, masks and renders (gates3 audit fault 1)
+  ok   the real tjunction layout (renders, masks and stats in after/ and before/): passes; before/ history is not judged
+  ok   ...and both after/ views were measured
+  ok   a COMPARE render in after/ without its record beside it: refused, names the file
+  ok   a typed hash that does not match the PNG: refused
+  ok   a stats record with NO png beside it (typed hash, picture elsewhere): refused
+  ok   typed road_px 30000 with a mask that holds NO road: refused, both numbers shown (the gates3 audit fake)
+  ok   typed debug 0 with a mask that holds 80000 debug pixels: refused (the typed number is not read)
+  ok   the mask picture missing: refused
+  ok   a mask edited after the record was written: refused (hash differs)
+  ok   a mask that is a colour gradient, not a class pass: refused
+  ok   a mask of another size than the render: refused
+  ok   written_by not a known render tool: refused
+  ok   a record with no mask fields (the pre-gates4 layout): refused, says to render again
+  ok   a mask whose road pixels are GRASS in the render: refused (mask does not belong to this render)
+  ok   a render with 22% orange "needs structure" colour next to a mask that reports no debug pixels: refused
+  ok   mask = render (identical bytes): refused
+  ok   road_px larger than the 800x450 frame: refused (the mask cannot hold it)
+  ok   stats width/height that disagree with the PNG header: refused
+  ok   round 9's s4 aerial flagged diagnostic and not in COMPARE.md: still refused (a headline-named view cannot be diagnostic)
+  ok   a diagnostic close-up explained in STATUS.md (name + reason): accepted
+  ok   the thresholds are documented in the source with the measured round 9 figures
+  ok   scene.mjs writes <view>.stats.json and <view>.mask.png next to each render
+  ok   mesh-view render.mjs writes the mask picture and its hash
+picture plausibility: size and flat pictures
+  ok   a decodable 800x450 picture with many colours: passes
+  ok   pngColourCount decodes the writer's PNG
+  ok   a flat single-colour render with a matching mask: refused ("flat or blank picture")
+  ok   a 40x20 picture: refused as too small
+  ok   a header-only render PNG cannot be decoded: the pixel checks of the render are skipped, the mask still decides
+picture gate: file identity across roles, reference provenance (gates3 audit fault 1)
+  ok   four different files: passes
+  ok   the reference is a copy of the render: refused, names both roles
+  ok   the composite is the render: refused
+  ok   before identical to the render (nothing moved): refused, says so
+  ok   the same render used for two cases: refused
+  ok   the render differs from before in ONE pixel: refused as no real movement
+  ok   the render differs from before in 13% of the frame: passes
+  ok   a before picture that cannot be decoded as the same size: movement not judged (identity only)
+  ok   three copies of one image are one reference: refused (STATUS Case line)
+  ok   three different images are three references
+  ok   registered photos under docs/reference: pass
+  ok   a file in docs/reference whose hash is in no INDEX and no log: refused
+  ok   a "reference" inside the hand-in folder: refused
+  ok   a registered-looking reference that is byte-identical to the round's own render: refused
+  ok   a composite from _compare as a reference: refused
+  ok   no hash log at all: not refused (the caller says FAIL-OPEN: not checkable)
+  ok   knownReferenceHashes reads the hook log and any 40-hex hash in an INDEX.md
+  ok   knownReferenceHashes is null when nothing is recorded
+check_handin end to end
+  ok   v1 (no GATES-VERSION): the old checks only, passes
+  ok   v2, scene 21/21 measured: passes and prints what was measured
+  ok   scene 20/21 (at the floor, below target) without a STATUS line: refused, asks for the shortfall in STATUS
+  ok   scene 20/21 with the shortfall named in STATUS: passes
+  ok   STATUS claims 21/21 but the measurement is 17/21: refused, message says the typed number is not read and lists failing checks
+  ok   the scene check grew to 23 checks but the gate says /21: refused (main session must update the gate)
+  ok   node_modules missing: cannot measure -> FAIL-OPEN printed (and logged), hand-in not refused for it
+  ok   ctest gate with no build dir: refused, says to build and run ctest
+  ok   ctest result with exactly 2 failed assertions: passes
+  ok   ctest result with 5 failed assertions: refused, shows measured value
+  ok   ctest result older than a source edit: refused (stale)
+  ok   waiver guard: new should_fail, new is_rough name and a loosened tolerance in the worktree: refused with one line each
+  ok   ...and the waiver that main added AFTER the branch point ("later") is not blamed on the branch (merge base, not main tip)
+  ok   ...with the base taken from the main checkout HEAD even though no branch is called main
+  ok   each finding allowed by a task-file allow_waiver line: passes
+  ok   allowing only one of them: still refused for the others
+  ok   a deleted test case (alpha): refused
+  ok   an UNTRACKED new test file with a skip is read too
+  ok   clean worktree: waiver guard passes and says what it compared against
+  ok   a waiver that is COMMITTED on the branch is found too (diff against the merge base, not the working tree only)
+  ok   hand-in with "not attempted", 2 passes and a usage-window reason: refused for all three
+  ok   v2 engine-only hand-in without FAULTS.md: refused (v1 does not ask)
+  ok   ...and v1 without FAULTS.md still passes (--no-visual)
+  ok   visible v2 hand-in whose COMPARE render has no stats record: refused
+  ok   ...stats say no road in frame (round 9 s6 street): refused with the percentage

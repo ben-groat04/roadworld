@@ -6,9 +6,9 @@ References opened: 10 of 10 listed. Opened and read: gates9 AUDIT.md and STATUS.
 
 - ACCEPTED RESIDUAL (ruling 1), stated plainly: deliberate code run as the same OS user can still read the signing secret and forge any signed record (suite record, audit record, ack). A pattern guard cannot stop code that computes a path. This round adds DETECTION: state_guard refuses commands and file writes outside tools/ and the tests that name the secret or import a hooks file; the auditor brief (item 4b) makes every auditor grep the builder's commits, scratch and progress folder and write a "Secret check" in AUDIT.md. Detection is by name only.
 - Not run through a live launch: all checks are real hook scripts fed real payload shapes against temp folders.
-- Not fixed, said here: two c1 probe forms stay allowed (`git archive HEAD .claude`, which archives committed files only; a `?` glob onto a fixture file ack_secret_old in the state folder, which holds no key). A preload in NODE_OPTIONS runs before run_suite's first line; run_suite then refuses and writes no record, but the preload itself ran (it is code, the residual above).
+- Two c1 probe forms stay allowed on purpose, with the reason: `git archive HEAD .claude` archives committed files only and the state folder is gitignored, so it holds no key; a `?` glob onto a fixture file ack_secret_old in the state folder holds no key either. A preload in NODE_OPTIONS runs before run_suite's first line; run_suite then refuses and writes no record, but the preload itself ran (it is code, the accepted residual above).
 - Observed, not changed: delete_guard refused a Bash heredoc that only contained the text `fs.rmSync` (false positive); I wrote the file with the Write tool.
-- Suites: run one at a time under `timeout 600` with CP_GATE_STATE_DIR in scratch (live gate.log not written). Not run through run_suite.mjs (this round changes the suites). Counts below; any suite not finished at hand-in is marked PENDING.
+- Suites: all 15 ran one at a time under `timeout 600` with CP_GATE_STATE_DIR in scratch (live gate.log not written), 0 failed in all; logs suite_*.log here. They were not run through run_suite.mjs because this round changes the suites.
 
 ## Items
 
@@ -53,7 +53,7 @@ References opened: 10 of 10 listed. Opened and read: gates9 AUDIT.md and STATUS.
 
 ## Suite counts (one at a time, timeout 600)
 
-guards6 32, guards7 28, guards8 56, guards9 54, guards10 107, guards11 170, guards12 95, guards13 139, guards14 97, guards15 162, test_hooks 419; all 0 failed. test_gates, test_worktree_tools, test_backup_reference, test_record_lib: PENDING at hand-in time (still running); nothing they test was changed. fail_first_test_guards15.txt: 88 FAIL / 74 ok against the gates14 tools (commit 9945974).
+guards6 32, guards7 28, guards8 56, guards9 54, guards10 107, guards11 170, guards12 95, guards13 139, guards14 97, guards15 162, test_hooks 419, test_gates 514, test_worktree_tools 27, test_backup_reference 56, test_record_lib exit 0 (no count line); all 0 failed. fail_first_test_guards15.txt: 88 FAIL / 74 ok against the gates14 tools (commit 9945974).
 
 ## Merge text for main
 
@@ -61,3 +61,9 @@ guards6 32, guards7 28, guards8 56, guards9 54, guards10 107, guards11 170, guar
 2. CLAUDE.md: add to the hooks paragraph: "Secret reading by deliberate code is an accepted residual; the auditor's Secret check is the detection."
 3. Rounds may be split into measure, build and render phases (short fresh agents handing over through files in the hand-in folder); the builder and auditor separation is unchanged.
 4. docs/templates/AUDIT_BRIEF.md item 4b is in this branch.
+
+## Reference files opened
+
+Case: gates9 audit | Opened: C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/docs/progress/gates9/AUDIT.md, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/docs/progress/gates9/STATUS.md, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/docs/progress/gates14/AUDIT.md
+Case: tools and settings | Opened: C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/tools/make_brief.mjs, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/tools/check_handin.mjs, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/.claude/settings.json, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/docs/AGENT_CONTRACT.md, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/CLAUDE.md
+Case: hooks and templates | Opened: C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/tools/hooks/lib.mjs, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/tools/hooks/state_guard_impl.mjs, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/tools/hooks/guard_paths.mjs, C:/Users/bgbg0/Documents/Programming/roadworld-wt/gates10/docs/templates/AUDIT_BRIEF.md

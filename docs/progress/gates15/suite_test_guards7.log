@@ -1,0 +1,37 @@
+gates7 delete guard: false blocks (gates6 audit section 1, items 1-3) must be ALLOWED, the dangerous twin REFUSED
+  ok   item 1 one-liner deletes of a path literal: 11 cases judged as the audit says
+  ok   item 2 del -Recurse is Remove-Item: 6 cases judged as the audit says
+  ok   item 3 filtered listing piped into Remove-Item from the worktree root: 6 cases judged as the audit says
+gates7 delete guard: holes (gates6 audit section 2, items 6-8, 10) must be REFUSED
+  ok   item 6 PowerShell blocks with the brace glued to the verb: 17 cases judged as the audit says
+  ok   item 7 xargs rm and find -exec truncate over the photos: 9 cases judged as the audit says
+  ok   own fault list, pass 1 (found while attacking the fixes above): 13 cases judged as the audit says
+  ok   item 8 abbreviated PowerShell parameters, dotted globs, git clean -e: 13 cases judged as the audit says
+  ok   item 10 generic wrapper look-through: 19 cases judged as the audit says
+gates7 state guard (gates6 audit items 4 and 9)
+  ok   state guard: 32 cases (gates6 audit items 4 and 9) judged as the audit says
+gates7 lexer: glued braces become their own tokens, ${x} and {a,b} do not
+  ok   try {Remove-Item docs -Recurse -Force} catch {}: no word carries a brace; Remove-Item is a statement of its own
+  ok   ${HOME}/x and {a,b} stay single words
+  ok   find -exec rm {} \; keeps the {} placeholder
+  ok   the body of a piped ForEach-Object is marked piped and fe
+gates7 git guard (item 15, in-process, backslash cwds)
+  ok   G1 blanket staging in the main checkout, any subagent: 37 cases
+  ok   G2 a builder with a HANDIN_DIR outside main writes nothing to main: 21 cases
+gates7 git guard as a process: the harness payload, transcripts, FAIL-OPEN
+  ok   process: the main session (no agent_id) may run git add -A in main (exit 0)
+  ok   process: a NO-CONTRACT clerk running git add -A in main: refused (exit 2, message names the incident fix)
+  ok   process: the same clerk with explicit paths: allowed (exit 0)
+  ok   process: a builder (HANDIN_DIR in its own worktree, read from its transcript) committing a named file in main: refused (exit 2), message says HANDIN_DIR and git -C
+  ok   process: the same builder using git -C <its worktree>: allowed (exit 0)
+  ok   process: a builder whose HANDIN_DIR is in the BRIEF-FILE it names is read too: refused (exit 2)
+  ok   process: an agent whose transcript cannot be read: G2 does not apply, explicit paths pass (exit 0)
+  ok   process: ... but G1 still refuses git add -A (exit 2)
+  ok   process: bad stdin: exit 0 and a FAIL-OPEN line in the (isolated) gate.log
+  ok   settings.json wires git_guard.mjs beside delete_guard.mjs on Bash|PowerShell (timeout 15)
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the photos behind the junction and in the fixture main survived every case
+  ok   the temp folder (junction unlinked first) is removed
+
+28 passed, 0 failed

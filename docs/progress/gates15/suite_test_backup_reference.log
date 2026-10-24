@@ -1,0 +1,63 @@
+validators (fixtures built like the real damage)
+  ok   a real PNG (CRCs, inflated size, IEND) validates
+  ok   a PNG with zeros for its first 16 bytes but an intact end (the real damage): refused, bad signature
+  ok   a PNG with one damaged byte inside a chunk: refused, bad CRC
+  ok   a PNG cut off before IEND: refused
+  ok   a PNG whose pixel data is 3 rows short of its header: refused, decoded size
+  ok   a JPEG with SOI, SOF, SOS and EOI validates
+  ok   a JPEG without EOI (the real truncated files): refused
+  ok   a JPEG that does not start with SOI: refused
+  ok   a JPEG whose entropy data is a 70 KB zero run: refused by the zero-run rule
+  ok   longestZeroRun counts the longest run
+  ok   a zero-length file of any type is refused
+  ok   a text file with content passes (only pictures are decoded)
+mirror
+  ok   41 valid files: mirrored, backup holds 41 files plus the manifest
+  ok   a second run copies nothing (all unchanged)
+  ok   one damaged photo in main: NOTHING mirrored, the refusal names the file and the reason
+  ok   ...and the good copy in the backup is untouched (a bad file never replaces a good one)
+  ok   a truncated JPEG in main: refused
+  ok   a PNG with a damaged chunk: refused
+  ok   everything repaired: mirrored again, only the file that really differs (p4) is copied
+  ok   --verify-only validates without writing
+  ok   1 of 41 files gone (2.4 %): allowed, and the file is removed from the backup (a mirror)
+  ok   6 more files gone (15 %): REFUSED, backup unchanged, says what to do
+  ok   --accept-loss with a short reason: still refused
+  ok   gates6 item 27b: a real reason WITHOUT the main session accept_loss file is ignored (a subagent cannot write .claude/state): refused, and the refusal says who may allow it
+  ok   --accept-loss with a real reason (20+ chars): mirrored, reason written into the manifest
+  ok   an empty docs/reference is never mirrored over a backup
+  ok   a missing docs/reference: refused
+  ok   a backup folder inside docs/reference: refused
+  ok   the top-level _damaged quarantine is neither validated nor mirrored (the real docs/reference holds 284 known-bad files there)
+gates6: JPEG scan decode, silent corruption, _damaged as loss, accept_loss (gates5 audit items 27a-27c)
+  ok   27a: a baseline JPEG whose scan decodes exactly (the fixture encoder) validates
+  ok   27a: 100 zero bytes in the middle of the scan data: refused (the old checker copied it as valid)
+  ok   27a: 40 flipped bytes in the scan data: refused
+  ok   27a: 60 bytes cut out of the scan (EOI still present): refused
+  ok   27a: the real photo with a restart interval and a trailing RSTn (found by the first real run) validates
+  ok   27a: first mirror ok
+  ok   27a: a photo changed in place with the SAME size and mtime is refused as silent corruption (manifest sha1)
+  ok   27c: first mirror ok
+  ok   27c: ONE good photo moved into _damaged (inside the 5 % limit) is refused, backup unchanged, the photo named
+  ok   27c: the same photo quarantined in a DAMAGED state is allowed, and the backup keeps its good copy
+  ok   27b: first mirror ok
+  ok   27b: --accept-loss with a made-up reason and NO accept_loss file: refused, backup keeps its photos
+  ok   27b: with the main session's accept_loss file the loss is accepted, and the file is consumed (single use)
+command line
+  ok   CLI: valid tree: exit 0, prints the counts
+  ok   CLI: a damaged file: exit 1, REFUSED, names it
+  ok   the script has no recursive delete (no rmSync, no rm -r)
+gates7: baseline zero-run rule at every offset (gates6 audit item 11), verify-only uses the manifest (item 12)
+  ok   item 11: 100 zero bytes at 24 offsets of a baseline scan: refused at every one
+  ok   item 11: exactly 32 zero bytes: refused with the zero-run message
+  ok   item 11: 31 zero bytes are not judged by the zero-run rule (the decoder may still refuse them)
+  ok   item 11: the undamaged scan still validates
+  ok   item 11: stuffed FF 00 pairs do not count toward the run
+  ok   item 12: the first mirror hashes everything and writes the manifest
+  ok   item 12: verify-only after a mirror: every file is trusted by size+mtime, none is read
+  ok   item 12: a file whose mtime changed is read and validated in full (the others stay trusted)
+  ok   item 12: verify-only --full reads and hashes every file
+  ok   item 12: --full still catches a silent change (same size, same mtime, other bytes)
+  ok   item 12: the mirror run itself always hashes, so the silent change is refused there too
+
+56 passed, 0 failed (temp dir C:\Users\bgbg0\AppData\Local\Temp\bkref-4VTKfY)
