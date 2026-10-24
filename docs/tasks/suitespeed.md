@@ -37,3 +37,6 @@ Both compilers run the parallel suite inside the targets, with a coverage check 
 - suitespeed builder (this round): parallel ctest shards, coverage check, slow-case report. It touches only tests/CMakeLists.txt, test files no running branch has changed, and its hand-in folder.
 ## Waiting
 - none
+
+## Gates
+allow_waiver deleted_test:world_cache: fuzz, planar roads at least 15 m apart (all layers incl. street lights), several seeds
