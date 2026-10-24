@@ -180,3 +180,23 @@ export function launchInfoOfAgent(input) {
 // state_guard crashed (FAIL-OPEN, 23 Oct 22:02) on an agent's C++ heredoc whose "[" the old class-escape missed: no hook builds a RegExp from input text any other way.
 export const reEsc = (s) => String(s).replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&');
 export function safeRe(src, flags = '') { try { return new RegExp(src, flags); } catch { return /(?!)/; } }
+
+// ---- gates15 (main-session ruling 4): the Unreal lane lock is decided by gate.log, never by owner.txt. tools/lane_lock.mjs appends `{gate:'lane', decision:'take'|'release', agent, id, ...}` lines through log();
+// the holder is the FOLD of those lines in order: a take while the lane is held is ignored (a lost race), a release counts only from the holder or from `main`. owner.txt and the folder are a human hint
+// only (an agent can write a file; it cannot write gate.log, which state_guard refuses to every tool). Returns { agent, id, round, time, purpose } or null when the lane is free per the log.
+export function laneFold(entries) {
+  let holder = null;
+  for (const e of entries) {
+    if (!e || e.gate !== 'lane') continue;
+    if (e.decision === 'take') { if (!holder) holder = { agent: String(e.agent), id: String(e.id || ''), round: e.round || '', time: e.ts || '', purpose: e.purpose || '' }; }
+    else if (e.decision === 'release') { if (holder && (String(e.agent) === holder.agent || String(e.agent) === 'main')) holder = null; }
+  }
+  return holder;
+}
+export function laneHolder(stateDir = STATE_DIR) {
+  let txt = '';
+  try { txt = fs.readFileSync(path.join(stateDir, 'gate.log'), 'utf8'); } catch { return null; }
+  const entries = [];
+  for (const l of txt.split('\n')) { if (!l.includes('"gate":"lane"')) continue; const o = parseJson(l); if (o) entries.push(o); }
+  return laneFold(entries);
+}
