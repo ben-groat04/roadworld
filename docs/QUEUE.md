@@ -15,6 +15,9 @@ Truth for branches: `tools\worktree_status.ps1`. Tips from each worktree's `git 
 - **m6lights1 (tip 9cacec7):** phase 2 in Unreal (lights playtest, street-light column meshes).
 - **Follow-ups:** a perf round after the m2fix5c and grade-r14 merge, changes in order 2, 4, 3, 5, then 6 road-first (owner approved road-first and kept 0.5 m texels). Megaplants on Fab: declined for now by the owner.
 - **roundabout5:** see the 23 Oct 21:40 section (audit SEND BACK, roundabout6 owed, holds until tjunction6 or its successor hands in).
+- 14:35 junctionprim1 started (phase 1): junction geometry rebuilt from straights and tangent arcs with per-class parameters, roundabout first (owner 24 Oct: "always think if it can be made simpler"). Replaces roundabout6.
+- 14:30 tjunction8 stopped at a checkpoint: the old fitted model is being replaced; its photo measurements become test data for junctionprim2.
+- gates16 handed in, auditor running.
 
 ## 23 Oct 2026, 21:40 local state (main session)
 Supersedes the older sections where they differ. Times from the clock.
