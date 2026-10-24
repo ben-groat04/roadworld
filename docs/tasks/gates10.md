@@ -95,7 +95,7 @@ allow_waiver deleted_gate_test:test_hooks.mjs:a review that names no progress fo
 Known: the 11 items in gates9 AUDIT.md, and the missing gate coverage for auditor and first-look launches (part B).
 
 ## Launched
-This job. Running: builders for roundabout5, tjunction6, m2fix5b and m3ui-r1.
+gates16: functional gaps after the gates13-15 merge (released-handin builder record, audit key migration, Unreal render records, gates15 audit faults, not-opened reference reasons).
 
 ## Waiting
-grade-r13 waits for this round's phase mode, so that it runs split and gated.
+Nothing waits on gates16 beyond the Unreal render-record writer, which later Unreal rounds use.

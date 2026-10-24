@@ -6,6 +6,8 @@
 11 Oct, in this chat, about the account-gated sources (Quixel Megaplants and Megascans Trees on Fab): "well we would come to the accounts as a fallback"
 11 Oct: "i will never open it, this takes too long. just mess around with it yourself to test it (ideally in an agent)"
 11 Oct: "it isn't even getting relevant ref images!!!"
+24 Oct 2026: "How was vegetation getting on btw this is what will make it look good"
+24 Oct 2026, asked whether an agent may export from the PVE editor by driving the window with real mouse and keyboard input: "Yes, and I'm away now"
 
 ## Scope
 This round (pvetrees1) judges the Unreal 5.8 Procedural Vegetation Editor sample trees for Case A only: a hedgerow broadleaf tree seen from a lane, driver's eye 20-60 m. The verdict decides whether account-gated sources (Quixel Megaplants, Megascans Trees) are needed for this kind of tree. Later rounds take Cases B, C and D, one per round (contract item 22).
@@ -39,7 +41,7 @@ UNREAL LANE (one Unreal build, editor or -game process at a time on this machine
 1. Nobody has rendered the PVE sample trees or compared them with UK hedgerow photos.
 
 ## Launched
-- pvetrees1 builder: Case A. It takes the Unreal lane through the lane lock between other rounds' runs.
+- pvetrees2 asset evaluation: Case A, send-back round after the pvetrees1 audit (export all presets and species variants, hedge attempt, frame times, licence). It takes the Unreal lane through the lane lock between other rounds' runs.
 
 ## Waiting
 - Cases B, C, D: one case per round, after pvetrees1's verdict.
