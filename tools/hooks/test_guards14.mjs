@@ -52,6 +52,9 @@ console.log('gates14 A: the secret lives outside the repo trees; .claude cannot 
   refuse('Remove-Item -Recurse -Force <main>\\.claude', ps(`Remove-Item -Recurse -Force ${MB}\\.claude`));
   refuse('cat <main>/.cl*/st*/ack_secret (wildcards in two segments)', bash(`cat ${P}/.cl*/st*/ack_secret`));
   refuse('cat <main>/.claude/{state,x}/ack_secret (brace expansion)', bash(`cat ${P}/.claude/{state,x}/ack_secret`));
+  refuse('cat $(echo <main>/.claude/state/ack_secret) (command substitution hides the path; own fault 1)', bash(`cat $(echo ${P}/.claude/state/ack_secret)`));
+  refuse('x=<main>/.claude/state/ack_secret; cat $x (variable assignment; own fault 1)', bash(`x=${P}/.claude/state/ack_secret; cat $x`));
+  refuse('backtick form of the same (own fault 1)', bash('cat `echo ' + P + '/.claude/state/ack_secret`'));
   refuse('zip -r x.zip <main>/.claude', bash(`zip -r x.zip ${P}/.claude`));
   refuse('cp -a <main> <dest> (a folder that holds .claude)', bash(`cp -a ${P} ${dest}`));
   refuse('ln -s <main>/.claude link (a link to the folder)', bash(`ln -s ${P}/.claude link`));

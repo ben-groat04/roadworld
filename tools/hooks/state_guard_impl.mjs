@@ -188,6 +188,8 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
   if (opts.cwd) CTX.cwd = opts.cwd;
   const reasons = [];
   if (depth > 4) return reasons;
+  // gates14 own fault 1: the secret's name or folder combined with an indirection (command substitution, a backtick, a variable assignment, $env:, Set-Variable) is the secret read by a path the guard cannot follow
+  if (depth === 0 && /ack_secret|\.roadworld-gate/i.test(cmd) && (/\$\(|`|(^|[;&|(]\s*)\$?[A-Za-z_]\w*=|\$env:|Set-Variable|\bset\s+\w+=/i.test(cmd))) reasons.push('the secret is named together with a command substitution or a variable assignment: the path it resolves to cannot be judged; name the real path of a file you may read');
   const { segments } = parseCommand(cmd);
   const lastOf = (i) => { let j = i; while (j > 0 && segments[j].piped) j--; return j; };
   for (let si = 0; si < segments.length; si++) {
