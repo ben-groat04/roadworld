@@ -54,7 +54,7 @@ console.log('gates15 A: a word with an unclosed [ (the 24 Oct 08:46Z fail-open) 
     void r;
   }
   t('A the exact word of the live failure ([..*Linking) is judged without an exception', (() => { try { impl.judgeCommand('node tools/[..*Linking', 0, { mainRoot: proj, cwd: proj, agent: 'ag5' }); return true; } catch { return false; } })());
-  t('A globRe on an invalid pattern returns a regex that matches everything (the caller then refuses)', lib.globRe('[z-a]', 'i').test('ack_secret') && lib.globRe('(', '').test('x'));
+  t('A globRe on an invalid pattern returns a regex that matches everything (the caller then refuses)', (() => { try { return lib.globRe('[z-a]', 'i').test('ack_secret') && lib.globRe('(', '').test('x'); } catch { return false; } })());
   t('A globSegRe of an invalid class ([z-a]*) matches everything: a glob that cannot be read is treated as able to name the secret', gp.globSegRe('[z-a]*').test('ack_secret'));
   const fo = fs.existsSync(path.join(isolation.stateDir, 'gate.log')) ? fs.readFileSync(path.join(isolation.stateDir, 'gate.log'), 'utf8') : '';
   t('A no FAIL-OPEN line in the redirected gate.log after all the words', !/FAIL-OPEN/.test(fo), fo.split('\n').filter((l) => /FAIL-OPEN/.test(l)).join('\n').slice(0, 300));
