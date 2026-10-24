@@ -159,6 +159,12 @@ if (RUN_SUITE_OK) {
   const eNode = spawnSync(process.execPath, ['-e', "console.log('[doctest] test cases: 9 | 9 passed | 0 failed | 0 skipped')"], { encoding: 'utf8' });
   const printed = path.join(wt, 'docs', 'progress', 'rp', 'suite_node.log'); mkdirs(path.dirname(printed)); fs.writeFileSync(printed, eNode.stdout);
   t('C a log printed by `node -e` has no record: refused (the 23 Oct forgery)', sr.findSuiteRun(printed, wt, { after: 0, stateDir: ds }).ok === false);
+  for (const [nm, args] of [['node -p', ['-p', "'[doctest] test cases: 9 | 9 passed | 0 failed | 0 skipped'"]], ['node --eval', ['--eval', "console.log('[doctest] test cases: 9 | 9 passed | 0 failed | 0 skipped')"]]]) {
+    const vr = spawnSync(process.execPath, args, { encoding: 'utf8' }); const vp = path.join(wt, 'docs', 'progress', 'rv_' + nm.replace(/\W/g, ''), 'suite_node.log'); mkdirs(path.dirname(vp)); fs.writeFileSync(vp, vr.stdout || '[doctest] test cases: 9 | 9 passed | 0 failed | 0 skipped\n');
+    t(`C a log printed by \`${nm}\` has no record: refused`, sr.findSuiteRun(vp, wt, { after: 0, stateDir: ds }).ok === false);
+  }
+  const bp = path.join(wt, 'docs', 'progress', 'rv_bash', 'suite_node.log'); mkdirs(path.dirname(bp)); fs.writeFileSync(bp, '[doctest] test cases: 9 | 9 passed | 0 failed | 0 skipped\n');
+  t('C a log printed by `bash -c echo` has no record: refused', sr.findSuiteRun(bp, wt, { after: 0, stateDir: ds }).ok === false);
   const edited = path.join(wt, 'docs', 'progress', 'rc', 'suite_node.log'); fs.appendFileSync(edited, '[doctest] test cases: 9 | 9 passed | 0 failed\n');
   const fe = sr.findSuiteRun(edited, wt, { after: 0, stateDir: ds });
   t('C an EDITED log is refused (hash mismatch)', fe.ok === false && /hash mismatch/.test(fe.why), JSON.stringify(fe));
