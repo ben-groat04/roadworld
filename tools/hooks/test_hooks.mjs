@@ -11,15 +11,16 @@ import { spawnSync as realSpawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolateState, cleanupTmp } from '../test_isolation.mjs';
 // children are COPIES of the hooks in temp mains with their own state folders; only this process (which imports the real lib from src) is redirected by CP_GATE_STATE_DIR
-const spawnSync = (c, a, o = {}) => { const env = { ...(o.env || process.env) }; delete env.CP_GATE_STATE_DIR; return realSpawn(c, a, { ...o, env }); };
+const spawnSync = (c, a, o = {}) => { const env = { ...(o.env || process.env) }; delete env.CP_GATE_STATE_DIR;   /* gates14: the secret lives outside the repo; children share this process secret */ return realSpawn(c, a, { ...o, env }); };
 
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hooktest-'));
 const isolation = isolateState(tmp, src);   // CP_GATE_STATE_DIR for this process; the real gate.log is watched and must get no line of this run
+process.env.CP_GATE_SECRET_DIR = path.join(tmp, "shared_secret");   /* gates14: the secret lives outside the repo; the copies in the temp mains and this process share one */
 const root = path.join(tmp, 'main');
 const wt = path.join(tmp, 'wt');
 const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); };
-['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/git_guard.mjs', 'tools/hooks/time_guard.mjs', 'tools/hooks/time_guard_impl.mjs', 'tools/hooks/suite_record.mjs', 'tools/hooks/lock_guard.mjs', 'tools/hooks/lock_guard_impl.mjs', 'tools/hooks/lock_extra.mjs', 'tools/hooks/phase_marks.mjs', 'tools/hooks/git_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
+['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/git_guard.mjs', 'tools/hooks/time_guard.mjs', 'tools/hooks/time_guard_impl.mjs', 'tools/hooks/suite_record.mjs', 'tools/hooks/lock_guard.mjs', 'tools/hooks/lock_guard_impl.mjs', 'tools/hooks/lock_extra.mjs', 'tools/hooks/phase_marks.mjs', 'tools/hooks/git_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/guard_paths.mjs', 'tools/lane_lock.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
   'tools/check_handin.mjs', 'tools/image_lib.mjs', 'tools/phase_lib.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
 for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'photo ' + f); }
@@ -463,7 +464,7 @@ console.log('gate_notice, gate_ack, canary');
   const itemLines = (c) => c.split('\n').filter((l) => /#\d+\[[0-9a-f]{6}\]/.test(l));
   const tokOf = (l) => { const m = l.match(/#(\d+)\[([0-9a-f]{6})\]/); return m[1] + ':' + m[2]; };
   t('notice prints #n[code] next to every item (fail-open, released hand-in, no-contract)', itemLines(ctx).length >= 3 && itemLines(ctx).some((l) => l.includes(hd('vis'))) && itemLines(ctx).some((l) => /read-only research/.test(l)), ctx);
-  const secretNow = fs.readFileSync(path.join(stateDir, 'ack_secret'), 'utf8').trim();
+  const secretNow = fs.readFileSync(path.join(process.env.CP_GATE_SECRET_DIR, 'ack_secret'), 'utf8').trim();
   t('the ack secret itself is never printed in the notice', secretNow.length >= 16 && !ctx.includes(secretNow));
   const allToks = itemLines(ctx).map(tokOf).join(' ');
 
@@ -485,7 +486,9 @@ console.log('gate_notice, gate_ack, canary');
   const rootS = path.join(tmp, 'mainS'); ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_ack.mjs'].forEach((rel) => { const d = path.join(rootS, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
   fs.mkdirSync(path.join(rootS, '.git'), { recursive: true }); fs.mkdirSync(path.join(rootS, '.claude/state'), { recursive: true });
   fs.writeFileSync(path.join(rootS, '.claude/state/gate.log'), JSON.stringify({ ts: new Date().toISOString(), gate: 'brief', reason: 'FAIL-OPEN: x' }) + '\n');
+  const prevSec = process.env.CP_GATE_SECRET_DIR; process.env.CP_GATE_SECRET_DIR = path.join(tmp, 'no_secret_here');
   a = ack('1:abcdef', 'guessing a code without ever seeing the notice', rootS); t('no ack secret yet (notice never shown): ack refused', a.status === 1 && /no ack secret/.test(a.stderr), a.stderr);
+  process.env.CP_GATE_SECRET_DIR = prevSec;
 
   // ack ONE item (the released hand-in): only that one disappears
   const hl = itemLines(ctx).find((l) => l.includes(hd('vis')));
@@ -912,6 +915,7 @@ console.log('gates3 hooks, part 2: BLOCKED for old-layout briefs, once per finis
   stop('bv1', tp1);
   t('...and a changed set of BLOCKED items is news again', logLines().filter((e) => e.gate === 'blocked' && e.handin_dir === hd('blkv1')).length === 2);
   // secret creation: never overwritten, exclusive create
+  const prevSec2 = process.env.CP_GATE_SECRET_DIR; delete process.env.CP_GATE_SECRET_DIR;
   const lib = await import(pathToFileURL(path.join(src, 'tools/hooks/lib.mjs')).href);
   const sd = path.join(tmp, 'secret_state');
   const s1 = lib.ensureSecret(sd), s2 = lib.ensureSecret(sd);
@@ -920,6 +924,7 @@ console.log('gates3 hooks, part 2: BLOCKED for old-layout briefs, once per finis
   t('six processes asking for a secret in a fresh state dir all get the same one', new Set(kids).size === 1 && kids[0].length === 24, JSON.stringify(kids));
   const rec = lib.signRecord({ a: 1, b: 'x' }, sd);
   t('signRecord / verifyRecord: a signed record verifies, an edited one does not, a record without sig does not', lib.verifyRecord(rec, sd) && !lib.verifyRecord({ ...rec, a: 2 }, sd) && !lib.verifyRecord({ a: 1, b: 'x' }, sd) && !lib.verifyRecord(rec, path.join(tmp, 'other_state')));
+  process.env.CP_GATE_SECRET_DIR = prevSec2;
 }
 
 console.log('gates3 hooks, part 3: a deleted builder record does not cancel the debt (auditgate audit fault 6)');
@@ -1108,9 +1113,9 @@ console.log('gates5: state guard and delete guard against the real payload shape
   const sgCases = [
     // [tool, input, expect (0 allow / 2 deny), label]
     [...B(`touch ${lock}`), 2, 'touch the Unreal lane lock (a FILE lock: refused since gates13, the lock is a directory)'], [...B(`rm -f ${lock}`), 0, 'rm -f the lane lock'], [...B(`test -f ${lock} && cat ${lock}`), 0, 'test -f && cat the lane lock'],
-    [...P(`New-Item -ItemType Directory -Path ${lock.replace(/\//g, '\\')} -Force`), 0, 'New-Item -ItemType Directory the lane lock (PowerShell)'], [...P(`Remove-Item ${lock.replace(/\//g, '\\')} -Force`), 0, 'Remove-Item the lane lock (PowerShell)'],
+    [...P(`New-Item -ItemType Directory -Path ${lock.replace(/\//g, '\\')} -Force`), 2, 'New-Item -ItemType Directory the lane lock (PowerShell)'], [...P(`Remove-Item ${lock.replace(/\//g, '\\')} -Force`), 0, 'Remove-Item the lane lock (PowerShell)'],
     [...B(`echo 4242 > ${lock}`), 2, 'redirect into the lane lock itself (a FILE lock: refused since gates13)'],
-    ['Write', { file_path: lock + '/owner.txt', content: 'agent: ag5 round: x' }, 0, 'Write tool on owner.txt inside the lane lock'], ['Read', { file_path: lock }, 0, 'Read tool on the lane lock'],
+    ['Write', { file_path: lock + '/owner.txt', content: 'agent: ag5 round: x' }, 2, 'Write tool on owner.txt inside the lane lock'], ['Read', { file_path: lock }, 0, 'Read tool on the lane lock'],
     ['Read', { file_path: glog }, 0, 'Read tool on gate.log'], ['Grep', { pattern: 'FAIL-OPEN', path: glog, output_mode: 'content' }, 0, 'Grep tool on gate.log (gates4 fault 4)'],
     ['Grep', { pattern: 'FAIL-OPEN', path: sdir, glob: 'gate.log' }, 0, 'Grep over the state folder limited to gate.log by glob'], ['Glob', { pattern: '*', path: sdir }, 0, 'Glob lists the state folder (names only)'],
     [...B(`cat ${glog} | tail -20`), 0, 'cat gate.log | tail (piped read, gates4 fault 4)'], [...P(`Get-Content ${glog.replace(/\//g, '\\')} -Tail 20 | Select-String error`), 0, 'Get-Content gate.log | Select-String'],

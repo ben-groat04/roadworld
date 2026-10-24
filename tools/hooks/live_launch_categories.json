@@ -1,5 +1,5 @@
 {
- "note": "gates13 decision 1: each of the 77 real NO-CONTRACT descriptions of the main gate.log up to 23 Oct 2026 mapped to the launch form that is now the honest one: AUDIT-OF / FIRSTLOOK-OF (make_brief --audit / --first-look) for audits and first looks, else NO-CONTRACT category clerk|merge|research|status|measure. Used by test_guards13 and written into the gates13 STATUS table.",
+ "note": "gates13 decision 1: each of the 81 real NO-CONTRACT descriptions of the main gate.log up to 24 Oct 2026 (the four of 23-24 Oct added by gates14) mapped to the launch form that is now the honest one: AUDIT-OF / FIRSTLOOK-OF (make_brief --audit / --first-look) for audits and first looks, else NO-CONTRACT category clerk|merge|research|status|measure. Used by test_guards13 and written into the gates13 STATUS table.",
  "rows": [
   [
    "Hook live test: exempt launch",
@@ -385,6 +385,26 @@
    "Clerk: QUEUE and ACCEPTANCE update",
    "clerk",
    "clerk bookkeeping only, doc edits to QUEUE and ACCEPTANCE plus one commit in main, no code."
+  ],
+  [
+   "Disk use survey (read-only)",
+   "research",
+   "read-only survey of disk use under the project and scratch folders; nothing is changed."
+  ],
+  [
+   "Remove 5 finished worktrees",
+   "clerk",
+   "clerk removal of five merged worktrees after unlinking their reference junctions; no code."
+  ],
+  [
+   "Remove 5 finished worktrees (retry)",
+   "clerk",
+   "clerk retry of the worktree removal that stopped on a locked folder; no code."
+  ],
+  [
+   "Commit gate records, remove worktrees",
+   "clerk",
+   "clerk commit of the finished gate records plus removal of merged worktrees; no code."
   ]
  ]
 }

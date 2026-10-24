@@ -1,0 +1,293 @@
+gates14 A: the secret lives outside the repo trees; .claude cannot be copied, moved, archived or deleted; wildcards after a cd are resolved
+  FAIL A REFUSE: cp -r <main>/.claude <dest> (audit fault 1)
+       status 0 
+  FAIL A REFUSE: cp -r <main>/.claude/. <dest> (audit fault 1)
+       status 0 
+  FAIL A REFUSE: mv <main>/.claude <dest> (audit fault 1 and 3)
+       status 0 
+  FAIL A REFUSE: cd <main>/.claude && cat st*/ack_se* (audit fault 1, a relative glob after a cd)
+       status 0 
+  FAIL A REFUSE: tar cf x.tar .claude from the main checkout (audit fault 1)
+       status 0 
+  FAIL A REFUSE: rm -rf <main>/.claude (audit fault 2 and 3)
+       status 0 
+  FAIL A REFUSE: Compress-Archive -Path <main>\.claude (PowerShell archive)
+       status 0 
+  FAIL A REFUSE: robocopy <main>\.claude C:\x /E
+       status 0 
+  FAIL A REFUSE: rmdir /s /q <main>\.claude (cmd)
+       status 0 
+  FAIL A REFUSE: Remove-Item -Recurse -Force <main>\.claude
+       status 0 
+  ok   A REFUSE: cat <main>/.cl*/st*/ack_secret (wildcards in two segments)
+  ok   A REFUSE: cat <main>/.claude/{state,x}/ack_secret (brace expansion)
+  FAIL A REFUSE: zip -r x.zip <main>/.claude
+       status 0 
+  FAIL A REFUSE: cp -a <main> <dest> (a folder that holds .claude)
+       status 0 
+  FAIL A REFUSE: ln -s <main>/.claude link (a link to the folder)
+       status 0 
+  FAIL A REFUSE: mv of the main checkout itself
+       status 0 
+  ok   A REFUSE: cat ~/.roadworld-gate/ack_secret
+  FAIL A REFUSE: cat ~/.road*/ack* (wildcard into the secret folder)
+       status 0 
+  ok   A REFUSE: cd ~ && cat .roadworld-gate/ack_secret
+  ok   A REFUSE: Get-Content $env:USERPROFILE\.roadworld-gate\ack_secret
+  ok   A REFUSE: cat <home>/.roadworld-gate/ack_secret by absolute path
+  ok   A REFUSE: the Read tool on the secret in the home folder
+  FAIL A REFUSE: the Grep tool over the secret folder
+       status 0 
+  ok   A REFUSE: cp the secret out of the home folder
+  ok   A REFUSE: node -e naming the secret folder
+  ok   A ALLOW: ls <main>/.claude/state (names only)
+  ok   A ALLOW: cat <main>/.claude/state/gate.log
+  ok   A ALLOW: cat <main>/.claude/state/*.log (a wildcard that cannot match the secret)
+  ok   A ALLOW: rm -rf build (an ordinary recursive delete)
+  ok   A ALLOW: cp -r docs <dest>
+  ok   A ALLOW: tar cf x.tar docs
+  ok   A ALLOW: git commit -m "cp -r .claude and rm -rf .claude are refused" (the words are text)
+  ok   A ALLOW: a heredoc whose body says rm -rf .claude
+  ok   A ALLOW: the main session (no agent id) is not limited: rm -rf of a scratch folder
+  ok   A settings.json wires state_guard for Bash and PowerShell commands
+  FAIL A with no state redirect the secret is at <home>/.roadworld-gate/ack_secret
+       [eval]:1
+import("file:///C:/Users/bgbg0/AppData/Local/Temp/claude/C--Users-bgbg0-Documents-Programming-roadworld/dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8/scratchpad/old/tools/hooks/lib.mjs").then((m) => { console.log(JSON.stringify({ s: m.ensureSecret(), dir: m.secretDirFor(m.STATE_DIR) })); })
+                                                                                                                                                                                                                                                         ^
+
+TypeError: m.secretDirFor is not a function
+    at [eval]:1:250
+
+Node.js v24.20.0
+
+  FAIL A a legacy <repo>/.claude/state/ack_secret is MOVED there (same value, old copy removed) so signed records keep verifying
+       {}
+  ok   A with CP_GATE_STATE_DIR set (tests) the secret stays in that folder, never in the home folder
+gates14 B: run_suite --script runs only scripts main already has, unchanged; suite_node.log counts only for a node-only round
+  ok   B a script main already has, unchanged, runs and leaves a record
+  ok   B ... and findSuiteRun accepts it
+  FAIL B REFUSE: the auditor's printing tests/test_fake.mjs (not at the merge base): exit 3, no record
+       run_suite: node suite exit 0; log C:\Users\bgbg0\AppData\Local\Temp\guards14-zszIre\b_wt\docs\progress\rb\suite_node.log
+
+  FAIL B ... and findSuiteRun of a log that run would have made is not ok (the earlier honest log still matches only its own bytes)
+       {"ok":true,"run":{"v":1,"id":"dc6f9240400e8638","worktree":"C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards14-zszIre\\b_wt","binary":"C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards14-zszIre\\b_wt\\tests\\test_fake.mjs","binarySha":"0c956064c91637c2a783e7dd59ae498dbffa0dc64ee120202a9992fcaa47312d","exeMtime":"2026-10-24T08:17:20.647Z","args":["C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards14-zszIre\\b_wt\\tests\\test_fake.mjs"],"filter":null,"compiler":"node","round":"rb","start":"2026-10-24T08:17:20.701Z","end":"2026-10-24T08:17:20.749Z","endMs":1792829840749,"exit":0,"log":"C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards14-zszIre\\b_wt\\docs\\progress\\rb\\suite_node.log","logSha":"b443e47030
+  FAIL B REFUSE: the same script COMMITTED on the branch is still not at the merge base
+  FAIL B REFUSE: a script main has, CHANGED on the branch (it could print any result)
+  FAIL B ALLOW: the script restored to main's bytes runs again
+  FAIL B REFUSE: CP_SUITE_BASE=HEAD in the live (not redirected) gate is ignored: a branch-only script is still refused
+  FAIL B ... (with a redirected state, as the tests use it, the base can be named: the record then lands outside the live gate)
+  FAIL B a C++ round (not node-only) with only suite_node.log: the check names the missing suite_gcc.log
+       commit 3adf2114 (mine) was made since the measure phase but BUILD.md does not list it | suite_node.log: no run record file (C:\Users\bgbg0\AppData\Local\Temp\guards14-zszIre\state-isolated\suite_records.jsonl): tools/run_suite.mjs has not recorded any suite run on this machine; run `node tools/run_suite.mjs <worktree>` | new test tests/test_mine.mjs: no fail_first_*.txt in the hand-in folder that 
+  ok   B a node-only round with suite_node.log: no "missing suite log" problem
+  FAIL B a node-only round without suite_node.log names it
+       MEASURE.md is missing: the build phase starts from it | no "Commits:" line: list the commits you made since the measure phase (short hashes) | commit 3adf2114 (mine) was made since the measure phase but BUILD.md does not list it | commit d11a6591 (add fake) was made since the measure phase but BUILD
+  FAIL B check_handin reads --suite node-only into buildProblems (nodeOnly)
+gates14 C: tools/lane_lock.mjs writes owner.txt; every other write into the lock folder is refused; the --agent id is the caller's own
+  FAIL C status of a free lane says free
+  FAIL C take makes the lock folder and owner.txt with "agent: ag5", round, time, purpose
+       node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module 'C:\Users\bgbg0\AppData\Local\Temp\claude\C--Users-bgbg0-Documents-Programming-roadworld\dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8\scratchpad\old\tools\lane_lock.mjs'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+    at Module._load (node:internal/modules/cjs/loader:1341:5)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.execut
+  FAIL C a second agent cannot take it: exit 1, names the holder ag5, owner.txt unchanged
+       node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module 'C:\Users\bgbg0\AppData\Local\Temp\claude\C--Users-bgbg0-Documents-Programming-roadworld\dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8\scratchpad\old\tools\lane_lock.mjs'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+    at Module._load (node:internal/modules/cjs/loader:1341:5)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.execut
+  FAIL C a second agent cannot release it
+       node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module 'C:\Users\bgbg0\AppData\Local\Temp\claude\C--Users-bgbg0-Documents-Programming-roadworld\dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8\scratchpad\old\tools\lane_lock.mjs'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+    at Module._load (node:internal/modules/cjs/loader:1341:5)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.execut
+  FAIL C status names the holder
+  FAIL C the holder releases it
+       node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module 'C:\Users\bgbg0\AppData\Local\Temp\claude\C--Users-bgbg0-Documents-Programming-roadworld\dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8\scratchpad\old\tools\lane_lock.mjs'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+    at Module._load (node:internal/modules/cjs/loader:1341:5)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.execut
+  FAIL C take without --agent is refused
+       node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module 'C:\Users\bgbg0\AppData\Local\Temp\claude\C--Users-bgbg0-Documents-Programming-roadworld\dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8\scratchpad\old\tools\lane_lock.mjs'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+    at Module._load (node:internal/modules/cjs/loader:1341:5)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.execut
+  FAIL C an id with shell characters is refused
+       node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module 'C:\Users\bgbg0\AppData\Local\Temp\claude\C--Users-bgbg0-Documents-Programming-roadworld\dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8\scratchpad\old\tools\lane_lock.mjs'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+    at Module._load (node:internal/modules/cjs/loader:1341:5)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.execut
+  FAIL C a lock with no owner.txt (a crashed run's leftover) is released by anyone
+       node:internal/modules/cjs/loader:1568
+  throw err;
+  ^
+
+Error: Cannot find module 'C:\Users\bgbg0\AppData\Local\Temp\claude\C--Users-bgbg0-Documents-Programming-roadworld\dadbe0ba-a9fc-4f68-9e75-a11e00cf49e8\scratchpad\old\tools\lane_lock.mjs'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+    at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+    at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+    at Module._load (node:internal/modules/cjs/loader:1341:5)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+    at Module.execut
+  FAIL C REFUSE: echo 'agent: other' > <lock>/owner.txt (the audit's spoof, no lock held)
+       status 0 
+  FAIL C REFUSE: tee <lock>/owner.txt
+       status 0 
+  FAIL C REFUSE: Set-Content <lock>\owner.txt
+       status 0 
+  FAIL C REFUSE: Out-File <lock>\owner.txt
+       status 0 
+  FAIL C REFUSE: cp /tmp/owner.txt <lock>/owner.txt
+       status 0 
+  FAIL C REFUSE: sed -i on <lock>/owner.txt
+       status 0 
+  FAIL C REFUSE: mv x <lock>/owner.txt
+       status 0 
+  FAIL C REFUSE: the Write tool on owner.txt
+       status 0 
+  FAIL C REFUSE: the Edit tool on owner.txt
+       status 0 
+  FAIL C REFUSE: mkdir of the lock by hand
+       status 0 
+  ok   C ALLOW: node tools/lane_lock.mjs take --agent ag5 (the caller's own id)
+  ok   C ALLOW: node tools\lane_lock.mjs release --agent ag5
+  FAIL C REFUSE: lane_lock take --agent ag9 by agent ag5 (another agent's id)
+       status 0 
+  FAIL C REFUSE: lane_lock take with no --agent
+       status 0 
+  FAIL C REFUSE: lane_lock take --agent $(echo ag9) (id built by the shell)
+       status 0 
+  FAIL C REFUSE: lane_lock --agent=ag9 (the = form of another id)
+       status 0 
+  FAIL C REFUSE: cp of lane_lock.mjs (a copy would run under any id)
+       status 0 
+  FAIL C REFUSE: node -e importing lane_lock
+       status 0 
+  FAIL C REFUSE: node tools/lane_l*.mjs (a wildcard that hides the script name)
+       status 0 
+  ok   C ALLOW: reading owner.txt
+  ok   C ALLOW: the main session (no agent id) writes by hand
+  ok   C REFUSE: rm -r <lock> by ag7 while ag5 holds it
+  ok   C ALLOW: rm -r <lock> by its owner ag5
+gates14 D: gate_notice lists a NO-CONTRACT launch whose description is not in live_launch_categories.json
+  ok   D launches whose description is in the table raise no "unmapped" item (case and spaces ignored)
+  FAIL D two launches whose description is NOT in the table are two unmapped items, each with its own log line number
+  FAIL D the notice names each unmapped description with its own #n[code] and says where the table is
+       GATE NOTICE from tools/hooks/gate_notice.mjs (source: .claude/state/gate.log and .claude/state/builders of the main checkout). 1 open item(s).
+- NO-CONTRACT launches x3 since the last ack (no contract, no hand-in gate); 1 distinct reason(s), newest: "clerk doc edit for the log, no code" (acks as one item #3[f93b42], last launch 2026-10-24T08:17:24.238Z)
+This notice is repeated on every prompt until each is acknowledged BY ITS OWN #n[code]. The only thing that clears an item: node tools/hooks/gate_ack.mjs "<n>:<code> [<n>:<code> ...]" "<what was done about it>" (text of at least 20 characters, 4 words, saying what was done; recorded in the log with a timestamp).
+  FAIL D unmapped items count in the total and in ackItems (acked one by one)
+       {"total":1}
+  ok   D an acknowledged unmapped item is gone
+  ok   D "Disk use survey (read-only)" is in the table
+  ok   D "Remove 5 finished worktrees" is in the table
+  ok   D "Remove 5 finished worktrees (retry)" is in the table
+  ok   D "Commit gate records, remove worktrees" is in the table
+  ok   D live gate.log (read only; not present here): every description missing from the table is listed as unmapped by the notice code
+  ok   no line of this run reached the real gate.log
+
+37 passed, 57 failed
+ - A REFUSE: cp -r <main>/.claude <dest> (audit fault 1)
+ - A REFUSE: cp -r <main>/.claude/. <dest> (audit fault 1)
+ - A REFUSE: mv <main>/.claude <dest> (audit fault 1 and 3)
+ - A REFUSE: cd <main>/.claude && cat st*/ack_se* (audit fault 1, a relative glob after a cd)
+ - A REFUSE: tar cf x.tar .claude from the main checkout (audit fault 1)
+ - A REFUSE: rm -rf <main>/.claude (audit fault 2 and 3)
+ - A REFUSE: Compress-Archive -Path <main>\.claude (PowerShell archive)
+ - A REFUSE: robocopy <main>\.claude C:\x /E
+ - A REFUSE: rmdir /s /q <main>\.claude (cmd)
+ - A REFUSE: Remove-Item -Recurse -Force <main>\.claude
+ - A REFUSE: zip -r x.zip <main>/.claude
+ - A REFUSE: cp -a <main> <dest> (a folder that holds .claude)
+ - A REFUSE: ln -s <main>/.claude link (a link to the folder)
+ - A REFUSE: mv of the main checkout itself
+ - A REFUSE: cat ~/.road*/ack* (wildcard into the secret folder)
+ - A REFUSE: the Grep tool over the secret folder
+ - A with no state redirect the secret is at <home>/.roadworld-gate/ack_secret
+ - A a legacy <repo>/.claude/state/ack_secret is MOVED there (same value, old copy removed) so signed records keep verifying
+ - B REFUSE: the auditor's printing tests/test_fake.mjs (not at the merge base): exit 3, no record
+ - B ... and findSuiteRun of a log that run would have made is not ok (the earlier honest log still matches only its own bytes)
+ - B REFUSE: the same script COMMITTED on the branch is still not at the merge base
+ - B REFUSE: a script main has, CHANGED on the branch (it could print any result)
+ - B ALLOW: the script restored to main's bytes runs again
+ - B REFUSE: CP_SUITE_BASE=HEAD in the live (not redirected) gate is ignored: a branch-only script is still refused
+ - B ... (with a redirected state, as the tests use it, the base can be named: the record then lands outside the live gate)
+ - B a C++ round (not node-only) with only suite_node.log: the check names the missing suite_gcc.log
+ - B a node-only round without suite_node.log names it
+ - B check_handin reads --suite node-only into buildProblems (nodeOnly)
+ - C status of a free lane says free
+ - C take makes the lock folder and owner.txt with "agent: ag5", round, time, purpose
+ - C a second agent cannot take it: exit 1, names the holder ag5, owner.txt unchanged
+ - C a second agent cannot release it
+ - C status names the holder
+ - C the holder releases it
+ - C take without --agent is refused
+ - C an id with shell characters is refused
+ - C a lock with no owner.txt (a crashed run's leftover) is released by anyone
+ - C REFUSE: echo 'agent: other' > <lock>/owner.txt (the audit's spoof, no lock held)
+ - C REFUSE: tee <lock>/owner.txt
+ - C REFUSE: Set-Content <lock>\owner.txt
+ - C REFUSE: Out-File <lock>\owner.txt
+ - C REFUSE: cp /tmp/owner.txt <lock>/owner.txt
+ - C REFUSE: sed -i on <lock>/owner.txt
+ - C REFUSE: mv x <lock>/owner.txt
+ - C REFUSE: the Write tool on owner.txt
+ - C REFUSE: the Edit tool on owner.txt
+ - C REFUSE: mkdir of the lock by hand
+ - C REFUSE: lane_lock take --agent ag9 by agent ag5 (another agent's id)
+ - C REFUSE: lane_lock take with no --agent
+ - C REFUSE: lane_lock take --agent $(echo ag9) (id built by the shell)
+ - C REFUSE: lane_lock --agent=ag9 (the = form of another id)
+ - C REFUSE: cp of lane_lock.mjs (a copy would run under any id)
+ - C REFUSE: node -e importing lane_lock
+ - C REFUSE: node tools/lane_l*.mjs (a wildcard that hides the script name)
+ - D two launches whose description is NOT in the table are two unmapped items, each with its own log line number
+ - D the notice names each unmapped description with its own #n[code] and says where the table is
+ - D unmapped items count in the total and in ackItems (acked one by one)

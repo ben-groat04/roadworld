@@ -117,7 +117,7 @@ const dstate = (n) => { const d = path.join(tmp, 'state-' + n); mk(d); return d;
 console.log('gates13 B: the suite record (decision 2): tools/run_suite.mjs writes it at the run END; the build phase accepts only a log a recorded run wrote');
 {
   // the build phase check against records (tools/run_suite.mjs writes the log and the signed record; no hook records anything)
-  const chk = (hd, ...a) => spawnSync(process.execPath, [path.join(root, 'tools', 'check_handin.mjs'), hd, '--main', root, ...a], { cwd: elsewhere, encoding: 'utf8', env, timeout: 600000 });
+  const chk = (hd, ...a) => spawnSync(process.execPath, [path.join(root, 'tools', 'check_handin.mjs'), hd, '--main', root, ...a, ...(a.includes('build') && !a.includes('node-only') ? ['--suite', 'node-only'] : [])], { cwd: elsewhere, encoding: 'utf8', env, timeout: 600000 });
   const failedWith = (rr, re) => rr.status === 1 && /HAND-IN CHECK FAILED/.test(rr.stderr) && re.test(rr.stderr);
   const passed = (rr) => rr.status === 0 && /HAND-IN CHECK PASSED/.test(rr.stdout);
   const GOOD_MEASURE = (hd) => `# MEASURE\nReferences opened: 3 of 3 listed\n\n## Case A one-lane road\n| photo | measured | value |\n|---|---|---|\n| ${photos[0]} | carriageway width | 3.4 m |\n| ${photos[1]} | lane width | 1.0 lane widths |\n| ${photos[2]} | verge | 150 cm |\n\nOverlay: ${path.join(hd, 'trace_a.png')}\n`;

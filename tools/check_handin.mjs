@@ -177,7 +177,7 @@ if (args.includes('--checkpoint')) {
     const lines = [];
     const probs = ph === 'measure'
       ? PL.measureProblems(folder, { since, main, refs: optAll('--refs')[0] !== undefined ? Number(optAll('--refs')[0]) : null, cases: optAll('--case').length ? optAll('--case') : null })
-      : PL.buildProblems(folder, wtRoot, { since, allowFail: optAll('--allow-fail'), GL, log: (...a) => lines.push(a.join(' ')) });
+      : PL.buildProblems(folder, wtRoot, { since, allowFail: optAll('--allow-fail'), nodeOnly: optAll('--suite').some((x) => /^node-only\b/i.test(String(x).trim())), GL, log: (...a) => lines.push(a.join(' ')) });
     lines.forEach((l) => console.error('phase check: ' + l));
     if (probs.length) { console.error(`HAND-IN CHECK FAILED (${probs.length}) for ${folder} (phase ${ph}):\n - ` + probs.join('\n - ')); process.exit(1); }
     console.log(`HAND-IN CHECK PASSED for ${folder} (phase ${ph})`);

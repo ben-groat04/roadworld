@@ -4,10 +4,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { ROOT, STATE_DIR, parseJson, readSecret, ensureSecret } from './lib.mjs';
 import { auditOwed } from './audit_lib.mjs';
 
 export const MIN_ACK_CHARS = 20;
+// gates14 (decision 6): the table of launch descriptions mapped to their honest launch form (tools/hooks/live_launch_categories.json). A NO-CONTRACT launch whose description is not in it is a notice item
+// of its own, so the table cannot fall behind silently (the gates13 audit found it four rows behind). null = the table cannot be read (the check is then skipped, never a crash).
+const TABLE_FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'live_launch_categories.json');
+const descKey = (d) => String(d == null ? '' : d).replace(/s+/g, ' ').trim().toLowerCase();
+export function mappedDescriptions(file = TABLE_FILE) {
+  try { const o = JSON.parse(fs.readFileSync(file, 'utf8')); return new Set((o.rows || []).map((r) => descKey(r[0]))); } catch { return null; }
+}
 export const CANARY_GRACE_MS = 120 * 1000;          // a brief made less than 2 minutes ago may simply not be launched yet
 export const NOTICE_STALE_MS = 3 * 3600 * 1000;     // the notice hook runs at least once per prompt / background report
 export const HANDIN_STALE_MS = 6 * 3600 * 1000;      // no agent has finished for this long while agents were started
@@ -65,7 +73,12 @@ export function pendingItems(entries, opts = {}) {
     .filter((e) => !acked.has(e.n));
   // NO-CONTRACT launches are ONE item (the newest line stands for the group; acking it acks every line in `ns`): a summary, not one item per launch
   const ncAll = live.filter((e) => e.gate === 'brief' && e.reason === 'NO-CONTRACT' && !acked.has(e.n));
-  const noContract = ncAll.length ? [{ ...ncAll[ncAll.length - 1], ns: ncAll.map((e) => e.n), count: ncAll.length, reasons: [...new Set(ncAll.map((e) => e.no_contract_reason))] }] : [];
+  // gates14: launches whose description is not in the table: one item per launch (acked by its own #n[code])
+  const mapped = mappedDescriptions();
+  const unmapped = mapped ? ncAll.filter((e) => e.description && !mapped.has(descKey(e.description))) : [];
+  const unmappedSet = new Set(unmapped.map((e) => e.n));
+  const ncGrouped = ncAll.filter((e) => !unmappedSet.has(e.n));
+  const noContract = ncGrouped.length ? [{ ...ncGrouped[ncGrouped.length - 1], ns: ncGrouped.map((e) => e.n), count: ncGrouped.length, reasons: [...new Set(ncGrouped.map((e) => e.no_contract_reason))] }] : [];
   // an agent that finished with BLOCKED items (an honest "cannot do this") is news for the main session; a NO-CONTRACT launch of an audit was refused
   const blocked = live.filter((e) => e.gate === 'blocked' && e.reason === 'BLOCKED' && !acked.has(e.n));
   const ncAudit = live.filter((e) => e.gate === 'brief' && e.reason === 'NO-CONTRACT audit launch refused' && !acked.has(e.n));
@@ -74,13 +87,13 @@ export function pendingItems(entries, opts = {}) {
   let owed = [];
   try { owed = auditOwed(opts.stateDir || STATE_DIR, opts.root || ROOT); } catch { /* fail open: logged by the caller if it matters */ }
   const launchGap = launchGapProblem(entries, opts.now || Date.now());
-  return { failOpen, handinFailed, noContract, blocked, ncAudit, auditOwed: owed, launchGap, total: failOpen.length + handinFailed.length + noContract.length + blocked.length + ncAudit.length + owed.length + (launchGap ? 1 : 0) };
+  return { failOpen, handinFailed, noContract, unmapped, blocked, ncAudit, auditOwed: owed, launchGap, total: failOpen.length + handinFailed.length + noContract.length + unmapped.length + blocked.length + ncAudit.length + owed.length + (launchGap ? 1 : 0) };
 }
 
 // ---- per-item acknowledgement. An item is acked by its log line number n AND a code only the notice shows: sha1(secret:n).
 // The secret is .claude/state/ack_secret, created by the notice hook (the main session's context) and never printed. A subagent
 // that does not read that file cannot ack; one that does has gone out of its way (documented limit, audit fault 2).
-export const ackItems = (p) => [...p.failOpen, ...p.handinFailed, ...p.noContract, ...(p.blocked || []), ...(p.ncAudit || [])];
+export const ackItems = (p) => [...p.failOpen, ...p.handinFailed, ...p.noContract, ...(p.unmapped || []), ...(p.blocked || []), ...(p.ncAudit || [])];
 export { readSecret, ensureSecret };
 export const ackCode = (secret, n) => crypto.createHash('sha1').update(`${secret}:${n}`).digest('hex').slice(0, 6);
 // Text must say what was done: enough length, words and variety (rejects "aaaaaaaaaaaaaaaaaaaa" and filler).
@@ -125,6 +138,11 @@ export function formatNotice(p, secret = null) {
   if (p.noContract.length) {
     const g = p.noContract[0];
     L.push(`- NO-CONTRACT launches x${g.count} since the last ack (no contract, no hand-in gate); ${g.reasons.length} distinct reason(s), newest: ${g.reasons.slice(-3).reverse().map((r) => '"' + clip(r, 80) + '"').join('; ')} (acks as one item ${id(g)}, last launch ${g.ts})`);
+  }
+  if (p.unmapped && p.unmapped.length) {
+    L.push(`- UNMAPPED NO-CONTRACT x${p.unmapped.length}: launches whose description is not in tools/hooks/live_launch_categories.json (add the row [description, category, reason], or acknowledge; the category of a NO-CONTRACT launch is self-declared by the launcher and backed only by the AUDIT.md write refusal):`);
+    for (const e of p.unmapped.slice(-12).reverse()) L.push(`    ${id(e)} ${e.ts} "${clip(e.description, 70)}" category=${e.no_contract_category || '?'} reason: ${clip(e.no_contract_reason, 70)}`);
+    if (more(p.unmapped, 12)) L.push(more(p.unmapped, 12));
   }
   if (p.total - p.auditOwed.length - (p.launchGap ? 1 : 0) > 0) {
     L.push(`${p.auditOwed.length ? 'The log items (all except AUDIT OWED) repeat' : 'This notice is repeated'} on every prompt until each is acknowledged BY ITS OWN #n[code]. The only thing that clears an item: ${ACK_CMD} (text of at least ${MIN_ACK_CHARS} characters, 4 words, saying what was done; recorded in the log with a timestamp).`);

@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { resolveMainRoot } from './root.mjs';
 
@@ -92,14 +93,28 @@ export function firstUserText(transcriptPath) {
 // ---- secret + signed records: TAMPER EVIDENCE ONLY. Builder and audit records are HMAC-signed with .claude/state/ack_secret so that a hand-edited record does not verify.
 // The trust in a record comes from WHO writes it (only the hooks, with the harness's agent_id; see audit_lib.mjs) and from tools/hooks/state_guard.mjs keeping subagents away from
 // the state folder and the secret. LIMIT: an agent that bypasses the guard (a script file that touches the state) could sign; that is not claimed to be impossible.
-export function readSecret(stateDir = STATE_DIR) { try { return fs.readFileSync(path.join(stateDir, 'ack_secret'), 'utf8').trim() || null; } catch { return null; } }
+// gates14 (main-session decision 1): the secret lives OUTSIDE every repo tree, at ONE fixed place: <user home>/.roadworld-gate/ack_secret (SECRET_HOME_DIR). It was in <main>/.claude/state, and the
+// parent folder .claude could be copied, moved or archived by an agent (cp -r, mv, tar), so every signed record was forgeable. state_guard refuses any path or glob that resolves into SECRET_HOME_DIR.
+// Tests: CP_GATE_STATE_DIR (a redirected state folder) keeps its secret inside that folder, as does an explicit stateDir argument that is not the live one; CP_GATE_SECRET_DIR overrides for tests.
+export const SECRET_HOME_DIR = path.join(os.homedir(), '.roadworld-gate');
+export function secretDirFor(stateDir = STATE_DIR) {
+  if (process.env.CP_GATE_SECRET_DIR) return path.resolve(process.env.CP_GATE_SECRET_DIR);
+  if (process.env.CP_GATE_STATE_DIR) return path.resolve(stateDir);
+  return path.resolve(stateDir) === path.resolve(STATE_DIR) ? SECRET_HOME_DIR : path.resolve(stateDir);
+}
+export function readSecret(stateDir = STATE_DIR) { try { return fs.readFileSync(path.join(secretDirFor(stateDir), 'ack_secret'), 'utf8').trim() || null; } catch { return null; } }
 export function ensureSecret(stateDir = STATE_DIR) {
   const have = readSecret(stateDir);
   if (have) return have;
-  const s = crypto.randomBytes(12).toString('hex');
-  fs.mkdirSync(stateDir, { recursive: true });
+  const dir = secretDirFor(stateDir); const file = path.join(dir, 'ack_secret');
+  fs.mkdirSync(dir, { recursive: true });
+  // migration: a secret that still sits in the old place (<state>/ack_secret) moves to the new one, so the records already signed keep verifying; the old copy is removed
+  let s = null; const legacy = path.join(stateDir, 'ack_secret');
+  if (path.resolve(dir) !== path.resolve(stateDir)) { try { s = fs.readFileSync(legacy, 'utf8').trim() || null; } catch { /* none */ } }
+  if (!s) s = crypto.randomBytes(12).toString('hex');
   // exclusive create: two hook processes starting together must end up with ONE secret (the loser reads the winner's), or one of their signed records would not verify
-  try { fs.writeFileSync(path.join(stateDir, 'ack_secret'), s, { flag: 'wx' }); } catch (e) { const other = readSecret(stateDir); if (other) return other; throw e; }
+  try { fs.writeFileSync(file, s, { flag: 'wx' }); } catch (e) { const other = readSecret(stateDir); if (other) return other; throw e; }
+  if (path.resolve(dir) !== path.resolve(stateDir)) { try { fs.rmSync(legacy, { force: true }); } catch { /* the main session removes it */ } }
   return s;
 }
 const canon = (o) => JSON.stringify(Object.keys(o).filter((k) => k !== 'sig').sort().map((k) => [k, o[k]]));

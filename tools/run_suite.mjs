@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
-import { STATE_DIR, signRecord } from './hooks/lib.mjs';
+import { STATE_DIR, ROOT, signRecord } from './hooks/lib.mjs';
 
 const MAX = 900;
 const argv = process.argv.slice(2);
@@ -36,11 +36,36 @@ const inside = (p) => { const r = path.relative(fs.realpathSync(wt), fs.realpath
 if (!round) { const r = spawnSync('git', ['-C', wt, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }); round = String(r.stdout || '').trim().split('/').pop() || 'round'; }
 if (!/^[\w.-]+$/.test(round)) die(`bad --round ${round}`);
 
+const gitOut = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+function suiteBase(wt) {
+  if (process.env.CP_GATE_STATE_DIR && process.env.CP_SUITE_BASE) return { ref: process.env.CP_SUITE_BASE, direct: true };
+  const br = String(gitOut(ROOT, 'rev-parse', '--abbrev-ref', 'HEAD').stdout || '').trim();
+  if (!br || br === 'HEAD') return { error: `cannot name the branch of the main checkout ${ROOT} (detached or not a repository)` };
+  const mb = gitOut(wt, 'merge-base', 'HEAD', br);
+  const sha = String(mb.stdout || '').trim();
+  return sha ? { ref: sha, direct: true } : { error: `no merge base of HEAD and the main branch "${br}": ${String(mb.stderr || '').trim()}` };
+}
+export function scriptBaseProblem(wt, file) {
+  const rel = path.relative(fs.realpathSync(wt), fs.realpathSync(file)).split(path.sep).join('/');
+  const b = suiteBase(wt);
+  if (b.error) return `--script refused: ${b.error}`;
+  const r = spawnSync('git', ['-C', wt, 'show', `${b.ref}:${rel}`], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 });
+  if (r.status !== 0) return `--script refused: ${rel} does not exist at the merge base with main (${b.ref.slice(0, 10)}): only a test script that main already has can be run as a node suite; a script added on this branch could print any result`;
+  let now; try { now = fs.readFileSync(file); } catch { return `--script refused: ${file} cannot be read`; }
+  if (Buffer.compare(now, r.stdout) !== 0) return `--script refused: ${rel} differs from the merge base with main (${b.ref.slice(0, 10)}): a script changed on this branch is not run as the suite (it could print any result); run the unchanged scripts of main, or write the result in STATUS`;
+  return null;
+}
+
 let bin, args, label;
 if (script) {
   bin = path.resolve(wt, toNative(script)); compiler = 'node'; label = 'node';
   if (!/(?:^|[\\/])(?:test_[\w.-]*|[\w.-]*_tests?)\.mjs$/i.test(bin)) die(`--script must be a test_*.mjs or *_test(s).mjs file, got ${script}`);
   if (!fs.existsSync(bin)) die(`${bin} does not exist`);
+  // gates14 (main-session decision 2): only a script that ALREADY exists at the merge base with main, byte for byte, is run as a node suite. A script added or changed on the branch could simply print
+  // "N passed, 0 failed" (gates13 audit fault 3: tests/test_fake.mjs forged a valid record). The base is the merge base of HEAD with the main checkout's branch; the test fixtures name a base
+  // commit with CP_SUITE_BASE, honoured only when CP_GATE_STATE_DIR redirects the state (a record in a redirected state folder counts for nothing in the live gate).
+  const baseProblem = scriptBaseProblem(wt, bin);
+  if (baseProblem) die(baseProblem, 3);
   args = [bin]; bin = process.execPath;   // the record names the script, below
 } else {
   const cand = compiler === 'gcc'

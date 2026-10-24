@@ -65,7 +65,7 @@ function measureHandin(name, mutate = (x) => x, { image = true } = {}) {
   wr(path.join(hd, 'MEASURE.md'), mutate(GOOD_MEASURE(hd)));
   return { w, hd };
 }
-const chk = (hd, ...a) => spawnSync(process.execPath, [path.join(root, 'tools', 'check_handin.mjs'), hd, '--main', root, ...a], { cwd: elsewhere, encoding: 'utf8', env, timeout: 600000 });
+const chk = (hd, ...a) => spawnSync(process.execPath, [path.join(root, 'tools', 'check_handin.mjs'), hd, '--main', root, ...a, ...(a.includes('build') && !a.includes('node-only') ? ['--suite', 'node-only'] : [])], { cwd: elsewhere, encoding: 'utf8', env, timeout: 600000 });
 const failedWith = (r, re) => r.status === 1 && /HAND-IN CHECK FAILED/.test(r.stderr) && re.test(r.stderr);
 const passed = (r) => r.status === 0 && /HAND-IN CHECK PASSED/.test(r.stdout);
 
@@ -128,7 +128,7 @@ function buildHandin(name, { testFile = false, failFirst = false, list = true, d
     ['a commit made since the measure phase is not listed', () => buildHandin('b_unlisted', { extraUnlisted: true }), /does not list it/, [suiteOk]],
     ['no Commits: line', () => { const x = buildHandin('b_nolist'); wr(path.join(x.hd, 'BUILD.md'), '# BUILD\nnothing here\n'); commit(x.w, 'x'); return x; }, /no "Commits:" line/, [suiteOk]],
     ['suite_node.log shows a failing test the brief does not allow', () => buildHandin('b_suite', { log: 'bad' }), /not in the brief's allowed list/, []],
-    ['no suite_node.log at all', () => buildHandin('b_nosuite', { log: 'none' }), /no suite log in the hand-in folder/, []],
+    ['no suite_node.log at all', () => buildHandin('b_nosuite', { log: 'none' }), /no suite_node.log in the hand-in folder/, []],
     ['a new test file with no fail_first_*.txt', () => buildHandin('b_nff', { testFile: true }), /no fail_first_\*\.txt/, [suiteOk]],
     ['git status not empty', () => buildHandin('b_dirty', { dirty: true }), /git status is not empty/, [suiteOk]],
   ];
@@ -176,7 +176,7 @@ const briefOf = (hd, extra) => `AGENT-CONTRACT-MARKER: v1\nHANDIN_DIR: ${hd}\nHA
   const bg = buildHandin('h_build'); const allSha = git(bg.w, 'log', '--format=%H', `${git(bg.w, 'log', '-1', '--format=%H', '--', 'docs/progress/rr/MEASURE.md').stdout.trim()}..HEAD`).stdout.trim().split('\n').filter(Boolean);
   wr(path.join(bg.hd, 'BUILD.md'), `# BUILD\nCommits: ${allSha.map((s) => s.slice(0, 10)).join(' ')}\nSuite binary: src.mjs\n`); commit(bg.w, 'final BUILD.md');
   logRun(bg.w, path.join(bg.hd, 'suite_node.log'), 'FAIL some case that is not allowed\n11 passed, 1 failed\n', { stateDir: state, exit: 1 }); commit(bg.w, 'bad suite log');
-  const rb = stopHook('ph_build', mkTr('tr_ph_build', briefOf(bg.hd, `PHASE: build\nSUITE: ${suiteBad}`)), 'PreToolUse');
+  const rb = stopHook('ph_build', mkTr('tr_ph_build', briefOf(bg.hd, `PHASE: build\nSUITE: ${suiteBad}\nSUITE: node-only`)), 'PreToolUse');
   t('A hook: a build-phase agent whose suite_node.log shows a failure the brief does not allow is refused (the hook reads the log and never runs the suite)', rb.code === 2 && /not in the brief's allowed list/.test(rb.err), rb.err.slice(0, 400));
 }
 

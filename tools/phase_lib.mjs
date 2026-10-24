@@ -143,7 +143,7 @@ const TEST_PATH = /(?:^|\/)tests?\/|(?:^|\/)test_[^/]*\.(?:mjs|cjs|js|ts|py|cpp|
 // content that registers tests wherever the file lives: doctest TEST_CASE, node:test, describe / test / it, or the repo's own runner shape (a t( "name", cond ) helper printing PASS / FAIL)
 const TEST_BODY = /\bTEST_CASE(?:_TEMPLATE)?\s*\(|\bSUBCASE\s*\(|from ['"]node:test['"]|^\s*(?:describe|test|it)\s*\(\s*['"`]|\bCHECK(?:_EQ|_FALSE)?\s*\(|\bt\(\s*['"`][^'"`]+['"`]\s*,/m;
 export function isTestFile(file, content = '') { return TEST_PATH.test(String(file).replace(/\\/g, '/')) || TEST_BODY.test(content); }
-export function buildProblems(folder, wt, { since = 0, GL = null, log = () => {}, allowFail = [] } = {}) {
+export function buildProblems(folder, wt, { since = 0, GL = null, log = () => {}, allowFail = [], nodeOnly = false } = {}) {
   const probs = [];
   const file = path.join(folder, 'BUILD.md');
   let text; try { text = stripComments(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')); } catch { return ['BUILD.md is missing in ' + folder + ': the build phase hands over through it']; }
@@ -172,7 +172,10 @@ export function buildProblems(folder, wt, { since = 0, GL = null, log = () => {}
   const lastCode = codeCommits.length ? Number(String(git('log', '-1', '--format=%ct', codeCommits[0].sha).stdout || '').trim()) * 1000 : 0;
   // the suite logs written by tools/run_suite.mjs (gates13, decision 2): suite_gcc.log (or suite_node.log for a node-suite round) is required, suite_msvc.log is checked when present
   const present = SUITE_LOGS.filter((n) => fs.existsSync(path.join(folder, n)));
-  if (!present.some((n) => n !== 'suite_msvc.log')) probs.push(`no suite log in the hand-in folder (${SUITE_LOGS.filter((n) => n !== 'suite_msvc.log').join(' or ')}): run \`node tools/run_suite.mjs <worktree>\` yourself (it runs the suite of that worktree under a time limit, writes the log and its record); a log made by any other command has no record`);
+  // gates14 (decision 2): suite_node.log stands in for suite_gcc.log ONLY when the task file declares the round node-only (a "node-only" line under "## Suite", passed on as the brief's SUITE: line);
+  // a C++ round needs a gcc record made by run_suite.mjs running the real test exe (a node script that prints a summary is not a C++ suite)
+  const needLog = nodeOnly ? 'suite_node.log' : 'suite_gcc.log';
+  if (!present.includes(needLog)) probs.push(`no ${needLog} in the hand-in folder${nodeOnly ? '' : ' (a C++ round needs the gcc suite; suite_node.log counts only when the task file declares the round node-only)'}: run \`node tools/run_suite.mjs <worktree>\` yourself (it runs the suite of that worktree under a time limit, writes the log and its record); a log made by any other command has no record`);
   for (const name of present) {
     const logFile = path.join(folder, name);
     let logText = null; try { logText = fs.readFileSync(logFile, 'utf8'); } catch { /* reported by findSuiteRun */ }

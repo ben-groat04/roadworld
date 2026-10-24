@@ -89,11 +89,11 @@ console.log('gates13 B: launches by allow-list (decision 1): contract / BRIEF-FI
   const ds = path.join(tmp, 'state-b'); mkdirs(ds);
   const launch = (description, prompt, type = 'general-purpose') => hookRun('brief_gate.mjs', { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's13', cwd: elsewhere, tool_input: { description, prompt, subagent_type: type } }, ds);
   const catTable = readJson(path.join(src, 'tools', 'hooks', 'live_launch_categories.json')).rows;
-  t('B the live table holds all 77 real descriptions, each with a launch form', catTable.length === 77 && catTable.every(([d, c, w]) => d && c && w), String(catTable.length));
+  t('B the live table holds all 81 real descriptions, each with a launch form', catTable.length === 81 && catTable.every(([d, c, w]) => d && c && w), String(catTable.length));
   const allowCats = ['clerk', 'merge', 'research', 'status', 'measure'];
   const honest = catTable.filter(([, c]) => allowCats.includes(c));
   const badAllow = honest.filter(([d, c, why]) => { const r = launch(d, `NO-CONTRACT: ${c}: ${why}\nDo the job.`); return r.status !== 0; }).map(([d]) => d);
-  t(`B every live clerk / merge / research / status description (${honest.length}) is ALLOWED with its category and its real reason`, badAllow.length === 0 && honest.length >= 35, badAllow.join(' | '));
+  t(`B every live clerk / merge / research / status description (${honest.length}) is ALLOWED with its category and its real reason`, badAllow.length === 0 && honest.length >= 39, badAllow.join(' | '));
   const reviews = catTable.filter(([, c]) => c === 'AUDIT-OF' || c === 'FIRSTLOOK-OF');
   const badRefuse = reviews.filter(([d, , why]) => { const r = launch(d, `NO-CONTRACT: ${why}\nDo the job.`); return !(r.status === 2 && /free-text NO-CONTRACT form is not accepted/.test(r.stderr) && /clerk, merge, research, status, measure/.test(r.stderr) && /AUDIT-OF/.test(r.stderr) && /FIRSTLOOK-OF/.test(r.stderr)); }).map(([d]) => d);
   t(`B every live audit and first-look description (${reviews.length}), launched as free-text NO-CONTRACT, is REFUSED and the text names the categories and AUDIT-OF / FIRSTLOOK-OF`, badRefuse.length === 0 && reviews.length === 41, badRefuse.join(' | '));
@@ -129,10 +129,12 @@ if (RUN_SUITE_OK) {
   const rs = path.join(src, 'tools', 'run_suite.mjs');
   const ds = path.join(tmp, 'state-c'); mkdirs(ds);
   const sr = await import(new URL('./suite_record.mjs', import.meta.url).href);
-  const mkWt = (name) => { const w = path.join(tmp, name); mkdirs(path.join(w, '.git')); mkdirs(path.join(w, 'tests')); return w; };
+  const mkWt = (name) => { const w = path.join(tmp, name); mkdirs(path.join(w, 'tests')); gitq(w, 'init', '-q'); fs.writeFileSync(path.join(w, 'tests', '.keep'), 'x'); gitq(w, 'add', 'tests/.keep'); gitq(w, 'commit', '-q', '-m', 'base'); return w; };
+  const headOf = (w) => String(gitq(w, 'rev-parse', 'HEAD').stdout || '').trim();
   const wt = mkWt('c_wt');
-  const fake = (w, body, name = 'test_fake_suite.mjs') => { const f = path.join(w, 'tests', name); fs.writeFileSync(f, body); return f; };
-  const run = (w, args, e = {}) => spawnSync(process.execPath, [rs, w, ...args], { encoding: 'utf8', env: envFor(ds, e), timeout: 120000 });
+  // gates14: run_suite --script runs only a script main already has, unchanged: the fixture script is COMMITTED (so it is part of the base the run is compared with); fakeAdded leaves it uncommitted (a script added on the branch)
+  const fake = (w, body, name = 'test_fake_suite.mjs') => { const f = path.join(w, 'tests', name); fs.writeFileSync(f, body); gitq(w, 'add', 'tests/' + name); gitq(w, 'commit', '-q', '-m', 'script ' + name); return f; };
+  const run = (w, args, e = {}) => spawnSync(process.execPath, [rs, w, ...args], { encoding: 'utf8', env: envFor(ds, { CP_SUITE_BASE: headOf(w), ...e }), timeout: 120000 });
   const okScript = fake(wt, "process.stdout.write('[doctest] test cases: 4 | 4 passed | 0 failed | 0 skipped\\n');");
   let r = run(wt, ['--script', okScript, '--round', 'rc']);
   const logP = path.join(wt, 'docs', 'progress', 'rc', 'suite_node.log');
@@ -144,7 +146,7 @@ if (RUN_SUITE_OK) {
   t('C findSuiteRun accepts the honest foreground run', f1.ok === true, JSON.stringify(f1));
   // background: the same record, written by the runner when it ends, not by a hook when the call returns
   const slow = fake(wt, "setTimeout(() => { process.stdout.write('[doctest] test cases: 2 | 2 passed | 0 failed | 0 skipped\\n'); }, 1500);", 'test_slow_suite.mjs');
-  const child = spawn(process.execPath, [rs, wt, '--script', slow, '--round', 'rbg'], { env: envFor(ds), stdio: 'ignore', detached: true }); child.unref();
+  const child = spawn(process.execPath, [rs, wt, '--script', slow, '--round', 'rbg'], { env: envFor(ds, { CP_SUITE_BASE: headOf(wt) }), stdio: 'ignore', detached: true }); child.unref();
   const bgLog = path.join(wt, 'docs', 'progress', 'rbg', 'suite_node.log');
   await new Promise((res) => setTimeout(res, 300));
   const early = sr.findSuiteRun(bgLog, wt, { after: 0, stateDir: ds });
@@ -283,18 +285,21 @@ console.log('gates13 F: the Unreal lane lock is a directory made with mkdir hold
   const allowF = (label, r) => t(`F ALLOW: ${label}`, r.status === 0, `status ${r.status} ${r.stderr.slice(0, 200)}`);
   const ownerText = (id) => `agent: ${id}\nround: m3ui-r3\ntime: 2026-10-23T22:40:00Z\npurpose: playtest of the road tool\n`;
   // no lock yet
-  allowF('mkdir of the lock folder (it fails by itself while held)', bash(`mkdir ${lockRel}`));
-  allowF('mkdir -p with the absolute path', bash(`mkdir -p "${lockDir.replace(/\\/g, '/')}"`));
-  allowF('New-Item -ItemType Directory (PowerShell form of the same lock)', sgF({ tool_name: 'PowerShell', tool_input: { command: `New-Item -ItemType Directory -Path ${lockRel}` } }));
+  refuseF('gates14: mkdir of the lock folder (it fails by itself while held)', bash(`mkdir ${lockRel}`));
+  allowF('gates14: the tool: node tools/lane_lock.mjs take --agent ag5 ...', bash('node tools/lane_lock.mjs take --agent ag5 --round m3 --purpose playtest'));
+  allowF('gates14: the tool release', bash('node tools/lane_lock.mjs release --agent ag5'));
+  allowF('gates14: the tool status (no id needed)', bash('node tools/lane_lock.mjs status'));
+  refuseF('gates14: mkdir -p with the absolute path', bash(`mkdir -p "${lockDir.replace(/\\/g, '/')}"`));
+  refuseF('gates14: New-Item -ItemType Directory (PowerShell form of the same lock)', sgF({ tool_name: 'PowerShell', tool_input: { command: `New-Item -ItemType Directory -Path ${lockRel}` } }));
   refuseF('the lock as a FILE: touch', bash(`touch ${lockRel}`));
   refuseF('the lock as a FILE: redirect', bash(`echo ag5 > ${lockRel}`));
   refuseF('the lock as a FILE: the Write tool on the lock path itself', wtool(lockDir, 'ag5'));
   refuseF('the lock as a FILE: New-Item -ItemType File', sgF({ tool_name: 'PowerShell', tool_input: { command: `New-Item -ItemType File ${lockRel}` } }));
-  allowF('the owner file inside the lock: the Write tool with the writer\'s own id (a free lock)', wtool(path.join(lockDir, 'owner.txt'), ownerText('ag5')));
+  refuseF('gates14: the owner file inside the lock: the Write tool with the writer\'s own id (a free lock)', wtool(path.join(lockDir, 'owner.txt'), ownerText('ag5')));
   refuseF('owner.txt content naming ANOTHER agent (agent: ag9 written by ag5)', wtool(path.join(lockDir, 'owner.txt'), ownerText('ag9')));
   refuseF('owner.txt content with no agent line at all', wtool(path.join(lockDir, 'owner.txt'), 'round: x\n'));
   refuseF('another file inside the lock (only owner.txt may live there)', bash(`echo x > ${lockRel}/notes.txt`));
-  allowF('echo "agent: ag5 ..." > owner.txt (redirect on a free lock)', bash(`echo "agent: ag5 round: m3ui-r3 time: now purpose: playtest" > ${lockRel}/owner.txt`));
+  refuseF('gates14: echo "agent: ag5 ..." > owner.txt (redirect on a free lock)', bash(`echo "agent: ag5 round: m3ui-r3 time: now purpose: playtest" > ${lockRel}/owner.txt`));
   allowF('reading owner.txt', bash(`cat ${lockRel}/owner.txt`, 'ag7'));
   allowF('listing the lock', bash(`ls ${lockRel}`, 'ag7'));
   allowF('Grep on the lock', sgF({ tool_name: 'Grep', tool_input: { pattern: 'agent', path: lockDir } }, 'ag7'));
@@ -307,7 +312,7 @@ console.log('gates13 F: the Unreal lane lock is a directory made with mkdir hold
   refuseF('a second agent removing the lock (rmdir after rm owner.txt)', bash(`rm ${absLock}/owner.txt && rmdir ${absLock}`, 'ag7'));
   refuseF('a second agent removing the lock (Remove-Item)', sgF({ tool_name: 'PowerShell', tool_input: { command: `Remove-Item -Recurse ${absLock}` } }, 'ag7'));
   allowF('the owner removing the lock (rm -r)', bash(`rm -r ${absLock}`, 'ag5'));
-  allowF('the owner rewriting owner.txt (Write tool with its own id)', wtool(path.join(lockDir, 'owner.txt'), ownerText('ag5'), 'ag5'));
+  refuseF('gates14: the owner rewriting owner.txt (Write tool with its own id)', wtool(path.join(lockDir, 'owner.txt'), ownerText('ag5'), 'ag5'));
   allowF('the main session (no agent id) is not limited: it can release any lock', hookRun('state_guard.mjs', { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: `rm -r ${absLock}` }, cwd: proj, session_id: 's13' }, ds));
   // a lock with no readable owner (made by hand, or the legacy file form) can be cleared by anyone, so a crashed agent never blocks the lane for good
   const orphan = path.join(tmp, 'f_orphan'); const oState = path.join(orphan, '.claude', 'state'); mkdirs(path.join(oState, 'unreal_lane.lock'));

@@ -170,7 +170,7 @@ console.log('gates11 B: the launch gate refuses a NO-CONTRACT launch by its DESC
 // ================================================================ C  phase checks
 const GOOD_MEASURE = (hd) => `# MEASURE\nReferences opened: 3 of 3 listed\n\n## Case A one-lane road\n| photo | measured | value |\n|---|---|---|\n| ${photos[0]} | carriageway width | 3.4 m |\n| ${photos[1]} | lane width | 1.0 lane widths |\n| ${photos[2]} | verge | 150 cm |\n\nOverlay: ${path.join(hd, 'trace_a.png')}\n`;
 function measureHandin(name, mutate = (x) => x) { const w = repo(name); const hd = path.join(w, 'docs', 'progress', 'rr'); mk(hd); pngFile(path.join(hd, 'trace_a.png'), 80, 60); wr(path.join(hd, 'MEASURE.md'), mutate(GOOD_MEASURE(hd))); return { w, hd }; }
-const chk = (hd, ...a) => spawnSync(process.execPath, [path.join(root, 'tools', 'check_handin.mjs'), hd, '--main', root, ...a], { cwd: elsewhere, encoding: 'utf8', env, timeout: 600000 });
+const chk = (hd, ...a) => spawnSync(process.execPath, [path.join(root, 'tools', 'check_handin.mjs'), hd, '--main', root, ...a, ...(a.includes('build') && !a.includes('node-only') ? ['--suite', 'node-only'] : [])], { cwd: elsewhere, encoding: 'utf8', env, timeout: 600000 });
 const failedWith = (r, re) => r.status === 1 && /HAND-IN CHECK FAILED/.test(r.stderr) && re.test(r.stderr);
 const passed = (r) => r.status === 0 && /HAND-IN CHECK PASSED/.test(r.stdout);
 console.log('gates11 C: measure phase (decision 5): photo files must exist, M = the brief\'s count, one table per case of the brief');
@@ -209,7 +209,7 @@ function buildHandin(name, o = {}) {
   t('C build: a ctest log with only the allowed failure passes', passed(r), r.stderr + r.stdout);
   const cases = [
     ['no commit touches code (a .md note only)', { code: false }, B, /touches code or tests outside the hand-in folder/],
-    ['no suite_node.log', { log: null }, B, /no suite log in the hand-in folder/],
+    ['no suite_node.log', { log: null }, B, /no suite_node.log in the hand-in folder/],
     ['log older than the last code commit', { logOld: true }, B, /older than the last code commit/],
     ['log with no summary (a half-written file)', { log: 'compiling...\nrunning...\n' }, B, /holds no doctest/],
     ['log is a timeout (exit=124)', { log: '[doctest] test cases: 5 | 5 passed | 0 failed | 0 skipped\nexit=124\n' }, B, /time limit/],
