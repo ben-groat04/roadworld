@@ -204,6 +204,7 @@ console.log('gates14 C: tools/lane_lock.mjs writes owner.txt; every other write 
   allow('the main session (no agent id) writes by hand', spawnSync(process.execPath, [path.join(src, 'tools', 'hooks', 'state_guard.mjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: `mkdir ${P}/${lockRel}` }, cwd: proj, session_id: 's14' }), encoding: 'utf8', env: baseEnv({ CP_MAIN_ROOT: proj }) }));
   // the owner may remove a lock it holds with rm; another agent may not (unchanged from gates13)
   mk(path.join(proj, '.claude', 'state', 'unreal_lane.lock')); fs.writeFileSync(path.join(proj, '.claude', 'state', 'unreal_lane.lock', 'owner.txt'), 'agent: ag5\nround: r\n');
+  fs.appendFileSync(path.join(proj, '.claude', 'state', 'gate.log'), JSON.stringify({ ts: new Date().toISOString(), gate: 'lane', decision: 'take', agent: 'ag5', id: 'g14', round: 'r', purpose: 'p' }) + '\n');   // gates15: the holder is the log's, not owner.txt's
   refuse('rm -r <lock> by ag7 while ag5 holds it', bash(`rm -r ${P}/${lockRel}`, 'ag7'));
   allow('rm -r <lock> by its owner ag5', bash(`rm -r ${P}/${lockRel}`, 'ag5'));
 }

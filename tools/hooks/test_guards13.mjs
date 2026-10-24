@@ -66,7 +66,7 @@ const offenders = [];
 for (const f of hookFiles) fs.readFileSync(path.join(src, 'tools', 'hooks', f), 'utf8').split('\n').forEach((line, i) => {
   if (!/new RegExp\(/.test(line) || /^\s*(\/\/|const RE_|const [A-Z_]+ = new RegExp)/.test(line)) return;
   if (/reEsc\(|safeRe\(/.test(line)) return;
-  if (/NO_CONTRACT_CATEGORIES|String\.raw|\$\{file\}|'\^' \+ key|LEAD \+|WORD \+|ORDER \+/.test(line)) return;   // constant sources
+  if (/NO_CONTRACT_CATEGORIES|export function globRe|String\.raw|\$\{file\}|'\^' \+ key|LEAD \+|WORD \+|ORDER \+/.test(line)) return;   // constant sources
   offenders.push(`${f}:${i + 1}`);
 });
 t('H no hook builds a RegExp from other text without reEsc/safeRe', offenders.length === 0, offenders.join(' '));
@@ -89,7 +89,7 @@ console.log('gates13 B: launches by allow-list (decision 1): contract / BRIEF-FI
   const ds = path.join(tmp, 'state-b'); mkdirs(ds);
   const launch = (description, prompt, type = 'general-purpose') => hookRun('brief_gate.mjs', { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's13', cwd: elsewhere, tool_input: { description, prompt, subagent_type: type } }, ds);
   const catTable = readJson(path.join(src, 'tools', 'hooks', 'live_launch_categories.json')).rows;
-  t('B the live table holds all 81 real descriptions, each with a launch form', catTable.length === 81 && catTable.every(([d, c, w]) => d && c && w), String(catTable.length));
+  t('B the live table holds all 90 real descriptions, each with a launch form', catTable.length === 90 && catTable.every(([d, c, w]) => d && c && w), String(catTable.length));
   const allowCats = ['clerk', 'merge', 'research', 'status', 'measure'];
   const honest = catTable.filter(([, c]) => allowCats.includes(c));
   const badAllow = honest.filter(([d, c, why]) => { const r = launch(d, `NO-CONTRACT: ${c}: ${why}\nDo the job.`); return r.status !== 0; }).map(([d]) => d);
@@ -305,6 +305,7 @@ console.log('gates13 F: the Unreal lane lock is a directory made with mkdir hold
   allowF('Grep on the lock', sgF({ tool_name: 'Grep', tool_input: { pattern: 'agent', path: lockDir } }, 'ag7'));
   // the lock is now held by ag5 (a real owner file)
   fs.mkdirSync(lockDir, { recursive: true }); fs.writeFileSync(path.join(lockDir, 'owner.txt'), ownerText('ag5'));
+  fs.appendFileSync(path.join(path.dirname(lockDir), 'gate.log'), JSON.stringify({ ts: new Date().toISOString(), gate: 'lane', decision: 'take', agent: 'ag5', id: 'g13', round: 'r', purpose: 'p' }) + '\n');   // gates15: the holder is the log's
   const absLock = lockDir.replace(/\\/g, '/');
   refuseF('a second agent rewriting owner.txt of a held lock (Write tool)', wtool(path.join(lockDir, 'owner.txt'), ownerText('ag7'), 'ag7'));
   refuseF('a second agent rewriting owner.txt (redirect)', bash(`echo "agent: ag7" > ${absLock}/owner.txt`, 'ag7'));

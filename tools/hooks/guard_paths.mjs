@@ -2,7 +2,7 @@
 // except through reEsc / safeRe (gates13 decision 8).
 import os from 'node:os';
 import path from 'node:path';
-import { reEsc, safeRe, SECRET_HOME_DIR } from './lib.mjs';
+import { reEsc, safeRe, globRe, SECRET_HOME_DIR } from './lib.mjs';
 
 export const norm = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
 export const winPath = (p) => (/^\/([a-zA-Z])(\/|$)/.test(p) ? p[1] + ':' + p.slice(2) : p);
@@ -39,7 +39,7 @@ export function globSegRe(g) {
       if (j > i + 1) { const cls = g.slice(i + 1, j).replace(/^!/, '^').replace(/\\/g, '\\\\'); r += '[' + cls + ']'; i = j; } else r += '\\[';
     } else r += reEsc(c);
   }
-  return safeRe(r + '$', 'i');
+  return globRe(r + '$', 'i');
 }
 
 // Can the glob (an absolute path whose segments may hold wildcards) name the target folder, or something below it ('into'), or the folder or one of its parents ('above', so that a

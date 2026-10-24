@@ -1,5 +1,5 @@
 {
- "note": "gates13 decision 1: each of the 81 real NO-CONTRACT descriptions of the main gate.log up to 24 Oct 2026 (the four of 23-24 Oct added by gates14) mapped to the launch form that is now the honest one: AUDIT-OF / FIRSTLOOK-OF (make_brief --audit / --first-look) for audits and first looks, else NO-CONTRACT category clerk|merge|research|status|measure. Used by test_guards13 and written into the gates13 STATUS table.",
+ "note": "gates13 decision 1: each of the 90 real NO-CONTRACT descriptions of the main gate.log up to 24 Oct 2026 (the four of 23-24 Oct added by gates14) mapped to the launch form that is now the honest one: AUDIT-OF / FIRSTLOOK-OF (make_brief --audit / --first-look) for audits and first looks, else NO-CONTRACT category clerk|merge|research|status|measure. Used by test_guards13 and written into the gates13 STATUS table. gates15 added the nine descriptions of 23-24 Oct that the gates14 notice listed as unmapped.",
  "rows": [
   [
    "Hook live test: exempt launch",
@@ -405,6 +405,51 @@
    "Commit gate records, remove worktrees",
    "clerk",
    "clerk commit of the finished gate records plus removal of merged worktrees; no code."
+  ],
+  [
+   "Clerk: suitespeed brief and bookkeeping",
+   "clerk",
+   "finish the suitespeed task file and brief, commit owed docs in main, remove the m3ui-r2 worktree"
+  ],
+  [
+   "M6 research: lighting columns, cover",
+   "research",
+   "groundwork for milestone M6 (world cover and road lighting columns) task file, read-only plus reference photo fetching"
+  ],
+  [
+   "Clerk: update pvetrees task, worktree",
+   "clerk",
+   "bring docs/tasks/pvetrees.md up to the current gate format and prepare its worktree and brief"
+  ],
+  [
+   "Clerk: tjunction7 waiver keys, re-check",
+   "clerk",
+   "add the main session's accepted allow_waiver keys to docs/tasks/tjunction2.md and re-run the tjunction7 hand-in check"
+  ],
+  [
+   "Clerk: draft m6lights task file",
+   "clerk",
+   "write docs/tasks/m6lights.md from the research draft and the main session's decisions, create its worktree and build the brief"
+  ],
+  [
+   "Performance architecture review (whole pipeline)",
+   "research",
+   "read-only performance architecture review of the whole player-edit pipeline, looking for fundamental speed-ups"
+  ],
+  [
+   "Clerk: free disk from finished worktrees",
+   "clerk",
+   "free disk space by removing finished worktrees and build output of finished rounds"
+  ],
+  [
+   "Trace photo asphalt edges",
+   "measure",
+   "measurement-only agent for round tjunction8; traces photo edges into one JSON file, writes no code and changes no sim_core, tests or renders"
+  ],
+  [
+   "Clerk: remove merged old worktrees",
+   "clerk",
+   "free disk by removing old merged clean roadworld-wt-* worktrees, report the rest"
   ]
  ]
 }

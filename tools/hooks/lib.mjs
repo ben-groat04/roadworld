@@ -200,3 +200,6 @@ export function laneHolder(stateDir = STATE_DIR) {
   for (const l of txt.split('\n')) { if (!l.includes('"gate":"lane"')) continue; const o = parseJson(l); if (o) entries.push(o); }
   return laneFold(entries);
 }
+// gates15 (fail-open 24 Oct 08:46Z: a command word with an unclosed "[" crashed a hook): the compile of a GLOB pattern. A pattern the engine rejects must REFUSE the command, not crash the hook and not
+// pass it: on failure this returns a regex that matches everything, so every "can this glob name the secret / a writer script" test answers yes.
+export function globRe(src, flags = '') { try { return new RegExp(src, flags); } catch { return /(?:)/; } }

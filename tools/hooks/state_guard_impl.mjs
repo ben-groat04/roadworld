@@ -31,7 +31,7 @@
 // match, a settings change made by a program. It reads tool input text (and the cwd of the event) and nothing else. FAIL OPEN (logged) on any internal error.
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, log, readStdin, parseJson, reEsc, safeRe, laneHolder, SECRET_HOME_DIR } from './lib.mjs';
+import { ROOT, log, readStdin, parseJson, reEsc, safeRe, globRe, laneHolder, SECRET_HOME_DIR } from './lib.mjs';
 import { norm, winPath, hasGlob, absOf, braceExpand, globReaches, globSegRe, touchesSecretHome } from './guard_paths.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
@@ -96,7 +96,7 @@ export function archiveKind(verb, av) {
   if (verb === 'find' && av.includes('-delete')) return 'a find -delete';
   return null;
 }
-const globToRe = (g) => safeRe('^' + reEsc(g).replace(/\\\*/g, '.*').replace(/\\\?/g, '.') + '$', 'i');
+const globToRe = (g) => globRe('^' + reEsc(g).replace(/\\\*/g, '.*').replace(/\\\?/g, '.') + '$', 'i');
 // does a glob word (possibly with a directory part) name a writer script?
 const globNamesWriter = (w) => { const base = String(w).replace(/^.*[\\/]/, ''); return hasGlob(base) && WRITER_FILES.some((f) => globToRe(base.replace(/\[[^\]]*\]/g, '?')).test(f)); };
 
