@@ -93,6 +93,11 @@ Gates (numbers, all must hold at hand-in):
 - The tile-size gate of Fault 2 passes. The gradelayer branch's layer tests are NOT run (not on main).
 - Existing cases keep their numbers: straight_crossfall, cutting_toe, embankment_end, bridge_valley, tunnel_curved_grade; the other r8 C++ cases keep their invariant counts.
 - No Unreal build. Renders are required (same-camera before/after composites, section sheets), so the hand-in is visual.
+Main session accepted these waiver rows of grade-r14 WAIVERS.md (24 Oct 2026: R1, R2, F1, G1-G6; R3 and D1 are NOT accepted):
+allow_waiver guarded_check:test_grading.cpp:if (pl.type == SectionType::Ro
+allow_waiver should_fail:// (prototypes/road-draw/tools/scene.mjs
+allow_waiver assertion_retargeted:test_grading.cpp
+allow_waiver check_false_swap:test_grading.cpp
 
 ## Launched
 This job (grade-r10 builder, then a fresh auditor as soon as the hand-in passes `check_handin.mjs`, then gradelayer round 2). Independent items inside the job, one agent: (a) confirm root causes 1 and 2; (b) plan structs and plan-level invariants on synthetic terrain; (c) ribbons and raster; (d) wall meshes from ribbons; (e) tile-size gate; (f) reference fetch and technical drawings; (g) layer hand-over patch. Items (f) and (g) are research or patch writing and may be split off to a second Sonnet agent working in a separate scratch folder if a builder slot is free; they never touch `sim_core/src/grading.cpp`. It needs a builder slot (at most 3-4 live builders; roundabout2, tjunction2 and gates2 are running, pvetrees is not). It needs no Unreal lane.

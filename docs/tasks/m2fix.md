@@ -58,6 +58,14 @@ Gaps from the M2 auditor (the screenshots decide, not this list; numbers are the
 Not in this job (stay as gaps, list them unchanged in STATUS.md): the M3 items (profile panel, G2 tick, total ribbon width, tuning/perf/help panels, colour modes, edit mode, offset-guide arc, line-batch overlay replacement), the earthworks items (regrade after commit, road profile against ground, bridges and tunnel meshes, vertical-gap check), the sandbox look.
 Playtest gates: milestone 1 and 2 checks must still pass 51/51 after your changes (rerun once before believing a mouse-input failure; report every rerun), plus your new assertions; each new assertion shown to FAIL on the pre-fix behaviour (state which build/commit you used to show it). Composites (game | prototype) for every state you touched, opened and named. Clean build of the plugin with `unreal\tools\Build-Editor.ps1 -EngineRoot C:\UE_5.8 -MaxParallelActions 1`; no new compiler warnings.
 
+## Gates
+Main session accepted the five waiver rows of m2fix5c WAIVERS.md (24 Oct 2026):
+allow_waiver is_rough:world_cover
+allow_waiver tolerance:chord_tolerance
+allow_waiver guarded_check:test_graded_ground.cpp:if (!diagonal) CHECK(same_tile
+allow_waiver approx:test_graded_ground.cpp
+allow_waiver approx:test_ground_imprint.cpp
+
 ## Launched
 This job: one Unreal builder (Sonnet), then a fresh auditor, then a merger. Independent items: the HUD and cue fixes (1, 2, 5, 6), the refused-crossing ghost (3), the open-stroke undo (4), the harness work (7, 8) and the two pictures (9) can be coded in parallel in one worktree by one agent; they all need the Unreal lane for builds and runs, so they are one lane, not several agents. It starts after the roadtool3 merge lands and the Unreal lane is free (pvetrees, which has no agent running yet, also needs the lane: one at a time, pvetrees only needs it for editor sessions).
 

@@ -115,3 +115,20 @@ Verdict: send back (roundabout6 owed).
 ## 23 Oct 2026: m3ui-r2 - SENT BACK, NOT ACCEPTED
 Main session first look 21:30, before the audit. Opened composites 04, 23, 37. Top 3: (1) not the same state as the prototype (04 straight 88 m vs curved 224 m; 23 straight vs curved); (2) ground still checker noise, not the ported prototype terrain; (3) 37 shows "Residential street" vs "A road / dual c'way". Improved: slider tracks present. 37 picture-record lines waived (Unreal frames).
 Verdict: send back (m3ui-r3).
+
+m3ui-r3 main session first look, 24 Oct 2026 ~10:35, BEFORE any AUDIT.md. Opened: composite_c27_finished.png, composite_c15_grade.png (prototype | now run33 | before).
+Top 3:
+1. c27: the finished road in 'now' is a pale grey slab with a dotted texture and NO centre or edge lines; 'before' (phase 1) had markings. Prototype: dark road, markings, earth batter. Regression, and decision 3 (road colour) not done.
+2. Ground in every frame: washed, blotchy grey-green camouflage, far from the prototype's even grass green; c15 has no lake/bank where the prototype has one.
+3. c15 HUD and profile panel match the prototype well; ghost road fine.
+Would never be built: a road with no markings, no verge or batter, lying as a pale slab on the ground.
+
+pvetrees1 main session first look, same time. Opened: docs/reference/_compare/pvetrees1/A67_vs_67.jpg.
+Top 3:
+1. Hedges are rows of separate shrub blobs with gaps at the base, not a continuous clipped hedge face with a grass verge in front.
+2. Tree: structure is good (real branching), but crown is upright and leaves dark and glossy; photo is a spreading oak dome in spring yellow-green.
+3. Stand-in scene: flat green ground, purple-grey road with no markings or verge; not a road placed in the game world.
+Would never be built: the gappy shrub row as a field hedge.
+
+24 Oct 13:55 grade-r14 phase 1c portal section sheet (main session): wing top only 0.13 m above retained ground, not ground + parapet; sent to phase 1d.
+24 Oct 14:10 tjunction8 phase 1 outline_90 (main session, opened aerial/90): no ghost island in the photo; south mouth corner off by several metres; sent to phase 2.

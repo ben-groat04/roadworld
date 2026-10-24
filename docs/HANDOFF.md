@@ -12,7 +12,7 @@ Written 11 Oct 2026, about 19:30, from git and the files, not from older text. D
 City Painter (repo `roadworld`): a photoreal sandbox city builder in Unreal 5.8. The player draws roads in an open seeded world and everything in the picture (surface, markings, earthworks, verge, lights, planting) is generated from the road plus a `world_cover` layer; nothing is hand-dressed. The photoreal target is real UK photos in `docs/reference/` (private). `sim_core/` (headless C++20) holds all logic; `unreal/` is a thin host; the browser prototype `prototypes/road-draw` is the UI spec. UK is only the first region pack. Priority #1: keep the Unreal side structured (`docs/unreal-architecture.md`).
 
 ## Milestones: the single copy of state (scope: `docs/unreal-game-plan.md` section C; detail and branches: `docs/QUEUE.md`)
-Two tracks: ENGINE (sim_core, many parallel worktrees) feeds GAME (Unreal, one build/run at a time via lock dir `.claude/state/unreal_lane.lock`). GAME order is fixed: M2 -> M3 -> M5 -> M6 -> M7 -> M4 -> M8.
+Two tracks: ENGINE (sim_core, many parallel worktrees) feeds GAME (Unreal, one build/run at a time via lock dir `.claude/state/unreal_lane.lock`, taken and released only with `node tools/lane_lock.mjs take --agent <id> --round <r> --purpose <text>` / `release`). GAME order is fixed: M2 -> M3 -> M5 -> M6 -> M7 -> M4 -> M8.
 | M | Player can | State, 11 Oct evening |
 |---|---|---|
 | M1 | fly over the hills | DONE (on main) |
