@@ -86,6 +86,11 @@ Worktree `C:\Users\bgbg0\Documents\Programming\roadworld-wt\gates10`, branch `ag
 - You own `tools/`, `docs/templates/`, and `.claude/settings.json` in your worktree only.
 - No Unreal. Do not push or merge.
 
+## Gates
+allow_waiver deleted_gate_test:test_hooks.mjs:a read-only "review of docs/progress"
+allow_waiver deleted_gate_test:test_hooks.mjs:a review that names no progress folder: allowed
+(Main session, 23 Oct 2026: gates12 decision 3 reverses what these two tests asserted; a review of another agent's work is now refused as NO-CONTRACT. They are rewritten under new names, not weakened.)
+
 ## Faults
 Known: the 11 items in gates9 AUDIT.md, and the missing gate coverage for auditor and first-look launches (part B).
 

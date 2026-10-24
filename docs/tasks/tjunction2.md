@@ -30,7 +30,7 @@ Start: worktree C:\Users\bgbg0\Documents\Programming\roadworld-wt\tjunction2, br
 
 ## Gates
 scene_check >= 20/21 (baseline 20/21)
-ctest failed_assertions == 2
+ctest failed_assertions <= 4 (2 known pier assertions + 2 from the roundabout strip test marked may_fail in tjunction6, owned by the roundabout round)
 No new test waiver, skip or should_fail. Tests are parameterised over angle (90, 60, 45 degrees, both hands) and driving side. Every test's expected value names the photo measurement or the rule in `docs/road-marking-rules.md` it comes from.
 
 ## Faults
