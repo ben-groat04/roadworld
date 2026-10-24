@@ -1,0 +1,31 @@
+remove_agent_worktree.ps1
+  ok   fixture: the junction in the worktree reaches the main checkout photos
+  ok   a clean worktree with the docs\reference junction: removed (exit 0)
+  ok   ...and the photos in the main checkout are all still there (3 files)
+  ok   ...the output says the junction was unlinked as a link and the count was checked
+  ok   ...the branch is kept without -DeleteBranch
+  ok   a worktree given by full path, with a SECOND junction elsewhere inside it: removed, both targets survive
+  ok   -DeleteBranch removes a merged branch (git branch -d)
+  ok   a worktree with uncommitted files: REFUSED by git worktree remove (no --force), exit 1, files untouched
+  ok   ...but the junction was already unlinked and the photos are intact
+  ok   -Force removes it after the links are gone, photos intact
+  ok   a name that is not a worktree folder: refused
+  ok   a folder under roadworld-wt that git does not know as a worktree: refused, left alone
+  ok   the main checkout itself: refused
+  ok   a registered worktree that is not under roadworld-wt: refused (not an agent worktree path)
+  ok   after every case above the photos are still 3 files
+  ok   the script never uses a recursive delete itself (no Remove-Item -Recurse, rm -r, rmdir /s)
+  ok   new_agent_worktree.ps1 tells the agent how to remove the worktree (the script, never a recursive delete)
+  ok   new_agent_worktree.ps1 no longer recursive-deletes anything
+new_agent_worktree.ps1 (no junction) and unlink_reference_junctions.ps1
+  ok   new_agent_worktree.ps1 in the scratch repo: worktree created (exit 0)
+  ok   ...it has NO docs\reference link or folder (main session decision: nothing in a worktree leads to the photos)
+  ok   ...and the output names the photos by absolute path in the main checkout
+  ok   unlink script -WhatIfOnly -All: lists the two reference links and removes nothing
+  ok   -Name old1: its docs\reference link is removed (link only), the other worktree is untouched, the photos are all there
+  ok   -All: the second reference link goes, a link to somewhere else (build\other) is LEFT ALONE and its target survives
+  ok   no -Name and no -All: refused
+  ok   an unknown worktree name: refused
+  ok   the script never uses a recursive delete (link-only cmd /c rmdir)
+
+27 passed, 0 failed (temp dir C:\Users\bgbg0\AppData\Local\Temp\wttools-tlgWyC)

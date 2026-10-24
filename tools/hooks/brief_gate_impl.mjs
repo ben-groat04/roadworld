@@ -6,7 +6,7 @@
 // changes to agents, so a broken gate that blocked every launch would deadlock the whole session.
 //
 // Allowed: exempt types (Explore, Plan, claude-code-guide, statusline-setup); a prompt that passes checkBrief();
-// a prompt with a "NO-CONTRACT: <reason, >= 20 chars>" line (research, merges, read-only checks);
+// a prompt with a "NO-CONTRACT: <category>: <reason, >= 20 chars>" line, category one of clerk, merge, research, status, measure (gates13: the allow-list; free text is refused);
 // a prompt with "BRIEF-FILE: <absolute path>" whose file passes checkBrief().
 // a prompt (or BRIEF-FILE) with "AUDIT-OF: <absolute progress folder>" is an auditor launch (tools/make_brief.mjs --audit):
 // allowed without NO-CONTRACT, but refused when the folder is not absolute, when it also carries HANDIN_DIR (an auditor is not a builder),
@@ -15,8 +15,9 @@
 // Every decision is one JSON line in .claude/state/gate.log of the main checkout.
 import fs from 'node:fs';
 import path from 'node:path';
-import { log, readStdin, parseJson, checkBrief, noContractReason, briefFileOf, EXEMPT_TYPES } from './lib.mjs';
+import { log, readStdin, parseJson, checkBrief, noContractParse, NO_CONTRACT_CATEGORIES, briefFileOf, EXEMPT_TYPES } from './lib.mjs';
 import { auditOfIn, pastedFaultList } from './audit_lib.mjs';
+import { firstLookOfIn } from './phase_marks.mjs';
 
 // True when the text asks an agent to write / create an AUDIT.md (or to be "the auditor" that writes one). Mentions of the file are not enough.
 export function asksToWriteAudit(text) {
@@ -59,7 +60,31 @@ export async function main() {
       '\nBuild the auditor brief with `node tools/make_brief.mjs <task-file> --audit <progress-folder>`.\n');
     return 2;
   }
-  const nc = noContractReason(prompt);
+  // gates10: a first-look launch (make_brief --first-look): FIRSTLOOK-OF in the prompt or its BRIEF-FILE. Same shape as an auditor: absolute folder, never a builder (no HANDIN_DIR).
+  let flText = prompt;
+  let fo = firstLookOfIn(prompt);
+  if (!fo && briefFileOf(prompt)) { try { flText = fs.readFileSync(briefFileOf(prompt), 'utf8'); fo = firstLookOfIn(flText); } catch { /* handled below as a normal brief */ } }
+  if (fo) {
+    const why = [];
+    if (!path.win32.isAbsolute(fo) && !path.posix.isAbsolute(fo)) why.push(`FIRSTLOOK-OF must be an absolute path (got "${fo}")`);
+    if (/^HANDIN_DIR:/m.test(flText)) why.push('a FIRSTLOOK-OF brief must not also carry HANDIN_DIR (a first look is not a builder; make the brief with make_brief.mjs --first-look)');
+    if (!why.length) { log({ ...base, decision: 'allow', reason: 'FIRSTLOOK-OF', firstlook_of: fo }); return 0; }
+    log({ ...base, decision: 'deny', reason: 'FIRSTLOOK-OF refused', missing: why });
+    process.stderr.write('LAUNCH REFUSED by the brief gate (FIRSTLOOK-OF launch):\n - ' + why.join('\n - ') + '\nBuild the first-look brief with `node tools/make_brief.mjs <task-file> --first-look <progress-folder>`.\n');
+    return 2;
+  }
+  // gates13 (main-session decision 1): launches by ALLOW-LIST, not by word list. A launch carries the contract (or BRIEF-FILE), AUDIT-OF, FIRSTLOOK-OF, or a line
+  // `NO-CONTRACT: <category>: <reason, 20+ characters>` with the category exactly one of clerk, merge, research, status, measure. Anything else is refused whatever its wording (the 23 Oct audits
+  // and first looks all passed as free-text NO-CONTRACT; a vocabulary list was evaded by "Vet", "QA", "Proof-read"...). The old free-text form is refused with the categories named.
+  const ncp = noContractParse(prompt);
+  if (ncp.form === 'free' || ncp.form === 'short') {
+    log({ ...base, decision: 'deny', reason: 'NO-CONTRACT free-text form refused', no_contract_reason: ncp.text });
+    process.stderr.write('LAUNCH REFUSED by the brief gate: ' + (ncp.form === 'short' ? 'the NO-CONTRACT reason is under 20 characters.' : 'the free-text NO-CONTRACT form is not accepted any more.') +
+      ' A launch carries ONE of: the contract (build it with `node tools/make_brief.mjs <task-file> --round <name>`, or a BRIEF-FILE line), `AUDIT-OF: <progress folder>` (`make_brief.mjs --audit`), `FIRSTLOOK-OF: <progress folder>` (`make_brief.mjs --first-look`), or a line `NO-CONTRACT: <category>: <reason, 20+ characters>` with category exactly one of ' +
+      NO_CONTRACT_CATEGORIES.join(', ') + '. An audit or first look is never one of those categories.\n');
+    return 2;
+  }
+  const nc = ncp.form === 'ok' ? ncp.reason : null;
   // A NO-CONTRACT launch cannot be asked to WRITE an AUDIT.md: that file only counts when an auditor launched with make_brief --audit (marker AUDIT-OF) writes it and the finish
   // gate records it. Only prompts that ask for the file to be written are refused: mergers, clerks and readers may mention AUDIT.md, audits and progress folders freely
   // (gates3 audit fault 3: the wording rule refused merge and bookkeeping prompts and was evaded by synonyms). A synonym that slips past this wording buys nothing:
@@ -74,7 +99,7 @@ export async function main() {
     }
   }
   if (nc) {
-    log({ ...base, decision: 'allow', reason: 'NO-CONTRACT', no_contract_reason: nc });
+    log({ ...base, decision: 'allow', reason: 'NO-CONTRACT', no_contract_reason: nc, no_contract_category: ncp.category });
     return 0;
   }
   const own = checkBrief(prompt);
@@ -100,7 +125,7 @@ export async function main() {
   process.stderr.write(
     'LAUNCH REFUSED by the brief gate (tools/hooks/brief_gate.mjs). The subagent prompt is missing:\n - ' + missing.join('\n - ') +
     '\nFix: build the brief with `node tools/make_brief.mjs <task-file> --round <name>` and send its output as the prompt. ' +
-    'For work that is not a build/review hand-in (research, merge, read-only check) add a line `NO-CONTRACT: <reason, at least 20 characters>`. ' +
+    'Allowed launch forms: the contract, `AUDIT-OF: <folder>` (make_brief.mjs --audit), `FIRSTLOOK-OF: <folder>` (make_brief.mjs --first-look), or for non-hand-in work a line `NO-CONTRACT: <category>: <reason, at least 20 characters>` with category exactly one of clerk, merge, research, status, measure. ' +
     'To point at a file instead, add `BRIEF-FILE: <absolute path>` (the file must pass the same test).\n');
   return 2;
 }

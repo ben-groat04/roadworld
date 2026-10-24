@@ -45,6 +45,14 @@
               "${CLAUDE_PROJECT_DIR}/tools/hooks/git_guard.mjs"
             ],
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/tools/hooks/time_guard.mjs"
+            ],
+            "timeout": 15
           }
         ]
       },

@@ -118,7 +118,7 @@ console.log('gates8 A6 the junction walk skips build output folders; real Unreal
   t('A6 linksBelow(Unreal-style worktree with 400 build files and a link inside Intermediate) is walked (H3, gates9): the buried link IS found, not capped', r.length === 1 && !r.capped, JSON.stringify({ n: r.length, capped: r.capped, seen: r.seen }));
   t('A6 ... and a link outside the build folders is found (docs\\reference in the link tree)', lb(wtJ).length === 1);
   t('A6 ... and a link NAMED like a build folder is still found as an entry', (() => { const w = addWt('b1'); fs.rmSync(path.join(w, 'build'), { recursive: true }); fs.symlinkSync(photos, path.join(w, 'build'), 'junction'); const x = lb(w); try { fs.rmdirSync(path.join(w, 'build')); } catch { /* left */ } return x.length === 1; })());
-  t('A6 git clean -fd in the Unreal-style worktree (link buried in Intermediate) is refused (H3, gates9), the walk costs < 3 s', dg('git clean -fd', wtU).length > 0 && Date.now() - t0 < 3000);
+  { const t1 = Date.now(); const refusedU = dg('git clean -fd', wtU).length > 0; const ms = Date.now() - t1; /* gates10 (gates9 audit fault 7): the limit is back at 2 s (the first form of this test); the measured cost is in the message */ t(`A6 git clean -fd in the Unreal-style worktree (link buried in Intermediate) is refused (H3, gates9); the walk costs ${ms} ms (limit 2000)`, refusedU && ms < 2000, `refused=${refusedU}, ${ms} ms`); }
   t('A6 the cap still refuses: a 1 ms budget on a walkable tree reports capped', (() => { const x = lb(wt, { ms: 0, limit: 1 }); return x.capped === true; })());
 }
 

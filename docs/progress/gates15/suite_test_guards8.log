@@ -1,0 +1,74 @@
+gates8 A1 git stash list|show: reading the stash is not a write
+  ok   A1 git guard, builder with HANDIN_DIR outside main (G2) and any subagent (G1): 8 cases
+  ok   A1 delete guard: 3 cases
+gates8 A2 path-less git clean in a worktree that holds no junction or symlink
+  ok   A2 git clean: 12 cases
+gates8 A3 robocopy /MIR into a worktree build dir
+  ok   A3 robocopy: 9 cases
+gates8 A4 short concrete needs lines (gates_lib.needsIsConcrete)
+  ok   A4 needsIsConcrete: 8 short concrete lines pass, 7 vague ones do not
+gates8 A5 git add -u . and git add -n . in main
+  ok   A5 staging: 9 cases
+gates8 A6 the junction walk skips build output folders; real Unreal worktrees measured read-only
+  ok   A6 linksBelow(Unreal-style worktree with 400 build files and a link inside Intermediate) is walked (H3, gates9): the buried link IS found, not capped
+  ok   A6 ... and a link outside the build folders is found (docs\reference in the link tree)
+  ok   A6 ... and a link NAMED like a build folder is still found as an entry
+  ok   A6 git clean -fd in the Unreal-style worktree (link buried in Intermediate) is refused (H3, gates9); the walk costs 10 ms (limit 2000)
+  ok   A6 the cap still refuses: a 1 ms budget on a walkable tree reports capped
+gates8 C1 iex / Invoke-Expression "<command>" is a command
+  ok   C1 delete guard: 9 cases
+  ok   C1 git guard: 6 cases
+  ok   C1 state guard: 4 cases
+gates8 C2 a name filter that can match docs, reference or a photo folder name, from main
+  ok   C2 filters: 12 cases
+gates8 C3 del /s with a wildcard
+  ok   C3 del /s: 10 cases
+gates8 C4 powershell "cmd" without -Command
+  ok   C4 delete guard: 7 cases
+  ok   C4 git guard: 3 cases
+gates8 C5 cd /d, literal GIT_DIR= / GIT_WORK_TREE=, git add .\
+  ok   C5 git guard: 16 cases
+  ok   C5 state guard cd /d: 2 cases
+  ok   C5 delete guard cd /d: 2 cases
+gates8 C6 the G2 write list
+  ok   C6 G2: a builder with HANDIN_DIR outside main writes nothing to main; reading stays allowed: 34 cases
+gates8 E1 locked tests (lock_guard.mjs as a process, real transcripts)
+  ok   E1 lock_guard process: 77 real payloads (refusal text exact: "locked test: written by the auditor; make it pass, or write BLOCKED")
+  ok   E1 a Read of a locked file: not this hook's business (exit 0)
+  ok   E1 bad stdin: exit 0 and a FAIL-OPEN line for lock_guard in the (isolated) gate.log
+  ok   E1 a refusal is logged as deny with the agent id
+  ok   E1 the locked files are untouched after every case (nothing here ran a command)
+  ok   E1 settings.json wires lock_guard.mjs on Write|Edit|NotebookEdit|Bash|PowerShell (timeout 15)
+gates8 E2 checkpoint hand-back (handin_gate.mjs and check_handin.mjs --checkpoint, real transcripts)
+  ok   E2 --checkpoint with no CHECKPOINT.md: fails and says so
+  ok   E2 --checkpoint first line not in the form: fails with the form
+  ok   E2 --checkpoint with no image path: fails
+  ok   E2 --checkpoint naming a non-image: fails
+  ok   E2 --checkpoint naming an image that does not exist: fails and names it
+  ok   E2 --checkpoint with a placeholder "what is done": fails
+  ok   E2 --checkpoint, valid file with an existing image (absolute path): passes and says it is not a hand-in
+  ok   E2 --checkpoint, image named relative to the hand-in folder: passes
+  ok   E2 --checkpoint, one of two images exists: passes (at least one)
+  ok   E2 the FULL check of the same folder still fails (a checkpoint is not a hand-in)
+  ok   E2 hook: no CHECKPOINT.md, no hand-in: refused as before (exit 2, STATUS.md missing)
+  ok   E2 hook, first call of a finish (PreToolUse SubagentHandback) with a valid CHECKPOINT.md: allowed (exit 0)
+  ok   E2 ... logged gate=handin decision=checkpoint
+  ok   E2 ... not counted as a hand-in: no builder record, no refusal counter, no HANDIN_FAILED.txt
+  ok   E2 ... no refusal counter file for the agent
+  ok   E2 hook, second call of the SAME finish (SubagentStop, within the window, same file): allowed again, logged as the same finish
+  ok   E2 hook, a LATER stop of the same agent (outside the window): the checkpoint is used up, the full check runs: blocked, and the message says why
+  ok   E2 hook, invalid CHECKPOINT.md (the image does not exist): not let through, the reason names the checkpoint
+  ok   E2 hook, a stale CHECKPOINT.md (older than this agent's run): does not count
+  ok   E2 hook, the final hand-in (no CHECKPOINT.md) with a passing STATUS.md: allowed as a hand-in ("hand-in check passed")
+  ok   E2 hook, CHECKPOINT.md present and a complete STATUS.md: the stop is logged as a checkpoint, not as a passed hand-in
+  ok   E2 hook, check_handin.mjs missing: a checkpoint is not granted (fails open on the full check, logged), never a crash
+gates8 step 6: tools/clean_test_temp.mjs
+  ok   step 6 --dry-run lists 7 folders and removes none
+  ok   step 6 removes the 7 test folders, leaves the other folder, exit 0
+  ok   step 6 the photos behind the junction survived (the link was unlinked, not followed)
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the photos behind the junctions and in the fixture main survived every case
+  ok   the temp folder (junctions unlinked first) is removed
+
+56 passed, 0 failed

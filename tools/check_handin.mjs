@@ -14,6 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync, spawnSync } from 'node:child_process';
+import { imageDims, imageEndOk } from './image_lib.mjs';
 
 const args = process.argv.slice(2);
 const noVisual = args.includes('--no-visual');
@@ -26,7 +27,7 @@ const builderArg = bi >= 0 ? args[bi + 1] : null;
 const mainArg = mi >= 0 ? args[mi + 1] : null;
 // Gates v2 (tools/gates_lib.mjs): switched on by the brief's `GATES-VERSION: 2`; the hook passes the brief's `GATE:` lines as --gate "<line>".
 // --task <task-file> reads the "## Gates" section of a task file instead (manual runs). --worktree overrides the worktree root.
-const VALUE_OPTS = ['--main', '--builder', '--since', '--gates-version', '--gate', '--task', '--worktree', '--legacy', '--prior-audit', '--item'];
+const VALUE_OPTS = ['--main', '--builder', '--since', '--gates-version', '--gate', '--task', '--worktree', '--legacy', '--prior-audit', '--item', '--phase', '--suite', '--refs', '--case', '--allow-fail'];
 const optAll = (n) => args.flatMap((a, i) => (a === n ? [args[i + 1]] : []));
 const gatesVersion = Number(optAll('--gates-version')[0] || 1);
 const gateLines = optAll('--gate');
@@ -120,30 +121,6 @@ if (since > 0) {
 // `CHECKPOINT: <what is done> | images: <path>[, <path>...]` and at least one of the named paths is an existing image. The finish hook lets such a stop through once per agent and does NOT
 // count it as a hand-in (no audit owed); the final hand-in is still checked in full.
 // the frame size from the first bytes of an image file, or null when the header is not valid
-function imageDims(b) {
-  const sane = (w, h) => (w > 0 && h > 0 && w <= 100000 && h <= 100000 ? { w, h } : null);
-  if (b.length >= 33 && b.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && b.readUInt32BE(8) === 13 && b.subarray(12, 16).toString('latin1') === 'IHDR') return sane(b.readUInt32BE(16), b.readUInt32BE(20));
-  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
-    let i = 2;
-    while (i + 9 < b.length) {
-      if (b[i] !== 0xff) { i++; continue; }
-      const m = b[i + 1];
-      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7) || m === 0xff) { i += m === 0xff ? 1 : 2; continue; }
-      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) return sane(b.readUInt16BE(i + 7), b.readUInt16BE(i + 5));
-      i += 2 + b.readUInt16BE(i + 2);
-    }
-    return null;
-  }
-  if (b.length >= 10 && /^GIF8[79]a/.test(b.subarray(0, 6).toString('latin1'))) return sane(b.readUInt16LE(6), b.readUInt16LE(8));
-  if (b.length >= 26 && b[0] === 0x42 && b[1] === 0x4d && b.readUInt32LE(14) >= 12) return sane(Math.abs(b.readInt32LE(18)), Math.abs(b.readInt32LE(22)));
-  if (b.length >= 30 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') {
-    const k = b.subarray(12, 16).toString('latin1');
-    if (k === 'VP8X') return sane(1 + b.readUIntLE(24, 3), 1 + b.readUIntLE(27, 3));
-    if (k === 'VP8L') { const v = b.readUInt32LE(21); return sane((v & 0x3fff) + 1, ((v >> 14) & 0x3fff) + 1); }
-    if (k === 'VP8 ') return sane(b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff);
-  }
-  return null;
-}
 if (args.includes('--checkpoint')) {
   const cp = read('CHECKPOINT.md');
   const why = [];
@@ -173,6 +150,7 @@ if (args.includes('--checkpoint')) {
         let head; try { const fd = fs.openSync(r, 'r'); head = Buffer.alloc(Math.min(st.size, 65536)); fs.readSync(fd, head, 0, head.length, 0); fs.closeSync(fd); } catch { return 'cannot be read'; }
         const dims = imageDims(head);
         if (!dims) return 'has no valid PNG / JPEG / GIF / BMP / WEBP header (a real picture is needed)';
+        if (!imageEndOk(r)) return 'is cut off (no end marker: PNG IEND, JPEG EOI, GIF trailer, or a size bigger than the file): a truncated picture is not a real render';
         return null;
       };
       const results = imgs.map((p) => [p, problemsOf(p)]);
@@ -187,6 +165,24 @@ if (args.includes('--checkpoint')) {
   if (why.length) { console.error('CHECKPOINT FAILED\n - ' + why.join('\n - ')); process.exit(1); }
   console.log('CHECKPOINT PASSED (' + path.join(folder, 'CHECKPOINT.md') + '): this is not a hand-in; the final hand-in still needs the full check');
   process.exit(0);
+}
+
+// --phase measure|build (gates10): a phase agent of a split round hands over through MEASURE.md / BUILD.md, checked by tools/phase_lib.mjs. The render phase is the ordinary hand-in below.
+// The output uses the same PASSED / FAILED lines as the full check, so the finish hook reads it unchanged.
+{
+  const ph = optAll('--phase')[0];
+  if (ph === 'measure' || ph === 'build') {
+    let PL = null;
+    try { PL = await import('./phase_lib.mjs'); } catch (e) { console.error('FAIL-OPEN: phase_lib.mjs could not be loaded: ' + (e && e.message)); process.exit(1); }
+    const lines = [];
+    const probs = ph === 'measure'
+      ? PL.measureProblems(folder, { since, main, refs: optAll('--refs')[0] !== undefined ? Number(optAll('--refs')[0]) : null, cases: optAll('--case').length ? optAll('--case') : null })
+      : PL.buildProblems(folder, wtRoot, { since, allowFail: optAll('--allow-fail'), nodeOnly: optAll('--suite').some((x) => /^node-only\b/i.test(String(x).trim())), GL, log: (...a) => lines.push(a.join(' ')) });
+    lines.forEach((l) => console.error('phase check: ' + l));
+    if (probs.length) { console.error(`HAND-IN CHECK FAILED (${probs.length}) for ${folder} (phase ${ph}):\n - ` + probs.join('\n - ')); process.exit(1); }
+    console.log(`HAND-IN CHECK PASSED for ${folder} (phase ${ph})`);
+    process.exit(0);
+  }
 }
 
 // STATUS.md
@@ -289,12 +285,13 @@ if (noVisual) { /* skipped */ } else if (compare === null) {
     if (!findFile(ref, refBases)) fails.push(`COMPARE.md row "${kase}": reference not found: ${ref}`);
     if (!findFile(comp, bases)) fails.push(`COMPARE.md row "${kase}": composite not found (expected under docs/reference/_compare/<topic>/): ${comp}`);
     if (!findFile(before, bases)) fails.push(`COMPARE.md row "${kase}": before image not found: ${before}`);
-    const row = { kase, render: resolveFile(render, bases), reference: resolveFile(ref, refBases), composite: resolveFile(comp, bases), before: resolveFile(before, bases) };
+    const row = { kase, render: resolveFile(render, bases), reference: resolveFile(ref, refBases), composite: resolveFile(comp, bases), before: resolveFile(before, bases), unreal: !!(GL && GL.isUnrealRow && GL.isUnrealRow(cells)) };
     compareRows.push(row);
     if (row.reference) refCandidates.add(row.reference);
   });
   // different files by content, in every role and across rows (a copy of one image in four columns is the fake the gates3 audit built)
   if (GL && gatesV2) { try { GL.compareIntegrity(compareRows).forEach((p) => fails.push('GATE picture: ' + p)); } catch (e) { failOpen('compare integrity', e); } }
+  if (GL && GL.unrealFrameProblems) { try { GL.unrealFrameProblems(compareRows, since, { folder: path.resolve(folder), compareDirs: [path.join(refRoot, '_compare', path.basename(path.resolve(folder))), path.join(wtRoot, 'docs', 'reference', '_compare', path.basename(path.resolve(folder)))], statusText: status || '', resolve: (p) => resolveFile(p, [path.resolve(folder), wtRoot, main, refRoot, scratchBase]) }).forEach((p) => fails.push('GATE picture: ' + p)); } catch (e) { failOpen('unreal frames', e); } }
 }
 
 // ---- Wrapper gate (any brief version): a round that adds a sim_core/src/*.cpp needs its Unreal wrapper (tools/check_wrappers.mjs).
@@ -393,7 +390,7 @@ if (accept) {
   try {
     const al = await import('./hooks/audit_lib.mjs');
     const stateDir = path.join(main, '.claude', 'state');
-    const rec = al.readBuilder(folder, stateDir) || al.findBuilderInLog(folder, stateDir);
+    const rec = al.readBuilder(folder, stateDir) || al.readReleased(folder, stateDir) || al.findBuilderInLog(folder, stateDir);
     const ar = al.readAudit(folder, stateDir);
     const builderId = rec ? rec.agent_id : builderArg;
     const legacy = legacyArg && legacyArg.trim().length >= 20 ? legacyArg.trim() : null;

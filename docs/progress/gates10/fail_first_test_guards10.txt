@@ -1,0 +1,441 @@
+test_guards10.mjs run against main 5fe652c's tools (scratch export git archive 5fe652c, /c/Users/bgbg0/Documents/Programming/roadworld-scratch/gates10-old): 79 cases FAIL, 28 pass (the 28 are ALLOW and still-REFUSE controls that main already satisfies). Command: timeout 600 node tools/hooks/test_guards10.mjs
+
+gates10 A: phase measure (check_handin --phase measure on made-up hand-ins)
+  FAIL A measure: a GOOD MEASURE.md (opened line, table with photo and value, 3 photos, a decodable trace image) passes
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_good\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (no MEASURE.md) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_none\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (no "References opened" line) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_noref\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (opened 0) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_zero\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (opened 2 of 3 with no "not opened" line) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_part\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (no case section) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_nocase\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (table row without a measured value) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_noval\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (table row without a photo file) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_nophoto\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (only 2 different photos) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_two\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (no trace image named) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_noimg\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (trace image does not exist) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_missing\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (trace image is a truncated PNG) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_trunc\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: BAD (trace image is not a picture) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_fake\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A measure: a MEASURE.md written before the brief (--since in the future) is refused
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\m_old\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+gates10 A: phase build (check_handin --phase build: commit list, the suite run by the check, fail_first, waivers, git status)
+  FAIL A build: a GOOD build hand-in (every commit listed, suite exits 0 when the check runs it, fail_first for the new test file, no waiver, clean git status) passes
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\b_good\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A build: BAD (no BUILD.md) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\b_none\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A build: BAD (a commit made since the measure phase is not listed) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\b_unlisted\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A build: BAD (no Commits: line) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\b_nolist\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A build: BAD (the suite fails when the check runs it) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\b_suite\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A build: BAD (no suite named at all) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\b_nosuite\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A build: BAD (a new test file with no fail_first_*.txt) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\b_nff\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+  FAIL A build: BAD (git status not empty) is refused with the matching reason
+       HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\b_dirty\docs\progress\rr:
+        - STATUS.md is missing
+        - FAULTS.md is missing
+        - COMPARE.md is missing
+       Send this list back to the agent unread; do not read the report.
+       
+gates10 A: finish hook for a phase agent (real transcripts)
+  FAIL A hook: a measure-phase agent with a GOOD MEASURE.md may stop; logged as a passed phase check, NOT a hand-in
+       [{"code":0,"out":"{\"decision\":\"block\",\"reason\":\"HAND-IN GATE: you may not finish yet (refusal 1 of 3). Fix the following, run `node tools/check_handin.mjs C:\\\\Users\\\\bgbg0\\\\AppData\\\\Local\\\\Temp\\\\guards10-B1s6eS\\\\h_good\\\\docs\\\\progress\\\\rr --no-visual` until it passes, then finish.\\nHAND-IN CHECK FAILED (1) for C:\\\\Users\\\\bgbg0\\\\AppData\\\\Local\\\\Temp\\\\guards10-B1s6eS\\\\h_good\\\\docs\\\\progress\\\\rr:\\n - STATUS.md is missing\\nSend this list back to the agent unread; do not read the report.\"}","err":""},[{"ts":"2026-10-23T19:09:27.964Z","gate":"inject","agent_type":"general-purpose","agent_id":"ph_ok","decision":"inject","chars":1},{"ts":"2026-10-23T19:09:28.247Z","gate":"handin","event":"SubagentStop","agent_id":"ph_ok","agent_type":"general-purpose","cwd":"C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards10-B1s6eS\\elsewhere","decision":"block","block_number":1,"handin_dir":"C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards10-B1s6eS\\h_good\\docs\\progress\\rr","failures":"HAND-IN CHECK FAILED (1) for C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards10-B1s6eS\\h_good\\docs\\progress\\rr:\n - STATUS.md is missing\nSend this list back to the agent unread; do not read the report."}]]
+  ok   A hook: ... and no builder record exists, so no audit is owed after a phase
+  FAIL A hook: a measure-phase agent with NO MEASURE.md is refused three times (exit 2, the reason names MEASURE.md and the phase)
+       [[2,"HAND-IN GATE: you may not finish yet (refusal 1 of 3). Fix the following, run `node tools/check_handin.mjs C:\\Users\\bgbg"],[2,"HAND-IN GATE: you may not finish yet (refusal 2 of 3). Fix the following, run `node tools/check_handin.mjs C:\\Users\\bgbg"],[2,"HAND-IN GATE: you may not finish yet (refusal 3 of 3). Fix the following, run `node tools/check_handin.mjs C:\\Users\\bgbg"],[0,""]]
+  ok   A hook: ... the fourth stop is released and HANDIN_FAILED.txt is written in the hand-in folder
+  ok   A hook: a DIFFERENT phase agent has its own refusal count (refusal 1 of 3, not released)
+  FAIL A hook: a valid CHECKPOINT.md does NOT let a phase agent stop (the allowance is for the final hand-in only)
+       {"code":0,"out":"","err":""}
+  ok   A hook: the render phase gets the ordinary full hand-in check (STATUS.md is demanded)
+  FAIL A hook: a build-phase agent whose SUITE: command fails is refused (the hook passed --suite to the check)
+       HAND-IN GATE: you may not finish yet (refusal 1 of 3). Fix the following, run `node tools/check_handin.mjs C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\h_build\docs\progress\rr --no-visual` until it passes, then finish.
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\h_build\docs\progress\rr:
+        - STATUS.md is missing
+       Send this list back to the agent unread; do no
+gates10 A: the `unreal` frame kind of COMPARE.md
+  FAIL A unreal: a row with frame kind unreal is not a headline view of the browser records
+  FAIL A unreal: the [unreal] tag in the case cell declares it as well
+       THREW GL.isUnrealRow is not a function
+  FAIL A unreal: pictureProblems asks for NO stats.json / mask.png of an unreal frame named *_aerial.png
+       view "x_aerial.png" (listed in COMPARE.md) has no x_aerial.stats.json next to the render: render it with prototypes/mesh-view/render.mjs or prototypes/road-draw/tools/scene.mjs, which write the record and its mask picture
+  ok   A unreal: ... but the same frame as a browser render (no declaration) still needs its records
+  FAIL A unreal: a real decodable 10 KB+ frame written during the run passes unrealFrameProblems
+       THREW GL.unrealFrameProblems is not a function
+  FAIL A unreal: a frame under 10 KB is refused
+       THREW GL.unrealFrameProblems is not a function
+  FAIL A unreal: a truncated frame is refused
+       THREW GL.unrealFrameProblems is not a function
+  FAIL A unreal: a frame older than the brief is refused
+       THREW GL.unrealFrameProblems is not a function
+  FAIL A unreal: a row that is not unreal is not judged by this check
+       THREW GL.unrealFrameProblems is not a function
+  FAIL image_lib: a PNG cut off before IEND is not complete; the whole file is
+       THREW Cannot read properties of null (reading 'imageEndOk')
+gates10 C: a truncated PNG is refused as a checkpoint image (gates9 audit)
+  FAIL C a >= 10 KB PNG whose tail is cut off (valid header, no IEND) is refused as a checkpoint image
+  ok   C ... the complete picture passes
+gates10 A/B: make_brief --phase and --first-look
+  FAIL A make_brief --phase measure: prints a PHASE: measure line and the phase section
+       make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer
+       # BRIEF: T round
+       
+       ROUND: rr   WORKTREE: C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\mb_wt   BRANCH: agent/rr   BASE: current main (run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`, do not start from a stale branch)
+       Progress folder for hand-in: docs/
+  FAIL A make_brief --phase build: refused while MEASURE.md does not exist
+       make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer
+       
+  FAIL A make_brief --phase render: refused while the earlier phases have not handed over
+       make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer
+       
+  FAIL A make_brief --phase bogus: refused
+       make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer
+       
+  FAIL A make_brief --phase build: refused when MEASURE.md exists but fails its check (run by make_brief, not quoted)
+       make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer
+       
+  FAIL A make_brief --phase build: briefed once MEASURE.md passes; the brief carries PHASE: build and the SUITE: line of the task file
+       make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer
+       # BRIEF: T round
+       
+       ROUND: rr   WORKTREE: C:\Users\bgbg0\AppData\Local\Temp\guards10-B1s6eS\mb_good   BRANCH: agent/rr   BASE: current main (run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`, do not start from a stale branch)
+       Progress folder for hand-in: doc
+  FAIL B make_brief --first-look: prints a FIRSTLOOK-OF marker, the owner words, and NOT the builder fault list
+       make_brief: no "## Items" section: the numbered lines of "## Faults" are used as the items the hand-in must answer
+       # BRIEF: T round
+       
+       ROUND: rr   WORKTREE: C:\Users\bgbg0\Documents\Programming\roadworld-scratch\roadworld-wt\rr   BRANCH: agent/rr   BASE: current main (run `powershell -NoProfile -ExecutionPolicy Bypass -File tools\new_agent_worktree.ps1 <name>`, do not start from a stale branch)
+       Progress folder for hand-in: docs/progress/rr/
+       HANDIN_DIR: C:\Users\bgbg0\Documents\Programming\roadworld-scratch\roadw
+  FAIL B ... and tells the agent not to open AUDIT.md, STATUS.md or FAULTS.md first
+gates10 B: FIRSTLOOK_OPUS.md validated by the finish hook
+  FAIL B hook: a GOOD FIRSTLOOK_OPUS.md (own id, 3 existing images incl. a round picture and a photo, Top 3, would-never-be-built) lets the agent finish
+       [{"code":0,"out":"","err":""},[{"ts":"2026-10-23T19:09:34.522Z","gate":"inject","agent_type":"general-purpose","agent_id":"fl_ok","decision":"inject","chars":1},{"ts":"2026-10-23T19:09:34.643Z","gate":"handin","event":"PreToolUse","agent_id":"fl_ok","agent_type":"general-purpose","cwd":"C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards10-B1s6eS\\elsewhere","decision":"allow","reason":"no HANDIN_DIR in brief"}]]
+  FAIL B hook: BAD first look (no file) is refused with the matching reason
+  FAIL B hook: BAD first look (another agent id) is refused with the matching reason
+  FAIL B hook: BAD first look (no id line) is refused with the matching reason
+  FAIL B hook: BAD first look (no Opened: line) is refused with the matching reason
+  FAIL B hook: BAD first look (only two images opened) is refused with the matching reason
+  FAIL B hook: BAD first look (a named image does not exist) is refused with the matching reason
+  FAIL B hook: BAD first look (no reference photo among them) is refused with the matching reason
+  FAIL B hook: BAD first look (no picture of the round among them) is refused with the matching reason
+  FAIL B hook: BAD first look (no Top 3) is refused with the matching reason
+  FAIL B hook: BAD first look (Top 3 with a one-word item) is refused with the matching reason
+  FAIL B hook: BAD first look (no "would never be built" line) is refused with the matching reason
+  FAIL B hook: BAD first look (placeholder "would never be built") is refused with the matching reason
+  FAIL B hook: three refusals, then the fourth stop is released and FIRSTLOOK_FAILED.txt is written
+       [0,0,0,0]
+  FAIL B hook: STATUS.md read BEFORE the first image (transcript order) is refused unless an "Order:" line says why
+  ok   B hook: ... with an "Order:" line (20+ characters) it is let through and the line is on record
+  ok   B hook: images first, STATUS.md afterwards: fine
+gates10 B: the launch hook and NO-CONTRACT audits / first looks (real descriptions from gate.log of 23 Oct 2026)
+  FAIL B launch: NO-CONTRACT "Auditor for gates9 hand-in" is refused as an audit, and the text names the way to launch it
+  FAIL B launch: NO-CONTRACT "Auditor for gates8 hand-in" is refused as an audit, and the text names the way to launch it
+  FAIL B launch: NO-CONTRACT "Auditor for m2fix hand-in" is refused as an audit, and the text names the way to launch it
+  FAIL B launch: NO-CONTRACT "Opus first look on grade-r12 images" is refused as an first look, and the text names the way to launch it
+  FAIL B launch: NO-CONTRACT "Opus first look: tjunction5 images" is refused as an first look, and the text names the way to launch it
+  FAIL B launch: NO-CONTRACT "Opus first look: grade-r10 images" is refused as an first look, and the text names the way to launch it
+  ok   B launch: NO-CONTRACT "Clerk: contract speed rules, queue, acceptance" stays allowed
+  ok   B launch: NO-CONTRACT "Merge gates7 then gates9 into main" stays allowed
+  ok   B launch: NO-CONTRACT "Recovery round 2: validate and re-fetch photos" stays allowed
+  ok   B launch: NO-CONTRACT "Queue catch-up for 22-23 Oct events" stays allowed
+  ok   B launch: NO-CONTRACT "Re-fetch 18 truncated photos and back up" stays allowed
+  ok   B launch: NO-CONTRACT "Research: Unreal plugin facts" stays allowed
+  FAIL B launch: a FIRSTLOOK-OF launch (make_brief --first-look) is allowed without NO-CONTRACT
+       LAUNCH REFUSED by the brief gate (tools/hooks/brief_gate.mjs). The subagent prompt is missing:
+        - a line "HANDIN_DIR: <absolute path>" (make_brief.mjs emits it)
+       Fix: build the brief with `node tools/make_brief.mjs <task-file> --round <name>` and send its output as the prompt. For work that is not a build/review hand-in (research, merge, read-only check) add a line `NO-CONTRACT: <reason, at least 20 characters>`. To point at a file instead, add `BRIEF-FILE: <absolute path>` (the file must pass the same test).
+       
+  ok   B launch: a FIRSTLOOK-OF launch with a relative folder is refused
+  FAIL B launch: a FIRSTLOOK-OF launch that also carries HANDIN_DIR (a builder) is refused
+       LAUNCH REFUSED by the brief gate (tools/hooks/brief_gate.mjs). The subagent prompt is missing:
+        - the agent contract (marker line "AGENT-CONTRACT-MARKER: v1"; build the brief with: node tools/make_brief.mjs <task-file> --round <name>)
+        - a non-empty "## Owner's words" section containing the owner's verbatim quote in quotation marks
+       Fix: build the brief with `node tools/make_brief.mjs <task-file> --round <name>` and send its output as the prompt. For work that is not a build/review hand-in (research, merge, read-only check) add a line `NO-CONTRACT: <reason, at least 20 characters>`. To point at a file instead, add `BRIEF-FILE: <absolute path>` (the file must pass the same test).
+       
+  ok   B launch: a real AUDIT-OF launch is still allowed
+  ok   B launch: a launch with no contract and no NO-CONTRACT line is still refused
+gates10 C: lock_guard bulk and indirect write forms (gates9 audit H7, patch / git apply / fs.rm routes)
+  FAIL C bulk forms that rewrite a locked test (REFUSE): 34 real payloads
+       find -exec clang-format -i: find tests -exec clang-format -i {} +: status 0 , wanted 2
+       find -name -exec prettier --write: find tests -name "*.mjs" -exec prettier --write {} \;: status 0 , wanted 2
+       ls | xargs clang-format -i: ls tests/*.mjs | xargs clang-format -i: status 0 , wanted 2
+       git ls-files | xargs clang-format -i: git ls-files tests | xargs clang-format -i: status 0 , wanted 2
+       find | xargs sed -i: find tests -name "*.mjs" | xargs sed -i s/f/g/: status 0 , wanted 2
+       clang-format -i $(ls ...): clang-format -i $(ls tests/*.mjs): status 0 , wanted 2
+       clang-format -i $(find ...): clang-format -i $(find tests -name "*.mjs"): status 0 , wanted 2
+       rm brace list: rm tests/{listed_test.mjs,other.mjs}: status 0 , wanted 2
+       clang-format -i brace list: clang-format -i tests/{helper.cpp,listed_test.mjs}: status 0 , wanted 2
+       sort -o file file: sort -o tests/listed_test.mjs tests/listed_test.mjs: status 0 , wanted 2
+       sort --output=: sort --output=tests/listed_test.mjs x.txt: status 0 , wanted 2
+       astyle: astyle tests/listed_test.mjs: status 0 , wanted 2
+       ed -s: ed -s tests/listed_test.mjs: status 0 , wanted 2
+       vim -es: vim -es tests/listed_test.mjs: status 0 , wanted 2
+       ex -s: ex -s tests/listed_test.mjs: status 0 , wanted 2
+       uncrustify --replace: uncrustify --replace tests/listed_test.mjs: status 0 , wanted 2
+       robocopy file filter onto the locked file: robocopy src tests listed_test.mjs: status 0 , wanted 2
+       robocopy /MOV moves the locked file away: robocopy tests moved listed_test.mjs /MOV: status 0 , wanted 2
+       patch -i a diff of the locked file: patch -p1 -i upd_locked.diff: status 0 , wanted 2
+       git apply a diff of the locked file: git apply upd_locked.diff: status 0 , wanted 2
+       git apply -p3 with the stripped name: git apply -p3 upd_deep.diff: status 0 , wanted 2
+       git apply tries every strip level 0-5: git apply upd_deep.diff: status 0 , wanted 2
+       git apply with a heredoc diff: git apply <<EOF
+       --- a/tests/listed_test.mjs
+       +++ b/tests/listed_test.mjs
+       @@ -1 +1 @@
+       -f
+       +g
+       EOF: status 0 , wanted 2
+       fs.rm: node -e "fs.rm('tests/listed_test.mjs', () => {})": status 0 , wanted 2
+       fs.promises.rm: node -e "fs.promises.rm('tests/listed_test.mjs')": status 0 , wanted 2
+       fsp.rm: node -e "fsp.rm('tests/listed_test.mjs')": status 0 , wanted 2
+       fs.openSync(.., "w"): node -e "fs.openSync('tests/listed_test.mjs', 'w')": status 0 , wanted 2
+       fs.promises.open(.., "a"): node -e "fs.promises.open('tests/listed_test.mjs', 'a')": status 0 , wanted 2
+       ruby -e File.delete: ruby -e 'File.delete(%q(tests/listed_test.mjs))': status 0 , wanted 2
+  ok   C the same forms on files that are NOT locked, and read-only forms (ALLOW): 20 real payloads
+  FAIL C LOCK-LIST-BAD on an allowed command: systemMessage (the user) AND hookSpecificOutput.additionalContext (Claude, the builder)
+       {"systemMessage":"LOCK-LIST-BAD: entry \"tests/missing_test.mjs\" names no existing file (see .claude/state/gate.log; tell the main session)"}
+  FAIL C LOCK-LIST-BAD on a REFUSED command: the stderr the builder sees carries the warning too
+       REFUSED by the lock guard (tools/hooks/lock_guard.mjs): locked test: written by the auditor; make it pass, or write BLOCKED
+        - rm tests/listed_test.mjs: the path is listed in LOCKED_TESTS.txt (tests/listed_test.mjs)
+       A file listed in LOCKED_TESTS.txt of the prior round's hand-in folder (or under tests/locked/) was written by the auditor to judge your work. Do not edit, delete or rename it: fix the code until it passes. If it cannot pass, write a BLOCKED line in STATUS.md (BLOCKED: <item> | tried: | blocked by: | needs:).
+       
+gates10 C: delete_guard reads CODE, not a commit message or a note that says "Remove-Item -Recurse"
+  ok   C delete_guard (cwd main): commit -m that only SAYS a recursive delete is allowed
+  FAIL C delete_guard (cwd main): commit -m with parentheses that only SAYS a recursive delete is allowed
+       refused: git commit -m "fix: Remove-Item -Recurse (Join-Path $x y) and rimraf and shutil.rmtree(x) are named here"
+  FAIL C delete_guard (cwd main): git commit -F - heredoc that only SAYS a recursive delete is allowed
+       refused: git commit -F - <<'EOF'
+       fix: the false positive on Remove-Item -Recurse $(rimraf) in a message
+       EOF
+  FAIL C delete_guard (cwd main): commit -m "$(cat <<EOF ...)" that only SAYS a recursive delete is allowed
+       refused: git commit -m "$(cat <<'EOF'
+       Say Remove-Item -Recurse (Resolve-Path docs) and shutil.rmtree(p) in prose
+       EOF
+       )"
+  FAIL C delete_guard (cwd main): cat > file <<EOF that only SAYS a recursive delete is allowed
+       refused: cat > notes.md <<'EOF'
+       Do not run Remove-Item -Recurse (Get-Item x) or rimraf(x) here.
+       EOF
+  FAIL C delete_guard (cwd main): echo that only SAYS a recursive delete is allowed
+       refused: echo "never run Remove-Item -Recurse (Join-Path $PWD docs)"
+  FAIL C delete_guard (cwd main): grep that only SAYS a recursive delete is allowed
+       refused: grep -rn "rimraf\|shutil.rmtree(" tools
+  FAIL C delete_guard (cwd main): gh pr create --body that only SAYS a recursive delete is allowed
+       refused: gh pr create --title "x" --body "mentions Remove-Item -Recurse (Join-Path a b)"
+  ok   C delete_guard (cwd main): a real Remove-Item -Recurse with a computed path is still refused
+  ok   C delete_guard (cwd main): a real node rimraf one-liner is still refused
+  ok   C delete_guard (cwd main): a real python rmtree one-liner is still refused
+  ok   C delete_guard (cwd main): a heredoc fed to bash with rm -rf docs is still refused
+  ok   C delete_guard (cwd main): pwsh -c Remove-Item -Recurse docs is still refused
+  ok   C delete_guard (cwd main): a prose-looking prefix does not hide a real delete is still refused
+  ok   C delete_guard (cwd main): rm -rf docs is still refused
+gates10 C: test temp folders (clean_test_temp prefixes, cleanup when a suite is cut short)
+  FAIL C clean_test_temp PREFIXES cover every mkdtemp prefix the suites use (guards9-, guards10-, scenegate- were missing)
+       not covered: guards10-
+  FAIL C a suite that exits early (a failing test calls process.exit) removes its own temp folder
+       1 C:\Users\bgbg0\AppData\Local\Temp\guards10-child-tLpUjr 
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the temp folder is removed
+
+28 passed, 79 failed
+FAILED TESTS:
+ - A measure: a GOOD MEASURE.md (opened line, table with photo and value, 3 photos, a decodable trace image) passes
+ - A measure: BAD (no MEASURE.md) is refused with the matching reason
+ - A measure: BAD (no "References opened" line) is refused with the matching reason
+ - A measure: BAD (opened 0) is refused with the matching reason
+ - A measure: BAD (opened 2 of 3 with no "not opened" line) is refused with the matching reason
+ - A measure: BAD (no case section) is refused with the matching reason
+ - A measure: BAD (table row without a measured value) is refused with the matching reason
+ - A measure: BAD (table row without a photo file) is refused with the matching reason
+ - A measure: BAD (only 2 different photos) is refused with the matching reason
+ - A measure: BAD (no trace image named) is refused with the matching reason
+ - A measure: BAD (trace image does not exist) is refused with the matching reason
+ - A measure: BAD (trace image is a truncated PNG) is refused with the matching reason
+ - A measure: BAD (trace image is not a picture) is refused with the matching reason
+ - A measure: a MEASURE.md written before the brief (--since in the future) is refused
+ - A build: a GOOD build hand-in (every commit listed, suite exits 0 when the check runs it, fail_first for the new test file, no waiver, clean git status) passes
+ - A build: BAD (no BUILD.md) is refused with the matching reason
+ - A build: BAD (a commit made since the measure phase is not listed) is refused with the matching reason
+ - A build: BAD (no Commits: line) is refused with the matching reason
+ - A build: BAD (the suite fails when the check runs it) is refused with the matching reason
+ - A build: BAD (no suite named at all) is refused with the matching reason
+ - A build: BAD (a new test file with no fail_first_*.txt) is refused with the matching reason
+ - A build: BAD (git status not empty) is refused with the matching reason
+ - A hook: a measure-phase agent with a GOOD MEASURE.md may stop; logged as a passed phase check, NOT a hand-in
+ - A hook: a measure-phase agent with NO MEASURE.md is refused three times (exit 2, the reason names MEASURE.md and the phase)
+ - A hook: a valid CHECKPOINT.md does NOT let a phase agent stop (the allowance is for the final hand-in only)
+ - A hook: a build-phase agent whose SUITE: command fails is refused (the hook passed --suite to the check)
+ - A unreal: a row with frame kind unreal is not a headline view of the browser records
+ - A unreal: the [unreal] tag in the case cell declares it as well
+ - A unreal: pictureProblems asks for NO stats.json / mask.png of an unreal frame named *_aerial.png
+ - A unreal: a real decodable 10 KB+ frame written during the run passes unrealFrameProblems
+ - A unreal: a frame under 10 KB is refused
+ - A unreal: a truncated frame is refused
+ - A unreal: a frame older than the brief is refused
+ - A unreal: a row that is not unreal is not judged by this check
+ - image_lib: a PNG cut off before IEND is not complete; the whole file is
+ - C a >= 10 KB PNG whose tail is cut off (valid header, no IEND) is refused as a checkpoint image
+ - A make_brief --phase measure: prints a PHASE: measure line and the phase section
+ - A make_brief --phase build: refused while MEASURE.md does not exist
+ - A make_brief --phase render: refused while the earlier phases have not handed over
+ - A make_brief --phase bogus: refused
+ - A make_brief --phase build: refused when MEASURE.md exists but fails its check (run by make_brief, not quoted)
+ - A make_brief --phase build: briefed once MEASURE.md passes; the brief carries PHASE: build and the SUITE: line of the task file
+ - B make_brief --first-look: prints a FIRSTLOOK-OF marker, the owner words, and NOT the builder fault list
+ - B ... and tells the agent not to open AUDIT.md, STATUS.md or FAULTS.md first
+ - B hook: a GOOD FIRSTLOOK_OPUS.md (own id, 3 existing images incl. a round picture and a photo, Top 3, would-never-be-built) lets the agent finish
+ - B hook: BAD first look (no file) is refused with the matching reason
+ - B hook: BAD first look (another agent id) is refused with the matching reason
+ - B hook: BAD first look (no id line) is refused with the matching reason
+ - B hook: BAD first look (no Opened: line) is refused with the matching reason
+ - B hook: BAD first look (only two images opened) is refused with the matching reason
+ - B hook: BAD first look (a named image does not exist) is refused with the matching reason
+ - B hook: BAD first look (no reference photo among them) is refused with the matching reason
+ - B hook: BAD first look (no picture of the round among them) is refused with the matching reason
+ - B hook: BAD first look (no Top 3) is refused with the matching reason
+ - B hook: BAD first look (Top 3 with a one-word item) is refused with the matching reason
+ - B hook: BAD first look (no "would never be built" line) is refused with the matching reason
+ - B hook: BAD first look (placeholder "would never be built") is refused with the matching reason
+ - B hook: three refusals, then the fourth stop is released and FIRSTLOOK_FAILED.txt is written
+ - B hook: STATUS.md read BEFORE the first image (transcript order) is refused unless an "Order:" line says why
+ - B launch: NO-CONTRACT "Auditor for gates9 hand-in" is refused as an audit, and the text names the way to launch it
+ - B launch: NO-CONTRACT "Auditor for gates8 hand-in" is refused as an audit, and the text names the way to launch it
+ - B launch: NO-CONTRACT "Auditor for m2fix hand-in" is refused as an audit, and the text names the way to launch it
+ - B launch: NO-CONTRACT "Opus first look on grade-r12 images" is refused as an first look, and the text names the way to launch it
+ - B launch: NO-CONTRACT "Opus first look: tjunction5 images" is refused as an first look, and the text names the way to launch it
+ - B launch: NO-CONTRACT "Opus first look: grade-r10 images" is refused as an first look, and the text names the way to launch it
+ - B launch: a FIRSTLOOK-OF launch (make_brief --first-look) is allowed without NO-CONTRACT
+ - B launch: a FIRSTLOOK-OF launch that also carries HANDIN_DIR (a builder) is refused
+ - C bulk forms that rewrite a locked test (REFUSE): 34 real payloads
+ - C LOCK-LIST-BAD on an allowed command: systemMessage (the user) AND hookSpecificOutput.additionalContext (Claude, the builder)
+ - C LOCK-LIST-BAD on a REFUSED command: the stderr the builder sees carries the warning too
+ - C delete_guard (cwd main): commit -m with parentheses that only SAYS a recursive delete is allowed
+ - C delete_guard (cwd main): git commit -F - heredoc that only SAYS a recursive delete is allowed
+ - C delete_guard (cwd main): commit -m "$(cat <<EOF ...)" that only SAYS a recursive delete is allowed
+ - C delete_guard (cwd main): cat > file <<EOF that only SAYS a recursive delete is allowed
+ - C delete_guard (cwd main): echo that only SAYS a recursive delete is allowed
+ - C delete_guard (cwd main): grep that only SAYS a recursive delete is allowed
+ - C delete_guard (cwd main): gh pr create --body that only SAYS a recursive delete is allowed
+ - C clean_test_temp PREFIXES cover every mkdtemp prefix the suites use (guards9-, guards10-, scenegate- were missing)
+ - C a suite that exits early (a failing test calls process.exit) removes its own temp folder

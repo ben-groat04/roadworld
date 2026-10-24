@@ -1,0 +1,438 @@
+brief_gate
+  ok   exempt Explore allowed
+  ok   exempt Plan allowed
+  ok   exempt claude-code-guide allowed
+  ok   exempt statusline-setup allowed
+  ok   no contract: denied (exit 2)
+  ok   deny lists every missing item
+  ok   deny is logged
+  ok   missing subagent_type treated as general-purpose: denied
+  ok   make_brief output allowed
+  ok   marker removed: denied
+  ok   HANDIN_DIR removed: denied
+  ok   relative HANDIN_DIR: denied
+  ok   "time-box" wording: denied
+  ok   "whole task" wording: denied
+  ok   empty Owner's words: denied
+  ok   owner words without quotation marks: denied
+  ok   NO-CONTRACT with reason: allowed + logged
+  ok   NO-CONTRACT with short reason: denied
+  ok   BRIEF-FILE that passes: allowed
+  ok   BRIEF-FILE that fails: denied
+  ok   BRIEF-FILE unreadable: denied
+  ok   prompt pointing at a file without BRIEF-FILE: denied
+  ok   bad JSON: fail open (exit 0, logged)
+  ok   empty stdin: fail open
+  ok   tool_input null: no crash (denied or failed open)
+  ok   non-string prompt: no crash
+contract_inject
+  ok   non-exempt: additionalContext holds the contract
+  ok   exempt type: no output
+  ok   empty agent_type (internal agent): no crash
+  ok   bad JSON: fail open
+  ok   contract file missing: fail open, logged
+handin_gate
+  ok   brief without HANDIN_DIR: allowed
+  ok   HANDIN_DIR set but folder empty (no-visual brief): blocked with list
+  ok   no-visual flag honoured: FAULTS/COMPARE not demanded
+  ok   after fixing: passes, stop allowed
+  ok   visual brief without FAULTS.md/COMPARE.md: blocked, both named
+  ok   counter after 1st block = 1
+  ok   2nd block
+  ok   3rd block
+  ok   no HANDIN_FAILED.txt yet
+  ok   4th attempt: stop allowed (empty stdout, exit 0)
+  ok   HANDIN_FAILED.txt written with the list
+  ok   4th attempt logged with failures
+  ok   counter is per agent_id: another agent starts at refusal 1
+  ok   HANDIN_DIR found via BRIEF-FILE: checked and blocked
+  ok   PreToolUse (SubagentHandback) variant: transcript found beside main transcript, denied with exit 2
+  ok   transcript missing: fail open
+  ok   empty brief text: allowed
+  ok   bad JSON: fail open
+  ok   no agent_id: allowed
+  ok   check_handin.mjs missing (node exits 1): fail open, NOT a block
+check_handin non-photo references
+  ok   26 screenshot paths relative to the hand-in worktree: passes
+  ok   26 absolute screenshot paths: passes
+  ok   one non-existent path: fails and names the file
+  ok   only 2 existing files in a case: still fails (needs 3)
+audit gate
+  ok   make_brief --audit: exit 0
+  ok   audit brief carries the AUDIT-OF marker line with the absolute folder
+  ok   audit brief carries the contract, the owner words and the cases
+  ok   audit brief has no HANDIN_DIR (an auditor is not a builder) and no builder fault list
+  ok   audit brief counts the reference files for "N of M" (3 named)
+  ok   audit brief orders the work: own fault list BEFORE the builder files; checks the measuring tools; names AUDIT.md first lines
+  ok   audit brief states builder and auditor are never the same agent, with the owner quote
+  ok   make_brief --audit needs only owner words and cases (no Faults/Launched/Waiting)
+  ok   make_brief --audit without a quoted owner words: refused (exit 1)
+  ok   make_brief --audit logs an audit make_brief line (canary sees it)
+  ok   launch gate: make_brief --audit output allowed without NO-CONTRACT
+  ok   launch gate: bare AUDIT-OF line allowed
+  ok   launch gate: relative AUDIT-OF denied
+  ok   launch gate: AUDIT-OF together with HANDIN_DIR denied
+  ok   launch gate: pasted "## Pass N" heading denied
+  ok   launch gate: pasted "## Residual" heading denied
+  ok   launch gate: two long lines of the builder FAULTS.md pasted: denied, names the file
+  ok   launch gate: a single long line is not a paste: allowed
+  ok   launch gate: AUDIT-OF inside a BRIEF-FILE allowed
+  ok   launch gate: BRIEF-FILE with a pasted fault list denied
+  ok   AUDIT-OF mid-line is not a marker: still denied as a contract-less brief
+  ok   SubagentStart context starts with YOUR AGENT ID and keeps the contract
+  ok   builder hand-in pass recorded the builder agent id per HANDIN_DIR
+  ok   exactly one "audit owed" log line for it (a repeat pass by the same agent logs nothing new)
+  ok   builder passes again (Stop after Handback): allowed, no new owed line
+  ok   notice lists the folder as AUDIT OWED with the builder id
+  ok   notice says an ack cannot clear it
+  ok   the failed hand-in (vis) was never recorded as a builder: no audit owed for it
+  ok   gates13 D6: the release wrote a signed builder record flagged released (agent v1, the vis folder)
+  ok   gates13 D6: the released record raises no "audit owed" notice (it is not a passed hand-in)
+  ok   gates13 D6: an auditor of the released folder is blocked for the missing AUDIT.md, NOT for "no record of who built this folder"
+  ok   gates13 D6: --accept names the released builder: an AUDIT.md by v1 is refused ("never the same agent"), not "no record of who built"
+  ok   gates13 D6: a different auditor with a valid AUDIT.md finishes, logged as independent of the released builder v1
+  ok   gates13 D6: --accept on the released folder still FAILS (the hand-in itself never passed)
+  ok   auditor without AUDIT.md: blocked, says it is missing
+  ok   the block names the auditor its own agent id
+  ok   AUDIT.md without "Auditor agent:" line: blocked
+  ok   AUDIT.md without Verdict: blocked
+  ok   Verdict other than accept / send back: blocked
+  ok   AUDIT.md without "References opened: N of M": blocked
+  ok   References opened 2 of 3 without a "not opened" line: blocked
+  ok   References opened 2 of 3 WITH a "not opened: file (reason)" line: allowed
+  ok   faults section under 40 characters: blocked
+  ok   no faults section at all: blocked
+  ok   the template placeholder as the id: blocked
+  ok   AUDIT.md claims an id that is not the finishing agent: blocked ("is not you")
+  ok   auditor id equals the recorded builder id (same agent audits its own round): blocked
+  ok   a different agent writing a valid AUDIT.md: allowed, logged with the builder id
+  ok   stop counter is per agent_id (b1 was never blocked)
+  ok   auditor brief reached through BRIEF-FILE: also gated
+  ok   auditor on SubagentHandback (PreToolUse): denied with exit 2 until AUDIT.md exists
+  ok   auditor refusal 1 of 3
+  ok   auditor refusal 2 of 3
+  ok   auditor refusal 3 of 3
+  ok   4th attempt: released (exit 0, no output), AUDIT_FAILED.txt written
+  ok   release is logged as an audit that stays owed, not as a released hand-in
+  ok   ...and the folder is STILL listed as AUDIT OWED (the release does not clear it)
+  ok   no builder record for the folder: the auditor is REFUSED (fail closed; independence cannot be shown)
+  ok   AUDIT.md written by the builder id does not clear the notice
+  ok   malformed AUDIT.md does not clear the notice
+  ok   AUDIT.md older than the builder's passed hand-in does not clear it (stale audit)
+  ok   a TYPED valid-looking AUDIT.md by a different agent id does NOT clear the notice (no signed record: a made-up id is worthless)
+  ok   the same file WITH the finish gate's signed record clears the notice
+  ok   an audit record without its signature is ignored: owed again
+  ok   an audit record edited after signing (auditor id changed) is ignored: owed again
+  ok   the genuine signed record again clears it
+  ok   a valid AUDIT.md in the same round folder of the main checkout (after merge) with its record clears it too
+  ok   removing the AUDIT.md brings the notice back
+  ok   a different builder passing the same folder replaces the record (changed)
+  ok   and the earlier audit no longer counts: owed again
+  ok   the same builder passing again before any audit: not a new hand-in (changed false)
+  ok   the new audit by b2 (record after the new pass) clears it
+  ok   the SAME builder id resumed after "send back" and passing again invalidates the old audit (changed true, owed again)
+  ok   and a fresh audit clears it again
+  ok   a record whose progress folder no longer exists anywhere is not listed
+  ok   a hand-typed (unsigned) builder record is ignored: readBuilder null, nothing owed for it
+  ok   six owed audits: all six listed (no cap on auditors needing to run)
+  ok   six valid audits (with signed records) clear all six
+  ok   own checkout: owed shows up
+  ok   ack cannot name an audit: there is no log item to acknowledge, the ack is refused and nothing is logged
+  ok   after the ack the audit is STILL on the notice, on every prompt
+  ok   the notice with only an owed audit does not offer gate_ack as the way out
+  ok   only the file WITH its signed record clears it
+  ok   unreadable builders state: notice hook still exits 0 and stays silent
+  ok   builder record cannot be written: the stop is still allowed (fail open), the failure is logged FAIL-OPEN
+  ok   after the recorder test the "pass" round is restored and its AUDIT.md (with its signed record) still clears the notice
+  ok   check_handin without --accept: unchanged, passes with no AUDIT.md
+  ok   --accept with no AUDIT.md: fails and says it is missing
+  ok   --accept with AUDIT.md written by the builder: fails, names "never the same agent"
+  ok   --accept with a malformed AUDIT.md: fails with the missing fields
+  ok   --accept with a TYPED AUDIT.md by a made-up auditor id (q1) and no signed record: REFUSED ("no audit record")
+  ok   --accept with the same file AND the finish gate's signed record: passes
+  ok   --accept --builder <the auditor id>: fails (the override names a different builder than the record)
+  ok   --accept --builder whoever does NOT remove the check (gates2 audit fault 1): refused
+  ok   --accept with Verdict: send back (even with a record): refused, a send-back audit never accepts a round
+  ok   --accept with no builder record and no --builder: fails (independence cannot be shown)
+  ok   --accept --builder o1, NO builder record and a typed AUDIT.md with a fake id: REFUSED (the gates2 audit's reproduced escape)
+  ok   --accept --builder o1 WITH a signed audit record of builder o1: passes
+  ok   ...but a record made for builder o1 does not pass for --builder someone-else
+  ok   --legacy with a short reason: refused
+  ok   --legacy "<reason>" lets a pre-audit-gate folder through (file independent, verdict accept) and says so
+  ok   ...and the legacy accept is logged to gate.log
+  ok   --builder without --accept changes nothing
+  ok   --accept with the builder recovered from gate.log and a typed fake-id AUDIT.md (gates2 audit reproduction): REFUSED
+  ok   ...and passes once the signed record exists
+  ok   --accept with an AUDIT.md older than the builder hand-in: fails (stale)
+  ok   --accept still runs the ordinary checks: a broken STATUS.md fails it
+gate_notice, gate_ack, canary
+  ok   real log: notice emitted as UserPromptSubmit additionalContext
+  ok   notice names FAIL-OPEN lines
+  ok   notice names the released hand-in with its HANDIN_DIR
+  ok   notice counts NO-CONTRACT launches with the reason
+  ok   notice states how to clear it
+  ok   notice under the 10000 character cap
+  ok   repeats on the next prompt until acknowledged
+  ok   every run logs a heartbeat line (gate notice)
+  ok   notice prints #n[code] next to every item (fail-open, released hand-in, no-contract)
+  ok   the ack secret itself is never printed in the notice
+  ok   ack without arguments: refused, exit 1, usage shown
+  ok   ack with items but no text: refused
+  ok   ack with short text: refused, exit 1
+  ok   ack with 19 characters: refused
+  ok   ack with 25 junk characters in one word: refused (needs 4 words)
+  ok   ack with 12 words of one letter: refused (needs different characters)
+  ok   ack padded with spaces to 20+: refused (trimmed)
+  ok   ack without <n>:<code> tokens: refused
+  ok   ack with a wrong code: refused ("does not match")
+  ok   ack of an item that is not pending: refused
+  ok   ack with an empty item list: refused
+  ok   refused acks do not clear the notice
+  ok   refused ack writes nothing to the log
+  ok   no ack secret yet (notice never shown): ack refused
+  ok   ack of one item: accepted, names it, says how many log items are still open
+  ok   ack logged with the item number, text, timestamp
+  ok   after acking one item: that item is gone, the others are still reported
+  ok   acking the same item again: refused (not pending)
+  ok   ack of the remaining items together: accepted
+  ok   after ack: no output at all
+  ok   after ack: heartbeat still logged (decision none)
+  ok   still silent on the next prompt
+  ok   a new NO-CONTRACT after the ack is reported alone
+  ok   a new FAIL-OPEN after the ack is reported
+  ok   ack clears both
+  ok   acking with nothing pending: refused (there is no item to name)
+  ok   same HANDIN_DIR released repeatedly: reported once
+  ok   notice hook with bad stdin: exit 0, no output, logged FAIL-OPEN
+  ok   and that failure shows up in the next notice
+  ok   garbage line in the log is skipped, valid FAIL-OPEN after it still reported
+  ok   no gate.log yet: exit 0, output empty
+  ok   state dir unusable: exit 0, silent
+  ok   canary: empty log is fine
+  ok   canary: brief made 10 s ago, no launch yet: grace, fine
+  ok   canary RULE 1: brief 10 min old and no launch hook line after it: tripped, names the round
+  ok   canary RULE 1: launch hook line (brief) after the brief: fine
+  ok   canary RULE 1: inject line after the brief also counts
+  ok   canary RULE 1: a launch line BEFORE the brief does not count
+  ok   canary RULE 1: handin/notice lines do not count as launch hooks
+  ok   canary RULE 2: last notice line older than 3 h: tripped
+  ok   canary RULE 2: notice 2 h ago: fine
+  ok   canary RULE 2: notice hook never logged but launch hooks old: tripped ("ever")
+  ok   canary RULE 2: notice never logged and launch hooks young: fine
+  ok   canary RULE 2: FAIL-OPEN notice lines do not count as the hook running
+  ok   canary: both rules can trip together
+  ok   make_brief on a clean checkout: exit 0, brief printed, no canary text
+  ok   make_brief logs a make_brief line
+  ok   make_brief: previous brief 30 min old with no launch hook line: exit 3, loud warning, brief still printed
+  ok   make_brief again: still tripped until a launch hook line appears
+  ok   after a launch hook line the canary clears
+  ok   make_brief prints pending gate notices too (exit stays 0)
+  ok   worktree checkout (.git is a file): canary skipped and no log line written
+  ok   gate_ack from a worktree copy (.git is a file): refused, exit 1, log untouched
+  ok   check_handin: loud canary warning on stderr, exit code still 1 for the missing STATUS.md
+  ok   check_handin called by the hand-in gate (CP_FROM_HOOK): no canary text
+  ok   check_handin does not show pending gate notices to the agent (canary only)
+  ok   check_handin with an empty gate.log: no canary text
+  ok   settings.json wires UserPromptSubmit to gate_notice.mjs
+hand-in freshness, counter reset, owner quotes, COMPARE relevance, hand-in canary
+  ok   stale passing STATUS.md (written an hour before this agent started): blocked, says it predates the run
+  ok   the same agent rewrites STATUS.md during its run: passes
+  ok   run start is taken from the first transcript line timestamp when present: a STATUS.md older than it is blocked
+  ok   check_handin --since <future>: fails and names STATUS.md; without --since it is unchanged
+  ok   auditor: an AUDIT.md older than the auditor's run does not satisfy the gate
+  ok   counter reset: first block is refusal 1
+  ok   counter reset: second block is refusal 2
+  ok   counter reset: pass allowed
+  ok   counter reset: the pass deleted the counter file
+  ok   counter reset: a resumed agent that fails again starts at refusal 1, not 3
+  ok   make_brief accepts an owner quote that contains "time-box" / "whole task"
+  ok   brief gate accepts the same quote
+  ok   "time-box" outside the owner words is still refused
+  ok   make_brief still refuses "whole task" in the Faults section
+  ok   COMPARE row with subject/type, scale and viewpoint statements: passes
+  ok   COMPARE row with only the old 5 columns: fails (needs 8)
+  ok   COMPARE row with an empty viewpoint cell: fails and names the viewpoint
+  ok   COMPARE row whose scale cell says "no": fails (replace the reference)
+  ok   COMPARE row with a one-word "yes": fails (must say what matches)
+  ok   COMPARE row with "N/A": fails
+  ok   a statement that merely starts with the letters "no" ("north-side ...") is not mistaken for "no"
+  ok   every row is checked, not just the first
+  ok   a second incomplete row fails and names its case
+  ok   canary RULE 3: agent started 7 h ago, no hand-in gate line since: tripped, names the agent
+  ok   canary RULE 3: agent started 5 h ago: not yet
+  ok   canary RULE 3: a hand-in gate line (allow) after the start clears it
+  ok   canary RULE 3: a hand-in line BEFORE the start does not help
+  ok   canary RULE 3: FAIL-OPEN hand-in lines do not count as the gate running
+  ok   canary RULE 3: exempt-type skips (decision skip) are not agent starts
+  ok   canary RULE 3: audit-gate lines (gate audit) do not count as hand-in lines
+  ok   make_brief through the real tool: RULE 3 shows, exit 3, brief still printed
+audit gate v2: records, verdict, resumed builder, no builder record
+  ok   builder (signed v3 record) passes
+  ok   fault 1: a hand-typed AUDIT.md with an invented auditor id does NOT clear the owed audit (no audit record)
+  ok   fault 1: --accept refuses it too and names the missing record
+  ok   fault 1: --accept --builder fb1 does not bypass the record
+  ok   a real auditor finishing through the gate: allowed, AUDIT RECORD written with its harness id and the builder id
+  ok   ...and the owed audit is cleared
+  ok   --accept with a recorded audit with verdict accept: passes
+  ok   --accept --builder naming another agent than the audit record: refused
+  ok   an AUDIT.md edited after the auditor finished is owed again (hash differs from the record)
+  ok   ...restored to the recorded text: cleared again
+  ok   verdict "send back": the audit was done, the notice clears
+  ok   fault 2: --accept refuses a "send back" audit
+  ok   fault 3: the SAME builder id passes the hand-in again after the audit (resumed after send back)
+  ok   ...the old audit no longer counts: owed again and the log says so
+  ok   ...and --accept refuses until a new audit is recorded
+  ok   a second pass back to back (PreToolUse then Stop at one finish) logs no extra owed line
+  ok   a new auditor after the re-hand-in clears it and is the recorded one
+  ok   fault 4: AUDIT-OF a folder with no builder record and no log line: the auditor is REFUSED (fail closed)
+  ok   fault 4: builder record deleted but the gate log still shows who passed it: the id is recovered from the log, the audit is accepted
+  ok   ...and the builder id (recovered from the log) still cannot audit its own round
+measured gates through the finish hook
+  ok   make_brief wrote GATES-VERSION and the GATE line into the brief the hook reads
+  ok   hook: the brief's GATE line is passed to check_handin; 17/21 measured: stop BLOCKED with the measured number
+  ok   hook: 21/21 measured: stop allowed, hand-in recorded
+  ok   hook: a brief WITHOUT GATES-VERSION (agent started before gates v2) is not measured: 3/21 on disk does not block it
+  ok   hook: gates in a BRIEF-FILE are read as well
+gates3 hooks
+  ok   brief_gate.mjs with a syntax error in lib.mjs: exit 0 (fail open) and ONE logged FAIL-OPEN line
+  ok   handin_gate.mjs with a syntax error in lib.mjs: exit 0 (fail open) and ONE logged FAIL-OPEN line
+  ok   gate_notice.mjs with a syntax error in lib.mjs: exit 0 (fail open) and ONE logged FAIL-OPEN line
+  ok   contract_inject.mjs with a syntax error in lib.mjs: exit 0 (fail open) and ONE logged FAIL-OPEN line
+  ok   brief_gate.mjs with a syntax error in audit_lib.mjs: exit 0 (fail open) and ONE logged FAIL-OPEN line
+  ok   handin_gate.mjs with a syntax error in audit_lib.mjs: exit 0 (fail open) and ONE logged FAIL-OPEN line
+  ok   gate_notice.mjs with a syntax error in audit_lib.mjs: exit 0 (fail open) and ONE logged FAIL-OPEN line
+  ok   an exception thrown by the implementation: exit 0, FAIL-OPEN logged with the message
+  ok   an implementation file that is missing: exit 0, FAIL-OPEN logged
+  ok   guard.mjs imports only node built-ins (so no library can stop its FAIL-OPEN line)
+  ok   check_handin has no static import of gates_lib or the hook libraries (dynamic imports inside try)
+  ok   empty agent_type, no transcript, never launched: a separate non-alarm log entry (no FAIL-OPEN)
+  ok   ...and it raises no gate notice item
+  ok   a real agent type with no transcript: still FAIL-OPEN
+  ok   an empty agent_type whose id the launch hook saw (a known agent id): FAIL-OPEN
+  ok   twelve helper agents in a row raise no notice item of their own
+  ok   five NO-CONTRACT launches: ONE summary line carrying the count and the distinct reasons
+  ok   ...with exactly one #n[code] token for the whole group
+  ok   ...and the notice says 1 open item
+  ok   acking that one token clears all five launches
+  ok   a launch after the ack shows up again, alone (x1)
+  ok   NO-CONTRACT launch that asks for an AUDIT.md to be written: DENIED (exit 2), says to use make_brief --audit
+  ok   ...an "auditor" prompt that writes findings into a Windows-path AUDIT.md: denied too
+  ok   ...create AUDIT.md: denied
+  ok   ...a prompt that carries the "Auditor agent:" header lines: denied
+  ok   a merger that mentions AUDIT.md and a progress folder: ALLOWED
+  ok   a clerk that edits the queue and records an accepted audit: ALLOWED
+  ok   a clerk that writes an ACCEPTANCE.md entry quoting the auditor and AUDIT.md: ALLOWED
+  ok   a reader of AUDIT.md: ALLOWED
+  ok   a read-only "review of docs/progress" by someone else is a review of the work of another agent: REFUSED by meaning (gates12 decision 3; it used to pass and its audit stayed owed)
+  ok   a review of the hook scripts (a reason that opens with the review job) is REFUSED by meaning (gates12 decision 3)
+  ok   read-only research and diagnosis that names no review job: allowed
+  ok   a read of docs/progress without audit wording: allowed
+  ok   a proper AUDIT-OF launch is unaffected
+  ok   the refused audit launch is on the notice (news to the main session)
+  ok   a STATUS whose only open item is a complete BLOCKED line: the stop is ALLOWED
+  ok   ...and a `blocked` line is written to gate.log with the item text
+  ok   ...which raises a gate notice item (news, not noise) with the item
+  ok   ...whose token can be acknowledged and then disappears
+  ok   an excuse ("out of scope", "later round") with no tried / blocked by: the stop is BLOCKED, the reason shows the BLOCKED form
+  ok   "blocked by: time" is an excuse in the BLOCKED form: still refused
+  ok   make_brief --prior-audit emits a PRIOR-AUDIT: line
+  ok   send-back brief (PRIOR-AUDIT): a STATUS without the "Prior audit items" table is refused by the finish hook
+  ok   ...with the table: allowed
+gates3 hooks, part 2: BLOCKED for old-layout briefs, once per finish; secret creation
+  ok   old-layout brief: a STATUS with a BLOCKED line passes as before and the BLOCKED news is logged anyway (read from STATUS.md by the hook)
+  ok   ...the finish hook runs twice at one finish (PreToolUse, then Stop): still ONE blocked entry
+  ok   ...and a changed set of BLOCKED items is news again
+  ok   ensureSecret returns the same secret on every call and never overwrites it
+  ok   six processes asking for a secret in a fresh state dir all get the same one
+  ok   signRecord / verifyRecord: a signed record verifies, an edited one does not, a record without sig does not
+gates3 hooks, part 3: a deleted builder record does not cancel the debt (auditgate audit fault 6)
+  ok   owed while the builder record exists
+  ok   the builder record DELETED: still owed (the "audit owed" log line stands in), builder id taken from the log
+  ok   a typed AUDIT.md does not clear it
+  ok   the signed audit record clears it
+  ok   a progress folder that no longer exists anywhere is not listed (nothing left to audit; documented limit)
+gates4 hooks: state guard, delete guard, reference register, made-up auditor id, launch gap, inject hint
+  ok   state guard: a subagent writing a builder record under .claude/state: DENIED (exit 2), logged
+  ok   ...Edit with forward slashes: denied
+  ok   state guard: a subagent reading ack_secret: denied
+  ok   state guard: reading gate.log is allowed (diagnosis)
+  ok   state guard: a Grep over the state folder: denied
+  ok   state guard: `cat .../gate.log` (a plain read) allowed
+  ok   state guard: a redirect into the state folder: denied
+  ok   state guard: cat of the secret: denied
+  ok   state guard: Get-Content of the secret (PowerShell, backslashes): denied
+  ok   state guard: a subagent running gate_ack: denied
+  ok   state guard: a command that names recordAudit: denied
+  ok   state guard: a subagent running ref_seed (it would register a picture it made up): denied
+  ok   state guard: ordinary commands (git, check_handin) allowed
+  ok   state guard: writing a normal file is allowed even when its text names the writers (the guard reads paths and commands, not file bodies: a documented limit)
+  ok   state guard: the MAIN session (no agent_id) is not limited
+  ok   state guard: bad JSON: fail open, logged
+  ok   delete guard: rm -rf of a worktree that holds the docs/reference junction: DENIED (exit 2), names the script
+  ok   delete guard: Remove-Item -Recurse -Force of it (PowerShell): denied
+  ok   delete guard: rmdir /s /q: denied
+  ok   delete guard: rm -rf of the docs folder that holds the junction: denied
+  ok   delete guard: rm -r docs/reference run from inside the worktree: denied
+  ok   delete guard: rm -rf * in a worktree root (expands to docs with the junction): denied
+  ok   delete guard: the roadworld-wt folder itself: denied
+  ok   delete guard: rm -rf build inside a worktree (no link below it): ALLOWED, agents do clean builds
+  ok   delete guard: Remove-Item -Recurse of build: allowed
+  ok   delete guard: rm -f of one file: allowed
+  ok   delete guard: git worktree remove without the script: denied
+  ok   delete guard: the removal script itself: allowed
+  ok   delete guard: robocopy /MIR into docs\reference: denied
+  ok   delete guard: an ordinary robocopy: allowed
+  ok   delete guard: the same delete inside bash -c "...": denied
+  ok   delete guard: git clean -fdx (removes ignored files such as the junction): denied
+  ok   delete guard: rm -rf of a shell variable near a worktree: denied (cannot be checked)
+  ok   delete guard: python shutil.rmtree of a worktree path: denied
+  ok   delete guard: node fs.rmSync recursive near a worktree: denied
+  ok   delete guard: .NET Directory.Delete(path, $true) near a worktree: denied
+  ok   delete guard: rmtree of an unrelated scratch path: allowed
+  ok   delete guard: harmless commands: allowed
+  ok   delete guard: rm -rf of a plain scratch path outside any worktree: allowed
+  ok   delete guard: bad JSON: fail open, logged
+  ok   the photos survived every test above (the guard only reads)
+  ok   ...and removing the junction non-recursively leaves the target
+  ok   ref_seed registers the existing photos (3) with their sha1, by "seed"
+  ok   ...a second run registers nothing new
+  ok   PostToolUse hook: a photo that landed in docs/reference during an agent's call is registered with that agent id
+  ok   ...composites under _compare are never registered as references
+  ok   ref_log hook: bad JSON: fail open, logged
+  ok   a correctly signed audit record for an auditor id no SubagentStart line saw ("fake9"): the audit stays OWED, says it was never seen launching
+  ok   the same audit by an id whose launch the hook logged ("real7"): clears the debt
+  ok   launch gap: 5 allowed launches an hour ago, 1 SubagentStart line: reported (the start hook is not seeing agents)
+  ok   launch gap: launches and starts balanced: nothing
+  ok   launch gap: a gap of 2 is not reported (agents killed before they started)
+  ok   launch gap: launches in the last 10 minutes are not counted (the agent may not have started yet)
+  ok   launch gap: exempt-type launches (Explore, Plan) are not counted
+  ok   the gap is a notice item (counted in the total and printed)
+  ok   SubagentStart context tells an agent asked to audit without AUDIT-OF to say so in the first line of its report
+  ok   settings.json wires delete_guard and state_guard (PreToolUse) and ref_log (PostToolUse)
+  ok   the finish hook timeout (300 s) stays above the 270 s the gates may spend
+gates4: ITEM lines from the task file reach the finish hook; omission is caught without a phrase list
+  ok   make_brief turns the "## Items" section into ITEM: lines (id | text)
+  ok   item G has no row in STATUS: the finish hook refuses and names item G (nothing was said about it, no excuse phrase to match)
+  ok   with a row per item, each done with a proof: the stop is allowed
+  ok   no "## Items" section: the numbered lines of "## Faults" become the items (prose lines such as "Known: ..." do not), and the brief says so
+  ok   a task file WITHOUT an Items section emits no ITEM lines (older task files are unaffected)
+gates3 hooks, part 4: HANDIN_DIR in the prompt, HANDIN: no-visual only in the BRIEF-FILE (this round's own hand-in was refused for it)
+  ok   prompt with HANDIN_DIR + BRIEF-FILE that says "HANDIN: no-visual": the engine-only check applies (no COMPARE.md demanded), stop allowed
+  ok   ...and the check still runs: a missing STATUS.md blocks, without a COMPARE.md complaint
+gates5: state guard and delete guard against the real payload shapes (gates4 audit items 1-9, 12); main checkout resolved from a worktree; settings.json canary
+  ok   state guard: 45 real-payload cases (lane lock, gate.log reads, words in messages, secret, records) all judged as decided
+  ok   state guard: the lane lock is allowed for the MAIN session too (no agent_id)
+  ok   delete guard run FROM A WORKTREE copy: rm -rf of the MAIN checkout is refused (gates4 fault 5: the hook used its own location as the root)
+  ok   ...and rm -rf main\docs (where the photos live): refused
+  ok   ...the refusal is logged in the MAIN checkout's .claude/state, not in the worktree's
+  ok   ...a FAIL-OPEN line from a worktree copy also lands in the main checkout's state (CLAUDE_PROJECT_DIR is the main checkout; hooks resolve it themselves either way)
+  ok   delete guard: 68 cases (gates4 audit faults 2, 5-8 and the allowed backup mirror, builds and scratch deletes) all judged as decided
+  ok   delete guard: the junction in the test worktree and its photo survived every case
+  ok   root.mjs: from a worktree's tools/hooks the main checkout is found through the .git file and commondir
+  ok   root.mjs: from the main checkout itself it is that folder; worktreeRoots lists the registered worktree
+  ok   lib.ROOT of a hook file that sits in a worktree is the main checkout (state and the contract are read and written there only)
+  ok   settings.json canary: all 11 hook command lines of the wiring start and exit 0 on a fake payload of their event, run from a worktree cwd (a wrong path or a missing import would show here, not only in a live session)
+test isolation: nothing of this run reaches the real gate.log
+  ok   NO line mentioning this run's temp folder reached the real gate.log of the main checkout (C:\Users\bgbg0\Documents\Programming\roadworld\.claude\state\gate.log)
+
+419 passed, 0 failed (temp dir C:\Users\bgbg0\AppData\Local\Temp\hooktest-1oQain)

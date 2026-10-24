@@ -41,7 +41,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { ROOT, log, readStdin, parseJson } from './lib.mjs';
+import { ROOT, log, readStdin, parseJson, reEsc, safeRe } from './lib.mjs';
 import { worktreeRoots } from './root.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
@@ -68,7 +68,9 @@ const fixDots = (p) => { const r = path.parse(p).root; return r + p.slice(r.leng
 // either bound does NOT refuse (a clean build of a folder with no link must pass, fast): it sets .buildBound and writes a "scan bound" line to gate.log. Outside build folders the old rule holds
 // (ms = 5000 / limit entries, a cap hit refuses).
 export const BUILD_OUTPUT_DIRS = /^(?:intermediate|binaries|deriveddatacache|saved|build|build-[\w.-]+|\.vs|obj|_deps)$/i;
-export function linksBelow(p, { ms = 5000, limit = 5000000, buildMs = 1500, buildDepth = 6 } = {}) {
+// gates10 (gates9 audit fault 1): NO depth bound any more (a link at depth 7 let `rm -rf build` through); only the time bound stays (CP_LINKS_BUILD_MS overrides it for tests), and when it is hit the
+// line in gate.log carries the FAIL-OPEN marker so the main session gets a GATE NOTICE (it used to be a quiet "scan bound" line).
+export function linksBelow(p, { ms = 5000, limit = 5000000, buildMs = Number(process.env.CP_LINKS_BUILD_MS) >= 0 && process.env.CP_LINKS_BUILD_MS !== undefined && process.env.CP_LINKS_BUILD_MS !== '' ? Number(process.env.CP_LINKS_BUILD_MS) : 1500 } = {}) {
   const found = []; found.seen = 0; found.capped = false; found.buildBound = false;
   const t0 = Date.now(); let tBuild = 0;       // tBuild: time spent inside build output folders
   const walk = (d, bd) => {      // bd: -1 outside a build folder, else the level below the build folder root
@@ -83,7 +85,6 @@ export function linksBelow(p, { ms = 5000, limit = 5000000, buildMs = 1500, buil
       const inBuild = bd >= 0 || BUILD_OUTPUT_DIRS.test(e.name);
       if (!inBuild) { walk(f, -1); if (found.capped) return; continue; }
       const nbd = bd >= 0 ? bd + 1 : 0;
-      if (nbd > buildDepth) { found.buildBound = true; found.boundWhy = 'depth'; continue; }
       if (tBuild >= buildMs) { found.buildBound = true; found.boundWhy = 'time'; continue; }
       const tb = Date.now(); walk(f, nbd); tBuild += Date.now() - tb;
       if (found.capped) return;
@@ -92,7 +93,7 @@ export function linksBelow(p, { ms = 5000, limit = 5000000, buildMs = 1500, buil
   let st; try { st = fs.lstatSync(p); } catch { return found; }
   if (st.isSymbolicLink()) { found.push(p); return found; }
   if (st.isDirectory()) { const startBuild = BUILD_OUTPUT_DIRS.test(path.basename(p)); const tb = Date.now(); walk(p, startBuild ? 0 : -1); if (startBuild) tBuild += Date.now() - tb; }
-  if (found.buildBound) { try { log({ gate: 'delete_guard', decision: 'allow', reason: `scan bound: the junction walk of ${p} stopped inside a build output folder (${found.boundWhy} bound: depth ${buildDepth}, ${buildMs} ms); no link was found before it, so the delete is not refused for it`, path: p, entries_seen: found.seen }); } catch { /* log only */ } }
+  if (found.buildBound) { try { log({ gate: 'delete_guard', decision: 'allow', reason: `FAIL-OPEN: scan bound: the junction walk of ${p} stopped inside a build output folder (${found.boundWhy} bound, ${buildMs} ms for all build folders); no link was found before it, so the delete was NOT refused for it and a link beyond the bound would be missed`, path: p, entries_seen: found.seen }); } catch { /* log only */ } }
   return found;
 }
 
@@ -108,9 +109,9 @@ function segRe(pat) {
     const c = pat[i];
     if (c === '*') re += '.*'; else if (c === '?') re += '.';
     else if (c === '[') { const j = pat.indexOf(']', i + 1); if (j < 0) re += '\\['; else { let cls = pat.slice(i + 1, j).replace(/^!/, '^').replace(/\\/g, '\\\\'); re += '[' + cls + ']'; i = j; } }
-    else re += c.replace(/[.+^${}()|\\]/g, '\\$&');
+    else re += reEsc(c);
   }
-  return new RegExp(re + '$', 'i');
+  return safeRe(re + '$', 'i');
 }
 // expand * ? [class] in any segment of an absolute path against the disk (case-insensitive); returns [] when nothing matches
 export function expandGlob(abs, limit = 400) {
@@ -226,6 +227,76 @@ const PHOTO_PATH_NAMES = ['docs', 'reference', 'aerial', 'street', 'gsv', '_comp
 const nameMayMatchPic = (pats) => !pats.length || pats.some((p) => ['a.jpg', 'a.png', 'a.jpeg', 'a.webp', 'a.gif', ...PHOTO_PATH_NAMES].some((n) => globRe(p).test(n)));
 const DELETEISH = /remove-item|\bri\b|\.delete\s*\(|\[io\.file\]::delete|\bunlink\b|(^|[\s;|&])(?:rm|del|erase|truncate|shred)(?:\s|$)/i;   // gates7 item 7: "| xargs rm" at the end of the line, truncate, shred
 
+// The command as CODE (gates10): heredoc bodies are kept only when the heredoc is fed to an interpreter or shell, and the words of a prose segment (git, gh, echo, printf, grep, cat, ...) are dropped.
+// Nothing else is removed: a one-liner in python -c / node -e / powershell -Command keeps its text. On any parse problem the whole command is returned (the old behaviour).
+const PROSE_VERBS = new Set(['git', 'gh', 'echo', 'printf', 'write-host', 'write-output', 'write-error', 'write-warning', 'cat', 'type', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'findstr', 'select-string', 'sls', 'less', 'more', 'head', 'tail', 'wc', 'jq']);
+const INTERP_VERBS = new Set(['bash', 'sh', 'zsh', 'pwsh', 'powershell', 'python', 'python3', 'py', 'node', 'nodejs', 'perl', 'ruby', 'deno', 'bun', 'cmd', 'iex', 'invoke-expression']);
+const WRAP_VERBS = new Set(['sudo', 'env', 'time', 'nohup', 'command', 'exec', 'timeout', 'nice', 'stdbuf', 'unbuffer', 'call', 'start']);
+// gates11 (gates10 audit fault 11): is the heredoc / here-string fed to an interpreter? Only the command that OWNS the heredoc is read: the text before the "<<" back to the last
+// && || ; and the text after the tag up to the next && || ; (so "node -v && cat > x.mjs <<EOF" and "cat > x.mjs <<EOF && node x.mjs" are a file write, not code), plus every
+// command piped on from it ("cat <<EOF | node -"). Redirect targets ("> node.mjs") are not words of the command. Returns the interpreter verb or null.
+export function heredocInterpreter(pre, post) {
+  const own = String(pre).split(/&&|\|\||;/).pop() + ' ' + String(post).split(/&&|\|\||;/)[0];
+  for (const part of own.split('|')) {
+    const toks = part.replace(/\d*>>?\s*\S+/g, ' ').replace(/<<?-?\s*\S*/g, ' ').trim().split(/\s+/).filter(Boolean).map((x) => x.replace(/^['"]|['"]$/g, ''));
+    let i = 0;
+    while (i < toks.length) {
+      const base = toks[i].toLowerCase().replace(/^.*[\/]/, '').replace(/\.(?:exe|cmd|bat|ps1)$/, '');
+      if (/^\w+=/.test(toks[i]) || WRAP_VERBS.has(base) || /^-/.test(toks[i]) || /^\d+$/.test(toks[i])) { i++; continue; }
+      if (INTERP_VERBS.has(base)) return base;
+      break;
+    }
+  }
+  return null;
+}
+// "cat > s.mjs <<EOF ... EOF && node s.mjs": the heredoc is a file write, but when a LATER part of the same command runs an interpreter on that very file the body is code that runs now.
+// targets = the files a heredoc command writes to (> f, >> f, tee f); the rest of the command is searched for an interpreter whose arguments name one of them.
+function writtenTargets(pre, post) {
+  const own = String(pre).split(/&&|\|\||;/).pop() + ' ' + String(post).split(/&&|\|\||;/)[0];
+  const out = [...own.matchAll(/\d*>>?\s*(['"]?)([^\s'">|&;]+)\1/g)].map((m) => m[2]);
+  const tee = own.match(/\btee\s+(?:-\w+\s+)*(['"]?)([^\s'">|&;]+)\1/); if (tee) out.push(tee[2]);
+  return out.filter((x) => x && !/^\/dev\/|^&/.test(x));
+}
+const baseName = (x) => String(x).replace(/\\/g, '/').replace(/^.*\//, '').toLowerCase();
+function runsAnyOf(rest, targets) {
+  if (!targets.length) return false;
+  const names = targets.map(baseName);
+  for (const seg of String(rest).split(/&&|\|\||;|\n|\|/)) {
+    const toks = seg.trim().split(/\s+/).filter(Boolean).map((x) => x.replace(/^['"]|['"]$/g, ''));
+    let i = 0;
+    while (i < toks.length) {
+      const base = toks[i].toLowerCase().replace(/^.*[\/\\]/, '').replace(/\.(?:exe|cmd|bat|ps1)$/, '');
+      if (/^\w+=/.test(toks[i]) || WRAP_VERBS.has(base) || /^-/.test(toks[i]) || /^\d+$/.test(toks[i])) { i++; continue; }
+      if (INTERP_VERBS.has(base) || base === 'source' || base === '.') { if (toks.slice(i + 1).some((a) => names.includes(baseName(a)))) return true; break; }
+      if (names.includes(baseName(toks[i]))) return true;   // ./s.sh, s.mjs run directly
+      break;
+    }
+  }
+  return false;
+}
+const HEREDOC_RE = /([^\n]*?)<<-?[ \t]*(['"]?)([A-Za-z_][\w.-]*)\2([^\n]*)\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g;
+const HERESTRING_RE = /([^\n]*?)@(['"])[ \t]*\n([\s\S]*?)\n[ \t]*\2@([^\n]*)/g;
+export function codeText(command) {
+  const cmd = String(command || '').replace(/\r\n/g, '\n');
+  try {
+    let kept = '';
+    const restOf = cmd.replace(HEREDOC_RE, (m, pre, _q, _tag, post) => pre + post).replace(HERESTRING_RE, (m, pre, _q, text, post) => pre + post);
+    let body = cmd.replace(HEREDOC_RE, (m, pre, _q, _tag, post, text) => { if (heredocInterpreter(pre, post) || runsAnyOf(restOf, writtenTargets(pre, post))) kept += '\n' + text; return pre + post; });
+    // PowerShell here-strings (@' ... '@): the text of a file being written, unless an interpreter takes it (iex, powershell, "| node -")
+    body = body.replace(HERESTRING_RE, (m, pre, _q, text, post) => { if (heredocInterpreter(pre, post)) kept += '\n' + text; return pre + post; });
+    const { segments } = parseCommand(body);
+    const out = [kept]; let dropped = body !== cmd;
+    for (const seg of segments) {
+      if (!seg.words.length) continue;
+      const v = verbOf(seg.words);
+      if (PROSE_VERBS.has(v.verb) && !v.line) { dropped = true; continue; }
+      out.push(seg.words.map((w) => w.v).join(' '));
+    }
+    // nothing dropped: the original text (the lexer's words lose parentheses and escaped quotes, which the scans below read)
+    return dropped ? out.join('\n') : cmd;
+  } catch { return cmd; }
+}
+
 // returns [] or an array of refusal reasons
 export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mainRoot = ROOT) {
   const reasons = [];
@@ -240,22 +311,25 @@ export function analyse(command, cwd = process.cwd(), depth = 0, ctx = null, mai
   const holdsLinkAt = (d) => { let x = path.resolve(d); for (let i = 0; i < 10; i++) { try { if (fs.lstatSync(path.join(x, 'docs', 'reference')).isSymbolicLink()) return true; } catch { /* none */ } const up = path.dirname(x); if (up === x) break; x = up; } return false; };
   const risky = (at) => ctx.underMain(at) || holdsLinkAt(at) || mentions();
 
+  // gates10: the two text scans below read CODE, not prose: the body of a heredoc that is not fed to an interpreter and the quoted arguments of a prose verb (git commit -m, echo, grep, gh ...)
+  // are dropped, so a commit message or note that merely SAYS a recursive delete (or "rimraf") is not a delete (gates9 audit, false positive).
+  const scan = codeText(cmd);
   // PowerShell: Remove-Item with -Recurse and a parenthesised (computed) path, in either order: the parentheses split the statement, so it is read as text
-  if (/\b(?:remove-item|ri)\b[^;|\n]*\([^;\n]*\)[^;\n]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b|\b(?:remove-item|ri)\b[^;\n]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b[^;\n]*\(/i.test(cmd) && risky(cwd)) reasons.push('Remove-Item -Recurse with a computed path in parentheses (Join-Path, Resolve-Path, Get-Item ...): its target cannot be read, in the main checkout, a tree with a docs\\reference link, or a command naming the photos');
+  if (/\b(?:remove-item|ri)\b[^;|\n]*\([^;\n]*\)[^;\n]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b|\b(?:remove-item|ri)\b[^;\n]*\s-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?\b[^;\n]*\(/i.test(scan) && risky(cwd)) reasons.push('Remove-Item -Recurse with a computed path in parentheses (Join-Path, Resolve-Path, Get-Item ...): its target cannot be read, in the main checkout, a tree with a docs\\reference link, or a command naming the photos');
   // recursive deletes written as a one-liner in another language near a tree (gates7 item 1: a call whose FIRST argument is a string literal is judged like a delete target below,
   // so python -c "shutil.rmtree('build')" is allowed in a clean worktree; a call with no literal first argument keeps the refusal)
   const ONE_ALL = /shutil\.rmtree|\brmtree\s*\(|\brm(?:dir)?(?:Sync)?\s*\([^)]*recursive\s*:\s*true|\brimraf\b|Directory\]::Delete\s*\(.*,\s*\$?true\s*\)|Directory\.Delete\s*\(.*,\s*\$?true\s*\)|\.Delete\s*\(\s*\$?true\s*\)|FileUtils\.rm_rf|File\.unlink|rm_rf\(/gi;
   const ONE_LIT = /(shutil\.rmtree|\brmtree|\brm(?:dir)?Sync|\brimraf(?:Sync)?|Directory\]?::?\.?Delete|FileUtils\.rm_rf|\brm_rf)\s*\(\s*\\*(["'])([^"'\n]*?)\\*\2([^)\n]*)/gi;
   const oneLits = [];
-  for (const m of cmd.matchAll(ONE_LIT)) {
+  for (const m of scan.matchAll(ONE_LIT)) {
     const fn = m[1].toLowerCase(); const rest = m[4] || '';
     const rec = /rmtree|rimraf|rm_rf/.test(fn) || (/rm(?:dir)?sync/.test(fn) && /recursive\s*:\s*true/i.test(rest)) || (/delete/.test(fn) && /,\s*\$?true/i.test(rest));
     if (rec && /^\s*(?:,|$)/.test(rest)) oneLits.push(m[3]);   // 'build' + x, 'build'.join(..), f"build": not a plain literal, so the call stays unresolved
   }
-  if ((cmd.match(ONE_ALL) || []).length > oneLits.length && nearText()) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) with a path that is not a string literal, in or near the main checkout or a worktree: it follows a docs\\reference junction');
+  if ((scan.match(ONE_ALL) || []).length > oneLits.length && nearText()) reasons.push('a recursive delete written as a script one-liner (rmtree / fs.rmSync recursive / rimraf / Directory.Delete(.., true)) with a path that is not a string literal, in or near the main checkout or a worktree: it follows a docs\\reference junction');
   // heredocs and here-strings handed to a shell run as commands
-  for (const m of cmd.replace(/\r\n/g, '\n').matchAll(/([^\n]*?)<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\2([^\n]*)\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/g)) {
-    if (/(?:^|[\s|;&])(?:bash|sh|zsh|pwsh|powershell)(?:\s|$)/.test(m[1] + ' ' + m[4])) reasons.push(...sub(m[5], cwd));
+  for (const m of cmd.replace(/\r\n/g, '\n').matchAll(HEREDOC_RE)) {
+    if (/^(?:bash|sh|zsh|pwsh|powershell)$/.test(heredocInterpreter(m[1], m[4]) || '')) reasons.push(...sub(m[5], cwd));
   }
 
   const { segments } = parseCommand(cmd);

@@ -1,0 +1,135 @@
+gates10 A: phase measure (check_handin --phase measure on made-up hand-ins)
+  ok   A measure: a GOOD MEASURE.md (opened line, table with photo and value, 3 photos, a decodable trace image) passes
+  ok   A measure: BAD (no MEASURE.md) is refused with the matching reason
+  ok   A measure: BAD (no "References opened" line) is refused with the matching reason
+  ok   A measure: BAD (opened 0) is refused with the matching reason
+  ok   A measure: BAD (opened 2 of 3 with no "not opened" line) is refused with the matching reason
+  ok   A measure: BAD (no case section) is refused with the matching reason
+  ok   A measure: BAD (table row without a measured value) is refused with the matching reason
+  ok   A measure: BAD (table row without a photo file) is refused with the matching reason
+  ok   A measure: BAD (only 2 different photos) is refused with the matching reason
+  ok   A measure: BAD (no trace image named) is refused with the matching reason
+  ok   A measure: BAD (trace image does not exist) is refused with the matching reason
+  ok   A measure: BAD (trace image is a truncated PNG) is refused with the matching reason
+  ok   A measure: BAD (trace image is not a picture) is refused with the matching reason
+  ok   A measure: a MEASURE.md written before the brief (--since in the future) is refused
+gates10 A: phase build (check_handin --phase build: commit list, the suite run by the check, fail_first, waivers, git status)
+  ok   A build: a GOOD build hand-in (every commit listed, suite exits 0 when the check runs it, fail_first for the new test file, no waiver, clean git status) passes
+  ok   A build: BAD (no BUILD.md) is refused with the matching reason
+  ok   A build: BAD (a commit made since the measure phase is not listed) is refused with the matching reason
+  ok   A build: BAD (no Commits: line) is refused with the matching reason
+  FAIL A build: BAD (suite_build.log shows a failing test the brief does not allow) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards10-3xvm3K\b_suite\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  FAIL A build: BAD (no suite_build.log at all) is refused with the matching reason
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards10-3xvm3K\b_nosuite\docs\progress\rr (phase build):
+        - no suite to run: the brief has no SUITE: line and the worktree has no sim_core; the build phase check runs the suite itself, so the brief must name one
+       
+  ok   A build: BAD (a new test file with no fail_first_*.txt) is refused with the matching reason
+  ok   A build: BAD (git status not empty) is refused with the matching reason
+gates10 A: finish hook for a phase agent (real transcripts)
+  ok   A hook: a measure-phase agent with a GOOD MEASURE.md may stop; logged as a passed phase check, NOT a hand-in
+  ok   A hook: ... and no builder record exists, so no audit is owed after a phase
+  ok   A hook: a measure-phase agent with NO MEASURE.md is refused three times (exit 2, the reason names MEASURE.md and the phase)
+  ok   A hook: ... the fourth stop is released and HANDIN_FAILED.txt is written in the hand-in folder
+  ok   A hook: a DIFFERENT phase agent has its own refusal count (refusal 1 of 3, not released)
+  ok   A hook: a valid CHECKPOINT.md does NOT let a phase agent stop (the allowance is for the final hand-in only)
+  ok   A hook: the render phase gets the ordinary full hand-in check (STATUS.md is demanded)
+  FAIL A hook: a build-phase agent whose suite_build.log shows a failure the brief does not allow is refused (the hook reads the log and never runs the suite)
+       PHASE GATE (build): you may not finish yet (refusal 1 of 3). Fix the following, run `node tools/check_handin.mjs C:\Users\bgbg0\AppData\Local\Temp\guards10-3xvm3K\h_build\docs\progress\rr --phase build` until it passes, then finish.
+       phase check: suite node -e "process.exit(3)" 3
+       HAND-IN CHECK FAILED (1) for C:\Users\bgbg0\AppData\Local\Temp\guards10-3xvm3K\h_build\docs\progress\rr (phase build):
+        
+gates10 A: the `unreal` frame kind of COMPARE.md
+  ok   A unreal: a row with frame kind unreal is not a headline view of the browser records
+  ok   A unreal: the [unreal] tag in the case cell declares it as well
+  ok   A unreal: pictureProblems asks for NO stats.json / mask.png of an unreal frame named *_aerial.png
+  ok   A unreal: ... but the same frame as a browser render (no declaration) still needs its records
+  ok   A unreal: a real decodable 10 KB+ frame written during the run passes unrealFrameProblems
+  ok   A unreal: a frame under 10 KB is refused
+  ok   A unreal: a truncated frame is refused
+  ok   A unreal: a frame older than the brief is refused
+  ok   A unreal: a row that is not unreal is not judged by this check
+  ok   image_lib: a PNG cut off before IEND is not complete; the whole file is
+gates10 C: a truncated PNG is refused as a checkpoint image (gates9 audit)
+  ok   C a >= 10 KB PNG whose tail is cut off (valid header, no IEND) is refused as a checkpoint image
+  ok   C ... the complete picture passes
+gates10 A/B: make_brief --phase and --first-look
+  ok   A make_brief --phase measure: prints a PHASE: measure line and the phase section
+  ok   A make_brief --phase build: refused while MEASURE.md does not exist
+  ok   A make_brief --phase render: refused while the earlier phases have not handed over
+  ok   A make_brief --phase bogus: refused
+  ok   A make_brief --phase build: refused when MEASURE.md exists but fails its check (run by make_brief, not quoted)
+  ok   A make_brief --phase build: briefed once MEASURE.md passes; the brief carries PHASE: build and the SUITE: line of the task file
+  ok   B make_brief --first-look: prints a FIRSTLOOK-OF marker, the owner words, and NOT the builder fault list
+  ok   B ... and tells the agent not to open AUDIT.md, STATUS.md or FAULTS.md first
+gates10 B: FIRSTLOOK_OPUS.md validated by the finish hook
+  ok   B hook: a GOOD FIRSTLOOK_OPUS.md (own id, 3 existing images incl. a round picture and a photo, Top 3, would-never-be-built) lets the agent finish
+  ok   B hook: BAD first look (no file) is refused with the matching reason
+  ok   B hook: BAD first look (another agent id) is refused with the matching reason
+  ok   B hook: BAD first look (no id line) is refused with the matching reason
+  ok   B hook: BAD first look (no Opened: line) is refused with the matching reason
+  ok   B hook: BAD first look (only two images opened) is refused with the matching reason
+  ok   B hook: BAD first look (a named image does not exist) is refused with the matching reason
+  ok   B hook: BAD first look (no reference photo among them) is refused with the matching reason
+  ok   B hook: BAD first look (no picture of the round among them) is refused with the matching reason
+  ok   B hook: BAD first look (no Top 3) is refused with the matching reason
+  ok   B hook: BAD first look (Top 3 with a one-word item) is refused with the matching reason
+  ok   B hook: BAD first look (no "would never be built" line) is refused with the matching reason
+  ok   B hook: BAD first look (placeholder "would never be built") is refused with the matching reason
+  ok   B hook: three refusals, then the fourth stop is released and FIRSTLOOK_FAILED.txt is written
+  ok   B hook: STATUS.md read BEFORE the first image (transcript order) is refused unless an "Order:" line says why
+  ok   B hook: ... with an "Order:" line (20+ characters) it is let through and the line is on record
+  ok   B hook: images first, STATUS.md afterwards: fine
+gates10 B: the launch hook and NO-CONTRACT audits / first looks (real descriptions from gate.log of 23 Oct 2026)
+  ok   B launch: NO-CONTRACT "Auditor for gates9 hand-in" is refused as an audit, and the text names the way to launch it
+  ok   B launch: NO-CONTRACT "Auditor for gates8 hand-in" is refused as an audit, and the text names the way to launch it
+  ok   B launch: NO-CONTRACT "Auditor for m2fix hand-in" is refused as an audit, and the text names the way to launch it
+  ok   B launch: NO-CONTRACT "Opus first look on grade-r12 images" is refused as an first look, and the text names the way to launch it
+  ok   B launch: NO-CONTRACT "Opus first look: tjunction5 images" is refused as an first look, and the text names the way to launch it
+  ok   B launch: NO-CONTRACT "Opus first look: grade-r10 images" is refused as an first look, and the text names the way to launch it
+  ok   B launch: NO-CONTRACT "Clerk: contract speed rules, queue, acceptance" stays allowed
+  ok   B launch: NO-CONTRACT "Merge gates7 then gates9 into main" stays allowed
+  ok   B launch: NO-CONTRACT "Recovery round 2: validate and re-fetch photos" stays allowed
+  ok   B launch: NO-CONTRACT "Queue catch-up for 22-23 Oct events" stays allowed
+  ok   B launch: NO-CONTRACT "Re-fetch 18 truncated photos and back up" stays allowed
+  ok   B launch: NO-CONTRACT "Research: Unreal plugin facts" stays allowed
+  ok   B launch: a FIRSTLOOK-OF launch (make_brief --first-look) is allowed without NO-CONTRACT
+  ok   B launch: a FIRSTLOOK-OF launch with a relative folder is refused
+  ok   B launch: a FIRSTLOOK-OF launch that also carries HANDIN_DIR (a builder) is refused
+  ok   B launch: a real AUDIT-OF launch is still allowed
+  ok   B launch: a launch with no contract and no NO-CONTRACT line is still refused
+gates10 C: lock_guard bulk and indirect write forms (gates9 audit H7, patch / git apply / fs.rm routes)
+  ok   C bulk forms that rewrite a locked test (REFUSE): 34 real payloads
+  ok   C the same forms on files that are NOT locked, and read-only forms (ALLOW): 20 real payloads
+  ok   C LOCK-LIST-BAD on an allowed command: systemMessage (the user) AND hookSpecificOutput.additionalContext (Claude, the builder)
+  ok   C LOCK-LIST-BAD on a REFUSED command: the stderr the builder sees carries the warning too
+gates10 C: delete_guard reads CODE, not a commit message or a note that says "Remove-Item -Recurse"
+  ok   C delete_guard (cwd main): commit -m that only SAYS a recursive delete is allowed
+  ok   C delete_guard (cwd main): commit -m with parentheses that only SAYS a recursive delete is allowed
+  ok   C delete_guard (cwd main): git commit -F - heredoc that only SAYS a recursive delete is allowed
+  ok   C delete_guard (cwd main): commit -m "$(cat <<EOF ...)" that only SAYS a recursive delete is allowed
+  ok   C delete_guard (cwd main): cat > file <<EOF that only SAYS a recursive delete is allowed
+  ok   C delete_guard (cwd main): echo that only SAYS a recursive delete is allowed
+  ok   C delete_guard (cwd main): grep that only SAYS a recursive delete is allowed
+  ok   C delete_guard (cwd main): gh pr create --body that only SAYS a recursive delete is allowed
+  ok   C delete_guard (cwd main): a real Remove-Item -Recurse with a computed path is still refused
+  ok   C delete_guard (cwd main): a real node rimraf one-liner is still refused
+  ok   C delete_guard (cwd main): a real python rmtree one-liner is still refused
+  ok   C delete_guard (cwd main): a heredoc fed to bash with rm -rf docs is still refused
+  ok   C delete_guard (cwd main): pwsh -c Remove-Item -Recurse docs is still refused
+  ok   C delete_guard (cwd main): a prose-looking prefix does not hide a real delete is still refused
+  ok   C delete_guard (cwd main): rm -rf docs is still refused
+gates10 C: test temp folders (clean_test_temp prefixes, cleanup when a suite is cut short)
+  ok   C clean_test_temp PREFIXES cover every mkdtemp prefix the suites use (guards9-, guards10-, scenegate- were missing)
+  ok   C a suite that exits early (a failing test calls process.exit) removes its own temp folder
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the temp folder is removed
+
+104 passed, 3 failed
+FAILED TESTS:
+ - A build: BAD (suite_build.log shows a failing test the brief does not allow) is refused with the matching reason
+ - A build: BAD (no suite_build.log at all) is refused with the matching reason
+ - A hook: a build-phase agent whose suite_build.log shows a failure the brief does not allow is refused (the hook reads the log and never runs the suite)

@@ -10,7 +10,10 @@
 //
 // WHAT IT JUDGES (main session decision 23 Oct 2026): ACTUAL TARGETS, never words. A word in a commit message, an echo, a grep pattern or a heredoc body is text and is ignored.
 // Always allowed for every agent:
-//   - .claude/state/unreal_lane.lock: create, write, read, remove (the single Unreal lane), by any tool;
+//   - .claude/state/unreal_lane.lock (the single Unreal lane; gates14, main-session decision 4): a DIRECTORY holding owner.txt (agent id, round, time, purpose), made ONLY by
+//     "node tools/lane_lock.mjs take|release --agent <your id>" (the guard checks that --agent is the caller's own agent id). Every other write into the lock folder (mkdir, redirect, tee,
+//     Set-Content, cp, mv, sed -i, the Write and Edit tools) is refused, so an owner.txt naming another agent can only come from that tool run by that agent. Reading the lock is allowed to all.
+//     Removal (rm, Remove-Item) is allowed only to the agent named in owner.txt (a lock with no readable owner, and the legacy file form, can be removed by anyone). The main session is not limited;
 //   - .claude/state/gate.log and .claude/state/handin/**: read by any tool (gate.log is never written; handin/ holds refusal counts and HANDIN_FAILED.txt, written by hooks only);
 //   - NAMES of the state folder: ls, dir, Get-ChildItem, tree, find without -exec, test -f (names only, nothing of the content).
 // Refused: any other path under .claude/state (records, ref_log, ack_secret), a wildcard into it, a bare ack_secret argument, a redirect into it, a recursive read (grep -r, rg
@@ -28,12 +31,38 @@
 // match, a settings change made by a program. It reads tool input text (and the cwd of the event) and nothing else. FAIL OPEN (logged) on any internal error.
 import fs from 'node:fs';
 import path from 'node:path';
-import { ROOT, log, readStdin, parseJson } from './lib.mjs';
+import { ROOT, log, readStdin, parseJson, reEsc, safeRe, globRe, laneHolder, SECRET_HOME_DIR } from './lib.mjs';
+import { norm, winPath, hasGlob, absOf, braceExpand, globReaches, globSegRe, touchesSecretHome } from './guard_paths.mjs';
 import { parseCommand, verbOf, shellInner } from './shell_lex.mjs';
 
-const norm = (p) => String(p || '').replace(/\\/g, '/').replace(/\/+/g, '/').toLowerCase();
-const winPath = (p) => (/^\/([a-zA-Z])(\/|$)/.test(p) ? p[1] + ':' + p.slice(2) : p);
-const ALLOWED_ANY = new Set(['unreal_lane.lock']);
+const ALLOWED_ANY = new Set([]);   // gates13: the lane lock has its own rules (judgeLock)
+const LOCK = 'unreal_lane.lock';
+const CTX = { agent: '', cwd: '' };   // the agent id and cwd of the event being judged (set by judge() and judgeCommand())
+const REMOVE_VERBS = new Set(['rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri']);
+// the lock folder's absolute path for a raw path that names it (or something inside it); null when it cannot be resolved
+function lockAbs(raw) {
+  const n = String(raw).replace(/\\/g, '/'); const i = n.toLowerCase().indexOf('.claude/state');
+  if (i < 0) return null;
+  const head = winPath(n.slice(0, i + '.claude/state'.length));
+  return path.join(path.resolve(CTX.cwd || process.cwd(), head), LOCK);
+}
+// who holds the lock (gates15 ruling 4): the fold of the `lane` lines in the gate.log beside the lock folder (lib.mjs laneHolder); owner.txt is a hint and is ignored. null = nobody holds it per the log
+export function lockOwner(lockDir) {
+  try { const h = laneHolder(path.dirname(lockDir)); return h ? h.agent : null; } catch { return null; }
+}
+// the lane lock (gates13 decision 7, gates14 decision 4). The lock is made, written and released ONLY by `node tools/lane_lock.mjs take|release|status --agent <your id>` (it writes owner.txt with that agent id;
+// this guard checks that the id given is the caller's own). Every other write into the lock folder is refused for every agent, whatever the tool or the form: mkdir, redirect, tee, Set-Content, Out-File, cp,
+// mv, sed -i, the Write and Edit tools. Removal (rm, rmdir, Remove-Item) is allowed to the agent named in owner.txt only (a lock with no readable owner can be removed by anyone). Reading is free.
+// sub = '' for the lock itself, 'owner.txt' for the owner file; anything else inside is refused. op: read | create (mkdir) | write | remove
+function judgeLock(raw, sub, { op, what }) {
+  const me = CTX.agent; const abs = lockAbs(raw);
+  if (sub !== '' && sub !== 'owner.txt') return [`${what} ${raw}: only owner.txt may live inside the Unreal lane lock (and only the lane_lock tool writes it)`];
+  if (op === 'read') return [];
+  const owner = abs ? lockOwner(abs) : null;
+  const held = (verb) => `${what} ${raw}: the Unreal lane lock is held by agent ${owner} (see owner.txt); only that agent ${verb} it (the main session can too). Wait and retry \`node tools/lane_lock.mjs take\` every 60 s.`;
+  if (op === 'remove') return owner && owner !== me ? [held('releases')] : [];
+  return [`${what} ${raw}: the Unreal lane lock is written only by the tool: \`node tools/lane_lock.mjs take --agent ${me || '<your agent id>'} --round <round> --purpose <text>\` (and \`release\`); a hand-made folder, owner.txt or redirect cannot name an owner, so it is refused`];
+}
 const WRITE_VERBS = new Set(['rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri', 'mv', 'move', 'move-item', 'mi', 'cp', 'copy', 'copy-item', 'cpi', 'tee', 'tee-object', 'set-content', 'add-content', 'out-file', 'new-item', 'ni', 'touch', 'mkdir', 'md', 'sc', 'ac', 'clear-content', 'rename-item', 'rni', 'ren', 'truncate', 'dd', 'install', 'ln', 'set-itemproperty']);
 const TEXT_VERBS = new Set(['echo', 'printf', 'write-host', 'write-output', 'write-error', 'write-warning', 'write-verbose', 'git', 'gh', 'cmd', 'set', 'export']);
 const PATTERN_VERBS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'select-string', 'sls', 'sed', 'awk', 'gawk', 'findstr']);
@@ -46,12 +75,28 @@ const RUNNERS = new Set(['node', 'nodejs', 'bun', 'deno', 'npx', 'tsx', 'sh', 'b
 const INLINE = new Set(['node', 'nodejs', 'python', 'python3', 'py', 'deno', 'bun']);
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'pwsh', 'powershell', 'cmd']);
 const COPY_VERBS = new Set(['cp', 'copy', 'copy-item', 'cpi', 'mv', 'move', 'move-item', 'mi', 'ln', 'install', 'rsync']);
-const WRITER_WORDS = /\b(?:recordAudit|recordBuilder|signRecord|verifyRecord|ack_secret|gate_ack|ref_seed|audit_lib)\b/;
-const WRITER_FILES = ['gate_ack.mjs', 'ref_seed.mjs', 'audit_lib.mjs'];
+const WRITER_WORDS = /\b(?:recordAudit|recordBuilder|signRecord|verifyRecord|ack_secret|roadworld-gate|lane_lock|gate_ack|ref_seed|audit_lib)\b/;
+const WRITER_FILES = ['gate_ack.mjs', 'ref_seed.mjs', 'audit_lib.mjs', 'lane_lock.mjs'];
 const RUN_SCRIPT = /^(?:gate_ack|ref_seed|audit_lib)(?:\.mjs)?$/i;
 
-const globToRe = (g) => new RegExp('^' + String(g).replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i');
-const hasGlob = (s) => /[*?]|\[[^\]]+\]/.test(s);
+// gates14: what kind of command moves a whole folder away (null when it does not): archivers and bulk copiers always, mv always, cp and Copy-Item and rm and Remove-Item when recursive
+const ARCHIVE_ALWAYS = new Set(['tar', 'bsdtar', 'gtar', 'zip', '7z', '7za', '7zr', 'rar', 'pax', 'cpio', 'compress-archive', 'robocopy', 'xcopy', 'rsync', 'scp', 'ditto', 'jar']);
+const MOVE_ONLY = new Set(['mv', 'move', 'move-item', 'mi', 'rename-item', 'rni', 'ren']);
+const PS_RECURSIVE_VERBS = new Set(['copy-item', 'cpi', 'remove-item', 'ri']);
+const UNIX_RECURSIVE_VERBS = new Set(['cp', 'rm', 'copy']);
+const CMD_DELETE_VERBS = new Set(['del', 'erase', 'rmdir', 'rd']);
+export function archiveKind(verb, av) {
+  if (ARCHIVE_ALWAYS.has(verb)) return 'an archive or bulk copy';
+  if (MOVE_ONLY.has(verb)) return 'a move';
+  const isDel = ['rm', 'del', 'erase', 'rmdir', 'rd', 'remove-item', 'ri'].includes(verb);
+  const what = isDel ? 'a recursive delete' : 'a recursive copy';
+  if (PS_RECURSIVE_VERBS.has(verb) && av.some((a) => /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?$/i.test(a))) return what;
+  if (UNIX_RECURSIVE_VERBS.has(verb) && av.some((a) => /^-[a-zA-Z]{1,4}$/.test(a) && /[rRa]/.test(a) || /^--recursive$/.test(a) || /^-(?:recurse|recursive)$/i.test(a))) return what;
+  if ((CMD_DELETE_VERBS.has(verb) || verb === 'copy' || verb === 'rd') && av.some((a) => /^\/[sSeE]$/.test(a))) return what;
+  if (verb === 'find' && av.includes('-delete')) return 'a find -delete';
+  return null;
+}
+const globToRe = (g) => globRe('^' + reEsc(g).replace(/\\\*/g, '.*').replace(/\\\?/g, '.') + '$', 'i');
 // does a glob word (possibly with a directory part) name a writer script?
 const globNamesWriter = (w) => { const base = String(w).replace(/^.*[\\/]/, ''); return hasGlob(base) && WRITER_FILES.some((f) => globToRe(base.replace(/\[[^\]]*\]/g, '?')).test(f)); };
 
@@ -70,7 +115,6 @@ export function stateRemainder(p) {
   return out.join('/');
 }
 
-const absOf = (p, cwd) => { const w = winPath(String(p).replace(/\\/g, '/')); return path.resolve(/^[A-Za-z]:|^\//.test(w) ? w : path.join(cwd || process.cwd(), w)); };
 // the path is the state folder, inside it, or a folder that contains it (.claude, the main checkout, its parents)
 function reachesState(p, cwd, mainRoot) {
   const c = norm(absOf(p, cwd)).replace(/\/$/, '');
@@ -79,15 +123,25 @@ function reachesState(p, cwd, mainRoot) {
   try { if (fs.existsSync(path.join(absOf(p, cwd), '.claude', 'state'))) return true; } catch { /* no */ }
   return /(^|\/)\.claude$/.test(c);
 }
+// gates14: the path is the state folder itself or a folder ABOVE it (.claude, the main checkout, its parents), not something inside it (paths inside are judged one by one by judgePath)
+function reachesAbove(p, cwd, mainRoot) {
+  const c = norm(absOf(p, cwd)).replace(/\/$/, '');
+  const stateAbs = norm(path.join(mainRoot, '.claude', 'state'));
+  if (stateAbs === c || stateAbs.startsWith(c + '/')) return true;
+  if (c.startsWith(stateAbs + '/')) return false;
+  try { if (fs.existsSync(path.join(absOf(p, cwd), '.claude', 'state'))) return true; } catch { /* no */ }
+  return /(^|\/)\.claude$/.test(c);
+}
 // a name/include filter that cannot match ack_secret, or an exclusion of the state folder
-function excludesState(args) {
+function excludesState(args, needle = 'state') {
   const a = args.map((x) => x.v !== undefined ? x.v : x);
+  const nre = safeRe(reEsc(needle), 'i'), nbang = safeRe('^!.*' + reEsc(needle)), nglob = safeRe('^--glob=!.*' + reEsc(needle));
   for (let i = 0; i < a.length; i++) {
     const v = a[i]; const nx = a[i + 1] || '';
-    if (/^--exclude-dir(?:=|$)/.test(v) && /state/i.test(v.includes('=') ? v : nx)) return true;
-    if (/^(?:-g|--glob)$/.test(v) && /^!.*state/.test(nx)) return true;
-    if (/^--glob=!.*state/.test(v)) return true;
-    if (/^(?:-not|!)$/.test(v) && /^-path$/.test(nx) && /state/i.test(a[i + 2] || '')) return true;
+    if (/^--exclude-dir(?:=|$)/.test(v) && nre.test(v.includes('=') ? v : nx)) return true;
+    if (/^(?:-g|--glob)$/.test(v) && nbang.test(nx)) return true;
+    if (nglob.test(v)) return true;
+    if (/^(?:-not|!)$/.test(v) && /^-path$/.test(nx) && nre.test(a[i + 2] || '')) return true;
     if (/^-prune$/.test(v)) return true;
   }
   const filters = [];
@@ -100,12 +154,51 @@ function excludesState(args) {
   return false;
 }
 
+// ---- gates15 (main-session ruling 1: detection, not prevention). Agents run as the same Windows user as the hooks: deliberate code (a script that computes the secret path, or imports lib.mjs
+// and signs) can read the secret whatever a pattern guard says. That is an ACCEPTED RESIDUAL. What this guard adds is DETECTION: code an agent writes or runs that imports a hooks file or names the
+// secret (the secret folder, readSecret, signRecord, ensureSecret, ack_secret) is refused when it sits outside tools/ and the tests, and the auditor brief (make_brief --audit) makes "grep the builder's
+// commits and scratch for those names" a standing audit item.
+const SECRET_NAMES = /\.roadworld-gate|\breadSecret\b|\bsignRecord\b|\back_secret\b|\bensureSecret\b|\bsecretDirFor\b/i;
+const HOOKS_IMPORT = /(?:\bimport\b|\brequire\b|\bfrom\b)[^\n]*?hooks[\\/]+[\w.-]+\.(?:mjs|cjs|js)\b/i;
+const CODE_EXT = /\.(?:mjs|cjs|js|ts|mts|cts|py|ps1|psm1|sh|bash|bat|cmd)$/i;
+export const namesSecretCode = (text) => { const s = String(text || ''); const m = s.match(SECRET_NAMES) || s.match(HOOKS_IMPORT); return m ? m[0].trim().slice(0, 60) : null; };
+const isTestFile = (p) => /(?:^|\/)(?:test_[\w.-]*|[\w.-]*_tests?)\.(?:mjs|cjs|js)$/.test(norm(p));
+// a file the agent WRITES may name the secret only in tools/hooks, in a test file, in a tests/ folder, or when it is an existing file under tools/ (an edit of a known tool)
+function writeExempt(p, cwd) {
+  const abs = absOf(p, cwd); const n = norm(abs);
+  if (/(?:^|\/)tools\/hooks\//.test(n) || isTestFile(n) || /(?:^|\/)tests\//.test(n)) return true;
+  if (/(?:^|\/)tools\//.test(n)) { try { return fs.existsSync(abs); } catch { return false; } }
+  return false;
+}
+// a script file the agent RUNS may name the secret only when it sits under tools/ or tests/ of a checkout (check_handin, run_suite and the suites import the hooks library)
+const runExempt = (p, cwd) => { const n = norm(absOf(p, cwd)); return /(?:^|\/)(?:tools|tests)\//.test(n) || isTestFile(n); };
+// the heredoc bodies of a command (parseCommand drops them as text; they are code when the command feeds them to an interpreter or writes them to a file)
+function heredocBodies(cmd) {
+  const out = []; const re = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g; let m;
+  const s = String(cmd).replace(/\r\n/g, '\n');
+  while ((m = re.exec(s))) out.push(m[3]);
+  return out;
+}
+// the path equals the folder that holds the secret, or a folder above it (the home folder, C:\Users, the drive root): a bulk copy, move, archive or recursive search of it carries the secret away
+function aboveSecret(raw, cwd) {
+  const s = String(raw || ''); if (!s || /^-/.test(s)) return false;
+  if (/\s/.test(s) && !/^[A-Za-z]:[\\/]\S*$/.test(s)) return false;
+  const abs = absOf(s, cwd); const n = norm(abs).replace(/\/$/, ''); const sh = norm(SECRET_HOME_DIR).replace(/\/$/, '');
+  if (n === sh || sh.startsWith(n + '/')) return true;
+  return hasGlob(s) && globReaches(abs, SECRET_HOME_DIR, 'above');
+}
+const PRELOAD_FLAG = /^(?:--import|--require|-r|--loader|--experimental-loader)(?:=|$)/;
+const PRELOAD_TARGET = /(?:^|[\\/])(?:lane_lock|run_suite|check_handin|make_brief)(?:\.mjs)?$|hooks[\\/]/i;
+const BULK_READ_VERBS = new Set(['find', 'ls', 'dir', 'gci', 'get-childitem', 'tree', 'du']);
+
 // one path of a tool or command: [] when fine, else a reason. `write` = the path is written, moved or removed.
-function judgePath(raw, { write = false, what = 'path', names = false } = {}) {
+function judgePath(raw, { write = false, what = 'path', names = false, op = null, content } = {}) {
+  if (raw && touchesSecretHome(raw, CTX.cwd)) return [`${what} ${raw}: the ack secret's own folder (<home>/.roadworld-gate) is never read, copied, moved or listed into by an agent`];
   const r = stateRemainder(raw);
   if (r === null) return /(^|[\\/])ack_secret$/i.test(String(raw)) && !write && !names ? [`${what} ${raw}: the ack secret is never read by an agent`] : [];
   if (names && !write) return [];
   if (r === 'handin' || r.startsWith('handin/')) return write ? [`${what} ${raw}: .claude/state/handin is written by the hooks only (reading it is allowed: refusal counts and HANDIN_FAILED.txt)`] : [];
+  if (r === LOCK || r.startsWith(LOCK + '/')) return judgeLock(raw, r === LOCK ? '' : r.slice(LOCK.length + 1), { op: write ? (op || 'write') : 'read', what, content });
   if (/[*?]/.test(r)) {
     // gates7 item 4: a READ through a wildcard whose last part cannot match ack_secret (state/*.log) is fine; a write, or a pattern that can match the secret, is not
     const parts = r.split('/'); const last = parts[parts.length - 1];
@@ -129,15 +222,24 @@ const protectedMsg = (p, what) => `${what} ${p}: the main checkout's hook wiring
 export function judgeCommand(cmd, depth = 0, opts = {}) {
   const mainRoot = opts.mainRoot || ROOT;
   let cur = opts.cwd || process.cwd();
+  if (opts.agent !== undefined) CTX.agent = String(opts.agent);
+  if (opts.cwd) CTX.cwd = opts.cwd;
   const reasons = [];
   if (depth > 4) return reasons;
+  // gates14 own fault 1: the secret's name or folder combined with an indirection (command substitution, a backtick, a variable assignment, $env:, Set-Variable) is the secret read by a path the guard cannot follow
+  if (depth === 0 && /ack_secret|\.roadworld-gate/i.test(cmd) && (/\$\(|`|(^|[;&|(]\s*)\$?[A-Za-z_]\w*=|\$env:|Set-Variable|\bset\s+\w+=/i.test(cmd))) reasons.push('the secret is named together with a command substitution or a variable assignment: the path it resolves to cannot be judged; name the real path of a file you may read');
+  // gates15 ruling 1(a)/audit fault 4: a NODE_OPTIONS assignment that preloads code could rewrite the arguments or the results of the gate tools (run_suite, lane_lock, check_handin, make_brief)
+  if (depth === 0 && /NODE_OPTIONS[^\n]*?=[^\n]*?(?:--import|--require|--loader|--experimental-loader|(?:^|[\s'"=])-r(?:\s|=))/i.test(cmd)) reasons.push('a NODE_OPTIONS assignment that preloads code (--import, --require, -r, --loader): a preload can rewrite what the gate tools see and do; run them plainly');
+  const bodies = depth === 0 ? heredocBodies(cmd) : [];
   const { segments } = parseCommand(cmd);
   const lastOf = (i) => { let j = i; while (j > 0 && segments[j].piped) j--; return j; };
   for (let si = 0; si < segments.length; si++) {
     const seg = segments[si];
     for (const rd of seg.redirects) {
-      reasons.push(...judgePath(rd.target, { write: true, what: 'a redirect into' }));
+      reasons.push(...judgePath(rd.target, { write: true, what: 'a redirect into', op: 'write' }));
       if (protectedMain(rd.target, mainRoot, cur)) reasons.push(protectedMsg(rd.target, 'a redirect into'));
+      // gates15 ruling 1(a): a heredoc written into a code file (cat > x.mjs <<EOF ... import lib.mjs ... EOF) is a script that names the secret
+      if (/>/.test(rd.op) && CODE_EXT.test(rd.target) && !writeExempt(rd.target, cur)) { const hit = bodies.map(namesSecretCode).find(Boolean); if (hit) reasons.push(`a heredoc written into ${rd.target} names the signing secret or imports a hooks file (${hit}): code outside tools/ and the tests that touches the secret is refused (ruling: detection)`); }
     }
     if (!seg.words.length) continue;
     const { verb, index, args, line } = verbOf(seg.words);
@@ -159,6 +261,7 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
         const code = av[k + 1];
         inlineCodeArg = args[k + 1];     // judged here as code; the generic path loop below must not read it as a path
         if (WRITER_WORDS.test(code)) reasons.push(`inline ${verb} code that names the record writers or the secret (${(code.match(WRITER_WORDS) || [''])[0]})`);
+        else if (namesSecretCode(code)) reasons.push(`inline ${verb} code that names the signing secret or imports a hooks file (${namesSecretCode(code)}): refused (ruling: detection of code that touches the secret)`);
         else {
           // gates7 item 4: inline code that only READS (no write, append, delete, rename, copy call in it) may name gate.log and handin/; the secret and every other record stay refused
           const writes = /write|append|unlink|\brm(?:dir|Sync)?\b|rename|copyFile|truncate|createWriteStream|shutil|os\.remove|os\.rename|\bopen\s*\([^)]*,\s*['"][^'"]*[wax+]|\.dump\s*\(|\bmkdir/i.test(code);
@@ -195,6 +298,49 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
         for (const p of (roots.length ? roots : ['.'])) if (reachesState(p, cur, mainRoot) && (stateRemainder(p) !== null || rec) && !excludesState(oa)) { reasons.push(`a listing of ${p} piped into a reader (${verb}): it reads the files named, the ack secret among them (limit the listing with -Filter/-name, or exclude state)`); break; }
       }
     }
+    // ---- gates15 ruling 1: detection of code that touches the secret (a script file the command runs, a heredoc fed to an interpreter), and preloads of the gate tools
+    if (RUNNERS.has(verb)) {
+      const preload = av.some((x) => PRELOAD_FLAG.test(x));
+      if (preload && av.some((x) => PRELOAD_TARGET.test(x))) reasons.push(`${verb} with a preload flag (--import, --require, -r, --loader) on a gate tool or a hooks file: a preload can rewrite what the tool sees and does; run it plainly`);
+      for (const x of args) {
+        const v = x.v; if (!v || /\s/.test(v) || (/^-/.test(v) && !PRELOAD_FLAG.test(v))) continue;
+        const cand = /^-/.test(v) ? v.slice(v.indexOf('=') + 1) : v; if (!CODE_EXT.test(cand)) continue;
+        let txt = null; try { const ab = absOf(cand, cur); const st = fs.statSync(ab); if (st.isFile() && st.size < 2 * 1024 * 1024) txt = fs.readFileSync(ab, 'utf8'); } catch { /* not a file */ }
+        const hit = txt === null ? null : namesSecretCode(txt);
+        if (hit && !runExempt(cand, cur)) reasons.push(`running ${cand}: the script (read now) names the signing secret or imports a hooks file (${hit}); code outside tools/ and the tests that touches the secret is refused (ruling: detection)`);
+      }
+      const bodyHit = bodies.map(namesSecretCode).find(Boolean);
+      if (bodyHit && (INLINE.has(verb) || SHELLS.has(verb))) reasons.push(`a heredoc fed to ${verb} names the signing secret or imports a hooks file (${bodyHit}): refused (ruling: detection)`);
+    }
+    // ---- gates15 (audit fault 2 of gates14): the home folder (or any folder above the secret's own) as the whole source of a copy, move, archive, delete or recursive search carries ~/.roadworld-gate away
+    if (!TEXT_VERBS.has(verb) || verb === 'git') {
+      const bulk = !TEXT_VERBS.has(verb) ? archiveKind(verb, av) : null;
+      if (bulk) for (const x of args) { if (aboveSecret(x.v, cur)) { reasons.push(`${verb} ${x.v}: ${bulk} of the home folder (or a folder above ~/.roadworld-gate) would carry the signing secret away; name the sub-folder you mean`); break; } }
+      const recGrep = GREPS.has(verb) && av.some((a) => /^-[a-zA-Z]*[rR][a-zA-Z]*$/.test(a) || /^--(?:recursive|dereference-recursive)$/.test(a));
+      const recRg = RIPGREPS.has(verb) && av.some((a) => /^(?:--hidden|-uu+|-\.)$/.test(a) || /^-[a-zA-Z]*u{2,}[a-zA-Z]*$/.test(a));
+      if ((recGrep || recRg) && !excludesState(av, 'roadworld')) {
+        const roots = pathArgs(true); for (const p of (roots.length ? roots : ['.'])) if (aboveSecret(p, cur)) { reasons.push(`a recursive ${verb} rooted at ${p}: it walks the home folder and reads ~/.roadworld-gate/ack_secret (root it in a sub-folder, or --exclude-dir=.roadworld-gate, or limit the files with --include=*.ext)`); break; }
+      }
+      if (BULK_READ_VERBS.has(verb) && !hasExec) {
+        const recursive = verb === 'find' ? !av.some((a, k) => a === '-maxdepth' && Number(av[k + 1]) <= 1) : verb === 'tree' || verb === 'du' || av.some((a) => /^-[a-zA-Z]*R/.test(a) || /^-recurse$/i.test(a) || /^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?$/i.test(a));
+        if (recursive && !excludesState(av, 'roadworld')) { const lead = []; for (const a of av) { if (/^[-(!]/.test(a)) { if (verb !== 'find' && /^-/.test(a)) continue; break; } lead.push(a); } for (const p of (lead.length ? lead : ['.'])) if (aboveSecret(p, cur)) { reasons.push(`${verb} ${p}: a recursive listing of the home folder names ~/.roadworld-gate/ack_secret (list a sub-folder, or filter with -name/-Filter on a file type that cannot be ack_secret)`); break; } }
+      }
+      if (verb === 'find' && hasExec) { const lead = []; for (const a of av) { if (/^[-(!]/.test(a)) break; lead.push(a); } for (const p of (lead.length ? lead : ['.'])) if (aboveSecret(p, cur) && !excludesState(av, 'roadworld')) { reasons.push(`find ${p} -exec: it runs a command on every file of the home folder, ~/.roadworld-gate/ack_secret among them`); break; } }
+      if (verb === 'git') {
+        // git -C <dir>, --git-dir, --work-tree and the folder or repository named by clone, init, bundle, archive, worktree, submodule, remote, fetch, pull, push
+        const gi = []; for (let k = 0; k < av.length; k++) { if (/^(?:-C|--git-dir|--work-tree)$/.test(av[k]) && av[k + 1]) gi.push(av[++k]); else if (/^--(?:git-dir|work-tree)=/.test(av[k])) gi.push(av[k].slice(av[k].indexOf('=') + 1)); }
+        const subIdx = av.findIndex((a, k) => !/^-/.test(a) && (k === 0 || !/^(?:-C|-c|--git-dir|--work-tree|--namespace|--exec-path)$/.test(av[k - 1])));
+        const sub = subIdx >= 0 ? av[subIdx].toLowerCase() : '';
+        const pos = ['clone', 'init', 'bundle', 'archive', 'worktree', 'submodule', 'remote', 'fetch', 'pull', 'push', 'add'].includes(sub) ? av.slice(subIdx + 1).filter((a) => !/^-/.test(a) && !/\s/.test(a)) : [];
+        if (sub === 'clean' && av.some((a) => /^-[a-zA-Z]*[xX][a-zA-Z]*$/.test(a)) && reachesAbove(gi.length ? gi[gi.length - 1] : '.', cur, mainRoot)) reasons.push('git clean -x/-X in the main checkout deletes the ignored .claude/state (the gate records); clean a worktree, not the main checkout');
+        for (const p of [...gi, ...pos]) { if (touchesSecretHome(p, cur) || aboveSecret(p, cur)) { reasons.push(`git ${sub || ''} ${p}: a git command on the home folder or on ~/.roadworld-gate would copy, index or serve the signing secret`); break; } }
+      }
+    }
+    // a path of the secret fed through a pipe into xargs / a reader loop (echo ~/.roadworld-gate/ack_secret | xargs cat)
+    if (seg.piped && (verb === 'xargs' || !!seg.fe)) {
+      const j = lastOf(si);
+      for (let k = j; k < si; k++) for (const w of segments[k].words) { if (/^-/.test(w.v) || (/\s/.test(w.v) && !/^[A-Za-z]:[\\/]\S*$/.test(w.v))) continue; if (touchesSecretHome(w.v, cur)) { reasons.push(`a path of the secret folder (${w.v}) is piped into ${verb === 'xargs' ? 'xargs' : 'a loop body'}: that reads or copies what it names`); break; } }
+    }
     // ---- scripts that write records, copies of them, and the main checkout's hook wiring
     for (const a of args) {
       const v = a.v;
@@ -204,6 +350,36 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
       if (COPY_VERBS.has(verb) && !/^-/.test(v) && (RUN_SCRIPT.test(v.replace(/^.*[\\/]/, '')) || globNamesWriter(v)) && av.indexOf(v) < av.length - 1) {
         reasons.push(`${verb} of ${v.replace(/^.*[\\/]/, '')}: a copy of a record-writing script would run the same code (an agent does not write gate records)`);
       }
+    }
+    // ---- gates14 (decision 1 and 3): copying, moving, archiving or recursively deleting the .claude folder itself (or a folder holding it), and links to it
+    if (!TEXT_VERBS.has(verb)) {
+      const kind = archiveKind(verb, av);
+      if (kind) {
+        const stateAbs = path.join(mainRoot, '.claude', 'state');
+        for (const x of args) {
+          const v = x.v; if (/^-/.test(v) || /^\/[a-z]{1,5}$/i.test(v) || /\s/.test(v)) continue;
+          const hit = braceExpand(v).flatMap((y) => y.split(',')).find((p) => reachesAbove(p, cur, mainRoot) || (hasGlob(p) && (globReaches(absOf(p, cur), stateAbs, 'above') || globReaches(absOf(p, cur), stateAbs, 'into'))));
+          if (hit) { reasons.push(`${verb} ${hit}: ${kind} of the .claude folder (or a folder that holds it): it would carry .claude/state and the gate records away (cp -r, mv, tar, zip, robocopy, xcopy, recursive rm and rmdir /s of .claude are refused for agents)`); break; }
+        }
+      }
+      const link = ['ln', 'mklink', 'new-item', 'ni'].includes(verb) && args.some((x, k) => (verb === 'ln' || verb === 'mklink') ? !/^-/.test(x.v) && !/^\/[a-z]$/i.test(x.v) && reachesAbove(x.v, cur, mainRoot) : /^-(?:target|value)$/i.test(x.v) && args[k + 1] && reachesAbove(args[k + 1].v, cur, mainRoot));
+      if (link) reasons.push(`${verb}: a link to the .claude folder would let a path outside it reach the state folder`);
+    }
+    // the lane lock tool: `node tools/lane_lock.mjs take|release|status --agent <your own agent id>`; the id must be the caller's own (the guard sees the event's agent id)
+    {
+      const laneIdx = args.findIndex((x) => /(?:^|[\\/])lane_lock(?:\.mjs)?$/i.test(x.v));
+      const vraw0 = seg.words[index] ? seg.words[index].v : '';
+      if ((laneIdx >= 0 && RUNNERS.has(verb)) || /(?:^|[\\/])lane_lock(?:\.mjs)?$/i.test(vraw0)) {
+        const k = av.findIndex((x) => /^--agent(?:=|$)/.test(x));
+        const given = k < 0 ? null : (av[k].includes('=') ? av[k].slice(av[k].indexOf('=') + 1) : av[k + 1]);
+        const sub = av.filter((x, i) => i > Math.max(laneIdx, -1) && !/^-/.test(x))[0] || '';
+        if (CTX.agent && sub !== 'status') {
+          if (!given) reasons.push('lane_lock.mjs: pass --agent <your own agent id> (the id from your start message): the tool writes it into owner.txt');
+          else if (!/^[\w.-]+$/.test(given)) reasons.push(`lane_lock.mjs --agent ${given}: the id must be written out literally (letters, digits, . _ -), not built by the shell`);
+          else if (given !== CTX.agent) reasons.push(`lane_lock.mjs --agent ${given}: that is not your agent id (${CTX.agent}); an agent takes and releases the lock only as itself`);
+        }
+      } else if (args.some((x) => globNamesWriter(x.v) && /lane/i.test(x.v)) && RUNNERS.has(verb)) reasons.push('a wildcard that names lane_lock.mjs cannot be checked: write the script name out');
+      if (COPY_VERBS.has(verb) && args.some((x) => /(?:^|[\\/])lane_lock(?:\.mjs)?$/i.test(x.v)) && args.length >= 2) reasons.push(`${verb} of lane_lock.mjs: a copy of the lock tool would run the same code under any id`);
     }
     let list = args;
     if (TEXT_VERBS.has(verb)) list = [];
@@ -250,10 +426,20 @@ export function judgeCommand(cmd, depth = 0, opts = {}) {
       if (!/^-/.test(v)) firstNonFlag = false;
       const vv = /^-\w+:/.test(v) ? v.replace(/^-\w+:/, '') : v;   // -Path:x
       if (/^-/.test(vv)) continue;
-      for (const piece of vv.split(',')) {
-        reasons.push(...judgePath(piece, { write: wr, names: isList }));
+      for (const piece of braceExpand(vv).flatMap((x) => x.split(','))) {
+        // gates14: a wildcard that can resolve into .claude/state (cd .claude && cat st*/ack_se*), judged as the path it can name
+        if (hasGlob(piece) && stateRemainder(piece) === null && stateRemainder(absOf(piece, cur)) === null) {
+          const absP = absOf(piece, cur); const stateAbs = path.join(mainRoot, '.claude', 'state');
+          if (globReaches(absP, stateAbs, 'into')) {
+            const rest = absP.replace(/\\/g, '/').split('/').slice(stateAbs.replace(/\\/g, '/').split('/').length);
+            const lop = REMOVE_VERBS.has(verb) ? 'remove' : 'write';
+            reasons.push(...judgePath(stateAbs.replace(/\\/g, '/') + (rest.length ? '/' + rest.join('/') : ''), { write: wr, names: isList, op: lop, what: `${verb} (the wildcard ${piece} can resolve into the state folder)` }));
+          }
+        }
+        const lockOp = REMOVE_VERBS.has(verb) ? 'remove' : (verb === 'mkdir' || verb === 'md' || ((verb === 'new-item' || verb === 'ni') && av.some((x) => /^directory$/i.test(x) || /^-itemtype[:=]?directory$/i.test(x)))) ? 'create' : 'write';
+        reasons.push(...judgePath(piece, { write: wr, names: isList, op: lockOp }));
         // relative to a folder entered with cd earlier in the command, or an event cwd inside the state folder
-        if (!/^(?:[A-Za-z]:|[\\/])/.test(piece) && (cur !== (opts.cwd || process.cwd()) || stateRemainder(cur) !== null)) reasons.push(...judgePath(absOf(piece, cur), { write: wr, names: isList }));
+        if (!/^(?:[A-Za-z]:|[\\/])/.test(piece) && (cur !== (opts.cwd || process.cwd()) || stateRemainder(cur) !== null)) reasons.push(...judgePath(absOf(piece, cur), { write: wr, names: isList, op: lockOp }));
         if (wr && protectedMain(piece, mainRoot, cur)) reasons.push(protectedMsg(piece, verb));
       }
     }
@@ -270,21 +456,39 @@ export function judge(input, mainRoot = ROOT) {
   const tool = input.tool_name || '';
   const ti = input.tool_input || {};
   if (!input.agent_id) return [];   // the main session
+  CTX.agent = String(input.agent_id); CTX.cwd = input.cwd || '';
   if (tool === 'Read') return judgePath(ti.file_path || ti.path || '', { what: 'Read of' });
   if (tool === 'Write' || tool === 'Edit' || tool === 'NotebookEdit') {
     const p = ti.file_path || ti.notebook_path || ti.path || '';
-    const rs = judgePath(p, { write: true, what: tool + ' on' });
+    const rs = judgePath(p, { write: true, what: tool + ' on', op: 'write', content: tool === 'Write' ? String(ti.content ?? '') : undefined });
+    // gates15 ruling 1(a): code written outside tools/hooks and the tests that imports a hooks file or names the secret
+    const body = tool === 'Write' ? ti.content : tool === 'Edit' ? ti.new_string : tool === 'NotebookEdit' ? ti.new_source : '';
+    const hit = CODE_EXT.test(p) && body ? namesSecretCode(body) : null;
+    if (hit && !writeExempt(p, input.cwd)) rs.push(`${tool} on ${p}: the content names the signing secret or imports a hooks file (${hit}); code outside tools/hooks, the tests and the existing tools that touches the secret is refused (ruling: detection)`);
     if (protectedMain(p, mainRoot, input.cwd)) rs.push(protectedMsg(p, tool + ' on'));
     return rs;
   }
-  if (tool === 'Glob') return [];     // names only: never file content
+  if (tool === 'Glob') {
+    // gates15 (gates14 audit fault 2): a Glob rooted at the home folder (or above) whose pattern can end on ack_secret names the secret's file
+    const p = ti.path || input.cwd || ''; const pat = String(ti.pattern || '');
+    const last = pat.split(/[\\/]/).pop() || '';
+    const out = [];
+    if (/roadworld-gate/i.test(pat) || touchesSecretHome(p, input.cwd)) out.push('Glob of the secret folder');
+    else if (aboveSecret(p, input.cwd) && (/ack_secret|roadworld/i.test(pat) || globSegRe(last || '*').test('ack_secret'))) out.push(`Glob ${pat} rooted at ${p}: it can name ~/.roadworld-gate/ack_secret (root the glob in a sub-folder, or end it in a file type that cannot be ack_secret)`);
+    return out;
+  }
   if (tool === 'Grep') {
     const reasons = [];
     const p = ti.path || '';
+    if (p && touchesSecretHome(p, input.cwd)) reasons.push(`Grep over ${p}: the ack secret's own folder is never searched by an agent`);
+    if (ti.glob && /roadworld-gate/i.test(String(ti.glob))) reasons.push('Grep with a glob that names the ack secret folder');
+    // gates15 (gates14 audit fault 2): a Grep rooted at the home folder (or above, or the event cwd) reads every file below it, the secret among them, unless a glob or type limits the files
+    const gp = p || input.cwd || '';
+    if (gp && aboveSecret(gp, input.cwd)) { const g = String(ti.glob || ''); const gl = g.split(/[\\/]/).pop(); const limited = (g && !/^!/.test(g) && !globSegRe(gl.replace(/^\{|\}$/g, '')).test('ack_secret') && !/ack_secret|roadworld|\*\*?$/.test(g)) || !!ti.type; if (!limited) reasons.push(`Grep rooted at ${gp}: it searches the home folder, ~/.roadworld-gate/ack_secret among the files (root it in a sub-folder, or pass a glob or type for a file kind that cannot be ack_secret)`); }
     const r = p ? stateRemainder(p) : null;
     if (r !== null) {
       const g = String(ti.glob || '');
-      const ok = ALLOWED_ANY.has(r) || r === 'gate.log' || r === 'handin' || r.startsWith('handin/') || (r === '' && /^(?:\*\*\/)?(?:gate\.log|unreal_lane\.lock)$/.test(g));
+      const ok = r === LOCK || r.startsWith(LOCK + '/') || r === 'gate.log' || r === 'handin' || r.startsWith('handin/') || (r === '' && /^(?:\*\*\/)?(?:gate\.log|unreal_lane\.lock)$/.test(g));
       if (!ok) reasons.push(`Grep over ${p}: the state folder holds the ack secret (a Grep of gate.log, handin/ or unreal_lane.lock is allowed)`);
     }
     if (ti.glob && /ack_secret/i.test(String(ti.glob))) reasons.push('Grep with a glob that selects the ack secret');

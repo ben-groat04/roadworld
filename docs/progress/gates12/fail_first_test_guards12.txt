@@ -1,0 +1,266 @@
+gates12 A: a second copy of a running test is refused only when the running process is THIS worktree's (decision 1)
+  FAIL A the first limited run is allowed and recorded (a start line with the id, worktree and image)
+  FAIL A REFUSE: a second copy while this worktree's own process is running; the refusal names the executable path it matched
+       status 2 REFUSED by the time-limit guard (tools/hooks/time_guard.mjs; contract item 26):
+        - a copy of `sim_core_tests` started 0 s ago from this worktree (C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\tg-wt) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations).
+       
+  FAIL A ALLOW: the same image is running, but from ANOTHER worktree (the gates11 audit's false refusal)
+       status 2 REFUSED by the time-limit guard (tools/hooks/time_guard.mjs; contract item 26):
+        - a copy of `sim_core_tests` started 0 s ago from this worktree (C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\tg-wt) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations).
+       
+  FAIL A REFUSE: both worktrees run it; only this worktree's path is named in the refusal
+       status 2 REFUSED by the time-limit guard (tools/hooks/time_guard.mjs; contract item 26):
+        - a copy of `sim_core_tests` started 0 s ago from this worktree (C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\tg-wt) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations).
+       
+  FAIL A ALLOW: the earlier run of this worktree has an end record (finished); a process of the same image in this worktree is not it
+       status 2 REFUSED by the time-limit guard (tools/hooks/time_guard.mjs; contract item 26):
+        - a copy of `sim_core_tests` started 0 s ago from this worktree (C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\tg-wt) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations).
+        node:internal/modules/cjs/loader:1568
+         throw err;
+         ^
+       
+       Error: Cannot find module 'C:\Users\bgbg0\Documents\Programming\roadworld-scratch\gates12\old\tools\hooks\time_guard_post.mjs'
+           at Module._resolveFilename (node:internal/modules/cjs/loader:1564:15)
+           at wrapResolveFilename (node:internal/modules/cjs/loader:1118:27)
+           at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1142:10)
+           at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1169:12)
+           at Module._load (node:internal/modules/cjs/loader:1341:5)
+           at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)
+           at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+           at node:internal/main/run_main_module:33:47 {
+         code: 'MODULE_NOT_FOUND',
+         requireStack: []
+       }
+       
+       Node.js v24.20.0
+       
+  FAIL A REFUSE: a BACKGROUND run counts until its process is gone (its Post hook fires when the call returns, not when the process ends)
+       status 2 REFUSED by the time-limit guard (tools/hooks/time_guard.mjs; contract item 26):
+        - a copy of `sim_core_tests` started 0 s ago from this worktree (C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\tg-wt) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations).
+       
+  ok   A ALLOW: the only unfinished record belongs to another worktree
+  ok   A ALLOW: the image is no longer in the process list (nothing running at all)
+  FAIL A a stuck executable-path lookup is cut (bounded), the command is allowed and one FAIL-OPEN line names the path lookup
+       status 2 REFUSED by the time-limit guard (tools/hooks/time_guard.mjs; contract item 26):
+        - a copy of `sim_core_tests` started 0 s ago from this worktree (C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\tg-wt) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations).
+        took 108 [{"ts":"2026-10-23T21:15:59.842Z","gate":"time_guard","decision":"deny","reason":"second copy of a running test refused","agent_id":"a1","cwd":"C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards12-nXNkOH\\tg-wt","command":"timeout 900 build/tests/sim_core_tests.exe > suite.log 2>&1","reasons":["a copy of `sim_core_tests` started 0 s ago from this worktree (C:\\Users\\bgbg0\\AppData\\Local\\Temp\\guards12-nXNkOH\\tg-wt) is still running: never start a second copy. Wait for it (its own time limit ends it), read its log, or find the slow case with filters (-tc, --durations)."]}]
+  FAIL A underRoot: matches by executable path or by a command line under the worktree, in any slash form, not by a sibling folder
+       THREW m.underRoot is not a function
+  FAIL A processPaths reads one "<exe>|<command line>" per line from the lookup command (CP_TIME_GUARD_PATH_CMD)
+       THREW m.processPaths is not a function
+gates12 B: the suite record: start (time guard), end + exit + hash (post hook); the build phase accepts only a log a recorded run wrote (decision 2)
+  FAIL B a limited node suite run is recorded at its start with the output file it redirects to
+       []
+  FAIL B the post hook appends an end line: exit 0 and the sha256 of the log as it is then
+  FAIL B a call the guard did not record leaves no end line
+  FAIL B exitCodeOf: PostToolUse success -> 0
+       THREW module missing: tools/hooks/time_guard_post_impl.mjs
+  FAIL B exitCodeOf: PostToolUseFailure "Exit code 3" -> 3
+       THREW module missing: tools/hooks/time_guard_post_impl.mjs
+  FAIL B exitCodeOf: PostToolUseFailure with no code -> null
+       THREW module missing: tools/hooks/time_guard_post_impl.mjs
+  FAIL B exitCodeOf: tool_response.exit_code -> 7
+       THREW module missing: tools/hooks/time_guard_post_impl.mjs
+  FAIL B exitCodeOf: interrupted -> null
+       THREW module missing: tools/hooks/time_guard_post_impl.mjs
+  ok   B a GOOD build hand-in (the log is the redirected output of a recorded run in this worktree, newer than the code, exit 0) passes
+  FAIL B a log TYPED BY HAND with a valid doctest summary and a "Suite binary" script line FAILS (the gates11 audit's forged log)
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\b12_typed\docs\progress\rr (phase build)
+       
+  FAIL B a log edited AFTER its run (appended line) FAILS with a hash mismatch
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\b12_tamper\docs\progress\rr (phase build)
+       
+  FAIL B a log written by a recorded run of ANOTHER worktree FAILS
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\b12_other\docs\progress\rr (phase build)
+       
+  FAIL B a run whose end the post hook never recorded (no hash) FAILS
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\b12_nopost\docs\progress\rr (phase build)
+       
+  ok   B a recorded run that ended BEFORE the last code commit FAILS
+  FAIL B a recorded run that exited 1 while the log shows no failing test FAILS (it died)
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\b12_died\docs\progress\rr (phase build)
+       
+  FAIL B a recorded run with an unknown exit code FAILS
+       HAND-IN CHECK PASSED for C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\b12_nocode\docs\progress\rr (phase build)
+       
+  ok   B a recorded run that failed (exit 1) with only the brief's allowed failure passes
+gates12 C: a NO-CONTRACT launch that reviews another agent's work is refused by meaning (decision 3)
+  FAIL C REFUSE "Auditing gates9"
+       status 0 
+  FAIL C REFUSE "Second-opinion reviewer of gates11"
+       status 0 
+  FAIL C REFUSE "Opus look at grade-r12 images"
+       status 0 
+  FAIL C REFUSE "Independent verification of gates9"
+       status 0 
+  FAIL C REFUSE "Please audit gates9"
+       status 0 
+  FAIL C REFUSE "Cold read of the gates9 hand-in"
+       status 0 
+  FAIL C REFUSE "Verify the gates9 round"
+       status 0 
+  FAIL C REFUSE "Reviewer for the roundabout5 round"
+       status 0 
+  FAIL C REFUSE "Review the tjunction6 renders"
+       status 0 
+  FAIL C REFUSE "Fresh eyes: look at the m2fix5b composites"
+       status 0 
+  FAIL C REFUSE "Strict audit of grade-r13"
+       status 0 
+  ok   C REFUSE "Opus first look at the m3ui-r1 frames"
+  ok   C REFUSE "Auditor for gates9 hand-in"
+  ok   C REFUSE "Opus first look on grade-r12 images"
+  FAIL C REFUSE a neutral description ("Quick job") whose stated reason opens with the review job
+       status 0 
+  FAIL C REFUSE a neutral description ("Docs check") whose stated reason opens with the review job
+       status 0 
+  FAIL C REFUSE a neutral description ("Image pass") whose stated reason opens with the review job
+       status 0 
+  FAIL C REFUSE a neutral description ("Second pair of eyes") whose stated reason opens with the review job
+       status 0 
+  FAIL C REFUSE a prompt line that orders a review of a progress folder (Check it)
+       status 0 
+  FAIL C REFUSE a prompt line that orders a review of a progress folder (Quick job)
+       status 0 
+  ok   C ALLOW "Write audit first-look rule into docs"
+  ok   C ALLOW "Clerk: photos-outrank-tests rule, commit review"
+  ok   C ALLOW "Merger: verify playtest, merge integ to main"
+  ok   C ALLOW "Merge gates7 then gates9 into main"
+  ok   C ALLOW "Research: Unreal plugin facts"
+  ok   C ALLOW "Fetch matched junction reference photos"
+  ok   C ALLOW "Clerk: contract item 26 time limits"
+  ok   C ALLOW "Add every-audit-item-fixed rule to docs"
+  ok   C ALLOW "Earthworks method review (read-only)"
+  ok   C ALLOW "Measure phase: tjunction6 photos"
+  ok   C ALLOW "Queue and worktree status check (read-only)"
+  ok   C ALLOW "Recovery round 2: validate and re-fetch photos"
+  ok   C ALLOW "Clerk: QUEUE and ACCEPTANCE update"
+  ok   C ALLOW "Auditing gates9" when the launch carries AUDIT-OF (the real audit launch)
+  ok   C ALLOW "Opus look at grade-r12 images" when the launch carries FIRSTLOOK-OF
+  FAIL C sweep of the live launches: every refused one is a real audit or first look, nothing else is refused (no false refusal)
+       rows 77 refused 38 wrong: Audit repo organisation, read-only | Audit the audit-gate tooling | Audit gradelayer WorldCache layers
+gates12 D: make_brief --phase build|render run from a worktree finds the sibling worktree folder (decision 4)
+  FAIL D from a worktree cwd, --phase build builds <roadworld-wt>/<round> (no doubled roadworld-wt) and finds MEASURE.md there
+       status 1 HANDIN_DIR  expected C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\pp\roadworld-wt\rr\docs\progress\rr
+       REFUSED: the build phase cannot be briefed yet:
+        - C:\Users\bgbg0\AppData\Local\Temp\guards12-nXNkOH\pp\roadworld-wt\roadworld-wt\rr\docs\progress\rr\MEASURE.md does not exist: the measure phase has not handed over
+       
+gates12 E: time guard: xargs, `timeout N -- cmd`, make family, Unreal Build.bat / RunUAT / UnrealBuildTool, node suites
+  FAIL E REFUSE (Bash): xargs ninja with no limit
+       status 0 
+  FAIL E REFUSE (Bash): xargs -n1 ctest with no limit
+       status 0 
+  FAIL E REFUSE (Bash): `timeout 1200 -- ninja` is over the cap
+       status 0 
+  FAIL E REFUSE (Bash): make with no limit
+       status 0 
+  FAIL E REFUSE (Bash): mingw32-make with no limit
+       status 0 
+  FAIL E REFUSE (Bash): gmake
+       status 0 
+  ok   E REFUSE (Bash): make and ctest, none limited
+  FAIL E REFUSE (Bash): Unreal Build.bat with no limit
+       status 0 
+  FAIL E REFUSE (Bash): RunUAT with no limit
+       status 0 
+  FAIL E REFUSE (Bash): UnrealBuildTool with no limit
+       status 0 
+  FAIL E REFUSE (Bash): RunUAT over the 5400 s cap
+       status 0 
+  FAIL E REFUSE (Bash): cmd /c Build.bat
+       status 0 
+  FAIL E REFUSE (PowerShell): Build.bat in PowerShell with no limit
+       status 0 
+  FAIL E REFUSE (Bash): a repo node suite with no limit
+       status 0 
+  FAIL E REFUSE (Bash): a node suite piped to tail
+       status 0 
+  FAIL E REFUSE (Bash): `timeout 0 --` is no limit
+       status 0 
+  ok   E ALLOW (Bash): `timeout 900 -- ninja`
+  ok   E ALLOW (Bash): timeout around xargs
+  ok   E ALLOW (Bash): xargs timeout 900 ctest
+  ok   E ALLOW (Bash): timeout make
+  ok   E ALLOW (Bash): make -n is a dry run
+  ok   E ALLOW (Bash): make --help
+  ok   E ALLOW (Bash): RunUAT with its 5400 s cap
+  ok   E ALLOW (Bash): Build.bat with timeout 3000
+  ok   E ALLOW (Bash): a node suite with timeout 900
+  ok   E ALLOW (Bash): a node suite --help
+  ok   E ALLOW (Bash): git log --grep make
+  ok   E ALLOW (Bash): echo
+  ok   E ALLOW (Bash): grep for make
+  ok   E ALLOW (Bash): cmake configure
+  ok   E ALLOW (Bash): a commit message
+  ok   E ALLOW (Bash): cat of a file named build.ninja
+  ok   E ALLOW (PowerShell): Select-String that mentions make
+  ok   E ALLOW (Bash): an unrelated node tool
+  FAIL E the refusal for make names the way to add the limit (`timeout 900 <cmd>`)
+
+clean_test_temp prefix: guards12- is cleaned with the other suites
+  FAIL clean_test_temp lists the guards12- prefix
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the temp folder is removed
+
+44 passed, 59 failed
+FAILED TESTS:
+ - A the first limited run is allowed and recorded (a start line with the id, worktree and image)
+ - A REFUSE: a second copy while this worktree's own process is running; the refusal names the executable path it matched
+ - A ALLOW: the same image is running, but from ANOTHER worktree (the gates11 audit's false refusal)
+ - A REFUSE: both worktrees run it; only this worktree's path is named in the refusal
+ - A ALLOW: the earlier run of this worktree has an end record (finished); a process of the same image in this worktree is not it
+ - A REFUSE: a BACKGROUND run counts until its process is gone (its Post hook fires when the call returns, not when the process ends)
+ - A a stuck executable-path lookup is cut (bounded), the command is allowed and one FAIL-OPEN line names the path lookup
+ - A underRoot: matches by executable path or by a command line under the worktree, in any slash form, not by a sibling folder
+ - A processPaths reads one "<exe>|<command line>" per line from the lookup command (CP_TIME_GUARD_PATH_CMD)
+ - B a limited node suite run is recorded at its start with the output file it redirects to
+ - B the post hook appends an end line: exit 0 and the sha256 of the log as it is then
+ - B a call the guard did not record leaves no end line
+ - B exitCodeOf: PostToolUse success -> 0
+ - B exitCodeOf: PostToolUseFailure "Exit code 3" -> 3
+ - B exitCodeOf: PostToolUseFailure with no code -> null
+ - B exitCodeOf: tool_response.exit_code -> 7
+ - B exitCodeOf: interrupted -> null
+ - B a log TYPED BY HAND with a valid doctest summary and a "Suite binary" script line FAILS (the gates11 audit's forged log)
+ - B a log edited AFTER its run (appended line) FAILS with a hash mismatch
+ - B a log written by a recorded run of ANOTHER worktree FAILS
+ - B a run whose end the post hook never recorded (no hash) FAILS
+ - B a recorded run that exited 1 while the log shows no failing test FAILS (it died)
+ - B a recorded run with an unknown exit code FAILS
+ - C REFUSE "Auditing gates9"
+ - C REFUSE "Second-opinion reviewer of gates11"
+ - C REFUSE "Opus look at grade-r12 images"
+ - C REFUSE "Independent verification of gates9"
+ - C REFUSE "Please audit gates9"
+ - C REFUSE "Cold read of the gates9 hand-in"
+ - C REFUSE "Verify the gates9 round"
+ - C REFUSE "Reviewer for the roundabout5 round"
+ - C REFUSE "Review the tjunction6 renders"
+ - C REFUSE "Fresh eyes: look at the m2fix5b composites"
+ - C REFUSE "Strict audit of grade-r13"
+ - C REFUSE a neutral description ("Quick job") whose stated reason opens with the review job
+ - C REFUSE a neutral description ("Docs check") whose stated reason opens with the review job
+ - C REFUSE a neutral description ("Image pass") whose stated reason opens with the review job
+ - C REFUSE a neutral description ("Second pair of eyes") whose stated reason opens with the review job
+ - C REFUSE a prompt line that orders a review of a progress folder (Check it)
+ - C REFUSE a prompt line that orders a review of a progress folder (Quick job)
+ - C sweep of the live launches: every refused one is a real audit or first look, nothing else is refused (no false refusal)
+ - D from a worktree cwd, --phase build builds <roadworld-wt>/<round> (no doubled roadworld-wt) and finds MEASURE.md there
+ - E REFUSE (Bash): xargs ninja with no limit
+ - E REFUSE (Bash): xargs -n1 ctest with no limit
+ - E REFUSE (Bash): `timeout 1200 -- ninja` is over the cap
+ - E REFUSE (Bash): make with no limit
+ - E REFUSE (Bash): mingw32-make with no limit
+ - E REFUSE (Bash): gmake
+ - E REFUSE (Bash): Unreal Build.bat with no limit
+ - E REFUSE (Bash): RunUAT with no limit
+ - E REFUSE (Bash): UnrealBuildTool with no limit
+ - E REFUSE (Bash): RunUAT over the 5400 s cap
+ - E REFUSE (Bash): cmd /c Build.bat
+ - E REFUSE (PowerShell): Build.bat in PowerShell with no limit
+ - E REFUSE (Bash): a repo node suite with no limit
+ - E REFUSE (Bash): a node suite piped to tail
+ - E REFUSE (Bash): `timeout 0 --` is no limit
+ - E the refusal for make names the way to add the limit (`timeout 900 <cmd>`)
+ - clean_test_temp lists the guards12- prefix

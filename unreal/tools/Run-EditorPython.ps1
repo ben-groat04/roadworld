@@ -27,12 +27,14 @@ param(
     [int]$ResY = 1080,
     [string]$EngineRoot,
     [int]$TimeoutMinutes = 60,
+    [int]$TimeoutSec = 0,   # same limit in seconds (rounded up to whole minutes); the time-limit guard (tools/hooks/time_guard.mjs) looks for this or a GNU timeout / Wait-Process -Timeout
     [string]$LocalDdcPath = 'C:\UEDDC',
     [string]$LogPath,        # default Saved\Logs\py-<name>-<timestamp>.log; First-Run.ps1 sets it so it can announce the path first
     [Nullable[int]]$GraphicsAdapter = $null,
     [int]$MaxPythonLines = 80,
     [string[]]$ExtraEditorArgs = @()
 )
+if ($TimeoutSec -gt 0) { $TimeoutMinutes = [Math]::Max(1, [int][Math]::Ceiling($TimeoutSec / 60.0)) }
 
 $ErrorActionPreference = 'Stop'
 

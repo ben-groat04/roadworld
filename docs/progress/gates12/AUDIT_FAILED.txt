@@ -1,0 +1,3 @@
+The AUDIT.md check still failed after 3 refusals; the agent was allowed to stop (2026-10-23T21:37:46.860Z).
+
+ - no record of who built this folder (no .claude/state/builders entry and no "hand-in check passed" line in gate.log for it): the independence of the auditor cannot be shown. Check the AUDIT-OF path is exactly the HANDIN_DIR of the builder; if the folder was never handed in through the gate, tell the main session in your report and stop

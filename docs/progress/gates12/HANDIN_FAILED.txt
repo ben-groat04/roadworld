@@ -1,0 +1,6 @@
+The hand-in check still failed after 3 refusals; the agent was allowed to stop (2026-10-23T21:26:35.359Z).
+
+HAND-IN CHECK FAILED (2) for C:\Users\bgbg0\Documents\Programming\roadworld-wt\gates10\docs\progress\gates12:
+ - GATE waiver guard (tools/hooks/test_hooks.mjs): gate test "a read-only "review of docs/progress": allowed (the wording rule no longer judges it; its " was removed or renamed (a weakened gate test is a waiver: say why in an allow_waiver line). Remove it and fix the cause; only a task-file gate line "allow_waiver deleted_gate_test:test_hooks.mjs:a read-only "review of docs/progress": allowed (the wording " lets it through
+ - GATE waiver guard (tools/hooks/test_hooks.mjs): gate test "a review that names no progress folder: allowed" was removed or renamed (a weakened gate test is a waiver: say why in an allow_waiver line). Remove it and fix the cause; only a task-file gate line "allow_waiver deleted_gate_test:test_hooks.mjs:a review that names no progress folder: allowed" lets it through
+Send this list back to the agent unread; do not read the report.

@@ -1,0 +1,65 @@
+gates9 F1: ordinary work on tests/ is not refused (no list, no tests/locked folder; and with a list)
+  ok   F1 builder with NO list and NO tests/locked: everything below is allowed: 21 real payloads
+  ok   F1 builder WITH a list and a tests/locked folder: ordinary work still passes, a real hit does not: 28 real payloads
+gates9 F2: inline python / node that only READS a locked test is allowed; a write is not
+  ok   F2 inline code: 15 real payloads
+gates9 F3: the refusal names the exact file; BLOCKED only for a real test edit
+  ok   F3 a glob refusal names the locked file it reaches (tests/listed_test.mjs or tests/locked/a.mjs)
+  ok   F3 a real edit of a locked test: the text says make it pass or write BLOCKED, and names the file
+  ok   F3 an edit of the lock list: refused, names the list, and does NOT tell the builder to write BLOCKED
+  ok   F3 rm -rf tests: the reason names a locked file it holds, not just "the folder"
+gates9 H1: the lock list and the prior AUDIT.md are protected like the locked tests (builders only)
+  ok   H1 attacks on the list and the audit (every form from the audit is refused): 30 real payloads
+gates9 H7: in-place formatters are writes
+  ok   H7 formatters over a locked test: 22 real payloads
+gates9 H2: a bad list is loud (LOCK-LIST-BAD), a UTF-16 list is decoded, globs are supported
+  ok   H2 a UTF-16LE list (BOM) works: 2 real payloads
+  ok   H2 a UTF-16LE list without a BOM works: 1 real payloads
+  ok   H2 a glob entry is supported (what it matches is locked): 6 real payloads
+  ok   H2 an entry that matches no file: a LOCK-LIST-BAD line (with FAIL-OPEN so the main session gets a GATE NOTICE) in gate.log
+  ok   H2 ... and a visible warning for the builder (systemMessage on stdout), exit 0
+  ok   H2 ... the same problem is logged once per agent, not on every command
+  ok   H2 PRIOR-AUDIT given, the audit speaks of LOCKED_TESTS.txt but the file is missing: LOCK-LIST-BAD
+  ok   H2 PRIOR-AUDIT given, no list and the audit does not speak of one: silent (nothing is locked, nothing is wrong)
+  ok   H2 a list with no entry (locks nothing): LOCK-LIST-BAD
+  ok   H2 a glob that matches no file: LOCK-LIST-BAD
+  ok   H2 a good list: no LOCK-LIST-BAD line, no warning
+gates9 H3: a junction inside a build output folder is found by the delete guard (real junctions)
+  ok   H3 21 delete-guard cases on real junctions inside build folders (refused) and link-free folders (allowed)
+  ok   H3 the clean-build path stays fast (two checks on a 1200-file build folder: 19 ms, limit 1500)
+  ok   H3 a zero time budget for build folders reports buildBound, finds no link, does not refuse
+  ok   H3 ... and the bound is logged (a gate.log line that says the scan was bounded)
+  ok   H3 a link below the old depth bound IS found (no depth bound since gates10)
+  ok   H3 within the default depth the same link IS found
+gates9 H4-H6 checkpoint hand-back (handin_gate.mjs and check_handin.mjs --checkpoint, real transcripts, real git repos)
+  ok   H4 fixture: the temp git repo was created
+  ok   H4 a real PNG (>= 10 KB, valid header) inside the hand-in folder, written during the run: passes
+  ok   H4 ... named relative to the hand-in folder: passes
+  ok   H4 a good PNG OUTSIDE the hand-in folder and _compare/<round> (like C:\Windows\System32\@WLOGO_96x96.png): refused, says where it must be
+  ok   H4 images: fake.png that is a text file: refused
+  ok   H4 an 8-byte file that is only the PNG signature: refused (too small)
+  ok   H4 20 KB of noise named .png: refused (no valid header)
+  ok   H4 PNG signature followed by noise (no IHDR): refused
+  ok   H4 a JPEG with a valid SOI and a frame header, >= 10 KB: passes
+  ok   H4 an image from before this run (an earlier round): refused
+  ok   H4 an image in docs/reference/_compare/<round> (the round = the hand-in folder name): passes
+  ok   H4 an image in _compare/<ANOTHER round>: refused
+  ok   H4 a reference photo (docs/reference/aerial) is not a checkpoint image: refused
+  ok   H5 control: CHECKPOINT.md written AFTER the latest commit counts as a checkpoint
+  ok   H5 CHECKPOINT.md OLDER than the latest commit is ignored: the full check runs (refused, STATUS.md missing)
+  ok   H5 ... the ignored checkpoint is logged (a gate.log line that says CHECKPOINT.md was ignored, older than the latest commit)
+  ok   H5 a commit that only adds CHECKPOINT.md and its picture does not void the checkpoint
+  ok   H5 ... and the refusal message tells the builder to delete CHECKPOINT.md
+  ok   H6 first checkpoint of the round: allowed
+  ok   H6 second hook call of the same finish (seconds later, same file): allowed
+  ok   H6 the same agent stopping again 40 s later (outside the 30 s window), file untouched: the full check runs (blocked, "already used")
+  ok   H6 ANOTHER agent of the same round with a fresh valid CHECKPOINT.md: one checkpoint per round, the full check runs
+  ok   H6 a different round is a different allowance: allowed
+  ok   H6 CHECKPOINT_WINDOW_MS is 30000
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the photos behind the junctions survived every case
+  ok   the locked test files are untouched after every case (nothing here ran a command)
+  ok   the temp folder (junctions unlinked first) is removed
+
+54 passed, 0 failed

@@ -1,0 +1,7 @@
+The hand-in check still failed after 3 refusals; the agent was allowed to stop (2026-10-23T19:11:42.865Z).
+
+HAND-IN CHECK FAILED (3) for C:\Users\bgbg0\Documents\Programming\roadworld-wt\gates10\docs\progress\gates10:
+ - GATE status: STATUS.md line 42: an item is left undone or deferred ("- Finish hook: a `PHASE: measure|build` agent stops when its own phase check passes; own 3-refusal c"): do it (contract items 5 and 17), or, if something really blocks it, write "BLOCKED: <item> | tried: <what you ran> | blocked by: <exact error or missing path> | see: <path of the log or output file that holds the error> | needs: <what unblocks it>"; "out of scope", "later round" and "bigger change" are not reasons
+ - GATE status: STATUS.md line 81: an item is left undone or deferred ("26. **Phases and time limits.** A builder round may be split into up to three short fresh agents run"): do it (contract items 5 and 17), or, if something really blocks it, write "BLOCKED: <item> | tried: <what you ran> | blocked by: <exact error or missing path> | see: <path of the log or output file that holds the error> | needs: <what unblocks it>"; "out of scope", "later round" and "bigger change" are not reasons
+ - GATE status: FAULTS.md: 2 self-audit pass(es), need 3 unless the residual list holds only unfixable items: then add a line "Residual only unfixable: <for each residual item (by its number), why it cannot be fixed>" (40+ characters)
+Send this list back to the agent unread; do not read the report.

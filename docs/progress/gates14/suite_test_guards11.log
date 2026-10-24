@@ -1,0 +1,185 @@
+gates11 A: time-limit guard (contract item 26): REFUSE a long job with no limit, ALLOW limited forms and commands that only mention the names
+  ok   A REFUSE (Bash): the suite with no limit
+  ok   A REFUSE (Bash): ctest with no limit
+  ok   A REFUSE (Bash): a limit over 900 s
+  ok   A REFUSE (Bash): timeout 0 is no limit
+  ok   A REFUSE (Bash): cmake --build with no limit
+  ok   A REFUSE (Bash): ninja with no limit
+  ok   A REFUSE (Bash): msbuild with no limit
+  ok   A REFUSE (Bash): scene.mjs with no limit
+  ok   A REFUSE (Bash): render.mjs with no limit
+  ok   A REFUSE (Bash): any *_tests program
+  ok   A REFUSE (Bash): a t_full* program
+  ok   A REFUSE (Bash): a nested shell does not hide it
+  ok   A REFUSE (Bash): time is not a limit
+  ok   A REFUSE (Bash): ctest piped to tail with no limit
+  ok   A REFUSE (Bash): two jobs, none limited
+  ok   A REFUSE (PowerShell): Run-Playtest.ps1 with no -TimeoutSec
+  ok   A REFUSE (PowerShell): -TimeoutMinutes is not the limit the guard wants
+  ok   A REFUSE (PowerShell): Run-EditorPython.ps1 with no limit
+  ok   A REFUSE (PowerShell): Build-Editor.ps1 -TimeoutSec over its 5400 s cap
+  ok   A REFUSE (PowerShell): -TimeoutSec 0
+  ok   A REFUSE (PowerShell): the suite in PowerShell with no limit
+  ok   A REFUSE (PowerShell): Start-Process + Wait-Process with no -Timeout
+  ok   A REFUSE (PowerShell): timeout typed in PowerShell is Windows timeout.exe, a pause
+  ok   A REFUSE (PowerShell): Start-Process -Wait has no limit
+  ok   A ALLOW (Bash): timeout 900 suite
+  ok   A ALLOW (Bash): timeout 600 ctest
+  ok   A ALLOW (Bash): timeout 15m = 900 s
+  ok   A ALLOW (Bash): timeout cmake --build
+  ok   A ALLOW (Bash): timeout -k 10 600 ninja
+  ok   A ALLOW (Bash): timeout scene.mjs
+  ok   A ALLOW (Bash): timeout around a nested shell
+  ok   A ALLOW (Bash): timeout t_full
+  ok   A ALLOW (Bash): cmake configure is not a run
+  ok   A ALLOW (Bash): listing test cases is not a run
+  ok   A ALLOW (Bash): ctest -N lists
+  ok   A ALLOW (Bash): cmake --build --help
+  ok   A ALLOW (Bash): grep that mentions ctest
+  ok   A ALLOW (Bash): cat of a log named after the suite
+  ok   A ALLOW (Bash): git log --grep ninja
+  ok   A ALLOW (Bash): a commit message that names them
+  ok   A ALLOW (Bash): echo
+  ok   A ALLOW (Bash): git diff of a file named like the suite
+  ok   A ALLOW (Bash): an unrelated node tool
+  ok   A ALLOW (PowerShell): Run-Playtest.ps1 -TimeoutSec 600
+  ok   A ALLOW (PowerShell): Build-Editor.ps1 -TimeoutSec 4000 (cap 5400)
+  ok   A ALLOW (PowerShell): -TimeoutSec:900 form
+  ok   A ALLOW (PowerShell): Start-Process + Wait-Process -Timeout 600
+  ok   A ALLOW (PowerShell): a nested bash with GNU timeout
+  ok   A ALLOW (PowerShell): Select-String that mentions ctest
+  ok   A ALLOW (PowerShell): Get-Content of the suite log
+  ok   A ALLOW (PowerShell): git log --grep Run-Playtest
+  ok   A ALLOW (PowerShell): listing the script
+  ok   A the refusal is on record in gate.log (gate time_guard, decision deny)
+  ok   A the Bash refusal names `timeout 900 <cmd>` and the PowerShell refusal names -TimeoutSec and Wait-Process -Timeout
+gates11 A: a second copy of a running test, and the 300 ms process lookup
+  ok   A dup: the first limited run is allowed (and recorded)
+  ok   A dup: a second copy of the same test from the same worktree while the process is still running is refused
+  ok   A dup: the same holds for ctest (first allowed, second refused)
+  ok   A dup: the same command is allowed once the process is gone (the earlier run ended)
+  ok   A dup: another worktree may run the same test at the same time
+  ok   A dup: a different test program is not a second copy
+  ok   A dup: a process lookup that hangs is cut at 300 ms; the command is allowed and a FAIL-OPEN line is logged
+  ok   A dup: processRunning(name) with a stuck lookup command returns null within 1 s (the bound)
+gates11 A: wiring and the -TimeoutSec parameter of the unreal scripts
+  ok   A settings.json wires tools/hooks/time_guard.mjs on Bash|PowerShell
+  ok   A Build-Editor.ps1 has a -TimeoutSec parameter that sets its time limit
+  ok   A Run-Playtest.ps1 has a -TimeoutSec parameter that sets its time limit
+  ok   A Run-EditorPython.ps1 has a -TimeoutSec parameter that sets its time limit
+gates11 B: the launch gate refuses a NO-CONTRACT launch by its DESCRIPTION (real descriptions of 23 Oct 2026)
+  ok   B REFUSE "Audit gate-notice hooks independently" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit earthworks round 9" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit T-junction round" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit road tool round 3" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Auditor for gates9 hand-in" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Auditor for m2fix5a hand-in" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit of the earthworks hand-in" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Auditing for the roundabout round" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit the audit-gate tooling" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit repo organisation, read-only" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Audit gradelayer WorldCache layers" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Opus first look on grade-r12 images" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Opus first look: tjunction5 images" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "First look at the m2fix hand-in" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "Fresh auditor for the junction round" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE "AUDITOR for x" (a reason that says nothing about audits does not save it)
+  ok   B REFUSE a prompt line that orders an audit of a progress folder (Check the round)
+  ok   B REFUSE a prompt line that orders an audit of a progress folder (Quick job)
+  ok   B ALLOW "Write audit first-look rule into docs"
+  ok   B ALLOW "Earthworks method review (read-only)"
+  ok   B ALLOW "Clerk: photos-outrank-tests rule, commit review"
+  ok   B ALLOW "Add every-audit-item-fixed rule to docs"
+  ok   B ALLOW "Clerk: contract speed rules, queue, acceptance"
+  ok   B ALLOW "Merge gates7 then gates9 into main"
+  ok   B ALLOW "Research: Unreal plugin facts"
+  ok   B ALLOW "Re-fetch 18 truncated photos and back up"
+  ok   B ALLOW "Queue catch-up for 22-23 Oct events"
+  ok   B ALLOW a clerk prompt that only says an audit of a progress folder was accepted
+  ok   B ALLOW an "Auditor for ..." description that carries AUDIT-OF (the real audit launch)
+  ok   B ALLOW an "Opus first look ..." description that carries FIRSTLOOK-OF (the real first-look launch)
+gates11 C: measure phase (decision 5): photo files must exist, M = the brief's count, one table per case of the brief
+  ok   C measure: a GOOD MEASURE.md with the brief's REFS and CASE lines passes
+  ok   C measure: BAD (a table row names a photo file that does not exist) is refused with the matching reason
+  ok   C measure: BAD (M is not the brief's count (3 listed in the file, 5 in the brief)) is refused with the matching reason
+  ok   C measure: BAD ("opened 3 of 4" when the brief lists 3) is refused with the matching reason
+  ok   C measure: BAD (the brief has two cases, MEASURE.md one table) is refused with the matching reason
+  ok   C measure: BAD (a case of the brief with no section of that name) is refused with the matching reason
+gates11 C: build phase (decisions 2-4): suite_node.log is read, never run; a code commit is required; fail_first shows a failure in the runner format
+  ok   C build: GOOD (code commit, log newer than it, real summary, fail_first in the runner format) passes
+  ok   C build: a doctest log whose only failure is the brief's allowed pier test passes
+  ok   C build: a ctest log with only the allowed failure passes
+  ok   C build: BAD (no commit touches code (a .md note only)) is refused with the matching reason
+  ok   C build: BAD (no suite_node.log) is refused with the matching reason
+  ok   C build: BAD (log older than the last code commit) is refused with the matching reason
+  ok   C build: BAD (log with no summary (a half-written file)) is refused with the matching reason
+  ok   C build: BAD (log is a timeout (exit=124)) is refused with the matching reason
+  ok   C build: BAD (a failing test that the brief does not allow) is refused with the matching reason
+  ok   C build: BAD (a failing test and no allow list at all) is refused with the matching reason
+  ok   C build: BAD (a failure count with no failing name) is refused with the matching reason
+  ok   C build: BAD (the suite binary is older than the last code commit) is refused with the matching reason
+  ok   C build: BAD (a new test file with a fail_first that shows no failure) is refused with the matching reason
+  ok   C build: BAD (a fail_first that says "all passed" in a long sentence) is refused with the matching reason
+  ok   C build: fail_first in the format "a doctest ERROR block" is accepted
+  ok   C build: fail_first in the format "a ctest ***Failed line" is accepted
+  ok   C build: fail_first in the format "a FAIL line of the repo runner" is accepted
+  ok   C build: fail_first in the format "a "N failed" summary above zero" is accepted
+  ok   C build: the check never runs a suite command (a --suite sentinel command was not started)
+  ok   C make_brief --phase measure|build: the brief carries REFS: (the count), one CASE: line per case and the ALLOW-FAIL: lines of the task file; the finish hook reads them back
+  ok   C make_brief: the build-phase text tells the agent to run the suite with tools/run_suite.mjs and names the allowed-failure list
+  ok   C audit brief template: the auditor re-runs the suite itself
+gates11 D: first-look file (decision 6): placeholders fail; a reference photo under docs/reference and a picture of the round are both needed
+  ok   D a GOOD first look (round pictures and a reference photo, real observations) passes
+  ok   D BAD first look (Top 3 line 1 is a <placeholder>) is refused
+  ok   D BAD first look (Top 3 line 2 is TODO) is refused
+  ok   D BAD first look (Top 3 line 3 is tbd) is refused
+  ok   D BAD first look (Top 3 line is one word repeated) is refused
+  ok   D BAD first look ("would never be built" is TODO) is refused
+  ok   D BAD first look ("would never be built" is a <placeholder>) is refused
+  ok   D BAD first look ("would never be built" is a short non-answer (under 15 characters)) is refused
+  ok   D BAD first look (no reference photo under docs/reference (an image from elsewhere on disk)) is refused
+  ok   D BAD first look (only reference photos, no picture of the round) is refused
+gates11 E: [unreal] frames (decision 7): in the round's _compare or hand-in folder, cited in STATUS next to a playtest log newer than the brief that names the frame
+  ok   E a frame in the hand-in folder, cited in STATUS with a fresh log that names it, passes
+  ok   E a frame in the round's _compare folder passes the same way
+  ok   E a frame outside the round's _compare and hand-in folders is refused
+  ok   E STATUS that does not cite the frame by name is refused
+  ok   E STATUS that cites no playtest log file is refused
+  ok   E a cited log that does not exist is refused
+  ok   E a cited log older than the brief is refused
+  ok   E a fresh log that does not name the frame is refused
+  ok   E without a context only the old integrity checks run (library callers)
+gates11 F: lock_guard (decisions 8 and 9): chained fs.rm, git stash / reset --hard / checkout -- / revert against locked files; patch --dry-run allowed
+  ok   F REFUSE chained and aliased fs write forms on a locked test: 10 real payloads
+  ok   F ALLOW the same forms on an unlocked file and reads: 3 real payloads
+  ok   F REFUSE git stash / reset --hard / checkout -- / restore against a MODIFIED locked test: 11 real payloads
+  ok   F ALLOW git commands that read, or that do not touch the locked test: 8 real payloads
+  ok   F ALLOW git stash and reset --hard while only an UNLOCKED file is modified: 3 real payloads
+  ok   F REFUSE git revert of a commit that changed a locked test: 3 real payloads
+  ok   F ALLOW git revert --abort / --continue and a revert of a commit that left the locked test alone: 3 real payloads
+  ok   F decision 9: patch --dry-run on a diff of a locked test is only a read (ALLOW): 5 real payloads
+  ok   F ... and a real patch of the locked test is still refused: 3 real payloads
+gates11 G: delete_guard (decision 11): a heredoc written to a file is text; a heredoc fed to an interpreter is code
+  ok   G ALLOW: cat > file <<EOF (a recursive delete named inside text)
+  ok   G ALLOW: a command before it, then cat > file <<EOF (a recursive delete named inside text)
+  ok   G ALLOW: cat >> file <<END-OF-FILE (a recursive delete named inside text)
+  ok   G ALLOW: tee file <<EOF (a recursive delete named inside text)
+  ok   G ALLOW: the file is written, a later line runs another tool (a recursive delete named inside text)
+  ok   G ALLOW: git commit -F - <<EOF (a recursive delete named inside text)
+  ok   G ALLOW: PowerShell Set-Content here-string (a recursive delete named inside text)
+  ok   G ALLOW: PowerShell here-string into a variable then Set-Content (a recursive delete named inside text)
+  ok   G REFUSE: node - <<EOF (the heredoc is the program) (the code runs)
+  ok   G REFUSE: cat <<EOF | node - (the code runs)
+  ok   G REFUSE: bash <<EOF with rm -rf (the code runs)
+  ok   G REFUSE: write the file, then run it in the same command (the code runs)
+  ok   G REFUSE: node <<EOF (the code runs)
+  ok   G REFUSE: PowerShell here-string piped to node - (the code runs)
+  ok   G REFUSE: python - <<EOF with rmtree (the code runs)
+
+clean_test_temp prefix: guards11- is cleaned with the other suites
+  ok   clean_test_temp lists the guards11- prefix
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the temp folder is removed
+
+170 passed, 0 failed

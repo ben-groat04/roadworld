@@ -11,16 +11,17 @@ import { spawnSync as realSpawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isolateState, cleanupTmp } from '../test_isolation.mjs';
 // children are COPIES of the hooks in temp mains with their own state folders; only this process (which imports the real lib from src) is redirected by CP_GATE_STATE_DIR
-const spawnSync = (c, a, o = {}) => { const env = { ...(o.env || process.env) }; delete env.CP_GATE_STATE_DIR; return realSpawn(c, a, { ...o, env }); };
+const spawnSync = (c, a, o = {}) => { const env = { ...(o.env || process.env) }; delete env.CP_GATE_STATE_DIR;   /* gates14: the secret lives outside the repo; children share this process secret */ return realSpawn(c, a, { ...o, env }); };
 
 const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'hooktest-'));
 const isolation = isolateState(tmp, src);   // CP_GATE_STATE_DIR for this process; the real gate.log is watched and must get no line of this run
+process.env.CP_GATE_SECRET_DIR = path.join(tmp, "shared_secret");   /* gates14: the secret lives outside the repo; the copies in the temp mains and this process share one */
 const root = path.join(tmp, 'main');
 const wt = path.join(tmp, 'wt');
 const cp = (rel) => { const d = path.join(root, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); };
-['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/git_guard.mjs', 'tools/hooks/lock_guard.mjs', 'tools/hooks/lock_guard_impl.mjs', 'tools/hooks/git_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
-  'tools/check_handin.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
+['tools/hooks/guard.mjs', 'tools/hooks/root.mjs', 'tools/hooks/shell_lex.mjs', 'tools/hooks/delete_guard.mjs', 'tools/hooks/delete_guard_impl.mjs', 'tools/hooks/git_guard.mjs', 'tools/hooks/time_guard.mjs', 'tools/hooks/time_guard_impl.mjs', 'tools/hooks/suite_record.mjs', 'tools/hooks/lock_guard.mjs', 'tools/hooks/lock_guard_impl.mjs', 'tools/hooks/lock_extra.mjs', 'tools/hooks/phase_marks.mjs', 'tools/hooks/git_guard_impl.mjs', 'tools/hooks/state_guard.mjs', 'tools/hooks/state_guard_impl.mjs', 'tools/hooks/guard_paths.mjs', 'tools/lane_lock.mjs', 'tools/hooks/ref_log.mjs', 'tools/hooks/ref_log_impl.mjs', 'tools/hooks/ref_lib.mjs', 'tools/ref_seed.mjs', 'tools/hooks/brief_gate_impl.mjs', 'tools/hooks/handin_gate_impl.mjs', 'tools/hooks/gate_notice_impl.mjs', 'tools/hooks/contract_inject_impl.mjs', 'tools/check_wrappers.mjs', 'tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/brief_gate.mjs', 'tools/hooks/handin_gate.mjs', 'tools/hooks/contract_inject.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs',
+  'tools/check_handin.mjs', 'tools/image_lib.mjs', 'tools/phase_lib.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md'].forEach(cp);
 // three reference files in the temp main checkout
 for (const f of ['aerial/a.jpg', 'street/b.jpg', 'gsv/c.jpg']) { const p = path.join(root, 'docs/reference', f); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, 'photo ' + f); }
 fs.mkdirSync(path.join(root, '.git'), { recursive: true }); // main-checkout marker for make_brief's canary
@@ -81,7 +82,7 @@ r = launch(good + '\nTime-box about 3 hours.'); t('"time-box" wording: denied', 
 r = launch(good + '\nThese are the whole task.'); t('"whole task" wording: denied', r.code === 2);
 const emptyOwner = good.replace(/(## Owner's words[^\n]*\n)[\s\S]*?(\n## Finish line)/, '$1\n$2'); r = launch(emptyOwner); t('empty Owner\'s words: denied', r.code === 2 && /Owner's words/.test(r.err));
 const noQuote = good.replace('"The photo is the target." (11 Oct)', 'The photo is the target said the owner'); r = launch(noQuote); t('owner words without quotation marks: denied', r.code === 2);
-r = launch('Research the docs.\nNO-CONTRACT: read-only research, no hand-in expected'); t('NO-CONTRACT with reason: allowed + logged', r.code === 0 && lastLog().reason === 'NO-CONTRACT' && /research/.test(lastLog().no_contract_reason));
+r = launch('Research the docs.\nNO-CONTRACT: research: read-only research, no hand-in expected'); t('NO-CONTRACT with reason: allowed + logged', r.code === 0 && lastLog().reason === 'NO-CONTRACT' && /research/.test(lastLog().no_contract_reason));
 r = launch('Research.\nNO-CONTRACT: too short'); t('NO-CONTRACT with short reason: denied', r.code === 2);
 const bf = path.join(tmp, 'brief_ok.txt'); fs.writeFileSync(bf, good);
 r = launch(`Your brief is in the file.\nBRIEF-FILE: ${bf}`); t('BRIEF-FILE that passes: allowed', r.code === 0 && lastLog().reason === 'BRIEF-FILE passes', r.err);
@@ -236,6 +237,21 @@ console.log('audit gate');
   t('notice lists the folder as AUDIT OWED with the builder id', /AUDIT OWED x1/.test(cA) && cA.includes(folderP) && /builder general-purpose\/p1/.test(cA) && /--audit/.test(cA), cA);
   t('notice says an ack cannot clear it', /an ack does nothing/.test(cA));
   t('the failed hand-in (vis) was never recorded as a builder: no audit owed for it', !al.readBuilder(hd('vis'), stateDir));
+  // -- gates13 (main-session decision 6): a hand-in RELEASED after 3 refusals writes a RELEASED builder record, so the auditor's finish gate can compare ids; --accept still fails until the hand-in passes
+  let c0;
+  const relRec = typeof al.readReleased === 'function' ? al.readReleased(hd('vis'), stateDir) : null;
+  t('gates13 D6: the release wrote a signed builder record flagged released (agent v1, the vis folder)', !!relRec && relRec.agent_id === 'v1' && relRec.released === true && relRec.handin_dir === path.resolve(hd('vis')), JSON.stringify(relRec));
+  t('gates13 D6: the released record raises no "audit owed" notice (it is not a passed hand-in)', !/AUDIT OWED[^\n]*vis/.test(noticeCtx()) && !fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map(J).some((e) => e.gate === 'audit' && e.decision === 'owed' && e.handin_dir === hd('vis')));
+  const visAudTp = transcript('aud_vis', mkAudit(hd('vis')).stdout);
+  r = stop('av1', visAudTp); t('gates13 D6: an auditor of the released folder is blocked for the missing AUDIT.md, NOT for "no record of who built this folder"', J(r.out).decision === 'block' && /AUDIT\.md is missing/.test(J(r.out).reason) && !/no record of who built/.test(J(r.out).reason), r.out);
+  fs.writeFileSync(path.join(hd('vis'), 'AUDIT.md'), auditText('v1'));
+  const accRel = (extra = []) => spawnSync(process.execPath, [path.join(root, 'tools/check_handin.mjs'), hd('vis'), '--main', root, '--accept', ...extra], { cwd: elsewhere, encoding: 'utf8' });
+  c0 = accRel(); t('gates13 D6: --accept names the released builder: an AUDIT.md by v1 is refused ("never the same agent"), not "no record of who built"', /never the same agent/.test(c0.stderr) && !/no record of who built/.test(c0.stderr), c0.stderr.slice(0, 500));
+  fs.writeFileSync(path.join(hd('vis'), 'AUDIT.md'), auditText('av2'));
+  r = stop('av2', transcript('aud_vis2', mkAudit(hd('vis')).stdout)); t('gates13 D6: a different auditor with a valid AUDIT.md finishes, logged as independent of the released builder v1', r.code === 0 && r.out === '' && lastLog().reason === 'audit written' && lastLog().builder_id === 'v1', r.out + JSON.stringify(lastLog()));
+  const accV = accRel();
+  t('gates13 D6: --accept on the released folder still FAILS (the hand-in itself never passed)', accV.status === 1 && /FAULTS\.md is missing|COMPARE\.md is missing/.test(accV.stderr), accV.stderr.slice(0, 400));
+  fs.rmSync(path.join(hd('vis'), 'AUDIT.md'), { force: true });
 
   // -- finish gate for the auditor
   const audTp = transcript('aud', auditBrief);
@@ -448,7 +464,7 @@ console.log('gate_notice, gate_ack, canary');
   const itemLines = (c) => c.split('\n').filter((l) => /#\d+\[[0-9a-f]{6}\]/.test(l));
   const tokOf = (l) => { const m = l.match(/#(\d+)\[([0-9a-f]{6})\]/); return m[1] + ':' + m[2]; };
   t('notice prints #n[code] next to every item (fail-open, released hand-in, no-contract)', itemLines(ctx).length >= 3 && itemLines(ctx).some((l) => l.includes(hd('vis'))) && itemLines(ctx).some((l) => /read-only research/.test(l)), ctx);
-  const secretNow = fs.readFileSync(path.join(stateDir, 'ack_secret'), 'utf8').trim();
+  const secretNow = fs.readFileSync(path.join(process.env.CP_GATE_SECRET_DIR, 'ack_secret'), 'utf8').trim();
   t('the ack secret itself is never printed in the notice', secretNow.length >= 16 && !ctx.includes(secretNow));
   const allToks = itemLines(ctx).map(tokOf).join(' ');
 
@@ -470,7 +486,9 @@ console.log('gate_notice, gate_ack, canary');
   const rootS = path.join(tmp, 'mainS'); ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_ack.mjs'].forEach((rel) => { const d = path.join(rootS, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
   fs.mkdirSync(path.join(rootS, '.git'), { recursive: true }); fs.mkdirSync(path.join(rootS, '.claude/state'), { recursive: true });
   fs.writeFileSync(path.join(rootS, '.claude/state/gate.log'), JSON.stringify({ ts: new Date().toISOString(), gate: 'brief', reason: 'FAIL-OPEN: x' }) + '\n');
+  const prevSec = process.env.CP_GATE_SECRET_DIR; process.env.CP_GATE_SECRET_DIR = path.join(tmp, 'no_secret_here');
   a = ack('1:abcdef', 'guessing a code without ever seeing the notice', rootS); t('no ack secret yet (notice never shown): ack refused', a.status === 1 && /no ack secret/.test(a.stderr), a.stderr);
+  process.env.CP_GATE_SECRET_DIR = prevSec;
 
   // ack ONE item (the released hand-in): only that one disappears
   const hl = itemLines(ctx).find((l) => l.includes(hd('vis')));
@@ -487,7 +505,7 @@ console.log('gate_notice, gate_ack, canary');
   n = prompt(); t('still silent on the next prompt', n.stdout === '');
 
   // new events after the ack show up again, and only those
-  launch('Research again.\nNO-CONTRACT: a second read-only research launch here');
+  launch('Research again.\nNO-CONTRACT: research: a second read-only research launch here');
   n = prompt(); const c2 = ptxt(n.stdout);
   t('a new NO-CONTRACT after the ack is reported alone', /x1/.test(c2) && /second read-only research/.test(c2) && !/HAND-IN RELEASED/.test(c2) && !/read-only research, no hand-in expected/.test(c2), c2);
   run('handin_gate.mjs', 'not json');
@@ -544,7 +562,7 @@ console.log('gate_notice, gate_ack, canary');
   // ---- canary through the real tools
   const mkRoot = (name) => {
     const rt = path.join(tmp, name);
-    ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md']
+    ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/hooks/gate_notice.mjs', 'tools/hooks/gate_ack.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'tools/image_lib.mjs', 'tools/phase_lib.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md', 'docs/templates/AUDIT_BRIEF.md']
       .forEach((rel) => { const d = path.join(rt, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
     fs.mkdirSync(path.join(rt, '.git'), { recursive: true });
     fs.mkdirSync(path.join(rt, '.claude/state'), { recursive: true });
@@ -662,7 +680,7 @@ console.log('hand-in freshness, counter reset, owner quotes, COMPARE relevance, 
   t('canary RULE 3: exempt-type skips (decision skip) are not agent starts', c3([at3(0, { gate: 'inject', decision: 'skip', reason: 'exempt type' })], 9 * H).length === 0);
   t('canary RULE 3: audit-gate lines (gate audit) do not count as hand-in lines', c3([at3(0, { gate: 'inject', decision: 'inject', agent_id: 'zz' }), at3(100, { gate: 'audit', decision: 'owed' })], 9 * H).length === 1);
   const rC3 = path.join(tmp, 'mainC3');
-  ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md'].forEach((rel) => { const d = path.join(rC3, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
+  ['tools/hooks/lib.mjs', 'tools/hooks/root.mjs', 'tools/hooks/audit_lib.mjs', 'tools/hooks/notice_lib.mjs', 'tools/make_brief.mjs', 'tools/check_handin.mjs', 'tools/image_lib.mjs', 'tools/phase_lib.mjs', 'tools/gates_lib.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md'].forEach((rel) => { const d = path.join(rC3, rel); fs.mkdirSync(path.dirname(d), { recursive: true }); fs.copyFileSync(path.join(src, rel), d); });
   fs.mkdirSync(path.join(rC3, '.git'), { recursive: true }); fs.mkdirSync(path.join(rC3, '.claude/state'), { recursive: true });
   const oldL = (h, e) => JSON.stringify({ ts: new Date(Date.now() - h * 3600000).toISOString(), ...e }) + '\n';
   fs.writeFileSync(path.join(rC3, '.claude/state/gate.log'), oldL(8, { gate: 'inject', decision: 'inject', agent_id: 'old1', agent_type: 'general-purpose' }) + oldL(0.1, { gate: 'notice', reason: 'ran' }));
@@ -771,7 +789,7 @@ console.log('gates3 hooks');
   const mkCheckout = (name) => {
     const rt = path.join(tmp, name);
     for (const f of fs.readdirSync(path.join(src, 'tools/hooks')).filter((n) => n.endsWith('.mjs') && !/^test_/.test(n))) { fs.mkdirSync(path.join(rt, 'tools/hooks'), { recursive: true }); fs.copyFileSync(path.join(src, 'tools/hooks', f), path.join(rt, 'tools/hooks', f)); }
-    for (const f of ['tools/check_handin.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'tools/check_wrappers.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md']) { fs.mkdirSync(path.dirname(path.join(rt, f)), { recursive: true }); fs.copyFileSync(path.join(src, f), path.join(rt, f)); }
+    for (const f of ['tools/check_handin.mjs', 'tools/image_lib.mjs', 'tools/phase_lib.mjs', 'tools/make_brief.mjs', 'tools/gates_lib.mjs', 'tools/check_wrappers.mjs', 'docs/AGENT_CONTRACT.md', 'docs/templates/BRIEF.md']) { fs.mkdirSync(path.dirname(path.join(rt, f)), { recursive: true }); fs.copyFileSync(path.join(src, f), path.join(rt, f)); }
     fs.mkdirSync(path.join(rt, '.git'), { recursive: true });
     return rt;
   };
@@ -821,28 +839,30 @@ console.log('gates3 hooks');
     t('a launch after the ack shows up again, alone (x1)', /NO-CONTRACT launches x1/.test(noticeOf(rt)), noticeOf(rt)); }
 
   // -- a NO-CONTRACT launch cannot be asked to WRITE an AUDIT.md (gates2 audit fault 8, reworked after the gates3 audit fault 3: mergers and clerks must not be refused)
-  let l3 = launch('Audit the round for me.\nWrite the audit to docs/progress/gates2/AUDIT.md.\nNO-CONTRACT: independent audit of the hand-in in docs/progress/gates2 please');
+  let l3 = launch('Audit the round for me.\nWrite the audit to docs/progress/gates2/AUDIT.md.\nNO-CONTRACT: research: independent audit of the hand-in in docs/progress/gates2 please');
   t('NO-CONTRACT launch that asks for an AUDIT.md to be written: DENIED (exit 2), says to use make_brief --audit', l3.code === 2 && /make_brief\.mjs <task-file> --audit/.test(l3.err) && lastLog().reason === 'NO-CONTRACT audit launch refused', l3.err);
-  l3 = launch('You are the auditor.\nRead C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\STATUS.md and write your findings into C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\AUDIT.md\nNO-CONTRACT: read-only check of a hand-in folder for the main session');
+  l3 = launch('You are the auditor.\nRead C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\STATUS.md and write your findings into C:\\x\\roadworld-wt\\gates2\\docs\\progress\\gates2\\AUDIT.md\nNO-CONTRACT: research: read-only check of a hand-in folder for the main session');
   t('...an "auditor" prompt that writes findings into a Windows-path AUDIT.md: denied too', l3.code === 2, l3.err);
-  l3 = launch('Create docs/progress/earthworks/AUDIT.md from the template.\nNO-CONTRACT: second review of the earthworks round by someone else');
+  l3 = launch('Create docs/progress/earthworks/AUDIT.md from the template.\nNO-CONTRACT: research: second review of the earthworks round by someone else');
   t('...create AUDIT.md: denied', l3.code === 2, l3.err);
-  l3 = launch('The first lines of the file are:\nAuditor agent: x1\nVerdict: accept\nNO-CONTRACT: audit file prepared by hand for a test of the gate');
+  l3 = launch('The first lines of the file are:\nAuditor agent: x1\nVerdict: accept\nNO-CONTRACT: research: audit file prepared by hand for a test of the gate');
   t('...a prompt that carries the "Auditor agent:" header lines: denied', l3.code === 2, l3.err);
   // real prompts of the kind the main session sends (a merger that mentions AUDIT.md, clerks that edit the queue and the acceptance log): NOT refused
-  l3 = launch('Merge agent/gates3 into main, run both suites, push in the background.\nNO-CONTRACT: merge agent/gates3 into main after the audit; AUDIT.md exists in docs/progress/gates3 and passed');
+  l3 = launch('Merge agent/gates3 into main, run both suites, push in the background.\nNO-CONTRACT: merge: merge agent/gates3 into main after the audit; AUDIT.md exists in docs/progress/gates3 and passed');
   t('a merger that mentions AUDIT.md and a progress folder: ALLOWED', l3.code === 0 && lastLog().reason === 'NO-CONTRACT', l3.err);
-  l3 = launch('Docs clerk.\nNO-CONTRACT: docs clerk: update docs/QUEUE.md and record that the audit of docs/progress/roundx was accepted');
+  l3 = launch('Docs clerk.\nNO-CONTRACT: clerk: docs clerk: update docs/QUEUE.md and record that the audit of docs/progress/roundx was accepted');
   t('a clerk that edits the queue and records an accepted audit: ALLOWED', l3.code === 0, l3.err);
-  l3 = launch('Bookkeeping.\nNO-CONTRACT: bookkeeping clerk writes docs/ACCEPTANCE.md entry for docs/progress/gates3 (auditor said accept; AUDIT.md says accept)');
+  l3 = launch('Bookkeeping.\nNO-CONTRACT: clerk: bookkeeping clerk writes docs/ACCEPTANCE.md entry for docs/progress/gates3 (auditor said accept; AUDIT.md says accept)');
   t('a clerk that writes an ACCEPTANCE.md entry quoting the auditor and AUDIT.md: ALLOWED', l3.code === 0, l3.err);
-  l3 = launch('Summarise.\nNO-CONTRACT: read docs/progress/gates3/AUDIT.md and summarise its faults for the main session');
+  l3 = launch('Summarise.\nNO-CONTRACT: research: read docs/progress/gates3/AUDIT.md and summarise its faults for the main session');
   t('a reader of AUDIT.md: ALLOWED', l3.code === 0, l3.err);
   l3 = launch('Second look.\nNO-CONTRACT: read-only review of the work in docs/progress/earthworks r9 by someone else');
-  t('a read-only "review of docs/progress": allowed (the wording rule no longer judges it; its audit would not be recorded and stays owed)', l3.code === 0, l3.err);
+  t('a read-only "review of docs/progress" by someone else is a review of the work of another agent: REFUSED by meaning (gates12 decision 3; it used to pass and its audit stayed owed)', l3.code === 2 && /LAUNCH REFUSED/.test(l3.err), l3.err);
   l3 = launch('Review the code.\nNO-CONTRACT: read-only review of the hook scripts, no hand-in expected');
-  t('a review that names no progress folder: allowed', l3.code === 0 && lastLog().reason === 'NO-CONTRACT', l3.err);
-  l3 = launch('Format check.\nNO-CONTRACT: read the docs/progress/README naming rules and report them');
+  t('a review of the hook scripts (a reason that opens with the review job) is REFUSED by meaning (gates12 decision 3)', l3.code === 2 && /LAUNCH REFUSED/.test(l3.err), l3.err);
+  l3 = launch('Diagnose the hook scripts.\nNO-CONTRACT: research: read-only research and diagnosis of how the hook scripts parse a command, writes one markdown report');
+  t('read-only research and diagnosis that names no review job: allowed', l3.code === 0 && lastLog().reason === 'NO-CONTRACT', l3.err);
+  l3 = launch('Format check.\nNO-CONTRACT: research: read the docs/progress/README naming rules and report them');
   t('a read of docs/progress without audit wording: allowed', l3.code === 0, l3.err);
   const withAof = launch(mkAuditBrief());
   t('a proper AUDIT-OF launch is unaffected', withAof.code === 0 && lastLog().reason === 'AUDIT-OF', withAof.err);
@@ -895,6 +915,7 @@ console.log('gates3 hooks, part 2: BLOCKED for old-layout briefs, once per finis
   stop('bv1', tp1);
   t('...and a changed set of BLOCKED items is news again', logLines().filter((e) => e.gate === 'blocked' && e.handin_dir === hd('blkv1')).length === 2);
   // secret creation: never overwritten, exclusive create
+  const prevSec2 = process.env.CP_GATE_SECRET_DIR; delete process.env.CP_GATE_SECRET_DIR;
   const lib = await import(pathToFileURL(path.join(src, 'tools/hooks/lib.mjs')).href);
   const sd = path.join(tmp, 'secret_state');
   const s1 = lib.ensureSecret(sd), s2 = lib.ensureSecret(sd);
@@ -903,6 +924,7 @@ console.log('gates3 hooks, part 2: BLOCKED for old-layout briefs, once per finis
   t('six processes asking for a secret in a fresh state dir all get the same one', new Set(kids).size === 1 && kids[0].length === 24, JSON.stringify(kids));
   const rec = lib.signRecord({ a: 1, b: 'x' }, sd);
   t('signRecord / verifyRecord: a signed record verifies, an edited one does not, a record without sig does not', lib.verifyRecord(rec, sd) && !lib.verifyRecord({ ...rec, a: 2 }, sd) && !lib.verifyRecord({ a: 1, b: 'x' }, sd) && !lib.verifyRecord(rec, path.join(tmp, 'other_state')));
+  process.env.CP_GATE_SECRET_DIR = prevSec2;
 }
 
 console.log('gates3 hooks, part 3: a deleted builder record does not cancel the debt (auditgate audit fault 6)');
@@ -1090,10 +1112,10 @@ console.log('gates5: state guard and delete guard against the real payload shape
   const B = (command) => ['Bash', { command, description: 'x' }], P = (command) => ['PowerShell', { command }];
   const sgCases = [
     // [tool, input, expect (0 allow / 2 deny), label]
-    [...B(`touch ${lock}`), 0, 'touch the Unreal lane lock'], [...B(`rm -f ${lock}`), 0, 'rm -f the lane lock'], [...B(`test -f ${lock} && cat ${lock}`), 0, 'test -f && cat the lane lock'],
-    [...P(`New-Item -ItemType File -Path ${lock.replace(/\//g, '\\')} -Force`), 0, 'New-Item the lane lock (PowerShell)'], [...P(`Remove-Item ${lock.replace(/\//g, '\\')} -Force`), 0, 'Remove-Item the lane lock (PowerShell)'],
-    [...B(`echo 4242 > ${lock}`), 0, 'redirect into the lane lock'],
-    ['Write', { file_path: lock, content: '4242' }, 0, 'Write tool on the lane lock'], ['Read', { file_path: lock }, 0, 'Read tool on the lane lock'],
+    [...B(`touch ${lock}`), 2, 'touch the Unreal lane lock (a FILE lock: refused since gates13, the lock is a directory)'], [...B(`rm -f ${lock}`), 0, 'rm -f the lane lock'], [...B(`test -f ${lock} && cat ${lock}`), 0, 'test -f && cat the lane lock'],
+    [...P(`New-Item -ItemType Directory -Path ${lock.replace(/\//g, '\\')} -Force`), 2, 'New-Item -ItemType Directory the lane lock (PowerShell)'], [...P(`Remove-Item ${lock.replace(/\//g, '\\')} -Force`), 0, 'Remove-Item the lane lock (PowerShell)'],
+    [...B(`echo 4242 > ${lock}`), 2, 'redirect into the lane lock itself (a FILE lock: refused since gates13)'],
+    ['Write', { file_path: lock + '/owner.txt', content: 'agent: ag5 round: x' }, 2, 'Write tool on owner.txt inside the lane lock'], ['Read', { file_path: lock }, 0, 'Read tool on the lane lock'],
     ['Read', { file_path: glog }, 0, 'Read tool on gate.log'], ['Grep', { pattern: 'FAIL-OPEN', path: glog, output_mode: 'content' }, 0, 'Grep tool on gate.log (gates4 fault 4)'],
     ['Grep', { pattern: 'FAIL-OPEN', path: sdir, glob: 'gate.log' }, 0, 'Grep over the state folder limited to gate.log by glob'], ['Glob', { pattern: '*', path: sdir }, 0, 'Glob lists the state folder (names only)'],
     [...B(`cat ${glog} | tail -20`), 0, 'cat gate.log | tail (piped read, gates4 fault 4)'], [...P(`Get-Content ${glog.replace(/\//g, '\\')} -Tail 20 | Select-String error`), 0, 'Get-Content gate.log | Select-String'],
