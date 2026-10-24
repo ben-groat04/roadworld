@@ -97,7 +97,7 @@ console.log('gates15 B: ACCEPTED RESIDUAL: deliberate code reads the secret. DET
   a('node --check tools/x.mjs (a flag that is not a preload)', bash('node --check tools/x.mjs'));
   a('NODE_OPTIONS=--max-old-space-size=4096 node tools/run_suite.mjs (no preload in it)', bash(`NODE_OPTIONS=--max-old-space-size=4096 node tools/run_suite.mjs ${P}`));
   a('the Write tool: a .md that names ack_secret and signRecord (text, not code)', tool('Write', { file_path: path.join(scratch, 'n.md'), content: 'the secret is ~/.roadworld-gate/ack_secret, signed by signRecord' }));
-  a('the Write tool: a new test file under tools/hooks naming the secret', tool('Write', { file_path: path.join(proj, 'tools', 'hooks', 'test_x.mjs'), content: `import { signRecord } from './lib.mjs'; // ack_secret` }));
+  a('the Write tool: a new test file under tools/hooks naming the secret', tool('Write', { file_path: path.join(scratch, 'tools', 'hooks', 'test_x.mjs'), content: `import { signRecord } from './lib.mjs'; // ack_secret` }));
   a('the Write tool: a new test_*.mjs anywhere (a test of the hooks)', tool('Write', { file_path: path.join(scratch, 'test_y.mjs'), content: `import { signRecord } from '../tools/hooks/lib.mjs';` }));
   a('the Edit tool: an edit of an EXISTING tools file that names readSecret', tool('Edit', { file_path: path.join(proj, 'tools', 'check_x.mjs'), old_string: 'a', new_string: 'readSecret()' }));
   a('the Write tool: a scratch script with no secret in it', tool('Write', { file_path: path.join(scratch, 'ok.mjs'), content: `console.log(1);` }));
@@ -120,13 +120,14 @@ console.log('gates15 C: run_suite: the whole import tree, a clean child environm
   fs.writeFileSync(path.join(main, 'tests', 'test_spawn.mjs'), "import { spawnSync } from 'node:child_process';\nconst r = spawnSync(process.execPath, ['-e', \"console.log('[doctest] test cases: 1 | 1 passed | 0 failed | 0 skipped')\"], { encoding: 'utf8' }); console.log(r.stdout);\n");
   fs.writeFileSync(path.join(main, 'tests', 'test_env.mjs'), "console.log(JSON.stringify({ foo: process.env.FOO_X || '', keep: process.env.CP_TEST_KEEP || '', np: process.env.NODE_PATH || '', no: process.env.NODE_OPTIONS || '', ex: process.execArgv }));\n");
   fs.writeFileSync(path.join(main, 'tools', 'util.mjs'), 'export const u = 1;\n');
+  fs.writeFileSync(path.join(main, '.gitattributes'), '* text=auto eol=lf\n');   // as the real repo: the checkout bytes equal git show
   fs.writeFileSync(path.join(main, '.gitignore'), '.claude/\ndocs/progress/\nbuild/\n');
   gitq(main, 'add', '-A'); gitq(main, 'commit', '-q', '-m', 'base');
   const wt = path.join(tmp, 'c_wt'); gitq(main, 'worktree', 'add', '-q', '-b', 'agent/c1', wt);
   const stateC = path.join(main, '.claude', 'state');
   const secDir = path.join(tmp, 'c_secret');
   const prodEnv = baseEnv({ CP_GATE_STATE_DIR: null, CP_MAIN_ROOT: main, CP_GATE_SECRET_DIR: secDir });
-  const run = (script, e = {}, extra = []) => spawnSync(process.execPath, [rs, wt, '--script', script, '--round', 'rc', '--timeout', '60', ...extra], { encoding: 'utf8', env: { ...prodEnv, ...e }, timeout: 120000 });
+  const run = (script, e = {}, extra = []) => spawnSync(process.execPath, [rs, wt, '--script', path.join(wt, script), '--round', 'rc', '--timeout', '60', ...extra], { encoding: 'utf8', env: { ...prodEnv, ...e }, timeout: 120000 });
   const recs = () => { try { return fs.readFileSync(path.join(stateC, 'suite_records.jsonl'), 'utf8').trim().split('\n').filter(Boolean).length; } catch { return 0; } };
   const logC = path.join(wt, 'docs', 'progress', 'rc', 'suite_node.log');
   let r = run('tests/test_real.mjs');
@@ -158,11 +159,11 @@ console.log('gates15 C: run_suite: the whole import tree, a clean child environm
   t('C ALLOW: a script with only literal imports is not held back by a change under tools/ it cannot reach', r.status === 0, r.stdout + r.stderr);
   gitq(wt, 'checkout', '--', 'tools/util.mjs');
   // fault 3b: a preload and the child's environment
-  const pre = path.join(scratch, 'pre.mjs'); fs.writeFileSync(pre, "console.log('[doctest] test cases: 777 | 777 passed | 0 failed | 0 skipped (child preload)'); process.exit(0);\n");
+  const pre = path.join(scratch, 'pre.mjs'); fs.writeFileSync(pre, "console.log('[doctest] test cases: 777 | 777 passed | 0 failed | 0 skipped (child preload)');\n");
   const n2 = recs();
   r = run('tests/test_real.mjs', { NODE_OPTIONS: `--import ${pathToFileURL(pre).href}` });
   t('C REFUSE: NODE_OPTIONS with --import around run_suite (audit fault 3b): exit 2, no record, the log is not the preload\'s', r.status === 2 && /NODE_OPTIONS/.test(r.stderr) && recs() === n2, r.stdout + r.stderr);
-  r = spawnSync(process.execPath, ['--import', pathToFileURL(pre).href, rs, wt, '--script', 'tests/test_real.mjs', '--round', 'rc'], { encoding: 'utf8', env: prodEnv, timeout: 60000 });
+  r = spawnSync(process.execPath, ['--import', pathToFileURL(pre).href, rs, wt, '--script', path.join(wt, 'tests', 'test_real.mjs'), '--round', 'rc'], { encoding: 'utf8', env: prodEnv, timeout: 60000 });
   t('C REFUSE: node --import <x> tools/run_suite.mjs: exit 2, no record', r.status === 2 && recs() === n2, r.stdout + r.stderr);
   r = run('tests/test_env.mjs', { FOO_X: 'leak', CP_TEST_KEEP: 'kept' });
   const envLine = (() => { try { return JSON.parse(fs.readFileSync(logC, 'utf8').trim().split('\n').pop()); } catch { return {}; } })();
@@ -286,7 +287,7 @@ console.log('gates15 E: the lane lock holder is the fold of the lane lines in ga
   fs.appendFileSync(glog, JSON.stringify({ ts: new Date().toISOString(), gate: 'lane', decision: 'release', agent: 'a1', round: 'r' }) + '\n');
   t('E the holder\'s release frees it', /^free/.test(lt(['status']).stdout));
   // preloads
-  r = lt(['status'], { NODE_OPTIONS: '--import file:///x/pre.mjs' }); t('E the tool refuses to run under NODE_OPTIONS (a preload could rewrite argv)', r.status === 2 && /NODE_OPTIONS/.test(r.stderr), r.stderr);
+  r = lt(['status'], { NODE_OPTIONS: '--import ' + pathToFileURL(path.join(scratch, 'innocent.mjs')).href }); t('E the tool refuses to run under NODE_OPTIONS (a preload could rewrite argv)', r.status === 2 && /NODE_OPTIONS/.test(r.stderr), r.stderr);
   r = spawnSync(process.execPath, ['--import', pathToFileURL(path.join(scratch, 'innocent.mjs')).href, toolF, 'status'], { encoding: 'utf8', env: baseEnv({ CP_GATE_STATE_DIR: ds }) }); t('E the tool refuses to run under node --import', r.status === 2, r.stderr);
   // the guard, with the real hook script
   const lockRel = '.claude/state/unreal_lane.lock'; const rr = R('E'), aa = A('E');
