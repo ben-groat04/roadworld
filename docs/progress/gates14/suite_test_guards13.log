@@ -1,0 +1,146 @@
+  ok   settings.json wires at least the ten known hooks
+  ok   H brief_gate.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H contract_inject.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H delete_guard.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H gate_notice.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H git_guard.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H handin_gate.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H lock_guard.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H ref_log.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H state_guard.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H time_guard.mjs: all 28 runs of the crash shapes decide (no crash, no FAIL-OPEN, no regex error)
+  ok   H no hook builds a RegExp from other text without reEsc/safeRe
+  ok   H reEsc makes any text match itself literally; safeRe never throws
+gates13 B: launches by allow-list (decision 1): contract / BRIEF-FILE / AUDIT-OF / FIRSTLOOK-OF / NO-CONTRACT <category>: <reason>; free text refused whatever its wording
+  ok   B the live table holds all 81 real descriptions, each with a launch form
+  ok   B every live clerk / merge / research / status description (40) is ALLOWED with its category and its real reason
+  ok   B every live audit and first-look description (41), launched as free-text NO-CONTRACT, is REFUSED and the text names the categories and AUDIT-OF / FIRSTLOOK-OF
+  ok   B the audit's 15 evasion descriptions as free-text NO-CONTRACT are all REFUSED
+  ok   B a category reason under 20 characters is refused (names the 20-character rule)
+  ok   B category "audit" is not on the list: refused as free text
+  ok   B category "review" is not on the list: refused as free text
+  ok   B category "first-look" is not on the list: refused as free text
+  ok   B category "builder" is not on the list: refused as free text
+  ok   B category "CLERK JOB" is not on the list: refused as free text
+  ok   B category "clerks" is not on the list: refused as free text
+  ok   B the category is case-insensitive ("Clerk:") and a good reason is allowed
+  ok   B the allow log line carries the category
+  ok   B a categorised launch is still refused when it asks for AUDIT.md to be written
+  ok   B ... while the same vague description with AUDIT-OF is allowed (the real audit launch)
+  ok   B ... and with FIRSTLOOK-OF
+  ok   B no form at all: refused as before
+  ok   B brief_gate_impl.mjs no longer imports or calls disguisedJob (no vocabulary list)
+gates13 C: tools/run_suite.mjs and the build-phase record (decision 2)
+  ok   C tools/run_suite.mjs exists (the one way to run the suite)
+  ok   C an honest FOREGROUND run: exit 0, the log is written where the round says
+  ok   C the record is written at the END of the run (end time at or after start, exit, log hash, worktree, binary)
+  ok   C findSuiteRun accepts the honest foreground run
+  ok   C a BACKGROUND run that has not ended has no record yet (the log is not accepted half-written)
+  ok   C ... and once it ends the record matches the finished log (a background run works)
+  ok   C a log TYPED by hand has no record: refused
+  ok   C a log printed by `node -e` has no record: refused (the 23 Oct forgery)
+  ok   C a log printed by `node -p` has no record: refused
+  ok   C a log printed by `node --eval` has no record: refused
+  ok   C a log printed by `bash -c echo` has no record: refused
+  ok   C an EDITED log is refused (hash mismatch)
+  ok   C a record of ANOTHER worktree is refused
+  ok   C run_suite refuses a script outside the worktree (no run, no record)
+  ok   C a record naming a binary OUTSIDE the worktree is refused
+  ok   C a record edited after signing does not verify
+  ok   C a run that ended BEFORE the last code commit is refused
+  ok   C a FILTERED run is logged as suite_<x>.filter.log and never counts as the suite
+  ok   C --timeout over 900 is refused (contract item 26), nothing runs
+  ok   C a hung suite is killed at its limit: exit 124 and the record says 124
+  ok   C ... and the log of a timed-out run is never accepted as a passed suite (it says exit=124)
+  ok   C REFUSE: an agent writing suite_records.jsonl (redirect)
+  ok   C REFUSE: an agent writing suite_records.jsonl (tee)
+  ok   C REFUSE: an agent writing suite_records.jsonl (cp onto it)
+  ok   C REFUSE: an agent writing suite_records.jsonl (sed -i)
+  ok   C REFUSE: an agent writing suite_records.jsonl (rm)
+  ok   C REFUSE: an agent writing suite_records.jsonl (absolute path)
+  ok   C REFUSE: the Write tool on suite_records.jsonl
+  ok   C REFUSE: even reading the record file by name is not offered to an agent (only the lock and gate.log are readable)
+  ok   C ALLOW: the main session (no agent id) is not limited by state_guard
+  ok   C the PostToolUse recording is gone: no time_guard_post files, no PostToolUse time guard in settings.json
+  ok   C make_brief build-phase text names tools/run_suite.mjs and no longer asks for a "Suite binary:" line
+gates13 D: the time guard takes each job's worktree from the command (cd, absolute program path, run_suite argument); cwd = the main checkout
+  ok   D `cd <worktree> && timeout 900 <suite>` from cwd = main: allowed, recorded under the WORKTREE root
+  ok   D an absolute program path inside a worktree sets that worktree as the root (cwd = main)
+  ok   D `node tools/run_suite.mjs <worktree>` takes the worktree from its argument
+  ok   D `cd A && git -C B status && timeout 900 suite`: the suite job keeps A (the later git -C does not move it)
+  ok   D REFUSE: a second copy in the same worktree, both calls started from the main checkout
+  ok   D ALLOW: the same image runs in worktree A, the new run is in worktree B
+  ok   D ALLOW: a run with no cd and no absolute path belongs to the cwd (main), not to worktree A
+  ok   D REFUSE: no limit is still refused after a cd
+  ok   D the old form (cwd inside the worktree, no cd) still works
+gates13 E: the time guard knows any prefix runner by position (taskset, nice, env, stdbuf, time, chrt, start, cmd /c, powershell -c, bash -c)
+  ok   E REFUSE: taskset -c 0 ninja
+  ok   E REFUSE: taskset 0x3 ninja -C build
+  ok   E REFUSE: nice -n 5 ctest
+  ok   E REFUSE: nice ninja
+  ok   E REFUSE: env X=1 ninja
+  ok   E REFUSE: env -u A ninja
+  ok   E REFUSE: stdbuf -oL ninja
+  ok   E REFUSE: stdbuf -o0 -e0 ctest
+  ok   E REFUSE: time ninja
+  ok   E REFUSE: chrt 10 ninja
+  ok   E REFUSE: chrt -f 10 ninja
+  ok   E REFUSE: start /b ninja
+  ok   E REFUSE: cmd /c ninja
+  ok   E REFUSE: powershell -c ninja
+  ok   E REFUSE: bash -c "ninja"
+  ok   E REFUSE: ionice -c3 ninja
+  ok   E REFUSE: nohup ninja
+  ok   E REFUSE: taskset -c 0 nice -n 5 ninja
+  ok   E REFUSE: env X=1 taskset -c 0 ctest
+  ok   E REFUSE: cd build && taskset -c 0 ninja
+  ok   E ALLOW: timeout 900 taskset -c 0 ninja
+  ok   E ALLOW: taskset -c 0 timeout 900 ninja
+  ok   E ALLOW: nice -n 5 timeout 900 ctest
+  ok   E ALLOW: env -u A timeout 900 ninja
+  ok   E ALLOW: stdbuf -oL timeout 900 ninja
+  ok   E ALLOW: env X=1 taskset -c 0 timeout 900 ctest
+  ok   E ALLOW: taskset -c 0 echo hi
+  ok   E ALLOW: taskset -c 0 ls build
+  ok   E ALLOW: time ls
+  ok   E ALLOW: nice -n 5 git status
+  ok   E ALLOW: env X=1 echo ok
+  ok   E ALLOW: stdbuf -oL cat build.ninja
+  ok   E the refusal for a wrapped command names the way to add the limit
+  ok   E run_suite with --timeout over 900 is refused by the guard too
+  ok   E run_suite with its own limit is allowed (it enforces it)
+gates13 F: the Unreal lane lock is a directory made with mkdir holding owner.txt; only the owner releases it
+  ok   F REFUSE: gates14: mkdir of the lock folder (it fails by itself while held)
+  ok   F ALLOW: gates14: the tool: node tools/lane_lock.mjs take --agent ag5 ...
+  ok   F ALLOW: gates14: the tool release
+  ok   F ALLOW: gates14: the tool status (no id needed)
+  ok   F REFUSE: gates14: mkdir -p with the absolute path
+  ok   F REFUSE: gates14: New-Item -ItemType Directory (PowerShell form of the same lock)
+  ok   F REFUSE: the lock as a FILE: touch
+  ok   F REFUSE: the lock as a FILE: redirect
+  ok   F REFUSE: the lock as a FILE: the Write tool on the lock path itself
+  ok   F REFUSE: the lock as a FILE: New-Item -ItemType File
+  ok   F REFUSE: gates14: the owner file inside the lock: the Write tool with the writer's own id (a free lock)
+  ok   F REFUSE: owner.txt content naming ANOTHER agent (agent: ag9 written by ag5)
+  ok   F REFUSE: owner.txt content with no agent line at all
+  ok   F REFUSE: another file inside the lock (only owner.txt may live there)
+  ok   F REFUSE: gates14: echo "agent: ag5 ..." > owner.txt (redirect on a free lock)
+  ok   F ALLOW: reading owner.txt
+  ok   F ALLOW: listing the lock
+  ok   F ALLOW: Grep on the lock
+  ok   F REFUSE: a second agent rewriting owner.txt of a held lock (Write tool)
+  ok   F REFUSE: a second agent rewriting owner.txt (redirect)
+  ok   F REFUSE: a second agent removing the lock (rm -r)
+  ok   F REFUSE: a second agent removing the lock (rmdir after rm owner.txt)
+  ok   F REFUSE: a second agent removing the lock (Remove-Item)
+  ok   F ALLOW: the owner removing the lock (rm -r)
+  ok   F REFUSE: gates14: the owner rewriting owner.txt (Write tool with its own id)
+  ok   F ALLOW: the main session (no agent id) is not limited: it can release any lock
+  ok   F ALLOW: removing a lock with no owner.txt (a crashed agent's leftover)
+  ok   F REFUSE: gate.log is still not writable by an agent
+  ok   F REFUSE: the ack secret is still not readable
+  ok   F REFUSE: another state file named next to the lock (unreal_lane.lock.bak)
+  ok   F state_guard_impl.mjs documents the lane_lock tool as the only writer of the lock (owner.txt) and the owner-only release
+  ok   no line of this run reached the real gate.log
+
+139 passed, 0 failed

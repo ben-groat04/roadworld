@@ -66,7 +66,7 @@ No-visual round: no images. Evidence: fail_first_test_guards14.txt and the suite
 
 ## Suite counts (one at a time, timeout 600)
 
-SUITECOUNTS
+test_guards6 32, guards7 28, guards8 56, guards9 54, guards10 107, guards11 170, guards12 95, guards13 139, guards14 97, test_hooks 419, test_gates 514, test_worktree_tools 27, test_backup_reference 56; 0 failed in all. Logs: suite_*.log here. guards13 was fixed once (a header-comment test reworded for the new lane lock text) and re-run; the final state of state_guard_impl.mjs was run through guards6 to 14 and test_hooks. fail_first: fail_first_test_guards14.txt, 57 FAIL lines against the gates13 tools.
 
 ## Merge text for main
 

@@ -322,7 +322,7 @@ console.log('gates13 F: the Unreal lane lock is a directory made with mkdir hold
   refuseF('the ack secret is still not readable', bash(`cat .claude/state/ack_secret`));
   refuseF('another state file named next to the lock (unreal_lane.lock.bak)', bash(`touch ${lockRel}.bak`));
   const sgSrc = fs.readFileSync(path.join(src, 'tools', 'hooks', 'state_guard_impl.mjs'), 'utf8');
-  t('F state_guard_impl.mjs documents the one lock form (mkdir + owner.txt) and the owner-only release', /ONE lock form/.test(sgSrc) && /owner\.txt/.test(sgSrc) && /only by the agent named in owner\.txt/.test(sgSrc));
+  t('F state_guard_impl.mjs documents the lane_lock tool as the only writer of the lock (owner.txt) and the owner-only release', /lane_lock.mjs/.test(sgSrc) && /owner.txt/.test(sgSrc) && /only to the agent named in owner.txt/.test(sgSrc));
 }
 
 
