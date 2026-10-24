@@ -96,8 +96,52 @@ Gates (numbers, all must hold at hand-in):
 Main session accepted these waiver rows of grade-r14 WAIVERS.md (24 Oct 2026: R1, R2, F1, G1-G6; R3 and D1 are NOT accepted):
 allow_waiver guarded_check:test_grading.cpp:if (pl.type == SectionType::Ro
 allow_waiver should_fail:// (prototypes/road-draw/tools/scene.mjs
-allow_waiver assertion_retargeted:test_grading.cpp
-allow_waiver check_false_swap:test_grading.cpp
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(t.refuse == #, name << "
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(runs_total > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(pts_total > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(bad == #, name << "
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(diff == #, name << " block
+allow_waiver assertion_retargeted:test_grading.cpp:REQUIRE(w1.size() == w2.size());
+allow_waiver assertion_retargeted:test_grading.cpp:REQUIRE(w1[k].pts.size() == w2[k].pts.si
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(under.count == #, std::str
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(slopes.count == #, std::st
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(median.count == #, std::st
+allow_waiver check_false_swap:test_grading.cpp:CHECK_MESSAGE(cap.count == #, std::strin
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(cap.count == #, std::strin
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(hidden.count == #, std::st
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(bare.count == #, std::stri
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(wall_pts > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(hidden_samples > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(steps_checked > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(worst <= kCreaseMax, std::
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.structure == #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.refuse == #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.wall > #); // the hillside needs
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.max_wall <= c->params.wall_max_h
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.max_wall >= #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.tunnels == #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.bridges == #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.tunnels > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(t.wall == #);
+allow_waiver assertion_retargeted:test_grading.cpp:REQUIRE(req.size() == #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(req[#].kind == StructureKind::Tunn
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(c->roads[#].portals.size() >= #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(f.structure == #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(lower_shared > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(lower_walls > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(upper_supported > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(upper_walls == #); // the upper ro
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(s.pl[#].wall_top == doctest::Appro
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(n > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(worst_step <= #, name << "
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(worst_pit <= #, name << ":
+allow_waiver assertion_retargeted:test_grading.cpp:REQUIRE(st.size() == #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(st[#].kind == StructureKind::Tunne
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(len <= # * c->params.wall_cap / c-
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(g.at(mid->x, y) < zf - #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(differ > #);
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(max_dip < c->params.round_daylight
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(worst2(g) < worst2(sh));
 
 ## Launched
 This job (grade-r10 builder, then a fresh auditor as soon as the hand-in passes `check_handin.mjs`, then gradelayer round 2). Independent items inside the job, one agent: (a) confirm root causes 1 and 2; (b) plan structs and plan-level invariants on synthetic terrain; (c) ribbons and raster; (d) wall meshes from ribbons; (e) tile-size gate; (f) reference fetch and technical drawings; (g) layer hand-over patch. Items (f) and (g) are research or patch writing and may be split off to a second Sonnet agent working in a separate scratch folder if a builder slot is free; they never touch `sim_core/src/grading.cpp`. It needs a builder slot (at most 3-4 live builders; roundabout2, tjunction2 and gates2 are running, pvetrees is not). It needs no Unreal lane.
