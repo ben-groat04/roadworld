@@ -1,0 +1,105 @@
+gates12 A: a second copy of a running test is refused only when the running process is THIS worktree's (decision 1)
+  ok   A the first limited run is allowed and recorded (a start line with the id, worktree and image)
+  ok   A REFUSE: a second copy while this worktree's own process is running; the refusal names the executable path it matched
+  ok   A ALLOW: the same image is running, but from ANOTHER worktree (the gates11 audit's false refusal)
+  ok   A REFUSE: both worktrees run it; only this worktree's path is named in the refusal
+  ok   A REFUSE: a BACKGROUND run counts until its process is gone (no hook sees its end; the process list decides)
+  ok   A ALLOW: the only unfinished record belongs to another worktree
+  ok   A ALLOW: the image is no longer in the process list (nothing running at all)
+  ok   A a stuck executable-path lookup is cut (bounded), the command is allowed and one FAIL-OPEN line names the path lookup
+  ok   A underRoot: matches by executable path or by a command line under the worktree, in any slash form, not by a sibling folder
+  ok   A processPaths reads one "<exe>|<command line>" per line from the lookup command (CP_TIME_GUARD_PATH_CMD)
+gates13 B: the suite record (decision 2): tools/run_suite.mjs writes it at the run END; the build phase accepts only a log a recorded run wrote
+  ok   B a GOOD build hand-in (the log is the output of a recorded tools/run_suite.mjs run in this worktree, newer than the code, exit 0) passes
+  ok   B ... and the same when the run wrote the log in place (run_suite --round = the hand-in round)
+  ok   B a log TYPED BY HAND (or printed by `node -e`) with a valid doctest summary FAILS: no run record
+  ok   B a log edited AFTER its run (appended line) FAILS with a hash mismatch
+  ok   B a copied log edited after its run FAILS (its bytes have no record)
+  ok   B a log written by a recorded run of ANOTHER worktree FAILS
+  ok   B a record whose suite binary is outside the worktree FAILS
+  ok   B a recorded run that ended BEFORE the last code commit FAILS
+  ok   B a recorded run that exited 1 while the log shows no failing test FAILS (it died)
+  ok   B a recorded run that failed (exit 1) with only the brief's allowed failure passes
+gates12 C: a NO-CONTRACT launch that reviews another agent's work is refused by meaning (decision 3)
+  ok   C REFUSE "Auditing gates9"
+  ok   C REFUSE "Second-opinion reviewer of gates11"
+  ok   C REFUSE "Opus look at grade-r12 images"
+  ok   C REFUSE "Independent verification of gates9"
+  ok   C REFUSE "Please audit gates9"
+  ok   C REFUSE "Cold read of the gates9 hand-in"
+  ok   C REFUSE "Verify the gates9 round"
+  ok   C REFUSE "Reviewer for the roundabout5 round"
+  ok   C REFUSE "Review the tjunction6 renders"
+  ok   C REFUSE "Fresh eyes: look at the m2fix5b composites"
+  ok   C REFUSE "Strict audit of grade-r13"
+  ok   C REFUSE "Opus first look at the m3ui-r1 frames"
+  ok   C REFUSE "Auditor for gates9 hand-in"
+  ok   C REFUSE "Opus first look on grade-r12 images"
+  ok   C REFUSE a neutral description ("Quick job") whose stated reason opens with the review job
+  ok   C REFUSE a neutral description ("Docs check") whose stated reason opens with the review job
+  ok   C REFUSE a neutral description ("Image pass") whose stated reason opens with the review job
+  ok   C REFUSE a neutral description ("Second pair of eyes") whose stated reason opens with the review job
+  ok   C REFUSE a prompt line that orders a review of a progress folder (Check it)
+  ok   C REFUSE a prompt line that orders a review of a progress folder (Quick job)
+  ok   C ALLOW "Write audit first-look rule into docs"
+  ok   C ALLOW "Clerk: photos-outrank-tests rule, commit review"
+  ok   C ALLOW "Merger: verify playtest, merge integ to main"
+  ok   C ALLOW "Merge gates7 then gates9 into main"
+  ok   C ALLOW "Research: Unreal plugin facts"
+  ok   C ALLOW "Fetch matched junction reference photos"
+  ok   C ALLOW "Clerk: contract item 26 time limits"
+  ok   C ALLOW "Add every-audit-item-fixed rule to docs"
+  ok   C ALLOW "Earthworks method review (read-only)"
+  ok   C ALLOW "Measure phase: tjunction6 photos"
+  ok   C ALLOW "Queue and worktree status check (read-only)"
+  ok   C ALLOW "Recovery round 2: validate and re-fetch photos"
+  ok   C ALLOW "Clerk: QUEUE and ACCEPTANCE update"
+  ok   C ALLOW "Auditing gates9" when the launch carries AUDIT-OF (the real audit launch)
+  ok   C ALLOW "Opus look at grade-r12 images" when the launch carries FIRSTLOOK-OF
+  ok   C sweep of the live launches: every real NO-CONTRACT description of the main gate.log, given as FREE TEXT, is refused with the categories named (the allow-list reads no words)
+gates12 D: make_brief --phase build|render run from a worktree finds the sibling worktree folder (decision 4)
+  ok   D from a worktree cwd, --phase build builds <roadworld-wt>/<round> (no doubled roadworld-wt) and finds MEASURE.md there
+gates12 E: time guard: xargs, `timeout N -- cmd`, make family, Unreal Build.bat / RunUAT / UnrealBuildTool, node suites
+  ok   E REFUSE (Bash): xargs ninja with no limit
+  ok   E REFUSE (Bash): xargs -n1 ctest with no limit
+  ok   E REFUSE (Bash): `timeout 1200 -- ninja` is over the cap
+  ok   E REFUSE (Bash): make with no limit
+  ok   E REFUSE (Bash): mingw32-make with no limit
+  ok   E REFUSE (Bash): gmake
+  ok   E REFUSE (Bash): make and ctest, none limited
+  ok   E REFUSE (Bash): Unreal Build.bat with no limit
+  ok   E REFUSE (Bash): RunUAT with no limit
+  ok   E REFUSE (Bash): UnrealBuildTool with no limit
+  ok   E REFUSE (Bash): RunUAT over the 5400 s cap
+  ok   E REFUSE (Bash): cmd /c Build.bat
+  ok   E REFUSE (PowerShell): Build.bat in PowerShell with no limit
+  ok   E REFUSE (Bash): a repo node suite with no limit
+  ok   E REFUSE (Bash): a node suite piped to tail
+  ok   E REFUSE (Bash): `timeout 0 --` is no limit
+  ok   E ALLOW (Bash): `timeout 900 -- ninja`
+  ok   E ALLOW (Bash): timeout around xargs
+  ok   E ALLOW (Bash): xargs timeout 900 ctest
+  ok   E ALLOW (Bash): timeout make
+  ok   E ALLOW (Bash): make -n is a dry run
+  ok   E ALLOW (Bash): make --help
+  ok   E ALLOW (Bash): RunUAT with its 5400 s cap
+  ok   E ALLOW (Bash): Build.bat with timeout 3000
+  ok   E ALLOW (Bash): a node suite with timeout 900
+  ok   E ALLOW (Bash): a node suite --help
+  ok   E ALLOW (Bash): git log --grep make
+  ok   E ALLOW (Bash): echo
+  ok   E ALLOW (Bash): grep for make
+  ok   E ALLOW (Bash): cmake configure
+  ok   E ALLOW (Bash): a commit message
+  ok   E ALLOW (Bash): cat of a file named build.ninja
+  ok   E ALLOW (PowerShell): Select-String that mentions make
+  ok   E ALLOW (Bash): an unrelated node tool
+  ok   E the refusal for make names the way to add the limit (`timeout 900 <cmd>`)
+
+clean_test_temp prefix: guards12- is cleaned with the other suites
+  ok   clean_test_temp lists the guards12- prefix
+test isolation and cleanup
+  ok   no line mentioning this run's temp folder reached the real gate.log
+  ok   the temp folder is removed
+
+95 passed, 0 failed
