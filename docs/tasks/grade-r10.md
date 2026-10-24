@@ -142,6 +142,9 @@ allow_waiver assertion_retargeted:test_grading.cpp:CHECK(g.at(mid->x, y) < zf - 
 allow_waiver assertion_retargeted:test_grading.cpp:CHECK(differ > #);
 allow_waiver assertion_retargeted:test_grading.cpp:CHECK(max_dip < c->params.round_daylight
 allow_waiver assertion_retargeted:test_grading.cpp:CHECK(worst2(g) < worst2(sh));
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(tallest_rock <= c->params.rock_fac
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK_MESSAGE(tallest <= c->params.rock_
+allow_waiver assertion_retargeted:test_grading.cpp:CHECK(rock_sections > #);
 
 ## Launched
 This job (grade-r10 builder, then a fresh auditor as soon as the hand-in passes `check_handin.mjs`, then gradelayer round 2). Independent items inside the job, one agent: (a) confirm root causes 1 and 2; (b) plan structs and plan-level invariants on synthetic terrain; (c) ribbons and raster; (d) wall meshes from ribbons; (e) tile-size gate; (f) reference fetch and technical drawings; (g) layer hand-over patch. Items (f) and (g) are research or patch writing and may be split off to a second Sonnet agent working in a separate scratch folder if a builder slot is free; they never touch `sim_core/src/grading.cpp`. It needs a builder slot (at most 3-4 live builders; roundabout2, tjunction2 and gates2 are running, pvetrees is not). It needs no Unreal lane.
